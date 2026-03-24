@@ -1,25 +1,57 @@
 import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
-import { Pool } from 'pg';
+import path from 'path';
+import { Pool, PoolConfig } from 'pg';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 const app = express();
-const port = process.env.PORT || 4000;
+const port = parseInt(process.env.PORT || '4000', 10);
 
-app.use(cors());
+const corsOrigins = process.env.CORS_ORIGIN?.split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (corsOrigins && corsOrigins.length > 0) {
+  app.use(
+    cors({
+      origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
+      credentials: true,
+    }),
+  );
+} else {
+  app.use(cors());
+}
 app.use(express.json());
 
-const pool = new Pool({
-  user: process.env.DB_USER || 'workpilot_user',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'workpilot',
-  password: process.env.DB_PASSWORD || 'workpilot_password',
-  port: parseInt(process.env.DB_PORT || '5433'),
-});
+function createPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (databaseUrl) {
+    const useSsl =
+      process.env.DB_SSL === 'true' ||
+      (isProduction && process.env.DB_SSL !== 'false');
+    const poolConfig: PoolConfig = {
+      connectionString: databaseUrl,
+      ssl: useSsl
+        ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
+        : undefined,
+    };
+    return new Pool(poolConfig);
+  }
+  return new Pool({
+    user: process.env.DB_USER || 'workpilot_user',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'workpilot',
+    password: process.env.DB_PASSWORD || 'workpilot_password',
+    port: parseInt(process.env.DB_PORT || '5433', 10),
+  });
+}
+
+const pool = createPool();
 
 type UserRole = 'SUPER_ADMIN' | 'ADMIN';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
@@ -168,7 +200,13 @@ interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'development_secret_change_me';
+const jwtSecretEnv = process.env.JWT_SECRET?.trim();
+if (isProduction && (!jwtSecretEnv || jwtSecretEnv.length < 32)) {
+  console.error('FATAL: In production, JWT_SECRET must be set and at least 32 characters long.');
+  process.exit(1);
+}
+const JWT_SECRET = jwtSecretEnv || 'dev-only-workpilot-jwt-secret-do-not-use-in-prod';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
 
 async function initDb() {
   await pool.query(`
@@ -817,18 +855,44 @@ async function initDb() {
     console.log('Seeded default service plans');
   }
 
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'superadmin@workpilot.local';
-  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'superadmin123';
+  const defaultSuperEmail = 'superadmin@workpilot.local';
+  const defaultSuperPassword = 'superadmin123';
 
-  const existing = await pool.query<DbUser>('SELECT * FROM users WHERE email = $1', [superAdminEmail]);
+  const userCountRow = await pool.query<{ c: string }>('SELECT COUNT(*)::text AS c FROM users');
+  const userCount = parseInt(userCountRow.rows[0]?.c || '0', 10);
 
-  if (existing.rowCount === 0) {
-    const passwordHash = await bcrypt.hash(superAdminPassword, 10);
-    await pool.query(
-      'INSERT INTO users (email, password_hash, role, created_by) VALUES ($1, $2, $3, $4)',
-      [superAdminEmail, passwordHash, 'SUPER_ADMIN', null],
-    );
-    console.log(`Seeded SUPER_ADMIN user with email ${superAdminEmail}`);
+  if (userCount === 0 && isProduction) {
+    const email = process.env.SUPER_ADMIN_EMAIL?.trim();
+    const password = process.env.SUPER_ADMIN_PASSWORD;
+    if (!email || !password || password.length < 12) {
+      throw new Error(
+        'Production bootstrap: set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD (minimum 12 characters) in .env before the first server start with an empty database.',
+      );
+    }
+  }
+
+  const seedEmail = process.env.SUPER_ADMIN_EMAIL?.trim() || defaultSuperEmail;
+  const seedPassword = process.env.SUPER_ADMIN_PASSWORD || defaultSuperPassword;
+
+  const existingSuper = await pool.query<DbUser>('SELECT * FROM users WHERE email = $1', [seedEmail]);
+  if ((existingSuper.rowCount ?? 0) === 0) {
+    if (
+      isProduction &&
+      (!process.env.SUPER_ADMIN_EMAIL?.trim() ||
+        !process.env.SUPER_ADMIN_PASSWORD ||
+        process.env.SUPER_ADMIN_PASSWORD.length < 12)
+    ) {
+      console.warn(
+        'Skipping SUPER_ADMIN auto-seed: set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD (min 12 characters) to create this account.',
+      );
+    } else {
+      const passwordHash = await bcrypt.hash(seedPassword, 10);
+      await pool.query(
+        'INSERT INTO users (email, password_hash, role, created_by) VALUES ($1, $2, $3, $4)',
+        [seedEmail, passwordHash, 'SUPER_ADMIN', null],
+      );
+      console.log(`Seeded SUPER_ADMIN user with email ${seedEmail}`);
+    }
   }
 }
 
@@ -908,7 +972,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       role: user.role,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
     const responseUser: Record<string, unknown> = {
       id: user.id,

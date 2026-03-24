@@ -5,6 +5,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+!backend/.env.example
+!frontend/.env.example
 
 # Next.js (frontend)
 frontend/.next/
