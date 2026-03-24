@@ -23,6 +23,8 @@ interface DescPricingItem {
   unit_price: number;
   vat_rate: number;
   quantity: number;
+  /** Present on saved job rows from API; omitted on job-description templates */
+  total?: number | string | null;
 }
 
 interface PricingItemRow {
@@ -162,15 +164,23 @@ export default function AddNewJobPage() {
         setCompletedServiceItems(Array.isArray(j.completed_service_items) ? j.completed_service_items : []);
 
         if (j.pricing_items && Array.isArray(j.pricing_items)) {
-          setPricingItems(j.pricing_items.map((pi: DescPricingItem) => ({
-             key: nextKey(),
-             item_name: pi.item_name,
-             time_included: pi.time_included,
-             unit_price: Number(pi.unit_price),
-             vat_rate: Number(pi.vat_rate),
-             quantity: pi.quantity,
-             total: Number(pi.total)
-          })));
+          setPricingItems(j.pricing_items.map((pi: DescPricingItem) => {
+            const unit = Number(pi.unit_price);
+            const qty = Number(pi.quantity);
+            const lineTotal =
+              pi.total != null && String(pi.total) !== ''
+                ? Number(pi.total)
+                : unit * qty;
+            return {
+              key: nextKey(),
+              item_name: pi.item_name,
+              time_included: pi.time_included,
+              unit_price: unit,
+              vat_rate: Number(pi.vat_rate),
+              quantity: qty,
+              total: lineTotal,
+            };
+          }));
         }
       } else if (custData) {
         // Pre-fill contact name for new job only
