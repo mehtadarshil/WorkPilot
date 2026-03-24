@@ -1,0 +1,41 @@
+Invoice Number,Customer,Postal Address,Reference,Invoice Date,Due Date,Description,Discount,Subtotal,Tax,Total,Paid,Due,Entered By,Entered On,Line Number,Line Item Code,Line Description,Line Quantity,Line Unit Price,Line Discount Percentage,Line Tax Rate,Line Tax Rate Percentage,Line Account Code,Line Amount
+INV545,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0340866-1","2026-03-03","2026-03-17",,0.00,4370.00,874.00,5244.00,0.00,5244.00,Manesh Halai,"2026-03-03 12:07",1,Misc,"N001-PO-0340866-1",1.0000,4370.00,0.00,20% VAT,20.00,,4370.00
+INV546,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0340886-1","2026-03-03","2026-03-17",,0.00,750.00,150.00,900.00,0.00,900.00,Manesh Halai,"2026-03-03 12:09",1,Misc,"N001-PO-0340886-1",1.0000,750.00,0.00,20% VAT,20.00,,750.00
+INV547,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0339205-1","2026-03-03","2026-03-17",,0.00,600.00,120.00,720.00,0.00,720.00,Manesh Halai,"2026-03-03 12:10",1,Misc,"N001-PO-0339205-1",1.0000,600.00,0.00,20% VAT,20.00,,600.00
+INV548,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0339170-1","2026-03-03","2026-03-17",,0.00,470.00,94.00,564.00,0.00,564.00,Manesh Halai,"2026-03-03 12:12",1,Misc,"N001-PO-0339170-1",1.0000,470.00,0.00,20% VAT,20.00,,470.00
+INV549,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0339148-1","2026-03-03","2026-03-17",,0.00,6310.00,1262.00,7572.00,0.00,7572.00,Manesh Halai,"2026-03-03 12:12",1,Misc,"N001-PO-0339148-1",1.0000,6310.00,0.00,20% VAT,20.00,,6310.00
+INV550,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0338019-1","2026-03-03","2026-03-17",,0.00,1300.00,260.00,1560.00,0.00,1560.00,Manesh Halai,"2026-03-03 12:14",1,Misc,"N001-PO-0338019-1",1.0000,1300.00,0.00,20% VAT,20.00,,1300.00
+INV551,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0327852-1","2026-03-03","2026-03-17",,0.00,510.00,102.00,612.00,0.00,612.00,Manesh Halai,"2026-03-03 12:15",1,Misc,"N001-PO-0327852-1",1.0000,510.00,0.00,20% VAT,20.00,,510.00
+INV552,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0326859-1","2026-03-03","2026-03-17",,0.00,2920.00,584.00,3504.00,0.00,3504.00,Manesh Halai,"2026-03-03 12:16",1,Misc,"N001-PO-0326859-1",1.0000,2920.00,0.00,20% VAT,20.00,,2920.00
+INV553,Notting Hill Genesis,"Bruce Kenrick House, 2 Killick Street
+London
+England N1 9FL
+United Kingdom","N001-PO-0324321-1","2026-03-03","2026-03-17",,0.00,750.00,150.00,900.00,0.00,900.00,Manesh Halai,"2026-03-03 12:18",1,Misc,"N001-PO-0324321-1",1.0000,750.00,0.00,20% VAT,20.00,,750.00
+INV557,Regal & Co Management Limited,,,"2026-03-10","2026-03-24",,0.00,270.00,54.00,324.00,0.00,324.00,Manesh Halai,"2026-03-10 16:21",1,Misc,"Issue with door slamming - replaced door colouser",1.0000,175.00,0.00,20% VAT,20.00,,175.00
+INV557,Regal & Co Management Limited,,,"2026-03-10","2026-03-24",,0.00,270.00,54.00,324.00,0.00,324.00,Manesh Halai,"2026-03-10 16:21",2,Misc,Door closer,1.0000,95.00,0.00,20% VAT,20.00,,95.00
+INV559,Regal & Co Management Limited,,,"2026-03-10","2026-03-24",,0.00,160.00,32.00,192.00,0.00,192.00,Manesh Halai,"2026-03-10 16:27",1,Misc,Supply and fit of new buffer gasket to help aid the door from slamming shut.,1.0000,160.00,0.00,20% VAT,20.00,,160.00
+INV560,Regal & Co Management Limited,,,"2026-03-10","2026-03-24",,0.00,165.00,33.00,198.00,0.00,198.00,Manesh Halai,"2026-03-10 16:28",1,Misc,"Call out - removal of light and make termination safe due to water leak.",1.0000,165.00,0.00,20% VAT,20.00,,165.00

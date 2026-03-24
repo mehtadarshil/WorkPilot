@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:15-alpine
+    container_name: workpilot_db
+    environment:
+      POSTGRES_USER: workpilot_user
+      POSTGRES_PASSWORD: workpilot_password
+      POSTGRES_DB: workpilot
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:
