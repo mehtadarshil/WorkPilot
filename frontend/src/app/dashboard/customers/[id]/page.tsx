@@ -28,6 +28,9 @@ interface CustomerDetails {
   last_contact: string | null;
   notes: string | null;
   customer_type_name: string | null;
+  customer_type_allow_branches?: boolean | null;
+  customer_type_company_name_required?: boolean | null;
+  customer_type_work_address_name?: string | null;
   price_book_name: string | null;
   created_by_name: string | null;
   created_at: string;
@@ -186,7 +189,17 @@ export default function CustomerDetailsPage() {
 
   const fullContactName = [data.contact_title, data.contact_first_name, data.contact_surname].filter(Boolean).join(' ');
 
-  const tabs = ['All works', 'Communications', 'Contacts', 'Branches', 'Work address', 'Assets', 'Files'];
+  const allowBranches = data.customer_type_allow_branches !== false;
+  const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
+  const tabs: { key: string; label: string }[] = [
+    { key: 'All works', label: 'All works' },
+    { key: 'Communications', label: 'Communications' },
+    { key: 'Contacts', label: 'Contacts' },
+    ...(allowBranches ? [{ key: 'Branches', label: 'Branches' }] : []),
+    { key: 'Work address', label: workAddressLabel },
+    { key: 'Assets', label: 'Assets' },
+    { key: 'Files', label: 'Files' },
+  ];
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -331,16 +344,15 @@ export default function CustomerDetailsPage() {
              {/* Tabs Header */}
              <div className="pt-4 px-6 border-b border-slate-200 bg-white flex items-end justify-between overflow-x-auto no-scrollbar">
                 <div className="flex gap-2">
-                  {tabs.map(tab => (
+                  {tabs.map((tab) => (
                     <button 
-                      key={tab} 
-                      onClick={() => setActiveTab(tab)}
+                      key={tab.key} 
+                      onClick={() => setActiveTab(tab.key)}
                       className={`whitespace-nowrap px-4 py-2.5 text-sm font-semibold transition border-b-2 ${
-                        activeTab === tab ? 'border-[#14B8A6] text-[#14B8A6]' : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
+                        activeTab === tab.key ? 'border-[#14B8A6] text-[#14B8A6]' : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                       }`}
                     >
-                      {tab}
-                      {tab === 'Contacts' && <span className="ml-2 bg-[#14B8A6] text-white px-1.5 py-0.5 rounded-full text-[10px]">1</span>}
+                      {tab.label}
                     </button>
                   ))}
                 </div>
@@ -525,7 +537,7 @@ export default function CustomerDetailsPage() {
                 <CustomerContactsTab customerId={id} />
               )}
 
-              {activeTab === 'Branches' && (
+              {activeTab === 'Branches' && (data.customer_type_allow_branches !== false) && (
                 <CustomerBranchesTab customerId={id} />
               )}
 

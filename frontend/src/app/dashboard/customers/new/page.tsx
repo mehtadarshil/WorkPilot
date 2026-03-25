@@ -9,6 +9,7 @@ import { ArrowLeft, Save } from 'lucide-react';
 interface CustomerType {
   id: number;
   name: string;
+  company_name_required?: boolean;
 }
 
 interface PriceBook {
@@ -59,6 +60,9 @@ export default function NewCustomerPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectedType = customerTypes.find((t) => t.id === Number(customerTypeId)) || null;
+  const companyRequired = !!selectedType?.company_name_required;
+
   const fetchData = useCallback(async () => {
     if (!token) return;
     try {
@@ -84,7 +88,12 @@ export default function NewCustomerPage() {
 
     // The backend requires full_name and email minimally right now.
     // We can infer full_name from Company Name or Contact Name
-    const derivedFullName = company || `${contactFirstName} ${contactSurname}`.trim() || 'Unknown Customer';
+    if (companyRequired && !company.trim()) {
+      setError('Company name is required for this customer type.');
+      setSaving(false);
+      return;
+    }
+    const derivedFullName = company.trim() || `${contactFirstName} ${contactSurname}`.trim() || 'Unknown Customer';
     
     // The older backend structure required 'email' at the top level
     const derivedEmail = contactEmail || 'no-reply@workpilot.placeholder.com';
@@ -187,10 +196,10 @@ export default function NewCustomerPage() {
                     </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Company/Housing Name *</label>
+                    <label className={labelClass}>Company/Housing Name{companyRequired ? ' *' : ''}</label>
                     <input
                       type="text"
-                      required
+                      required={companyRequired}
                       value={company}
                       onChange={e => setCompany(e.target.value)}
                       className={inputClass}

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { Search, MoreVertical, Briefcase, Plus } from 'lucide-react';
+import { Search, MoreVertical, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { getJson, patchJson, deleteRequest } from '../../apiClient';
 
 interface Job {
   id: number;
@@ -89,7 +89,6 @@ export default function JobsPage() {
   const [stateFilter, setStateFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
@@ -161,11 +160,11 @@ export default function JobsPage() {
   }, [fetchJobs]);
 
   useEffect(() => {
-    if (addModalOpen || editModalOpen) {
+    if (editModalOpen) {
       fetchCustomersForDropdown();
       fetchOfficersForDropdown();
     }
-  }, [addModalOpen, editModalOpen, fetchCustomersForDropdown, fetchOfficersForDropdown]);
+  }, [editModalOpen, fetchCustomersForDropdown, fetchOfficersForDropdown]);
 
   useEffect(() => {
     if (actionMenu === null) return;
@@ -192,12 +191,6 @@ export default function JobsPage() {
     setFormState('draft');
   };
 
-  const openAdd = () => {
-    setAddError(null);
-    resetForm();
-    setAddModalOpen(true);
-  };
-
   const openEdit = (j: Job) => {
     setAddError(null);
     setEditingJob(j);
@@ -213,39 +206,6 @@ export default function JobsPage() {
     setFormState(j.state);
     setActionMenu(null);
     setEditModalOpen(true);
-  };
-
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    if (!formTitle.trim()) {
-      setAddError('Job title is required.');
-      return;
-    }
-    if (!token) return;
-    try {
-      await postJson<{ job: Job }>(
-        '/jobs',
-        {
-          title: formTitle.trim(),
-          description: formDescription.trim() || undefined,
-          priority: formPriority,
-          officer_id: formOfficerId ? parseInt(formOfficerId, 10) : undefined,
-          start_date: formStartDate ? new Date(formStartDate).toISOString() : undefined,
-          deadline: formDeadline ? new Date(formDeadline).toISOString() : undefined,
-          customer_id: formCustomerId ? parseInt(formCustomerId, 10) : undefined,
-          location: formLocation.trim() || undefined,
-          required_certifications: formRequiredCertifications.trim() || undefined,
-          state: formState,
-        },
-        token,
-      );
-      setAddModalOpen(false);
-      resetForm();
-      fetchJobs();
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create job.');
-    }
   };
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -337,21 +297,9 @@ export default function JobsPage() {
 
       <div className="flex-1 overflow-y-auto p-8">
         <div className="mx-auto max-w-6xl space-y-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900">Job Management</h1>
-              <p className="mt-1 text-slate-500">Create, organize, track, and complete work across your organization.</p>
-            </div>
-            <motion.button
-              type="button"
-              onClick={openAdd}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
-            >
-              <Plus className="size-5" />
-              Create New Job
-            </motion.button>
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">Job Management</h1>
+            <p className="mt-1 text-slate-500">Organize, track, and complete work across your organization. Create new jobs from a customer profile.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
@@ -580,38 +528,6 @@ export default function JobsPage() {
           </motion.div>
         </div>
       </div>
-
-      {addModalOpen && (
-        <JobModal
-          title="Create New Job"
-          onSubmit={handleAdd}
-          onClose={() => setAddModalOpen(false)}
-          error={addError}
-          customers={customers}
-          officers={officers}
-          formTitle={formTitle}
-          setFormTitle={setFormTitle}
-          formDescription={formDescription}
-          setFormDescription={setFormDescription}
-          formPriority={formPriority}
-          setFormPriority={setFormPriority}
-          formOfficerId={formOfficerId}
-          setFormOfficerId={setFormOfficerId}
-          formStartDate={formStartDate}
-          setFormStartDate={setFormStartDate}
-          formDeadline={formDeadline}
-          setFormDeadline={setFormDeadline}
-          formCustomerId={formCustomerId}
-          setFormCustomerId={setFormCustomerId}
-          formLocation={formLocation}
-          setFormLocation={setFormLocation}
-          formRequiredCertifications={formRequiredCertifications}
-          setFormRequiredCertifications={setFormRequiredCertifications}
-          formState={formState}
-          setFormState={setFormState}
-          submitLabel="Create"
-        />
-      )}
 
       {editModalOpen && editingJob && (
         <JobModal

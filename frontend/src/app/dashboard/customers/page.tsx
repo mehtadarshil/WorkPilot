@@ -8,10 +8,13 @@ import {
   TrendingUp,
   TrendingDown,
   UserPlus,
+  Upload,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { useRouter } from 'next/navigation';
+import { parseCsv, toObjects } from '../csvUtils';
 
 interface Customer {
   id: number;
@@ -121,7 +124,154 @@ export default function CustomersPage() {
   const [formCustomerTypeId, setFormCustomerTypeId] = useState<number | ''>('');
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
 
+  // CSV import (customers + sites/work addresses)
+  const [importOpen, setImportOpen] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [customerCsvObjects, setCustomerCsvObjects] = useState<Record<string, string>[] | null>(null);
+  const [siteCsvObjects, setSiteCsvObjects] = useState<Record<string, string>[] | null>(null);
+  const [editImportKey, setEditImportKey] = useState<string | null>(null);
+  const [importEdits, setImportEdits] = useState<Record<string, Record<string, string>>>({});
+
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const normKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const customerImportRows = (() => {
+    if (!customerCsvObjects) return [];
+    return customerCsvObjects.map((o, idx) => {
+      const name = o['Customer Name']?.trim() || '';
+      const key = `${normKey(name)}__${idx}`;
+      const email = (o['Email Address'] || '').trim();
+      const phone = (o['Mobile Number'] || o['Phone Number'] || '').trim();
+      const archived = (o['Archived'] || '').trim();
+      const missing: string[] = [];
+      if (!name) missing.push('Customer Name');
+      if (!email) missing.push('Email Address');
+      return { key, raw: o, name, email, phone, archived, missing };
+    });
+  })();
+
+  const siteImportRows = (() => {
+    if (!siteCsvObjects) return [];
+    return siteCsvObjects.map((o, idx) => {
+      const customer = (o['Customer'] || '').trim();
+      const siteName = (o['Site Name'] || '').trim();
+      const addr1 = (o['Address Street'] || '').trim();
+      const key = `${normKey(customer)}__${idx}`;
+      const missing: string[] = [];
+      if (!customer) missing.push('Customer');
+      if (!siteName) missing.push('Site Name');
+      if (!addr1) missing.push('Address Street');
+      return { key, raw: o, customer, siteName, addr1, missing };
+    });
+  })();
+
+  const sitesByCustomerName = (() => {
+    const map: Record<string, typeof siteImportRows> = {};
+    for (const s of siteImportRows) {
+      const k = normKey(s.customer);
+      if (!k) continue;
+      if (!map[k]) map[k] = [];
+      map[k].push(s);
+    }
+    return map;
+  })();
+
+  const customersKeySet = (() => {
+    const set = new Set<string>();
+    for (const c of customerImportRows) set.add(normKey(c.name));
+    return set;
+  })();
+
+  const openImport = () => {
+    setImportError(null);
+    setImporting(false);
+    setCustomerCsvObjects(null);
+    setSiteCsvObjects(null);
+    setImportEdits({});
+    setEditImportKey(null);
+    setImportOpen(true);
+  };
+
+  const handleCustomerCsv = async (file: File) => {
+    const text = await file.text();
+    const objects = toObjects(parseCsv(text));
+    setCustomerCsvObjects(objects);
+  };
+
+  const handleSiteCsv = async (file: File) => {
+    const text = await file.text();
+    const objects = toObjects(parseCsv(text));
+    setSiteCsvObjects(objects);
+  };
+
+  const setEditValue = (key: string, field: string, value: string) => {
+    setImportEdits((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), [field]: value },
+    }));
+  };
+
+  const buildPayload = () => {
+    // customers: map from customer rows; sites: map from site rows
+    const customersPayload = customerImportRows.map((c) => {
+      const e = importEdits[c.key] || {};
+      return {
+        customer_name: e['Customer Name'] ?? c.raw['Customer Name'] ?? '',
+        contact_name: e['Contact Name'] ?? c.raw['Contact Name'] ?? '',
+        email_address: e['Email Address'] ?? c.raw['Email Address'] ?? '',
+        phone_number: e['Phone Number'] ?? c.raw['Phone Number'] ?? '',
+        mobile_number: e['Mobile Number'] ?? c.raw['Mobile Number'] ?? '',
+        physical_address_street: e['Physical Address Street'] ?? c.raw['Physical Address Street'] ?? '',
+        physical_address_city: e['Physical Address City'] ?? c.raw['Physical Address City'] ?? '',
+        physical_address_region: e['Physical Address Region'] ?? c.raw['Physical Address Region'] ?? '',
+        physical_address_postal_code: e['Physical Address Postal Code'] ?? c.raw['Physical Address Postal Code'] ?? '',
+        physical_address_country: e['Physical Address Country'] ?? c.raw['Physical Address Country'] ?? '',
+        lead_source: e['Lead Source'] ?? c.raw['Lead Source'] ?? '',
+        archived: e['Archived'] ?? c.raw['Archived'] ?? '',
+      };
+    });
+
+    const sitesPayload = siteImportRows.map((s) => {
+      const e = importEdits[s.key] || {};
+      return {
+        customer: e['Customer'] ?? s.raw['Customer'] ?? '',
+        site_name: e['Site Name'] ?? s.raw['Site Name'] ?? '',
+        contact_name: e['Contact Name'] ?? s.raw['Contact Name'] ?? '',
+        email_address: e['Email Address'] ?? s.raw['Email Address'] ?? '',
+        phone_number: e['Phone Number'] ?? s.raw['Phone Number'] ?? '',
+        mobile_number: e['Mobile Number'] ?? s.raw['Mobile Number'] ?? '',
+        address_street: e['Address Street'] ?? s.raw['Address Street'] ?? '',
+        address_city: e['Address City'] ?? s.raw['Address City'] ?? '',
+        address_region: e['Address Region'] ?? s.raw['Address Region'] ?? '',
+        address_postal_code: e['Address Postal Code'] ?? s.raw['Address Postal Code'] ?? '',
+        address_country: e['Address Country'] ?? s.raw['Address Country'] ?? '',
+        archived: e['Archived'] ?? s.raw['Archived'] ?? '',
+      };
+    });
+
+    return { customers: customersPayload, sites: sitesPayload };
+  };
+
+  const runImport = async () => {
+    if (!token) return;
+    if (!customerCsvObjects || !siteCsvObjects) {
+      setImportError('Please upload both customer_export.csv and site_export.csv');
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    try {
+      await postJson('/import/customers-sites', buildPayload(), token);
+      setImportOpen(false);
+      fetchCustomers();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const fetchCustomers = useCallback(async () => {
     if (!token) return;
@@ -343,16 +493,28 @@ export default function CustomersPage() {
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Customer Management</h1>
               <p className="mt-1 text-slate-500">Manage your client relationships and contact data.</p>
             </div>
-            <motion.button
-              type="button"
-              onClick={openAdd}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
-            >
-              <UserPlus className="size-5" />
-              Create New Customer
-            </motion.button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+              <motion.button
+                type="button"
+                onClick={openImport}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 font-bold text-slate-800 shadow-sm transition hover:bg-slate-50"
+              >
+                <Upload className="size-5 text-slate-500" />
+                Import CSV
+              </motion.button>
+              <motion.button
+                type="button"
+                onClick={openAdd}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
+              >
+                <UserPlus className="size-5" />
+                Create New Customer
+              </motion.button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -644,7 +806,279 @@ export default function CustomersPage() {
           submitLabel="Save Changes"
         />
       )}
+
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-6xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Import customers + sites</h3>
+                <p className="text-sm text-slate-500">Upload both files. Sites will be imported into each customer’s Work address list automatically.</p>
+              </div>
+              <button onClick={() => setImportOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 text-sm font-semibold text-slate-800">1) Upload `customer_export.csv`</div>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleCustomerCsv(f);
+                  }}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                />
+                <div className="mt-3 text-xs text-slate-500">
+                  Loaded: <span className="font-semibold text-slate-800">{customerCsvObjects ? customerCsvObjects.length : 0}</span> customers
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 text-sm font-semibold text-slate-800">2) Upload `site_export.csv`</div>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleSiteCsv(f);
+                  }}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                />
+                <div className="mt-3 text-xs text-slate-500">
+                  Loaded: <span className="font-semibold text-slate-800">{siteCsvObjects ? siteCsvObjects.length : 0}</span> sites
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200">
+              <div className="flex items-center justify-between px-6 py-3">
+                <div className="text-sm text-slate-600">
+                  {customerCsvObjects && siteCsvObjects ? (
+                    <>
+                      Preview: <span className="font-semibold text-slate-900">{customerImportRows.length}</span> customers and{' '}
+                      <span className="font-semibold text-slate-900">{siteImportRows.length}</span> sites
+                    </>
+                  ) : (
+                    'Upload both files to preview and import.'
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setImportOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    Close
+                  </button>
+                  <button
+                    disabled={importing}
+                    onClick={runImport}
+                    className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-bold text-white hover:bg-[#119f90] disabled:opacity-50"
+                  >
+                    {importing ? 'Importing...' : 'Import now'}
+                  </button>
+                </div>
+              </div>
+              {importError && (
+                <div className="px-6 pb-4">
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{importError}</div>
+                </div>
+              )}
+
+              {customerCsvObjects && siteCsvObjects && (
+                <div className="grid grid-cols-1 gap-6 border-t border-slate-200 p-6 lg:grid-cols-2">
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-800">Customers preview</div>
+                    <div className="max-h-[380px] overflow-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="sticky top-0 z-10 bg-white text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Customer</th>
+                            <th className="px-4 py-3">Email</th>
+                            <th className="px-4 py-3">Sites</th>
+                            <th className="px-4 py-3">Missing</th>
+                            <th className="px-4 py-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {customerImportRows.slice(0, 300).map((r) => {
+                            const sites = sitesByCustomerName[normKey(r.name)] || [];
+                            const missCount = r.missing.length + sites.reduce((s, x) => s + x.missing.length, 0);
+                            return (
+                              <tr key={r.key} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 font-semibold text-slate-900">{r.name || <span className="text-rose-600">(missing name)</span>}</td>
+                                <td className="px-4 py-3 text-slate-700">{r.email || <span className="text-amber-700">Missing (will auto-generate)</span>}</td>
+                                <td className="px-4 py-3 text-slate-700">{sites.length}</td>
+                                <td className="px-4 py-3">
+                                  {missCount === 0 ? (
+                                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">OK</span>
+                                  ) : (
+                                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">{missCount} missing</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button onClick={() => setEditImportKey(r.key)} className="font-bold text-[#14B8A6] hover:underline">
+                                    Edit
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {customerImportRows.length > 300 && (
+                      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">Showing first 300 customers.</div>
+                    )}
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-800">Sites preview</div>
+                    <div className="max-h-[380px] overflow-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="sticky top-0 z-10 bg-white text-xs font-semibold uppercase tracking-wider text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Customer</th>
+                            <th className="px-4 py-3">Site</th>
+                            <th className="px-4 py-3">Address</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200">
+                          {siteImportRows.slice(0, 500).map((s) => {
+                            const found = customersKeySet.has(normKey(s.customer));
+                            const missCount = s.missing.length;
+                            return (
+                              <tr key={s.key} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 font-semibold text-slate-900">{s.customer || <span className="text-rose-600">(missing customer)</span>}</td>
+                                <td className="px-4 py-3 text-slate-700">{s.siteName || <span className="text-rose-600">(missing site)</span>}</td>
+                                <td className="px-4 py-3 text-slate-700">{s.addr1 || <span className="text-rose-600">(missing address)</span>}</td>
+                                <td className="px-4 py-3">
+                                  {!found ? (
+                                    <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700">Customer not found</span>
+                                  ) : missCount === 0 ? (
+                                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">OK</span>
+                                  ) : (
+                                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">{missCount} missing</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <button onClick={() => {
+                                    // open customer edit if we can find the owning customer row; else just do nothing
+                                    const custRow = customerImportRows.find((c) => normKey(c.name) === normKey(s.customer));
+                                    if (custRow) setEditImportKey(custRow.key);
+                                  }} className="font-bold text-[#14B8A6] hover:underline">
+                                    Edit
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {siteImportRows.length > 500 && (
+                      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">Showing first 500 sites.</div>
+                    )}
+                    <div className="border-t border-slate-200 bg-white px-4 py-2 text-xs text-slate-500">
+                      <span className="font-semibold text-slate-800">{siteImportRows.filter((s) => !customersKeySet.has(normKey(s.customer))).length}</span> sites have <span className="font-semibold text-slate-800">Customer not found</span> (they will be skipped).
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importOpen && editImportKey && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setEditImportKey(null)}
+        >
+          <div
+            className="flex w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <h4 className="text-base font-bold text-slate-900">Edit import row</h4>
+              <button onClick={() => setEditImportKey(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const cust = customerImportRows.find((c) => c.key === editImportKey);
+                if (!cust) return <div className="text-sm text-slate-500">Row not found.</div>;
+                const sites = sitesByCustomerName[normKey(cust.name)] || [];
+                const e = importEdits[editImportKey] || {};
+                const val = (field: string) => (e[field] ?? cust.raw[field] ?? '');
+                return (
+                  <div className="space-y-5">
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="mb-3 text-sm font-semibold text-slate-800">Customer</div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <Field label="Customer Name" value={val('Customer Name')} onChange={(v) => setEditValue(editImportKey, 'Customer Name', v)} />
+                        <Field label="Email Address" value={val('Email Address')} onChange={(v) => setEditValue(editImportKey, 'Email Address', v)} />
+                        <Field label="Contact Name" value={val('Contact Name')} onChange={(v) => setEditValue(editImportKey, 'Contact Name', v)} />
+                        <Field label="Mobile Number" value={val('Mobile Number')} onChange={(v) => setEditValue(editImportKey, 'Mobile Number', v)} />
+                        <Field label="Physical Address Street" value={val('Physical Address Street')} onChange={(v) => setEditValue(editImportKey, 'Physical Address Street', v)} />
+                        <Field label="Physical Address Postal Code" value={val('Physical Address Postal Code')} onChange={(v) => setEditValue(editImportKey, 'Physical Address Postal Code', v)} />
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="mb-3 text-sm font-semibold text-slate-800">Sites (Work addresses)</div>
+                      {sites.length === 0 ? (
+                        <div className="text-sm text-slate-500">No sites found for this customer name in `site_export.csv`.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {sites.slice(0, 20).map((s) => {
+                            const siteKey = s.key;
+                            const se = importEdits[siteKey] || {};
+                            const sval = (field: string) => (se[field] ?? s.raw[field] ?? '');
+                            return (
+                              <div key={siteKey} className="rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <Field label="Site Name" value={sval('Site Name')} onChange={(v) => setEditValue(siteKey, 'Site Name', v)} />
+                                  <Field label="Address Street" value={sval('Address Street')} onChange={(v) => setEditValue(siteKey, 'Address Street', v)} />
+                                  <Field label="Address City" value={sval('Address City')} onChange={(v) => setEditValue(siteKey, 'Address City', v)} />
+                                  <Field label="Address Postal Code" value={sval('Address Postal Code')} onChange={(v) => setEditValue(siteKey, 'Address Postal Code', v)} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {sites.length > 20 && <div className="text-xs text-slate-500">Showing first 20 sites.</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="shrink-0 flex justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4">
+              <button onClick={() => setEditImportKey(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-600">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
+      />
+    </label>
   );
 }
 

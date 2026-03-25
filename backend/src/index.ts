@@ -26,7 +26,9 @@ if (corsOrigins && corsOrigins.length > 0) {
 } else {
   app.use(cors());
 }
-app.use(express.json());
+// Settings UI can upload base64 data URLs (logos). Increase request size limit to avoid 413 Payload Too Large.
+app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '12mb' }));
 
 function createPool(): Pool {
   const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -1504,6 +1506,9 @@ app.get('/api/customers/:id', authenticate, requireAdmin, async (req: Authentica
     const result = await pool.query(`
       SELECT c.*, 
         t.name as customer_type_name, 
+        t.allow_branches as customer_type_allow_branches,
+        t.company_name_required as customer_type_company_name_required,
+        t.work_address_name as customer_type_work_address_name,
         pb.name as price_book_name,
         u.full_name as created_by_name
       FROM customers c
@@ -5246,6 +5251,43 @@ app.put('/api/settings/customer-types/:id', authenticate, requireAdmin, async (r
   }
 });
 
+// CustomerTypesSettings.tsx uses PATCH for edits; support PATCH as an alias of PUT.
+app.patch('/api/settings/customer-types/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (isNaN(id)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as any;
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return res.status(400).json({ message: 'Name is required' });
+
+  const desc = typeof body.description === 'string' ? body.description.trim() : null;
+  const companyReq = !!body.company_name_required;
+  const branches = !!body.allow_branches;
+  const workAddrName = typeof body.work_address_name === 'string' && body.work_address_name.trim() !== '' ? body.work_address_name.trim() : 'Work Address';
+
+  const ownerClause = isSuperAdmin ? '' : ' AND created_by = $6';
+  const params: any[] = [name, desc, companyReq, branches, workAddrName];
+  if (!isSuperAdmin) params.push(userId);
+  params.push(id);
+  const idParamIdx = params.length;
+
+  try {
+    const result = await pool.query(
+      `UPDATE customer_types SET name=$1, description=$2, company_name_required=$3, allow_branches=$4, work_address_name=$5 
+       WHERE id=$${idParamIdx} ${ownerClause.replace('$6', '$6')} RETURNING *`,
+      params
+    );
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Not found' });
+    return res.json({ customerType: result.rows[0] });
+  } catch (error) {
+    console.error('Update customer type (patch) error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.delete('/api/settings/customer-types/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
@@ -6233,6 +6275,158 @@ app.delete('/api/customers/:customerId/assets/:assetId', authenticate, requireAd
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer asset error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/import/customers-sites', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const body = req.body as Record<string, unknown>;
+  const customers = Array.isArray(body.customers) ? (body.customers as Record<string, unknown>[]) : [];
+  const sites = Array.isArray(body.sites) ? (body.sites as Record<string, unknown>[]) : [];
+
+  const norm = (s: unknown) => String(typeof s === 'string' ? s : '').trim();
+  const normKey = (s: unknown) => norm(s).toLowerCase().replace(/\s+/g, ' ').trim();
+  const asBool = (v: unknown) => {
+    const t = norm(v).toLowerCase();
+    if (t === 'yes' || t === 'true' || t === '1') return true;
+    if (t === 'no' || t === 'false' || t === '0') return false;
+    return null;
+  };
+
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const customerIdByKey = new Map<string, number>();
+      let createdCustomers = 0;
+      let createdWorkAddresses = 0;
+
+      for (const c of customers) {
+        const fullName = norm(c.full_name) || norm(c.customer_name) || norm(c.name) || 'Imported customer';
+        const emailRaw = norm(c.email) || norm(c.email_address);
+        const email = emailRaw || `imported+${Date.now()}-${Math.random().toString(16).slice(2)}@workpilot.local`;
+
+        const phone = norm(c.phone) || norm(c.mobile) || norm(c.mobile_number) || null;
+        const landline = norm(c.landline) || norm(c.phone_number) || null;
+        const company = norm(c.company) || null;
+        const leadSource = norm(c.lead_source) || null;
+
+        const address1 = norm(c.address_line_1) || norm(c.physical_address_street) || null;
+        const town = norm(c.town) || norm(c.physical_address_city) || null;
+        const county = norm(c.county) || norm(c.physical_address_region) || null;
+        const postcode = norm(c.postcode) || norm(c.physical_address_postal_code) || null;
+        const country = norm(c.country) || norm(c.physical_address_country) || null;
+
+        const contactName = norm(c.contact_name);
+        const [contactFirstName, ...restSurname] = contactName ? contactName.split(' ') : [];
+        const contactSurname = restSurname.join(' ').trim();
+
+        const status = (() => {
+          const archived = asBool(c.archived);
+          if (archived === true) return 'INACTIVE';
+          return 'ACTIVE';
+        })();
+
+        const inserted = await client.query(
+          `INSERT INTO customers
+           (full_name, email, phone, company, status, lead_source, address_line_1, town, county, postcode, country, landline,
+            contact_first_name, contact_surname, contact_email, contact_mobile, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           RETURNING id`,
+          [
+            fullName,
+            email,
+            phone,
+            company,
+            status,
+            leadSource,
+            address1,
+            town,
+            county,
+            postcode,
+            country,
+            landline,
+            contactFirstName || null,
+            contactSurname || null,
+            emailRaw || null,
+            phone,
+            userId,
+          ],
+        );
+
+        const newId = Number(inserted.rows[0].id);
+        createdCustomers++;
+        customerIdByKey.set(normKey(fullName), newId);
+      }
+
+      const missingCustomerSites: { site_name: string; customer: string }[] = [];
+      for (const s of sites) {
+        const customerName = norm(s.customer) || norm(s.customer_name) || '';
+        const key = normKey(customerName);
+        const customerId = customerIdByKey.get(key);
+        if (!customerId) {
+          missingCustomerSites.push({ site_name: norm(s.site_name) || norm(s.name) || 'Site', customer: customerName || '(blank)' });
+          continue;
+        }
+
+        const siteName = norm(s.site_name) || norm(s.name) || norm(s.address_street) || 'Imported site';
+        const addr1 = norm(s.address_line_1) || norm(s.address_street) || 'Unknown address';
+        const town = norm(s.town) || norm(s.address_city) || null;
+        const county = norm(s.county) || norm(s.address_region) || null;
+        const postcode = norm(s.postcode) || norm(s.address_postal_code) || null;
+        // customer_work_addresses schema doesn't have a country column (keep in address fields if needed later)
+
+        const contactName = norm(s.contact_name);
+        const [firstName, ...rest] = contactName ? contactName.split(' ') : [];
+        const surname = rest.join(' ').trim();
+
+        const email = norm(s.email) || norm(s.email_address) || null;
+        const mobile = norm(s.mobile) || norm(s.mobile_number) || null;
+        const landline = norm(s.landline) || norm(s.phone_number) || null;
+        const archived = asBool(s.archived);
+        const isActive = archived === true ? false : true;
+
+        await client.query(
+          `INSERT INTO customer_work_addresses
+           (customer_id, name, address_line_1, town, county, postcode, email, mobile, landline,
+            first_name, surname, is_active, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            customerId,
+            siteName,
+            addr1,
+            town,
+            county,
+            postcode,
+            email,
+            mobile,
+            landline,
+            firstName || null,
+            surname || null,
+            isActive,
+            userId,
+          ],
+        );
+        createdWorkAddresses++;
+      }
+
+      await client.query('COMMIT');
+      return res.status(201).json({
+        created_customers: createdCustomers,
+        created_work_addresses: createdWorkAddresses,
+        skipped_sites_missing_customer: missingCustomerSites.slice(0, 50),
+        skipped_sites_missing_customer_count: missingCustomerSites.length,
+      });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Import customers+sites error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
