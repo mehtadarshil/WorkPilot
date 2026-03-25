@@ -1331,7 +1331,7 @@ const CUSTOMER_STATUSES = ['ACTIVE', 'LEAD', 'INACTIVE'] as const;
 app.get('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
+    const limit = Math.min(5000, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
     const statusFilter = typeof req.query.status === 'string' && CUSTOMER_STATUSES.includes(req.query.status as typeof CUSTOMER_STATUSES[number])
       ? req.query.status

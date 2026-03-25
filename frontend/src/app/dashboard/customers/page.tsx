@@ -630,10 +630,14 @@ export default function CustomersPage() {
                           <td className="px-6 py-4 text-sm text-slate-900">{c.company || '—'}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{c.email}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatLastContact(c.last_contact)}</td>
-                          <td className="relative px-6 py-4 text-right">
+                          <td
+                            className="relative px-6 py-4 text-right"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <button
                               type="button"
                               onClick={(e) => {
+                                e.stopPropagation();
                                 if (actionMenu === c.id) {
                                   setActionMenu(null);
                                 } else {

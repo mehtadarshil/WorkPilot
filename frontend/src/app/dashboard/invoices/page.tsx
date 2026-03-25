@@ -7,6 +7,7 @@ import { Search, FileText, Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { groupBy, parseCsv, toObjects } from '../csvUtils';
+import ImportCustomerSelect from '../ImportCustomerSelect';
 
 interface Invoice {
   id: number;
@@ -143,7 +144,7 @@ export default function InvoicesPage() {
   const fetchCustomers = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await getJson<{ customers: Customer[] }>('/customers?limit=100&page=1', token);
+      const data = await getJson<{ customers: Customer[] }>('/customers?limit=5000&page=1', token);
       setCustomers(data.customers ?? []);
     } catch {
       setCustomers([]);
@@ -701,10 +702,11 @@ export default function InvoicesPage() {
                     <tr key={`${r.csvInvoiceNumber}-${idx}`}>
                       <td className="px-3 py-2 font-medium">{r.csvInvoiceNumber}</td>
                       <td className="px-3 py-2">
-                        <select value={r.customerId ?? ''} onChange={(e) => updateImportRow(idx, { customerId: e.target.value ? parseInt(e.target.value, 10) : null })} className="w-full rounded border border-slate-200 px-2 py-1">
-                          <option value="">Select customer</option>
-                          {customers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                        </select>
+                        <ImportCustomerSelect
+                          customers={customers}
+                          value={r.customerId}
+                          onChange={(id) => updateImportRow(idx, { customerId: id })}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-2">
