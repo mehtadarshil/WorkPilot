@@ -37,8 +37,11 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-            cd WorkPilot/frontend
-            git pull origin main
-            npm install
+            # Repo root must match git (pull from frontend/ alone still merges whole tree; dirty files anywhere block pull).
+            cd WorkPilot
+            git fetch origin main
+            git reset --hard origin/main
+            cd frontend
+            npm ci || npm install
             npm run build
             pm2 restart workpilot-frontend
