@@ -3444,7 +3444,7 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
       name: 'Invoice — send to customer',
       subject: '{{company_name}} — Invoice {{invoice_number}}',
       body:
-        '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>Thank you,<br/>{{company_name}}</p>',
+        '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>Customer address: {{customer_address}}<br/>Work / site: {{work_address}}</p><p>Thank you,<br/>{{company_name}}</p>',
     },
     {
       key: 'quotation',
@@ -3722,7 +3722,7 @@ function canAccessInvoice(invoice: DbInvoice, userId: number, isSuperAdmin: bool
 
 /** Single-line customer address — same field order as customer detail page (`[id]/page.tsx`). */
 function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
-  const parts = [row.address_line_1, row.address_line_2, row.town, row.county, row.postcode]
+  const parts = [row.address_line_1, row.address_line_2, row.address_line_3, row.town, row.county, row.postcode]
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
     .filter(Boolean);
   if (parts.length) return parts.join(', ');
@@ -3733,6 +3733,52 @@ function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
   const country = typeof row.country === 'string' ? row.country.trim() : '';
   const fb = [city, region, country].filter(Boolean).join(', ');
   return fb || '';
+}
+
+/** Template vars for invoice emails (send + compose). */
+async function buildInvoiceEmailTemplateVars(
+  inv: DbInvoice & {
+    customer_full_name?: string | null;
+    cust_addr_line_1?: string | null;
+    cust_addr_line_2?: string | null;
+    cust_addr_line_3?: string | null;
+    cust_town?: string | null;
+    cust_county?: string | null;
+    cust_postcode?: string | null;
+  },
+  invSettings: { company_name?: string | null },
+): Promise<Record<string, string>> {
+  const invDate = formatInvoiceDateFromDb(inv.invoice_date);
+  const dueDate = formatInvoiceDateFromDb(inv.due_date);
+  const customer_address = formatCustomerAddressSingleLine({
+    address_line_1: inv.cust_addr_line_1,
+    address_line_2: inv.cust_addr_line_2,
+    address_line_3: inv.cust_addr_line_3,
+    town: inv.cust_town,
+    county: inv.cust_county,
+    postcode: inv.cust_postcode,
+  });
+  let work_address = '';
+  if (inv.invoice_work_address_id) {
+    const wr = await pool.query(
+      'SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2',
+      [inv.invoice_work_address_id, inv.customer_id],
+    );
+    if ((wr.rowCount ?? 0) > 0) {
+      work_address = formatWorkAddressSingleLine(wr.rows[0]);
+    }
+  }
+  return {
+    company_name: invSettings.company_name ?? 'WorkPilot',
+    customer_name: inv.customer_full_name ?? '',
+    invoice_number: inv.invoice_number,
+    invoice_total: parseFloat(String(inv.total_amount)).toFixed(2),
+    currency: inv.currency,
+    invoice_date: invDate,
+    due_date: dueDate,
+    customer_address,
+    work_address,
+  };
 }
 
 /** One comma-separated line for invoice PDF/UI (no newlines). */
@@ -4518,9 +4564,21 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
   const channel = body.channel === 'sms' ? 'sms' : 'email';
 
   const invCheck = await pool.query<
-    DbInvoice & { customer_email?: string | null; customer_phone?: string | null; customer_full_name?: string | null }
+    DbInvoice & {
+      customer_email?: string | null;
+      customer_phone?: string | null;
+      customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
+    }
   >(
-    `SELECT i.*, c.email AS customer_email, c.phone AS customer_phone, c.full_name AS customer_full_name
+    `SELECT i.*, c.email AS customer_email, c.phone AS customer_phone, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode
      FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1`,
     [id],
   );
@@ -4576,17 +4634,7 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
     if (!row) {
       return res.status(500).json({ message: 'Invoice email template missing' });
     }
-    const invDate = formatInvoiceDateFromDb(inv.invoice_date);
-    const dueDate = formatInvoiceDateFromDb(inv.due_date);
-    const vars: Record<string, string> = {
-      company_name: invSettings.company_name ?? 'WorkPilot',
-      customer_name: inv.customer_full_name ?? '',
-      invoice_number: inv.invoice_number,
-      invoice_total: parseFloat(String(inv.total_amount)).toFixed(2),
-      currency: inv.currency,
-      invoice_date: invDate,
-      due_date: dueDate,
-    };
+    const vars = await buildInvoiceEmailTemplateVars(inv, invSettings);
     const subject = applyTemplateVars(row.subject, vars);
     const bodyInner = applyTemplateVars(row.body_html, vars);
     const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
@@ -4639,9 +4687,20 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<
-    DbInvoice & { customer_email?: string | null; customer_full_name?: string | null }
+    DbInvoice & {
+      customer_email?: string | null;
+      customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
+    }
   >(
-    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name
+    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode
      FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1`,
     [id],
   );
@@ -4658,17 +4717,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
       [userId],
     );
     const row = tpl.rows[0];
-    const invDate = formatInvoiceDateFromDb(inv.invoice_date);
-    const dueDate = formatInvoiceDateFromDb(inv.due_date);
-    const vars: Record<string, string> = {
-      company_name: invSettings.company_name ?? 'WorkPilot',
-      customer_name: inv.customer_full_name ?? '',
-      invoice_number: inv.invoice_number,
-      invoice_total: parseFloat(String(inv.total_amount)).toFixed(2),
-      currency: inv.currency,
-      invoice_date: invDate,
-      due_date: dueDate,
-    };
+    const vars = await buildInvoiceEmailTemplateVars(inv, invSettings);
     const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} — ${inv.invoice_number}`;
     const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Please find your invoice <strong>${inv.invoice_number}</strong>.</p>`;
     const transport = createMailTransport(emailCfg);
@@ -5444,9 +5493,20 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<
-    DbQuotation & { customer_email?: string | null; customer_full_name?: string | null }
+    DbQuotation & {
+      customer_email?: string | null;
+      customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
+    }
   >(
-    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name
+    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode
      FROM quotations q JOIN customers c ON c.id = q.customer_id WHERE q.id = $1`,
     [id],
   );
@@ -5483,6 +5543,14 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
     }
     const qDate = (q.quotation_date as Date).toISOString().slice(0, 10);
     const validUntil = (q.valid_until as Date).toISOString().slice(0, 10);
+    const customer_address = formatCustomerAddressSingleLine({
+      address_line_1: q.cust_addr_line_1,
+      address_line_2: q.cust_addr_line_2,
+      address_line_3: q.cust_addr_line_3,
+      town: q.cust_town,
+      county: q.cust_county,
+      postcode: q.cust_postcode,
+    });
     const vars: Record<string, string> = {
       company_name: invSettings.company_name ?? 'WorkPilot',
       customer_name: q.customer_full_name ?? '',
@@ -5491,6 +5559,8 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
       currency: q.currency,
       quotation_date: qDate,
       valid_until: validUntil,
+      customer_address,
+      work_address: '',
     };
     const subject = applyTemplateVars(row.subject, vars);
     const bodyInner = applyTemplateVars(row.body_html, vars);
@@ -6045,6 +6115,60 @@ app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, asyn
     return res.json({ template: r.rows[0] });
   } catch (error) {
     console.error('Patch email template error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+const SYSTEM_EMAIL_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general']);
+
+app.post('/api/settings/email-templates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const body = req.body as { template_key?: string; name?: string; subject?: string; body_html?: string };
+  const key = typeof body.template_key === 'string' ? body.template_key.trim() : '';
+  if (!/^[a-z0-9_-]{1,64}$/i.test(key)) {
+    return res.status(400).json({ message: 'template_key must be 1–64 characters: letters, numbers, underscore, hyphen' });
+  }
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return res.status(400).json({ message: 'name is required' });
+  const subject = typeof body.subject === 'string' && body.subject.trim() ? body.subject : 'Message from {{company_name}}';
+  const bodyHtml = typeof body.body_html === 'string' && body.body_html.trim() ? body.body_html : '<p>{{message}}</p>';
+  try {
+    const ins = await pool.query(
+      `INSERT INTO email_templates (created_by, template_key, name, subject, body_html)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING template_key, name, subject, body_html, updated_at`,
+      [userId, key, name, subject, bodyHtml],
+    );
+    return res.status(201).json({ template: ins.rows[0] });
+  } catch (e: unknown) {
+    const code = (e as { code?: string })?.code;
+    if (code === '23505') {
+      return res.status(409).json({ message: 'A template with this key already exists' });
+    }
+    console.error('Create email template error:', e);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const keyParam = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+  const templateKey = typeof keyParam === 'string' ? keyParam.trim() : '';
+  if (!/^[a-z0-9_-]{1,64}$/i.test(templateKey)) {
+    return res.status(400).json({ message: 'Invalid template key' });
+  }
+  if (SYSTEM_EMAIL_TEMPLATE_KEYS.has(templateKey.toLowerCase())) {
+    return res.status(400).json({ message: 'Built-in templates (invoice, quotation, general) cannot be deleted' });
+  }
+  try {
+    const r = await pool.query('DELETE FROM email_templates WHERE created_by = $1 AND template_key = $2', [
+      userId,
+      templateKey,
+    ]);
+    if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Template not found' });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete email template error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
