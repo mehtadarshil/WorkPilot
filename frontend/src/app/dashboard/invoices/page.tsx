@@ -106,6 +106,7 @@ export default function InvoicesPage() {
   const [importRows, setImportRows] = useState<InvoiceImportRow[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState('');
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
@@ -123,6 +124,7 @@ export default function InvoicesPage() {
     { description: '', quantity: 1, unit_price: 0 },
   ]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
+  const [formCustomerReference, setFormCustomerReference] = useState('');
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -207,6 +209,7 @@ export default function InvoicesPage() {
     setFormNotes('');
     setFormLineItems([{ description: '', quantity: 1, unit_price: 0 }]);
     setFormTaxPercentage(settings?.default_tax_percentage ?? 0);
+    setFormCustomerReference('');
   };
 
   const openAdd = async () => {
@@ -221,6 +224,7 @@ export default function InvoicesPage() {
     setImportRows([]);
     setImportError(null);
     setImportCsvFileName(null);
+    setImportProgress(null);
     setImportModalOpen(true);
   };
 
@@ -294,7 +298,10 @@ export default function InvoicesPage() {
     }
     setImporting(true);
     setImportError(null);
+    const total = validRows.length;
+    setImportProgress({ done: 0, total });
     try {
+      let done = 0;
       for (const row of validRows) {
         const invIso = normalizeCsvDateToIso(row.invoiceDate) ?? row.invoiceDate;
         const dueIso = normalizeCsvDateToIso(row.dueDate) ?? row.dueDate;
@@ -322,6 +329,8 @@ export default function InvoicesPage() {
             await postJson(`/invoices/${created.invoice.id}/communications`, { type: 'note', text: `Imported on ${labelDate}` }, token);
           }
         }
+        done += 1;
+        setImportProgress({ done, total });
       }
       setImportModalOpen(false);
       setImportRows([]);
@@ -330,6 +339,7 @@ export default function InvoicesPage() {
       setImportError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setImporting(false);
+      setImportProgress(null);
     }
   };
 
@@ -383,6 +393,7 @@ export default function InvoicesPage() {
             unit_price: item.unit_price,
           })),
           tax_percentage: formTaxPercentage,
+          ...(formCustomerReference.trim() ? { customer_reference: formCustomerReference.trim() } : {}),
         },
         token,
       );
@@ -631,7 +642,12 @@ export default function InvoicesPage() {
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Customer *</label>
-                  <select required value={formCustomerId} onChange={(e) => setFormCustomerId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
+                  <select
+                    required
+                    value={formCustomerId}
+                    onChange={(e) => setFormCustomerId(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  >
                     <option value="">Select customer</option>
                     {customers.map((c) => (
                       <option key={c.id} value={c.id}>{c.full_name} ({c.email})</option>
@@ -665,6 +681,22 @@ export default function InvoicesPage() {
                     <option value="GBP">GBP</option>
                   </select>
                 </div>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-4 sm:col-span-2">
+                <p className="text-sm font-medium text-slate-800">Address on invoice</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Uses the customer&apos;s default billing address. To bill a specific work or site address, create the invoice from that work address&apos;s detail page.
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-700">Customer reference (optional)</label>
+                <input
+                  type="text"
+                  value={formCustomerReference}
+                  onChange={(e) => setFormCustomerReference(e.target.value)}
+                  placeholder="Shown on invoice when entered"
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                />
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between">
@@ -709,7 +741,7 @@ export default function InvoicesPage() {
       )}
 
       {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setImportModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => !importing && setImportModalOpen(false)}>
           <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900">Import Invoices from CSV</h3>
             <p className="mt-2 text-xs text-slate-500">
@@ -788,8 +820,31 @@ export default function InvoicesPage() {
               </table>
             </div>
             {importError && <p className="mt-3 text-sm text-rose-600">{importError}</p>}
+            {importing && importProgress && importProgress.total > 0 && (
+              <div className="mt-4 space-y-1.5">
+                <div className="flex justify-between text-xs font-medium text-slate-600">
+                  <span>Importing invoices</span>
+                  <span>
+                    {importProgress.done} / {importProgress.total}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-[#14B8A6] transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setImportModalOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(false)}
+                disabled={importing}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Close
+              </button>
               <button onClick={runInvoiceImport} disabled={importing} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] disabled:opacity-50">
                 {importing ? 'Importing...' : 'Import valid rows'}
               </button>

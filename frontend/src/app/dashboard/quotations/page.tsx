@@ -102,6 +102,7 @@ export default function QuotationsPage() {
   const [importRows, setImportRows] = useState<QuotationImportRow[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [formCustomerId, setFormCustomerId] = useState<string>('');
   const [formJobId, setFormJobId] = useState<string>('');
@@ -210,6 +211,7 @@ export default function QuotationsPage() {
     await fetchCustomers();
     setImportRows([]);
     setImportError(null);
+    setImportProgress(null);
     setImportModalOpen(true);
   };
 
@@ -275,7 +277,10 @@ export default function QuotationsPage() {
     }
     setImporting(true);
     setImportError(null);
+    const total = validRows.length;
+    setImportProgress({ done: 0, total });
     try {
+      let done = 0;
       for (const row of validRows) {
         await postJson('/quotations', {
           customer_id: row.customerId,
@@ -286,6 +291,8 @@ export default function QuotationsPage() {
           line_items: row.lineItems,
           tax_percentage: row.taxPercentage,
         }, token);
+        done += 1;
+        setImportProgress({ done, total });
       }
       setImportModalOpen(false);
       setImportRows([]);
@@ -294,6 +301,7 @@ export default function QuotationsPage() {
       setImportError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setImporting(false);
+      setImportProgress(null);
     }
   };
 
@@ -662,7 +670,7 @@ export default function QuotationsPage() {
       )}
 
       {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setImportModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => !importing && setImportModalOpen(false)}>
           <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900">Import Quotations from CSV</h3>
             <input type="file" accept=".csv,text/csv" className="mt-4 block w-full text-sm" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleQuotationCsvFile(f); }} />
@@ -706,8 +714,31 @@ export default function QuotationsPage() {
               </table>
             </div>
             {importError && <p className="mt-3 text-sm text-rose-600">{importError}</p>}
+            {importing && importProgress && importProgress.total > 0 && (
+              <div className="mt-4 space-y-1.5">
+                <div className="flex justify-between text-xs font-medium text-slate-600">
+                  <span>Importing quotations</span>
+                  <span>
+                    {importProgress.done} / {importProgress.total}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-[#14B8A6] transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setImportModalOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(false)}
+                disabled={importing}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Close
+              </button>
               <button onClick={runQuotationImport} disabled={importing} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] disabled:opacity-50">
                 {importing ? 'Importing...' : 'Import valid rows'}
               </button>

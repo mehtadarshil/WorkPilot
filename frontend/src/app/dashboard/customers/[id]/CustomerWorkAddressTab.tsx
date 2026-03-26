@@ -233,7 +233,6 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
   };
 
   const countLabel = useMemo(() => `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`, [rows.length]);
-  const viewHref = (id: number) => `/dashboard/customers/${customerId}/work-addresses/${id}?tab=${encodeURIComponent('Work address')}`;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -287,15 +286,12 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                     <td className="px-4 py-3">{r.postcode || '-'}</td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => {
-                          const href = viewHref(r.id);
-                          router.push(href);
-                          setTimeout(() => {
-                            if (typeof window !== 'undefined' && window.location.pathname.includes(`/dashboard/customers/${customerId}`)) {
-                              window.location.assign(href);
-                            }
-                          }, 120);
-                        }}
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/customers/${customerId}/work-addresses/${r.id}?tab=invoices`,
+                          )
+                        }
                         className="font-semibold text-[#14B8A6] hover:underline"
                       >
                         View

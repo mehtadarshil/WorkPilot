@@ -1,7 +1,7 @@
 'use client';
 
-import CustomerDetailsPage from '../../page';
+import WorkAddressDetailClient from './WorkAddressDetailClient';
 
-export default function WorkAddressCustomerProfilePage() {
-  return <CustomerDetailsPage />;
+export default function WorkAddressDetailPage() {
+  return <WorkAddressDetailClient />;
 }

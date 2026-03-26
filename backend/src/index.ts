@@ -160,6 +160,8 @@ interface DbInvoice {
   currency: string;
   notes: string | null;
   billing_address: string | null;
+  invoice_work_address_id?: number | null;
+  customer_reference?: string | null;
   state: string;
   created_at: Date;
   updated_at: Date;
@@ -706,6 +708,11 @@ async function initDb() {
       sort_order INT NOT NULL DEFAULT 0
     );
   `);
+
+  await pool.query(
+    `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_reference VARCHAR(255)`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoice_payments (
@@ -3713,6 +3720,86 @@ function canAccessInvoice(invoice: DbInvoice, userId: number, isSuperAdmin: bool
   return invoice.created_by === userId;
 }
 
+/** Single-line customer address — same field order as customer detail page (`[id]/page.tsx`). */
+function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
+  const parts = [row.address_line_1, row.address_line_2, row.town, row.county, row.postcode]
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .filter(Boolean);
+  if (parts.length) return parts.join(', ');
+  const legacy = typeof row.address === 'string' ? row.address.trim() : '';
+  if (legacy) return legacy;
+  const city = typeof row.city === 'string' ? row.city.trim() : '';
+  const region = typeof row.region === 'string' ? row.region.trim() : '';
+  const country = typeof row.country === 'string' ? row.country.trim() : '';
+  const fb = [city, region, country].filter(Boolean).join(', ');
+  return fb || '';
+}
+
+/** One comma-separated line for invoice PDF/UI (no newlines). */
+function formatWorkAddressSingleLine(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t) parts.push(t);
+  };
+  push(row.name);
+  push(row.branch_name);
+  push(row.company_name);
+  push(row.address_line_1);
+  push(row.address_line_2);
+  push(row.address_line_3);
+  const town = typeof row.town === 'string' ? row.town.trim() : '';
+  const county = typeof row.county === 'string' ? row.county.trim() : '';
+  if (town || county) parts.push([town, county].filter(Boolean).join(', '));
+  push(row.postcode);
+  return parts.join(', ');
+}
+
+/** Site/work row without the site `name` — shown separately from site name on invoices. */
+function formatWorkAddressSingleLineWithoutName(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t) parts.push(t);
+  };
+  push(row.branch_name);
+  push(row.company_name);
+  push(row.address_line_1);
+  push(row.address_line_2);
+  push(row.address_line_3);
+  const town = typeof row.town === 'string' ? row.town.trim() : '';
+  const county = typeof row.county === 'string' ? row.county.trim() : '';
+  if (town || county) parts.push([town, county].filter(Boolean).join(', '));
+  push(row.postcode);
+  return parts.join(', ');
+}
+
+/** Normalize legacy invoice rows that stored work address with newlines. */
+function workSiteAddressAsSingleLine(stored: string): string {
+  return stored
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+async function resolveInvoiceBillingFromWorkAddress(
+  customerId: number,
+  workAddressId: number,
+): Promise<{ billing_address: string; invoice_work_address_id: number }> {
+  const wr = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+    workAddressId,
+    customerId,
+  ]);
+  if ((wr.rowCount ?? 0) === 0) {
+    throw new Error('INVALID_WORK_ADDRESS');
+  }
+  return {
+    billing_address: formatWorkAddressSingleLine(wr.rows[0]),
+    invoice_work_address_id: workAddressId,
+  };
+}
+
 async function createInvoiceFromJob(jobId: number, userId: number) {
   const jobResult = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
   if (jobResult.rowCount === 0) return null;
@@ -3801,6 +3888,13 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
       countParams.push(jobId);
       listParams.push(jobId);
     }
+    const invoiceWorkAddressId =
+      typeof req.query.invoice_work_address_id === 'string' ? parseInt(req.query.invoice_work_address_id, 10) : null;
+    if (invoiceWorkAddressId && Number.isFinite(invoiceWorkAddressId)) {
+      conditions.push(`i.invoice_work_address_id = $${p++}`);
+      countParams.push(invoiceWorkAddressId);
+      listParams.push(invoiceWorkAddressId);
+    }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     listParams.push(limit, offset);
 
@@ -3876,10 +3970,30 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
-    const invResult = await pool.query<DbInvoice & { customer_full_name?: string; customer_email?: string; customer_phone?: string; customer_address?: string; job_title?: string }>(
+    const invResult = await pool.query<
+      DbInvoice & {
+        customer_full_name?: string;
+        customer_email?: string;
+        customer_phone?: string;
+        address_line_1?: string | null;
+        address_line_2?: string | null;
+        address_line_3?: string | null;
+        town?: string | null;
+        county?: string | null;
+        postcode?: string | null;
+        address?: string | null;
+        city?: string | null;
+        region?: string | null;
+        country?: string | null;
+        job_title?: string;
+        job_customer_reference?: string | null;
+      }
+    >(
       `SELECT i.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
-        COALESCE(c.address, c.city || ', ' || c.region || ' ' || c.country) AS customer_address,
-        j.title AS job_title
+        c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode,
+        c.address, c.city, c.region, c.country,
+        j.title AS job_title,
+        j.customer_reference AS job_customer_reference
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN jobs j ON j.id = i.job_id
@@ -3904,6 +4018,33 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
     );
     const settings = await getInvoiceSettings(inv.created_by ?? userId);
 
+    const invRef = inv.customer_reference?.trim() || null;
+    const jobRef = inv.job_customer_reference?.trim() || null;
+    const customerReferenceDisplay = invRef || jobRef || null;
+
+    const customerAddressFormatted = formatCustomerAddressSingleLine(inv as unknown as Record<string, unknown>) || null;
+
+    let workSiteName: string | null = null;
+    let workSiteAddressOnly: string | null = null;
+    if (inv.invoice_work_address_id) {
+      const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+        inv.invoice_work_address_id,
+        inv.customer_id,
+      ]);
+      if ((waRes.rowCount ?? 0) > 0) {
+        const wa = waRes.rows[0] as Record<string, unknown>;
+        const n = typeof wa.name === 'string' ? wa.name.trim() : '';
+        workSiteName = n || null;
+        const addrOnly = formatWorkAddressSingleLineWithoutName(wa).trim();
+        workSiteAddressOnly = addrOnly || null;
+      }
+      if (!workSiteName && !workSiteAddressOnly && inv.billing_address?.trim()) {
+        workSiteAddressOnly = workSiteAddressAsSingleLine(inv.billing_address.trim());
+      }
+    }
+    const invoiceCustomAddress =
+      !inv.invoice_work_address_id && inv.billing_address?.trim() ? inv.billing_address.trim() : null;
+
     const invoice = {
       id: inv.id,
       invoice_number: inv.invoice_number,
@@ -3911,9 +4052,16 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
       customer_full_name: inv.customer_full_name ?? null,
       customer_email: inv.customer_email ?? null,
       customer_phone: inv.customer_phone ?? null,
-      customer_address: inv.billing_address ?? inv.customer_address ?? null,
+      customer_address: customerAddressFormatted,
+      work_site_name: workSiteName,
+      work_site_address: workSiteAddressOnly,
+      invoice_custom_address: invoiceCustomAddress,
       job_id: inv.job_id ?? null,
       job_title: inv.job_title ?? null,
+      invoice_work_address_id: inv.invoice_work_address_id ?? null,
+      customer_reference: invRef,
+      job_customer_reference: jobRef,
+      customer_reference_display: customerReferenceDisplay,
       invoice_date: formatInvoiceDateFromDb(inv.invoice_date),
       due_date: formatInvoiceDateFromDb(inv.due_date),
       subtotal: parseFloat(inv.subtotal),
@@ -3969,6 +4117,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     currency?: string;
     notes?: string;
     billing_address?: string;
+    customer_reference?: string | null;
     line_items?: { description: string; quantity: number; unit_price: number }[];
     tax_percentage?: number;
     state?: string;
@@ -4001,7 +4150,11 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
       ? body.currency.trim()
       : settings.default_currency;
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+    const custRef =
+      typeof body.customer_reference === 'string' ? body.customer_reference.trim() || null : null;
+    /** Work/site linkage is only set via POST .../work-addresses/:workAddressId/invoices, not the generic create endpoint. */
     const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    const invoiceWorkAddressId: number | null = null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     let subtotal = 0;
@@ -4036,10 +4189,26 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
 
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_by)
-       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13)
-       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, state, created_at, updated_at, created_by`,
-      [invoiceNumber, customerId, jobId, invoiceDateStr, dueDateStr, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, targetState, userId],
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
+      [
+        invoiceNumber,
+        customerId,
+        jobId,
+        invoiceDateStr,
+        dueDateStr,
+        subtotal,
+        taxAmount,
+        totalAmount,
+        currency,
+        notes,
+        billingAddress,
+        invoiceWorkAddressId,
+        custRef,
+        targetState,
+        userId,
+      ],
     );
     const inv = invResult.rows[0];
     const invId = inv.id;
@@ -4103,9 +4272,14 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
       ? (body.state as (typeof INVOICE_STATES)[number])
       : undefined;
 
+  let effectiveCustomerId = inv.customer_id;
   if (body.customer_id !== undefined && Number.isFinite(body.customer_id)) {
     const custCheck = await pool.query('SELECT id FROM customers WHERE id = $1' + (isSuperAdmin ? '' : ' AND created_by = $2'), isSuperAdmin ? [body.customer_id] : [body.customer_id, userId]);
-    if ((custCheck.rowCount ?? 0) > 0) { updates.push(`customer_id = $${idx++}`); values.push(body.customer_id); }
+    if ((custCheck.rowCount ?? 0) > 0) {
+      updates.push(`customer_id = $${idx++}`);
+      values.push(body.customer_id);
+      effectiveCustomerId = body.customer_id as number;
+    }
   }
   if (body.job_id !== undefined) {
     const jid = body.job_id === null ? null : (Number.isFinite(body.job_id as number) ? (body.job_id as number) : parseInt(String(body.job_id), 10));
@@ -4136,7 +4310,26 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
   }
   if (str('currency') !== undefined) { updates.push(`currency = $${idx++}`); values.push(str('currency')); }
   if (str('notes') !== undefined) { updates.push(`notes = $${idx++}`); values.push(str('notes')); }
-  if (str('billing_address') !== undefined) { updates.push(`billing_address = $${idx++}`); values.push(str('billing_address')); }
+
+  const customerChanged =
+    body.customer_id !== undefined &&
+    Number.isFinite(body.customer_id as number) &&
+    (body.customer_id as number) !== inv.customer_id;
+  if (customerChanged && inv.invoice_work_address_id) {
+    updates.push(`invoice_work_address_id = $${idx++}`);
+    values.push(null);
+  }
+  const workSiteLocked =
+    !!(inv.invoice_work_address_id && !customerChanged && effectiveCustomerId === inv.customer_id);
+  if (!workSiteLocked && str('billing_address') !== undefined) {
+    updates.push(`billing_address = $${idx++}`);
+    values.push(str('billing_address'));
+  }
+
+  if (str('customer_reference') !== undefined) {
+    updates.push(`customer_reference = $${idx++}`);
+    values.push(str('customer_reference'));
+  }
 
   let stateToSet: string | undefined;
 
@@ -4479,6 +4672,30 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
     const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} — ${inv.invoice_number}`;
     const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Please find your invoice <strong>${inv.invoice_number}</strong>.</p>`;
     const transport = createMailTransport(emailCfg);
+
+    const customerEmailRaw = (inv.customer_email ?? '').trim();
+    const contactsForTo = await pool.query<{ email: string; first_name: string | null; surname: string }>(
+      `SELECT email, first_name, surname FROM customer_contacts
+       WHERE customer_id = $1 AND COALESCE(TRIM(email), '') <> ''
+       ORDER BY is_primary DESC, created_at ASC`,
+      [inv.customer_id],
+    );
+    const seenTo = new Set<string>();
+    const toEmailOptions: { email: string; label: string }[] = [];
+    const pushToOption = (email: string, label: string) => {
+      const e = email.trim().toLowerCase();
+      if (!e || seenTo.has(e)) return;
+      seenTo.add(e);
+      toEmailOptions.push({ email: email.trim(), label });
+    };
+    if (customerEmailRaw) {
+      pushToOption(customerEmailRaw, `Customer (${inv.customer_full_name?.trim() || 'account'})`);
+    }
+    for (const c of contactsForTo.rows) {
+      const name = [c.first_name, c.surname].filter(Boolean).join(' ').trim() || 'Contact';
+      pushToOption(c.email, name);
+    }
+
     return res.json({
       subject,
       body_html: bodyInner,
@@ -4490,6 +4707,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
       invoice_state: inv.state,
       default_to: inv.customer_email ?? '',
       customer_name: inv.customer_full_name ?? '',
+      to_email_options: toEmailOptions,
     });
   } catch (error) {
     console.error('Email compose draft error:', error);
@@ -5373,9 +5591,9 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, 
     const totalAmount = parseFloat(q.total_amount);
 
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, 'draft', $12)
-       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, state, created_at, updated_at, created_by`,
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 'draft', $12)
+       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
       [invoiceNumber, q.customer_id, q.job_id, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, q.currency, q.notes, q.billing_address, userId],
     );
     const inv = invResult.rows[0];
@@ -6877,6 +7095,165 @@ app.get('/api/customers/:customerId/work-addresses/:workAddressId', authenticate
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+/** Create an invoice tied to this work/site address (only way to set invoice_work_address_id). */
+app.post(
+  '/api/customers/:customerId/work-addresses/:workAddressId/invoices',
+  authenticate,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const customerId = parseInt(String(req.params.customerId), 10);
+    const workAddressId = parseInt(String(req.params.workAddressId), 10);
+    if (!Number.isFinite(customerId) || !Number.isFinite(workAddressId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const userId = req.user!.userId;
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+    const custCheck = await pool.query(
+      'SELECT id FROM customers WHERE id = $1' + (isSuperAdmin ? '' : ' AND created_by = $2'),
+      isSuperAdmin ? [customerId] : [customerId, userId],
+    );
+    if ((custCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid customer' });
+
+    let billingAddress: string;
+    let invoiceWorkAddressId: number;
+    try {
+      const r = await resolveInvoiceBillingFromWorkAddress(customerId, workAddressId);
+      billingAddress = r.billing_address;
+      invoiceWorkAddressId = r.invoice_work_address_id;
+    } catch (e) {
+      if ((e as Error).message === 'INVALID_WORK_ADDRESS') {
+        return res.status(400).json({ message: 'Invalid work address for this customer' });
+      }
+      throw e;
+    }
+
+    const body = req.body as {
+      job_id?: number;
+      invoice_date?: string;
+      due_date?: string;
+      currency?: string;
+      notes?: string;
+      customer_reference?: string | null;
+      line_items?: { description: string; quantity: number; unit_price: number }[];
+      tax_percentage?: number;
+      state?: string;
+      invoice_number?: string;
+    };
+
+    const jobId = body.job_id && Number.isFinite(body.job_id) ? body.job_id : null;
+    if (jobId && !isSuperAdmin) {
+      const jobCheck = await pool.query('SELECT id FROM jobs WHERE id = $1 AND created_by = $2', [jobId, userId]);
+      if ((jobCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid job' });
+    }
+
+    try {
+      const settings = await getInvoiceSettings(userId);
+      const invoiceDateStr = parseInvoiceDateForDb(body.invoice_date) ?? todayYyyyMmDdUtc();
+      const dueDateStr =
+        parseInvoiceDateForDb(body.due_date) ?? addDaysYyyyMmDd(invoiceDateStr, settings.default_due_days);
+      const currency = typeof body.currency === 'string' && body.currency.trim()
+        ? body.currency.trim()
+        : settings.default_currency;
+      const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+      const custRef =
+        typeof body.customer_reference === 'string' ? body.customer_reference.trim() || null : null;
+      const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
+
+      let subtotal = 0;
+      for (const item of lineItems) {
+        const qty = typeof item.quantity === 'number' ? item.quantity : 1;
+        const price = typeof item.unit_price === 'number' ? item.unit_price : 0;
+        subtotal += qty * price;
+      }
+      const taxPercentage =
+        typeof body.tax_percentage === 'number' ? Math.max(0, Math.min(100, body.tax_percentage)) : settings.default_tax_percentage;
+      const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
+      const totalAmount = subtotal + taxAmount;
+
+      const requestedRaw = typeof body.invoice_number === 'string' ? body.invoice_number.trim() : '';
+      let invoiceNumber: string;
+      if (requestedRaw) {
+        const normalized = normalizeInvoiceNumberFromImport(requestedRaw, settings.invoice_prefix);
+        if (!normalized) {
+          return res.status(400).json({ message: 'Could not parse invoice number; use e.g. INV545 or INV-000545' });
+        }
+        if (normalized.length > 50) {
+          return res.status(400).json({ message: 'Invoice number must be 50 characters or less' });
+        }
+        const dup = await pool.query('SELECT id FROM invoices WHERE invoice_number = $1', [normalized]);
+        if ((dup.rowCount ?? 0) > 0) {
+          return res.status(400).json({ message: `Invoice number "${normalized}" already exists` });
+        }
+        invoiceNumber = normalized;
+      } else {
+        invoiceNumber = await generateInvoiceNumber(settings.invoice_prefix);
+      }
+      const validStates = ['draft', 'issued', 'pending_payment'];
+      const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
+
+      const invResult = await pool.query<DbInvoice>(
+        `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
+         VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
+        [
+          invoiceNumber,
+          customerId,
+          jobId,
+          invoiceDateStr,
+          dueDateStr,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          currency,
+          notes,
+          billingAddress,
+          invoiceWorkAddressId,
+          custRef,
+          targetState,
+          userId,
+        ],
+      );
+      const inv = invResult.rows[0];
+      const invId = inv.id;
+
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i];
+        const qty = typeof item.quantity === 'number' ? item.quantity : 1;
+        const price = typeof item.unit_price === 'number' ? item.unit_price : 0;
+        const amount = qty * price;
+        await pool.query(
+          'INSERT INTO invoice_line_items (invoice_id, description, quantity, unit_price, amount, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
+          [invId, item.description || 'Item', qty, price, amount, i],
+        );
+      }
+
+      await logInvoiceActivity(invId, 'created', { invoice_number: invoiceNumber }, userId);
+
+      return res.status(201).json({
+        invoice: {
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          customer_id: inv.customer_id,
+          job_id: inv.job_id ?? null,
+          invoice_date: formatInvoiceDateFromDb(inv.invoice_date),
+          due_date: formatInvoiceDateFromDb(inv.due_date),
+          subtotal: parseFloat(inv.subtotal),
+          tax_amount: parseFloat(inv.tax_amount),
+          total_amount: parseFloat(inv.total_amount),
+          total_paid: parseFloat(inv.total_paid),
+          currency: inv.currency,
+          state: inv.state,
+          created_at: (inv.created_at as Date).toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Create invoice from work address error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
 
 app.post('/api/customers/:customerId/work-addresses', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);

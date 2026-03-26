@@ -22,6 +22,8 @@ type InvoiceDetail = {
   currency: string;
   notes: string | null;
   billing_address: string | null;
+  invoice_work_address_id?: number | null;
+  customer_reference?: string | null;
   state: string;
   line_items: { description: string; quantity: number; unit_price: number }[];
 };
@@ -58,6 +60,11 @@ export default function EditInvoicePage() {
   const [currency, setCurrency] = useState('USD');
   const [notes, setNotes] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
+  const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
+  /** Set at load when invoice was created from a work/site address — not editable here. */
+  const [invoiceHasWorkSite, setInvoiceHasWorkSite] = useState(false);
+  const [initialCustomerId, setInitialCustomerId] = useState('');
+  const [customerReference, setCustomerReference] = useState('');
   const [state, setState] = useState('draft');
   const [totalPaid, setTotalPaid] = useState('');
   const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0 }]);
@@ -77,12 +84,25 @@ export default function EditInvoicePage() {
       const inv = invRes.invoice;
       setInvoiceNumber(inv.invoice_number);
       setCustomerId(String(inv.customer_id));
+      setInitialCustomerId(String(inv.customer_id));
       setJobId(inv.job_id ? String(inv.job_id) : '');
       setInvoiceDate(inv.invoice_date);
       setDueDate(inv.due_date);
       setCurrency(inv.currency);
       setNotes(inv.notes ?? '');
-      setBillingAddress(inv.billing_address ?? '');
+      setCustomerReference(inv.customer_reference ?? '');
+      if (inv.invoice_work_address_id) {
+        setInvoiceHasWorkSite(true);
+        setBillingAddress(inv.billing_address ?? '');
+      } else if (inv.billing_address?.trim()) {
+        setInvoiceHasWorkSite(false);
+        setAddressKind('custom');
+        setBillingAddress(inv.billing_address);
+      } else {
+        setInvoiceHasWorkSite(false);
+        setAddressKind('customer');
+        setBillingAddress('');
+      }
       setState(inv.state);
       setTotalPaid(String(inv.total_paid));
       const items =
@@ -145,6 +165,13 @@ export default function EditInvoicePage() {
     setError(null);
     try {
       const tp = parseFloat(totalPaid);
+      const workSiteLocked =
+        invoiceHasWorkSite && customerId === initialCustomerId;
+      const addressPatch = workSiteLocked
+        ? {}
+        : {
+            billing_address: (addressKind === 'custom' ? billingAddress.trim() || null : null) as string | null,
+          };
       await patchJson(`/invoices/${invoiceId}`, {
         invoice_number: invoiceNumber.trim(),
         customer_id: parseInt(customerId, 10),
@@ -153,7 +180,8 @@ export default function EditInvoicePage() {
         due_date: dueDate,
         currency: currency.trim(),
         notes: notes.trim() || null,
-        billing_address: billingAddress.trim() || null,
+        ...addressPatch,
+        customer_reference: customerReference.trim() || null,
         state,
         total_paid: Number.isFinite(tp) ? Math.max(0, tp) : 0,
         line_items: validItems.map((li) => ({
@@ -236,7 +264,17 @@ export default function EditInvoicePage() {
                 <select
                   required
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setCustomerId(next);
+                    if (invoiceHasWorkSite && next !== initialCustomerId) {
+                      setInvoiceHasWorkSite(false);
+                      setAddressKind('customer');
+                      setBillingAddress('');
+                    } else {
+                      setAddressKind('customer');
+                    }
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                 >
                   <option value="">Select customer</option>
@@ -318,14 +356,63 @@ export default function EditInvoicePage() {
                   {taxAmount.toFixed(2)} · Total: {totalAmount.toFixed(2)}
                 </span>
               </label>
+              <div className="sm:col-span-2 space-y-3 rounded-lg border border-slate-100 bg-slate-50/60 p-4">
+                <p className="text-sm font-medium text-slate-800">Address on invoice</p>
+                {invoiceHasWorkSite && customerId === initialCustomerId ? (
+                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <p className="text-xs font-medium text-slate-500">Work / site address (from record)</p>
+                    <p className="mt-1 whitespace-pre-wrap">{billingAddress || '—'}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      This invoice is tied to a work address and cannot be switched to another address here. Create a new invoice from a work address detail page to use a different site.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="radio"
+                          name="invAddrEdit"
+                          className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          checked={addressKind === 'customer'}
+                          onChange={() => setAddressKind('customer')}
+                        />
+                        Customer address
+                      </label>
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="radio"
+                          name="invAddrEdit"
+                          className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          checked={addressKind === 'custom'}
+                          onChange={() => setAddressKind('custom')}
+                        />
+                        Custom address
+                      </label>
+                    </div>
+                    {addressKind === 'custom' && (
+                      <label className="block text-sm">
+                        <span className="font-medium text-slate-700">Custom text</span>
+                        <textarea
+                          value={billingAddress}
+                          onChange={(e) => setBillingAddress(e.target.value)}
+                          rows={3}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                          placeholder="Shown on invoice"
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+              </div>
               <label className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">Billing address</span>
-                <textarea
-                  value={billingAddress}
-                  onChange={(e) => setBillingAddress(e.target.value)}
-                  rows={3}
+                <span className="font-medium text-slate-700">Customer reference (optional)</span>
+                <input
+                  type="text"
+                  value={customerReference}
+                  onChange={(e) => setCustomerReference(e.target.value)}
+                  placeholder="Shown on invoice when entered; job reference also appears if set on the job"
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                  placeholder="Optional override shown on invoice"
                 />
               </label>
               <label className="block text-sm sm:col-span-2">

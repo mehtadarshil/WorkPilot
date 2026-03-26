@@ -34,6 +34,52 @@ const VARS_HELP: Record<string, string> = {
   general: '{{company_name}}, {{message}}',
 };
 
+/** Documented for subject + body HTML; must match keys passed in backend when sending. */
+const PLACEHOLDER_REFERENCE: {
+  templateKey: string;
+  title: string;
+  whenUsed: string;
+  tags: { tag: string; purpose: string }[];
+}[] = [
+  {
+    templateKey: 'invoice',
+    title: 'Invoice template',
+    whenUsed: 'When sending an invoice by email (or loading the invoice email composer). The invoice PDF is attached separately; it does not use these placeholders.',
+    tags: [
+      { tag: '{{company_name}}', purpose: "Your organisation name from Invoice settings (fallback: 'WorkPilot')." },
+      { tag: '{{customer_name}}', purpose: 'The customer display name on the invoice.' },
+      { tag: '{{invoice_number}}', purpose: 'Invoice number (e.g. INV-000042).' },
+      { tag: '{{invoice_total}}', purpose: 'Grand total as a decimal string with two places (e.g. 120.00).' },
+      { tag: '{{currency}}', purpose: 'ISO currency code (e.g. GBP, USD).' },
+      { tag: '{{invoice_date}}', purpose: "Invoice date in your app's display format." },
+      { tag: '{{due_date}}', purpose: 'Payment due date in the same format.' },
+    ],
+  },
+  {
+    templateKey: 'quotation',
+    title: 'Quotation template',
+    whenUsed: 'When sending a quotation by email to the customer.',
+    tags: [
+      { tag: '{{company_name}}', purpose: "Your organisation name from Invoice settings (fallback: 'WorkPilot')." },
+      { tag: '{{customer_name}}', purpose: 'The customer display name on the quotation.' },
+      { tag: '{{quotation_number}}', purpose: 'Quotation reference number.' },
+      { tag: '{{quotation_total}}', purpose: 'Total amount as a decimal string with two places.' },
+      { tag: '{{currency}}', purpose: 'ISO currency code.' },
+      { tag: '{{quotation_date}}', purpose: 'Quotation date (YYYY-MM-DD).' },
+      { tag: '{{valid_until}}', purpose: 'Validity / expiry date (YYYY-MM-DD).' },
+    ],
+  },
+  {
+    templateKey: 'general',
+    title: 'General template',
+    whenUsed: 'Reserved for generic or automated messages that pass a free-text body; use when integrations supply {{message}}.',
+    tags: [
+      { tag: '{{company_name}}', purpose: 'Your organisation name from Invoice settings.' },
+      { tag: '{{message}}', purpose: 'Arbitrary plain or HTML-safe text provided for that send (e.g. notification body).' },
+    ],
+  },
+];
+
 export default function EmailSettings() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -331,9 +377,38 @@ export default function EmailSettings() {
       <div>
         <h3 className="text-lg font-bold text-slate-900">Email templates</h3>
         <p className="mt-1 text-sm text-slate-500">
-          Subject and body support <code className="rounded bg-slate-100 px-1 text-xs">{'{{variable}}'}</code> placeholders. Invoice and quotation sends use these templates.
+          Subject and body support <code className="rounded bg-slate-100 px-1 text-xs">{'{{variable}}'}</code> placeholders
+          (double curly braces). Only the tags listed below are replaced for each template; anything else stays literal. Invoice
+          and quotation sends merge these into the subject and HTML body before your default signature is appended.
         </p>
-        <div className="mt-4 space-y-4">
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/90 p-4">
+          <h4 className="text-sm font-semibold text-slate-900">Placeholder tags reference</h4>
+          <p className="mt-1 text-xs text-slate-600">
+            Use the exact tag names (case-sensitive) in subject or body HTML. Tags are not replaced in the default signature
+            field above unless you paste the same placeholders there and the send path provides those variables.
+          </p>
+          <div className="mt-4 space-y-5">
+            {PLACEHOLDER_REFERENCE.map((block) => (
+              <div key={block.templateKey} className="border-t border-slate-200 pt-4 first:border-t-0 first:pt-0">
+                <p className="text-sm font-medium text-slate-800">{block.title}</p>
+                <p className="mt-0.5 text-xs text-slate-600">{block.whenUsed}</p>
+                <dl className="mt-2 space-y-2">
+                  {block.tags.map((row) => (
+                    <div key={row.tag} className="grid gap-1 sm:grid-cols-[minmax(0,220px)_1fr] sm:gap-3">
+                      <dt>
+                        <code className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-800 ring-1 ring-slate-200">{row.tag}</code>
+                      </dt>
+                      <dd className="text-xs text-slate-700">{row.purpose}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 space-y-4">
           {templates.map((t) => (
             <div key={t.template_key} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-2">

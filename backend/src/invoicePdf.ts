@@ -1,6 +1,46 @@
 import PDFDocument from 'pdfkit';
 import type { Pool } from 'pg';
 
+/** Matches customer detail page and GET /invoices/:id formatting. */
+function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
+  const parts = [row.address_line_1, row.address_line_2, row.town, row.county, row.postcode]
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .filter(Boolean);
+  if (parts.length) return parts.join(', ');
+  const legacy = typeof row.address === 'string' ? row.address.trim() : '';
+  if (legacy) return legacy;
+  const city = typeof row.city === 'string' ? row.city.trim() : '';
+  const region = typeof row.region === 'string' ? row.region.trim() : '';
+  const country = typeof row.country === 'string' ? row.country.trim() : '';
+  return [city, region, country].filter(Boolean).join(', ') || '';
+}
+
+function workSiteAddressAsSingleLine(stored: string): string {
+  return stored
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function formatWorkAddressSingleLineWithoutName(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t) parts.push(t);
+  };
+  push(row.branch_name);
+  push(row.company_name);
+  push(row.address_line_1);
+  push(row.address_line_2);
+  push(row.address_line_3);
+  const town = typeof row.town === 'string' ? row.town.trim() : '';
+  const county = typeof row.county === 'string' ? row.county.trim() : '';
+  if (town || county) parts.push([town, county].filter(Boolean).join(', '));
+  push(row.postcode);
+  return parts.join(', ');
+}
+
 function formatMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
@@ -30,8 +70,19 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     customer_full_name: string | null;
     customer_email: string | null;
     customer_phone: string | null;
-    customer_address: string | null;
+    address_line_1: string | null;
+    address_line_2: string | null;
+    town: string | null;
+    county: string | null;
+    postcode: string | null;
+    address: string | null;
+    city: string | null;
+    region: string | null;
+    country: string | null;
     billing_address: string | null;
+    invoice_work_address_id: number | null;
+    customer_reference: string | null;
+    job_customer_reference: string | null;
     invoice_date: Date;
     due_date: Date;
     subtotal: string;
@@ -43,9 +94,12 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     created_by: number | null;
   }>(
     `SELECT i.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
-      COALESCE(c.address, c.city || ', ' || c.region || ' ' || c.country) AS customer_address
+      c.address_line_1, c.address_line_2, c.town, c.county, c.postcode,
+      c.address, c.city, c.region, c.country,
+      j.customer_reference AS job_customer_reference
      FROM invoices i
      JOIN customers c ON c.id = i.customer_id
+     LEFT JOIN jobs j ON j.id = i.job_id
      WHERE i.id = $1`,
     [invoiceId],
   );
@@ -53,6 +107,28 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     throw new Error('Invoice not found');
   }
   const inv = invResult.rows[0];
+  const customerAddrFormatted = formatCustomerAddressSingleLine(inv as unknown as Record<string, unknown>);
+
+  let workSiteName: string | null = null;
+  let workSiteAddrOnly: string | null = null;
+  if (inv.invoice_work_address_id) {
+    const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+      inv.invoice_work_address_id,
+      inv.customer_id,
+    ]);
+    if ((waRes.rowCount ?? 0) > 0) {
+      const wa = waRes.rows[0] as Record<string, unknown>;
+      const n = typeof wa.name === 'string' ? wa.name.trim() : '';
+      workSiteName = n || null;
+      const addr = formatWorkAddressSingleLineWithoutName(wa).trim();
+      workSiteAddrOnly = addr || null;
+    }
+    if (!workSiteName && !workSiteAddrOnly && inv.billing_address?.trim()) {
+      workSiteAddrOnly = workSiteAddressAsSingleLine(inv.billing_address.trim());
+    }
+  }
+  const customBillingAddr =
+    !inv.invoice_work_address_id && inv.billing_address?.trim() ? inv.billing_address.trim() : null;
   const lineItemsResult = await pool.query<{
     description: string;
     quantity: string;
@@ -93,7 +169,10 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
   const balance = Math.round((totalAmount - totalPaid) * 100) / 100;
   const currency = inv.currency || 'USD';
 
-  const billTo = inv.billing_address?.trim() || inv.customer_address?.trim() || '—';
+  const custRefLine =
+    (inv.customer_reference && String(inv.customer_reference).trim()) ||
+    (inv.job_customer_reference && String(inv.job_customer_reference).trim()) ||
+    '';
   const invDate = (inv.invoice_date as Date).toISOString().slice(0, 10);
   const dueDate = (inv.due_date as Date).toISOString().slice(0, 10);
 
@@ -128,7 +207,25 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     doc.text(inv.customer_full_name || 'Customer', { width: 260 });
     if (inv.customer_email) doc.fontSize(9).text(inv.customer_email);
     if (inv.customer_phone) doc.fontSize(9).text(inv.customer_phone);
-    doc.fontSize(9).text(billTo, { width: 260 });
+    if (custRefLine) doc.fontSize(9).text(`Customer reference: ${custRefLine}`);
+    doc.fontSize(9).fillColor('#334155').text(customerAddrFormatted || '—', { width: 260 });
+    if (workSiteName || workSiteAddrOnly) {
+      doc.moveDown(0.4);
+      doc.fontSize(8).fillColor('#64748b').text('Work / site address');
+      doc.font('Helvetica');
+      if (workSiteName) {
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text(workSiteName, { width: 260 });
+        doc.font('Helvetica');
+      }
+      if (workSiteAddrOnly) {
+        doc.fontSize(9).fillColor('#334155').text(workSiteAddrOnly, { width: 260 });
+      }
+    }
+    if (customBillingAddr) {
+      doc.moveDown(0.4);
+      doc.fontSize(8).fillColor('#64748b').text('Billing address');
+      doc.fontSize(9).fillColor('#334155').text(customBillingAddr, { width: 260 });
+    }
 
     doc.moveDown(1.2);
     const tableTop = doc.y;

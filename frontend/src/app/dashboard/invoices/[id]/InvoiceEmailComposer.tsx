@@ -12,6 +12,7 @@ import {
   ListOrdered,
   Link as LinkIcon,
   RemoveFormatting,
+  ChevronDown,
 } from 'lucide-react';
 import { getJson, postJson } from '../../../apiClient';
 
@@ -26,6 +27,7 @@ type ComposeDraft = {
   invoice_state: string;
   default_to: string;
   customer_name: string;
+  to_email_options?: { email: string; label: string }[];
 };
 
 type Props = {
@@ -71,6 +73,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
   const loadGenerationRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const toFieldRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -88,6 +91,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
   const [files, setFiles] = useState<File[]>([]);
   const [scheduleAfterSend, setScheduleAfterSend] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [toPickerOpen, setToPickerOpen] = useState(false);
 
   const loadDraft = useCallback(async () => {
     if (!token || !invoiceId) return;
@@ -107,6 +111,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
       setIncludeSignature(true);
       setScheduleAfterSend(false);
       setComposeSession((s) => s + 1);
+      setToPickerOpen(false);
     } catch (e) {
       if (gen === loadGenerationRef.current) {
         setError(e instanceof Error ? e.message : 'Failed to load compose draft');
@@ -130,6 +135,17 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
     if (!el) return;
     el.innerHTML = draft.body_html || '';
   }, [open, draft, loading, composeSession]);
+
+  useEffect(() => {
+    if (!toPickerOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (toFieldRef.current && !toFieldRef.current.contains(e.target as Node)) {
+        setToPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [toPickerOpen]);
 
   const addFilesFromList = (list: FileList | File[] | null) => {
     if (!list?.length) return;
@@ -295,29 +311,68 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
 
             {/* Recipients — Gmail-like stacked rows */}
             <div className="shrink-0 divide-y divide-slate-100 border-b border-slate-100 px-3">
-              <div className="flex min-h-[44px] items-center gap-2 py-1">
-                <span className="w-9 shrink-0 text-right text-xs text-slate-500">To</span>
-                <input
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  placeholder={draft?.default_to || 'Recipients'}
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCc((v) => !v)}
-                  className="shrink-0 text-xs font-medium text-[#1a73e8] hover:underline"
-                >
-                  Cc
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowBcc((v) => !v)}
-                  className="shrink-0 text-xs font-medium text-[#1a73e8] hover:underline"
-                >
-                  Bcc
-                </button>
+              <div ref={toFieldRef} className="relative py-1">
+                <div className="flex min-h-[44px] items-center gap-2">
+                  <span className="w-9 shrink-0 text-right text-xs text-slate-500">To</span>
+                  <input
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    onFocus={() => {
+                      if ((draft?.to_email_options?.length ?? 0) > 0) setToPickerOpen(true);
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                    placeholder={draft?.default_to || 'Recipients'}
+                    autoComplete="off"
+                  />
+                  {(draft?.to_email_options?.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setToPickerOpen((v) => !v)}
+                      className="shrink-0 rounded p-1 text-slate-500 hover:bg-slate-100"
+                      aria-expanded={toPickerOpen}
+                      aria-label="Choose email from contacts"
+                    >
+                      <ChevronDown className={`size-4 transition-transform ${toPickerOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowCc((v) => !v)}
+                    className="shrink-0 text-xs font-medium text-[#1a73e8] hover:underline"
+                  >
+                    Cc
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBcc((v) => !v)}
+                    className="shrink-0 text-xs font-medium text-[#1a73e8] hover:underline"
+                  >
+                    Bcc
+                  </button>
+                </div>
+                {toPickerOpen && draft?.to_email_options && draft.to_email_options.length > 0 && (
+                  <ul
+                    className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    role="listbox"
+                  >
+                    {draft.to_email_options.map((opt, optIdx) => (
+                      <li key={`${opt.email}-${optIdx}`} role="option">
+                        <button
+                          type="button"
+                          className="w-full px-3 py-2.5 text-left hover:bg-slate-50"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setTo(opt.email);
+                            setToPickerOpen(false);
+                          }}
+                        >
+                          <span className="block truncate text-sm font-medium text-slate-900">{opt.email}</span>
+                          <span className="block truncate text-xs text-slate-500">{opt.label}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               {showCc && (
                 <div className="flex min-h-[40px] items-center gap-2 py-1">

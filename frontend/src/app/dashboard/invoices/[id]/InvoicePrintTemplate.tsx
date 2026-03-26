@@ -25,6 +25,14 @@ export type InvoicePrintModel = {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  /** Resolved for display: invoice reference, else job reference. */
+  customer_reference_display?: string | null;
+  /** Site / work name (bold), separate from address line. */
+  work_site_name?: string | null;
+  /** Work/site address only (no site name). */
+  work_site_address?: string | null;
+  /** Custom billing text when not using work/site (optional second block). */
+  invoice_custom_address?: string | null;
   job_id: number | null;
   invoice_date: string;
   due_date: string;
@@ -67,7 +75,7 @@ type Props = {
 export default function InvoicePrintTemplate({ invoice, settings }: Props) {
   const companyName = settings?.company_name || 'WorkPilot';
   const taxLabel = settings?.tax_label || 'Tax';
-  const invoiceAddress = invoice.billing_address || invoice.customer_address || '-';
+  const customerAddrLine = invoice.customer_address?.trim() || '—';
   const balanceDue = invoice.total_amount - invoice.total_paid;
   const accent =
     settings?.invoice_accent_color && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(settings.invoice_accent_color)
@@ -121,12 +129,41 @@ export default function InvoicePrintTemplate({ invoice, settings }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-8 px-8 py-8 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice for</p>
-          <p className="text-base font-semibold text-slate-900">{invoice.customer_full_name || '-'}</p>
-          {invoice.customer_email && <p className="mt-1 text-sm text-slate-600">{invoice.customer_email}</p>}
-          {invoice.customer_phone && <p className="text-sm text-slate-600">{invoice.customer_phone}</p>}
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{invoiceAddress}</p>
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice for</p>
+            <p className="text-base font-semibold text-slate-900">{invoice.customer_full_name || '-'}</p>
+            {invoice.customer_email && <p className="mt-1 text-sm text-slate-600">{invoice.customer_email}</p>}
+            {invoice.customer_phone && <p className="text-sm text-slate-600">{invoice.customer_phone}</p>}
+            {invoice.customer_reference_display?.trim() && (
+              <p className="mt-1 text-sm text-slate-600">
+                <span className="font-medium text-slate-700">Customer reference:</span> {invoice.customer_reference_display.trim()}
+              </p>
+            )}
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{customerAddrLine}</p>
+          </div>
+          {(invoice.work_site_name?.trim() || invoice.work_site_address?.trim()) && (
+            <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
+              {invoice.work_site_name?.trim() && (
+                <p className="text-base font-bold text-slate-900">{invoice.work_site_name.trim()}</p>
+              )}
+              {invoice.work_site_address?.trim() && (
+                <p className={`text-sm leading-relaxed text-slate-600 ${invoice.work_site_name?.trim() ? 'mt-1' : ''}`}>
+                  {invoice.work_site_address.trim()}
+                </p>
+              )}
+            </div>
+          )}
+          {invoice.invoice_custom_address?.trim() &&
+            !invoice.work_site_name?.trim() &&
+            !invoice.work_site_address?.trim() && (
+            <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Billing address</p>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{invoice.invoice_custom_address.trim()}</p>
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-6 sm:justify-end sm:gap-8">
           <div>
