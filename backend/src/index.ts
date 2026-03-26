@@ -3642,16 +3642,63 @@ async function getInvoiceSettings(userId: number): Promise<{
   };
 }
 
+function escapeRegexChars(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Canonical display: PREFIX-000001 (variable width if sequence > 6 digits). */
+function formatInvoiceSequenceNumber(p: string, n: number): string {
+  const num = Math.max(0, Math.floor(n));
+  const digits = String(num);
+  const padded = digits.length <= 6 ? digits.padStart(6, '0') : digits;
+  return `${p}-${padded}`;
+}
+
+/**
+ * Map CSV / legacy values (INV545, INV-545, INV-000545) to canonical PREFIX-000545 using settings prefix.
+ */
+function normalizeInvoiceNumberFromImport(raw: string, prefix: string): string | null {
+  const p = (prefix || 'INV').replace(/[^A-Za-z0-9_-]/g, '') || 'INV';
+  const s = String(raw).trim();
+  if (!s) return null;
+  const ep = escapeRegexChars(p);
+  let m = s.match(new RegExp(`^${ep}-(\\d+)$`, 'i'));
+  if (m) return formatInvoiceSequenceNumber(p, parseInt(m[1], 10));
+  m = s.match(new RegExp(`^${ep}(\\d+)$`, 'i'));
+  if (m) return formatInvoiceSequenceNumber(p, parseInt(m[1], 10));
+  const tail = s.match(/(\d+)$/);
+  if (tail) {
+    const n = parseInt(tail[1], 10);
+    if (!Number.isNaN(n) && n >= 0) return formatInvoiceSequenceNumber(p, n);
+  }
+  return null;
+}
+
+/** Max numeric suffix for PREFIX-… and PREFIX… (no dash), so imports like INV545 participate in sequencing. */
+async function getMaxInvoiceNumericSuffix(prefix: string): Promise<number> {
+  const p = (prefix || 'INV').replace(/[^A-Za-z0-9_-]/g, '') || 'INV';
+  const ep = escapeRegexChars(p);
+  const r = await pool.query<{ invoice_number: string }>(
+    `SELECT invoice_number FROM invoices WHERE invoice_number LIKE $1 OR invoice_number ~ $2`,
+    [`${p}-%`, `^${ep}\\d+$`],
+  );
+  let max = 0;
+  const reDash = new RegExp(`^${ep}-(\\d+)$`, 'i');
+  const reNoDash = new RegExp(`^${ep}(\\d+)$`, 'i');
+  for (const row of r.rows) {
+    const num = row.invoice_number;
+    const md = num.match(reDash);
+    const mn = num.match(reNoDash);
+    const n = md ? parseInt(md[1], 10) : mn ? parseInt(mn[1], 10) : 0;
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return max;
+}
+
 async function generateInvoiceNumber(prefix: string): Promise<string> {
   const p = (prefix || 'INV').replace(/[^A-Za-z0-9_-]/g, '') || 'INV';
-  const r = await pool.query(
-    `SELECT invoice_number FROM invoices WHERE invoice_number LIKE $1 ORDER BY id DESC LIMIT 1`,
-    [`${p}-%`],
-  );
-  const last = r.rows[0] as { invoice_number: string } | undefined;
-  const match = last ? last.invoice_number.match(new RegExp(`^${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`)) : null;
-  const nextNum = match ? parseInt(match[1], 10) + 1 : 1;
-  return `${p}-${String(nextNum).padStart(6, '0')}`;
+  const max = await getMaxInvoiceNumericSuffix(p);
+  return formatInvoiceSequenceNumber(p, max + 1);
 }
 
 async function logInvoiceActivity(invoiceId: number, action: string, details: Record<string, unknown>, userId: number | null) {
@@ -3925,6 +3972,8 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     line_items?: { description: string; quantity: number; unit_price: number }[];
     tax_percentage?: number;
     state?: string;
+    /** Raw value from CSV import; normalized to PREFIX-000001 and checked for duplicates. */
+    invoice_number?: string;
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
@@ -3965,7 +4014,24 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
     const totalAmount = subtotal + taxAmount;
 
-    const invoiceNumber = await generateInvoiceNumber(settings.invoice_prefix);
+    const requestedRaw = typeof body.invoice_number === 'string' ? body.invoice_number.trim() : '';
+    let invoiceNumber: string;
+    if (requestedRaw) {
+      const normalized = normalizeInvoiceNumberFromImport(requestedRaw, settings.invoice_prefix);
+      if (!normalized) {
+        return res.status(400).json({ message: 'Could not parse invoice number; use e.g. INV545 or INV-000545' });
+      }
+      if (normalized.length > 50) {
+        return res.status(400).json({ message: 'Invoice number must be 50 characters or less' });
+      }
+      const dup = await pool.query('SELECT id FROM invoices WHERE invoice_number = $1', [normalized]);
+      if ((dup.rowCount ?? 0) > 0) {
+        return res.status(400).json({ message: `Invoice number "${normalized}" already exists` });
+      }
+      invoiceNumber = normalized;
+    } else {
+      invoiceNumber = await generateInvoiceNumber(settings.invoice_prefix);
+    }
     const validStates = ['draft', 'issued', 'pending_payment'];
     const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
 

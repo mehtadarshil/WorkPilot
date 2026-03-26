@@ -298,6 +298,7 @@ export default function InvoicesPage() {
       for (const row of validRows) {
         const invIso = normalizeCsvDateToIso(row.invoiceDate) ?? row.invoiceDate;
         const dueIso = normalizeCsvDateToIso(row.dueDate) ?? row.dueDate;
+        const csvInvNo = row.csvInvoiceNumber.trim();
         const created = await postJson<{ invoice?: { id: number } }>('/invoices', {
           customer_id: row.customerId,
           invoice_date: invIso,
@@ -306,6 +307,7 @@ export default function InvoicesPage() {
           notes: row.notes || undefined,
           line_items: row.lineItems,
           tax_percentage: row.taxPercentage,
+          ...(csvInvNo ? { invoice_number: csvInvNo } : {}),
         }, token);
         if (row.enteredOn.trim()) {
           const parsedEntered = new Date(row.enteredOn);
@@ -711,7 +713,8 @@ export default function InvoicesPage() {
           <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900">Import Invoices from CSV</h3>
             <p className="mt-2 text-xs text-slate-500">
-              Invoice date and due date columns accept <span className="font-medium text-slate-700">YYYY-MM-DD</span>,{' '}
+              If the CSV includes an invoice number column, values are normalized to your prefix format (e.g. INV545 → INV-000545). Invoice date and due date columns accept{' '}
+              <span className="font-medium text-slate-700">YYYY-MM-DD</span>,{' '}
               <span className="font-medium text-slate-700">DD/MM/YYYY</span> (UK), month names (e.g. 15 Mar 2024), or Excel serial numbers. Headers: Invoice Date, Due Date.
             </p>
             <div className="mt-4">
