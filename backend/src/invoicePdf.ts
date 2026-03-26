@@ -66,6 +66,7 @@ function formatDate(isoDate: string): string {
 export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): Promise<Buffer> {
   const invResult = await pool.query<{
     id: number;
+    customer_id: number;
     invoice_number: string;
     customer_full_name: string | null;
     customer_email: string | null;
