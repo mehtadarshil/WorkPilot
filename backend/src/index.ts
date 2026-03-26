@@ -5,6 +5,15 @@ import { Pool, PoolConfig } from 'pg';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import {
+  applyTemplateVars,
+  wrapEmailHtml,
+  createMailTransport,
+  formatFromHeader,
+  sendSmtpMessage,
+  type EmailSettingsPayload,
+} from './emailHelpers';
+import { generateInvoicePdfBuffer } from './invoicePdf';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -817,6 +826,38 @@ async function initDb() {
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_website VARCHAR(255)`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_tax_id VARCHAR(100)`);
   } catch { /* columns may already exist */ }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_settings (
+      id SERIAL PRIMARY KEY,
+      created_by INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      smtp_enabled BOOLEAN NOT NULL DEFAULT false,
+      smtp_host VARCHAR(255),
+      smtp_port INTEGER,
+      smtp_secure BOOLEAN NOT NULL DEFAULT true,
+      smtp_user VARCHAR(255),
+      smtp_password TEXT,
+      smtp_reject_unauthorized BOOLEAN NOT NULL DEFAULT true,
+      from_name VARCHAR(255),
+      from_email VARCHAR(255),
+      reply_to VARCHAR(255),
+      default_signature_html TEXT,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id SERIAL PRIMARY KEY,
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      template_key VARCHAR(64) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      subject TEXT NOT NULL,
+      body_html TEXT NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      UNIQUE(created_by, template_key)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS certifications (
@@ -3347,9 +3388,183 @@ app.patch('/api/jobs/:id/dispatch', authenticate, requireAdmin, async (req: Auth
   }
 });
 
+// ---------- Email settings & templates (Admin) ----------
+async function loadEmailSettingsPayload(userId: number): Promise<EmailSettingsPayload & { smtp_password_set: boolean }> {
+  const r = await pool.query(
+    `SELECT smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_reject_unauthorized,
+            from_name, from_email, reply_to, default_signature_html
+     FROM email_settings WHERE created_by = $1`,
+    [userId],
+  );
+  if ((r.rowCount ?? 0) === 0) {
+    return {
+      smtp_enabled: false,
+      smtp_host: null,
+      smtp_port: 587,
+      smtp_secure: false,
+      smtp_user: null,
+      smtp_password: null,
+      smtp_reject_unauthorized: true,
+      from_name: null,
+      from_email: null,
+      reply_to: null,
+      default_signature_html: null,
+      smtp_password_set: false,
+    };
+  }
+  const row = r.rows[0] as Record<string, unknown>;
+  const pass = row.smtp_password as string | null;
+  return {
+    smtp_enabled: !!row.smtp_enabled,
+    smtp_host: (row.smtp_host as string) ?? null,
+    smtp_port: row.smtp_port != null ? Number(row.smtp_port) : 587,
+    smtp_secure: !!row.smtp_secure,
+    smtp_user: (row.smtp_user as string) ?? null,
+    smtp_password: pass,
+    smtp_reject_unauthorized: row.smtp_reject_unauthorized !== false,
+    from_name: (row.from_name as string) ?? null,
+    from_email: (row.from_email as string) ?? null,
+    reply_to: (row.reply_to as string) ?? null,
+    default_signature_html: (row.default_signature_html as string) ?? null,
+    smtp_password_set: !!(pass && String(pass).length > 0),
+  };
+}
+
+async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
+  const defaults: { key: string; name: string; subject: string; body: string }[] = [
+    {
+      key: 'invoice',
+      name: 'Invoice — send to customer',
+      subject: '{{company_name}} — Invoice {{invoice_number}}',
+      body:
+        '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>Thank you,<br/>{{company_name}}</p>',
+    },
+    {
+      key: 'quotation',
+      name: 'Quotation — send to customer',
+      subject: '{{company_name}} — Quotation {{quotation_number}}',
+      body:
+        '<p>Hi {{customer_name}},</p><p>Your quotation <strong>{{quotation_number}}</strong> is ready.</p><p>Total: <strong>{{currency}} {{quotation_total}}</strong><br/>Valid until: {{valid_until}}<br/>Quotation date: {{quotation_date}}</p><p>Thank you,<br/>{{company_name}}</p>',
+    },
+    {
+      key: 'general',
+      name: 'General message',
+      subject: 'Message from {{company_name}}',
+      body: '<p>{{message}}</p>',
+    },
+  ];
+  for (const d of defaults) {
+    await pool.query(
+      `INSERT INTO email_templates (created_by, template_key, name, subject, body_html)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (created_by, template_key) DO NOTHING`,
+      [userId, d.key, d.name, d.subject, d.body],
+    );
+  }
+}
+
 // ---------- Invoices (Admin only) ----------
 const INVOICE_STATES = ['draft', 'issued', 'pending_payment', 'partially_paid', 'paid', 'overdue', 'cancelled'] as const;
 const PAYMENT_METHODS = ['bank_transfer', 'credit_card', 'cash', 'digital_payment', 'check', 'other'] as const;
+
+/** Parse API/CSV date to YYYY-MM-DD for PostgreSQL DATE (avoids JS Date UTC/local off-by-one). */
+function parseInvoiceDateForDb(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/.exec(s);
+  if (iso) {
+    const m = parseInt(iso[2], 10);
+    const d = parseInt(iso[3], 10);
+    const y = parseInt(iso[1], 10);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= 2100) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+  const dmy = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/.exec(s);
+  if (dmy) {
+    const a = parseInt(dmy[1], 10);
+    const b = parseInt(dmy[2], 10);
+    const y = parseInt(dmy[3], 10);
+    let day: number;
+    let month: number;
+    if (a > 12) {
+      day = a;
+      month = b;
+    } else if (b > 12) {
+      month = a;
+      day = b;
+    } else {
+      day = a;
+      month = b;
+    }
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && y >= 1900 && y <= 2100) {
+      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  const dmyShort = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2})$/.exec(s);
+  if (dmyShort) {
+    const a = parseInt(dmyShort[1], 10);
+    const b = parseInt(dmyShort[2], 10);
+    let yy = parseInt(dmyShort[3], 10);
+    const y = yy >= 70 ? 1900 + yy : 2000 + yy;
+    let day: number;
+    let month: number;
+    if (a > 12) {
+      day = a;
+      month = b;
+    } else if (b > 12) {
+      month = a;
+      day = b;
+    } else {
+      day = a;
+      month = b;
+    }
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  const monNames = /(\d{1,2})[\s\-](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\-](\d{4})/i.exec(s);
+  if (monNames) {
+    const map: Record<string, number> = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+    const mo = map[monNames[2].toLowerCase().slice(0, 3)];
+    const day = parseInt(monNames[1], 10);
+    const y = parseInt(monNames[3], 10);
+    if (mo && day >= 1 && day <= 31 && y >= 1900 && y <= 2100) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  if (/^\d{5,6}(\.\d+)?$/.test(s.replace(/\s/g, ''))) {
+    const serial = Math.floor(parseFloat(s));
+    if (serial > 20000 && serial < 100000) {
+      const ms = Date.UTC(1899, 11, 30) + serial * 86400000;
+      return new Date(ms).toISOString().slice(0, 10);
+    }
+  }
+  return null;
+}
+
+function todayYyyyMmDdUtc(): string {
+  const n = new Date();
+  return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
+}
+
+function addDaysYyyyMmDd(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split('-').map((x) => parseInt(x, 10));
+  const t = Date.UTC(y, m - 1, d + days);
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Format PostgreSQL DATE for JSON (avoid toISOString() shifting the calendar day). */
+function formatInvoiceDateFromDb(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const mo = value.getMonth() + 1;
+    const d = value.getDate();
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  return '';
+}
 
 function parseSafeHexColor(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
@@ -3581,8 +3796,8 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
       customer_full_name: r.customer_full_name ?? null,
       job_id: r.job_id ?? null,
       job_title: r.job_title ?? null,
-      invoice_date: (r.invoice_date as Date).toISOString().slice(0, 10),
-      due_date: (r.due_date as Date).toISOString().slice(0, 10),
+      invoice_date: formatInvoiceDateFromDb(r.invoice_date),
+      due_date: formatInvoiceDateFromDb(r.due_date),
       subtotal: parseFloat(r.subtotal),
       tax_amount: parseFloat(r.tax_amount),
       total_amount: parseFloat(r.total_amount),
@@ -3652,8 +3867,8 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
       customer_address: inv.billing_address ?? inv.customer_address ?? null,
       job_id: inv.job_id ?? null,
       job_title: inv.job_title ?? null,
-      invoice_date: (inv.invoice_date as Date).toISOString().slice(0, 10),
-      due_date: (inv.due_date as Date).toISOString().slice(0, 10),
+      invoice_date: formatInvoiceDateFromDb(inv.invoice_date),
+      due_date: formatInvoiceDateFromDb(inv.due_date),
       subtotal: parseFloat(inv.subtotal),
       tax_amount: parseFloat(inv.tax_amount),
       total_amount: parseFloat(inv.total_amount),
@@ -3730,10 +3945,9 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
 
   try {
     const settings = await getInvoiceSettings(userId);
-    const invoiceDate = body.invoice_date ? new Date(body.invoice_date) : new Date();
-    const dueDate = body.due_date
-      ? new Date(body.due_date)
-      : new Date(invoiceDate.getTime() + settings.default_due_days * 24 * 60 * 60 * 1000);
+    const invoiceDateStr = parseInvoiceDateForDb(body.invoice_date) ?? todayYyyyMmDdUtc();
+    const dueDateStr =
+      parseInvoiceDateForDb(body.due_date) ?? addDaysYyyyMmDd(invoiceDateStr, settings.default_due_days);
     const currency = typeof body.currency === 'string' && body.currency.trim()
       ? body.currency.trim()
       : settings.default_currency;
@@ -3757,9 +3971,9 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
 
     const invResult = await pool.query<DbInvoice>(
       `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, state, created_at, updated_at, created_by`,
-      [invoiceNumber, customerId, jobId, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, targetState, userId],
+      [invoiceNumber, customerId, jobId, invoiceDateStr, dueDateStr, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, targetState, userId],
     );
     const inv = invResult.rows[0];
     const invId = inv.id;
@@ -3783,8 +3997,8 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
         invoice_number: inv.invoice_number,
         customer_id: inv.customer_id,
         job_id: inv.job_id ?? null,
-        invoice_date: (inv.invoice_date as Date).toISOString().slice(0, 10),
-        due_date: (inv.due_date as Date).toISOString().slice(0, 10),
+        invoice_date: formatInvoiceDateFromDb(inv.invoice_date),
+        due_date: formatInvoiceDateFromDb(inv.due_date),
         subtotal: parseFloat(inv.subtotal),
         tax_amount: parseFloat(inv.tax_amount),
         total_amount: parseFloat(inv.total_amount),
@@ -3811,7 +4025,6 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
   if ((invCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
   const inv = invCheck.rows[0];
   if (!canAccessInvoice(inv, userId, isSuperAdmin)) return res.status(404).json({ message: 'Invoice not found' });
-  if (inv.state === 'cancelled' || inv.state === 'paid') return res.status(400).json({ message: 'Cannot edit invoice in this state' });
 
   const body = req.body as Record<string, unknown>;
   const updates: string[] = [];
@@ -3819,23 +4032,48 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
   let idx = 1;
 
   const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() || null : undefined);
+  const explicitState =
+    body.state && INVOICE_STATES.includes(body.state as (typeof INVOICE_STATES)[number])
+      ? (body.state as (typeof INVOICE_STATES)[number])
+      : undefined;
+
   if (body.customer_id !== undefined && Number.isFinite(body.customer_id)) {
     const custCheck = await pool.query('SELECT id FROM customers WHERE id = $1' + (isSuperAdmin ? '' : ' AND created_by = $2'), isSuperAdmin ? [body.customer_id] : [body.customer_id, userId]);
     if ((custCheck.rowCount ?? 0) > 0) { updates.push(`customer_id = $${idx++}`); values.push(body.customer_id); }
   }
   if (body.job_id !== undefined) {
-    const jid = body.job_id === null ? null : (Number.isFinite(body.job_id) ? body.job_id : parseInt(String(body.job_id), 10));
+    const jid = body.job_id === null ? null : (Number.isFinite(body.job_id as number) ? (body.job_id as number) : parseInt(String(body.job_id), 10));
     if (jid === null || Number.isFinite(jid)) { updates.push(`job_id = $${idx++}`); values.push(jid); }
   }
-  if (body.invoice_date) { updates.push(`invoice_date = $${idx++}`); values.push(new Date(body.invoice_date as string)); }
-  if (body.due_date) { updates.push(`due_date = $${idx++}`); values.push(new Date(body.due_date as string)); }
+  if (str('invoice_number') !== undefined) {
+    const num = str('invoice_number');
+    if (num) {
+      const dup = await pool.query('SELECT id FROM invoices WHERE invoice_number = $1 AND id <> $2', [num, id]);
+      if ((dup.rowCount ?? 0) > 0) return res.status(400).json({ message: 'Invoice number already in use' });
+      updates.push(`invoice_number = $${idx++}`);
+      values.push(num);
+    }
+  }
+  if (body.invoice_date !== undefined) {
+    const ds = parseInvoiceDateForDb(body.invoice_date);
+    if (ds) {
+      updates.push(`invoice_date = $${idx++}`);
+      values.push(ds);
+    }
+  }
+  if (body.due_date !== undefined) {
+    const ds = parseInvoiceDateForDb(body.due_date);
+    if (ds) {
+      updates.push(`due_date = $${idx++}`);
+      values.push(ds);
+    }
+  }
   if (str('currency') !== undefined) { updates.push(`currency = $${idx++}`); values.push(str('currency')); }
   if (str('notes') !== undefined) { updates.push(`notes = $${idx++}`); values.push(str('notes')); }
   if (str('billing_address') !== undefined) { updates.push(`billing_address = $${idx++}`); values.push(str('billing_address')); }
-  if (body.state && INVOICE_STATES.includes(body.state as typeof INVOICE_STATES[number])) {
-    updates.push(`state = $${idx++}`);
-    values.push(body.state);
-  }
+
+  let stateToSet: string | undefined;
+
   if (Array.isArray(body.line_items)) {
     await pool.query('DELETE FROM invoice_line_items WHERE invoice_id = $1', [id]);
     let subtotal = 0;
@@ -3857,29 +4095,49 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
       : (prevSubtotal > 0 ? (prevTaxAmount / prevSubtotal) * 100 : 0);
     const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
     const totalAmount = subtotal + taxAmount;
-    const totalPaid = parseFloat(inv.total_paid);
+    const totalPaid =
+      typeof body.total_paid === 'number' && Number.isFinite(body.total_paid)
+        ? Math.max(0, body.total_paid)
+        : parseFloat(inv.total_paid);
     updates.push(`subtotal = $${idx++}`);
     values.push(subtotal);
     updates.push(`tax_amount = $${idx++}`);
     values.push(taxAmount);
     updates.push(`total_amount = $${idx++}`);
     values.push(totalAmount);
-    if (totalPaid >= totalAmount) {
-      updates.push(`state = $${idx++}`);
-      values.push('paid');
-    } else if (totalPaid > 0) {
-      updates.push(`state = $${idx++}`);
-      values.push('partially_paid');
+    if (typeof body.total_paid === 'number' && Number.isFinite(body.total_paid)) {
+      updates.push(`total_paid = $${idx++}`);
+      values.push(Math.max(0, Math.round(body.total_paid * 100) / 100));
     }
-  } else if (typeof body.tax_percentage === 'number') {
-    const subtotal = parseFloat(inv.subtotal);
-    const taxPct = Math.max(0, Math.min(100, body.tax_percentage));
-    const taxAmount = Math.round(subtotal * (taxPct / 100) * 100) / 100;
-    const totalAmount = subtotal + taxAmount;
-    updates.push(`tax_amount = $${idx++}`);
-    values.push(taxAmount);
-    updates.push(`total_amount = $${idx++}`);
-    values.push(totalAmount);
+    if (explicitState !== undefined) {
+      stateToSet = explicitState;
+    } else {
+      if (totalPaid >= totalAmount && totalAmount > 0) stateToSet = 'paid';
+      else if (totalPaid > 0) stateToSet = 'partially_paid';
+    }
+  } else {
+    if (typeof body.total_paid === 'number' && Number.isFinite(body.total_paid)) {
+      updates.push(`total_paid = $${idx++}`);
+      values.push(Math.max(0, Math.round(body.total_paid * 100) / 100));
+    }
+    if (typeof body.tax_percentage === 'number') {
+      const subtotal = parseFloat(inv.subtotal);
+      const taxPct = Math.max(0, Math.min(100, body.tax_percentage));
+      const taxAmount = Math.round(subtotal * (taxPct / 100) * 100) / 100;
+      const totalAmount = subtotal + taxAmount;
+      updates.push(`tax_amount = $${idx++}`);
+      values.push(taxAmount);
+      updates.push(`total_amount = $${idx++}`);
+      values.push(totalAmount);
+    }
+    if (explicitState !== undefined) {
+      stateToSet = explicitState;
+    }
+  }
+
+  if (stateToSet !== undefined) {
+    updates.push(`state = $${idx++}`);
+    values.push(stateToSet);
   }
 
   if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
@@ -3899,8 +4157,8 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
         invoice_number: r.invoice_number,
         customer_id: r.customer_id,
         job_id: r.job_id ?? null,
-        invoice_date: (r.invoice_date as Date).toISOString().slice(0, 10),
-        due_date: (r.due_date as Date).toISOString().slice(0, 10),
+        invoice_date: formatInvoiceDateFromDb(r.invoice_date),
+        due_date: formatInvoiceDateFromDb(r.due_date),
         subtotal: parseFloat(r.subtotal),
         tax_amount: parseFloat(r.tax_amount),
         total_amount: parseFloat(r.total_amount),
@@ -4012,42 +4270,289 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
   if (!canAccessInvoice(inv, userId, isSuperAdmin)) return res.status(404).json({ message: 'Invoice not found' });
 
   try {
-    const upd = await pool.query("UPDATE invoices SET state = 'pending_payment', updated_at = NOW() WHERE id = $1 AND state = 'issued' RETURNING id", [id]);
-    if ((upd.rowCount ?? 0) > 0) {
-      if (channel === 'sms') {
-        await logInvoiceActivity(
-          id,
-          'comm_sms',
-          {
-            body: `Invoice ${inv.invoice_number} — SMS sent to client (integration placeholder).`,
-            to_phone: inv.customer_phone ?? null,
-            to_name: inv.customer_full_name ?? null,
-          },
-          userId,
-        );
-      } else {
-        await logInvoiceActivity(
-          id,
-          'comm_email',
-          {
-            subject: `${inv.customer_full_name ?? 'Customer'}, your invoice ${inv.invoice_number} is ready`,
-            body: 'Invoice email to customer (integration placeholder — connect your mail provider).',
-            to_email: inv.customer_email ?? null,
-            to_name: inv.customer_full_name ?? null,
-            status: 'sent',
-            attachment_name: `${inv.invoice_number}.pdf`,
-          },
-          userId,
-        );
+    if (channel === 'email') {
+      const emailCfg = await loadEmailSettingsPayload(userId);
+      const transport = createMailTransport(emailCfg);
+      if (!emailCfg.smtp_enabled || !transport) {
+        return res.status(400).json({
+          message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending by email.',
+        });
+      }
+      if (!emailCfg.from_email?.trim()) {
+        return res.status(400).json({ message: 'Set From email in Settings → Email.' });
+      }
+      if (!inv.customer_email?.trim()) {
+        return res.status(400).json({ message: 'Customer has no email address.' });
       }
     }
-    return res.json({
-      success: true,
-      message: channel === 'sms' ? 'Invoice SMS logged (integration placeholder)' : 'Invoice email logged (integration placeholder)',
+
+    const upd = await pool.query("UPDATE invoices SET state = 'pending_payment', updated_at = NOW() WHERE id = $1 AND state = 'issued' RETURNING id", [id]);
+    if ((upd.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: 'Only issued invoices can be sent. Issue the invoice first.' });
+    }
+
+    if (channel === 'sms') {
+      await logInvoiceActivity(
+        id,
+        'comm_sms',
+        {
+          body: `Invoice ${inv.invoice_number} — SMS sent to client (integration placeholder).`,
+          to_phone: inv.customer_phone ?? null,
+          to_name: inv.customer_full_name ?? null,
+        },
+        userId,
+      );
+      return res.json({ success: true, message: 'Invoice SMS logged (integration placeholder)' });
+    }
+
+    const emailCfg = await loadEmailSettingsPayload(userId);
+    const transport = createMailTransport(emailCfg)!;
+    await ensureDefaultEmailTemplates(userId);
+    const invSettings = await getInvoiceSettings(userId);
+    const tpl = await pool.query<{ subject: string; body_html: string }>(
+      `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'invoice'`,
+      [userId],
+    );
+    const row = tpl.rows[0];
+    if (!row) {
+      return res.status(500).json({ message: 'Invoice email template missing' });
+    }
+    const invDate = formatInvoiceDateFromDb(inv.invoice_date);
+    const dueDate = formatInvoiceDateFromDb(inv.due_date);
+    const vars: Record<string, string> = {
+      company_name: invSettings.company_name ?? 'WorkPilot',
+      customer_name: inv.customer_full_name ?? '',
+      invoice_number: inv.invoice_number,
+      invoice_total: parseFloat(String(inv.total_amount)).toFixed(2),
+      currency: inv.currency,
+      invoice_date: invDate,
+      due_date: dueDate,
+    };
+    const subject = applyTemplateVars(row.subject, vars);
+    const bodyInner = applyTemplateVars(row.body_html, vars);
+    const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
+    const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
+    const pdfName = `${String(inv.invoice_number).replace(/[^\w.-]+/g, '_')}.pdf`;
+    let pdfAttachment: { filename: string; content: Buffer; contentType: string };
+    try {
+      const pdfBuf = await generateInvoicePdfBuffer(pool, id);
+      pdfAttachment = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' };
+    } catch (pdfErr) {
+      console.error('Invoice PDF generation error:', pdfErr);
+      return res.status(500).json({ message: 'Could not generate invoice PDF for attachment.' });
+    }
+    await sendSmtpMessage(transport, {
+      from,
+      to: inv.customer_email!.trim(),
+      subject,
+      html,
+      replyTo: emailCfg.reply_to,
+      attachments: [pdfAttachment],
     });
+    await logInvoiceActivity(
+      id,
+      'comm_email',
+      {
+        subject,
+        body: bodyInner,
+        to_email: inv.customer_email ?? null,
+        to_name: inv.customer_full_name ?? null,
+        status: 'sent',
+        attachment_name: pdfName,
+        attachment_names: [pdfName],
+        sent_via: 'smtp',
+      },
+      userId,
+    );
+    return res.json({ success: true, message: 'Invoice sent by email.' });
   } catch (error) {
     console.error('Send invoice error:', error);
+    const msg = error instanceof Error ? error.message : 'Internal server error';
+    return res.status(500).json({ message: msg });
+  }
+});
+
+app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const invCheck = await pool.query<
+    DbInvoice & { customer_email?: string | null; customer_full_name?: string | null }
+  >(
+    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name
+     FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1`,
+    [id],
+  );
+  if ((invCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
+  const inv = invCheck.rows[0];
+  if (!canAccessInvoice(inv, userId, isSuperAdmin)) return res.status(404).json({ message: 'Invoice not found' });
+
+  try {
+    await ensureDefaultEmailTemplates(userId);
+    const invSettings = await getInvoiceSettings(userId);
+    const emailCfg = await loadEmailSettingsPayload(userId);
+    const tpl = await pool.query<{ subject: string; body_html: string }>(
+      `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'invoice'`,
+      [userId],
+    );
+    const row = tpl.rows[0];
+    const invDate = formatInvoiceDateFromDb(inv.invoice_date);
+    const dueDate = formatInvoiceDateFromDb(inv.due_date);
+    const vars: Record<string, string> = {
+      company_name: invSettings.company_name ?? 'WorkPilot',
+      customer_name: inv.customer_full_name ?? '',
+      invoice_number: inv.invoice_number,
+      invoice_total: parseFloat(String(inv.total_amount)).toFixed(2),
+      currency: inv.currency,
+      invoice_date: invDate,
+      due_date: dueDate,
+    };
+    const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} — ${inv.invoice_number}`;
+    const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Please find your invoice <strong>${inv.invoice_number}</strong>.</p>`;
+    const transport = createMailTransport(emailCfg);
+    return res.json({
+      subject,
+      body_html: bodyInner,
+      signature_html: emailCfg.default_signature_html,
+      from_display: formatFromHeader(emailCfg.from_name, emailCfg.from_email) || emailCfg.from_email || '',
+      reply_to: emailCfg.reply_to,
+      smtp_ready: !!(emailCfg.smtp_enabled && transport && emailCfg.from_email?.trim()),
+      can_send: inv.state === 'issued',
+      invoice_state: inv.state,
+      default_to: inv.customer_email ?? '',
+      customer_name: inv.customer_full_name ?? '',
+    });
+  } catch (error) {
+    console.error('Email compose draft error:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as {
+    to?: string;
+    cc?: string;
+    bcc?: string;
+    subject?: string;
+    body_html?: string;
+    append_signature?: boolean;
+    attachments?: { filename?: string; content_base64?: string; content_type?: string }[];
+  };
+
+  const invCheck = await pool.query<
+    DbInvoice & { customer_email?: string | null; customer_full_name?: string | null }
+  >(
+    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name
+     FROM invoices i JOIN customers c ON c.id = i.customer_id WHERE i.id = $1`,
+    [id],
+  );
+  if ((invCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
+  const inv = invCheck.rows[0];
+  if (!canAccessInvoice(inv, userId, isSuperAdmin)) return res.status(404).json({ message: 'Invoice not found' });
+
+  const to = typeof body.to === 'string' ? body.to.trim() : '';
+  const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
+  const bodyHtmlRaw = typeof body.body_html === 'string' ? body.body_html.trim() : '';
+  const cc = typeof body.cc === 'string' ? body.cc.trim() : '';
+  const bcc = typeof body.bcc === 'string' ? body.bcc.trim() : '';
+  const appendSig = body.append_signature !== false;
+
+  if (!to) return res.status(400).json({ message: 'Recipient (To) is required' });
+  if (!subject) return res.status(400).json({ message: 'Subject is required' });
+  if (!bodyHtmlRaw) return res.status(400).json({ message: 'Message body is required' });
+
+  const emailCfg = await loadEmailSettingsPayload(userId);
+  const transport = createMailTransport(emailCfg);
+  if (!emailCfg.smtp_enabled || !transport) {
+    return res.status(400).json({
+      message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending.',
+    });
+  }
+  if (!emailCfg.from_email?.trim()) {
+    return res.status(400).json({ message: 'Set From email in Settings → Email.' });
+  }
+
+  try {
+    const upd = await pool.query("UPDATE invoices SET state = 'pending_payment', updated_at = NOW() WHERE id = $1 AND state = 'issued' RETURNING id", [id]);
+    if ((upd.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: 'Only issued invoices can be sent. Issue the invoice first.' });
+    }
+
+    const sigHtml = appendSig ? emailCfg.default_signature_html : null;
+    const html = wrapEmailHtml(bodyHtmlRaw, sigHtml);
+    const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
+
+    const userAttachments: { filename: string; content: Buffer; contentType?: string }[] = [];
+    if (Array.isArray(body.attachments)) {
+      for (const a of body.attachments) {
+        const fn = typeof a.filename === 'string' ? a.filename.trim() : '';
+        const b64 = typeof a.content_base64 === 'string' ? a.content_base64.trim() : '';
+        if (!fn || !b64) continue;
+        try {
+          userAttachments.push({
+            filename: fn,
+            content: Buffer.from(b64, 'base64'),
+            contentType: typeof a.content_type === 'string' ? a.content_type : undefined,
+          });
+        } catch {
+          return res.status(400).json({ message: `Invalid attachment data for ${fn}` });
+        }
+      }
+    }
+
+    const pdfName = `${String(inv.invoice_number).replace(/[^\w.-]+/g, '_')}.pdf`;
+    let pdfBuf: Buffer;
+    try {
+      pdfBuf = await generateInvoicePdfBuffer(pool, id);
+    } catch (pdfErr) {
+      console.error('Invoice PDF generation error:', pdfErr);
+      return res.status(500).json({ message: 'Could not generate invoice PDF for attachment.' });
+    }
+    const invoicePdfAtt = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' as const };
+    const allAttachments = [invoicePdfAtt, ...userAttachments];
+
+    await sendSmtpMessage(transport, {
+      from,
+      to,
+      cc: cc || undefined,
+      bcc: bcc || undefined,
+      subject,
+      html,
+      replyTo: emailCfg.reply_to,
+      attachments: allAttachments,
+    });
+
+    await logInvoiceActivity(
+      id,
+      'comm_email',
+      {
+        subject,
+        body: bodyHtmlRaw,
+        to_email: to,
+        cc: cc || null,
+        bcc: bcc || null,
+        to_name: inv.customer_full_name ?? null,
+        status: 'sent',
+        sent_via: 'smtp',
+        attachment_name: pdfName,
+        attachment_names: allAttachments.map((x) => x.filename),
+      },
+      userId,
+    );
+    return res.json({ success: true, message: 'Invoice sent by email.' });
+  } catch (error) {
+    console.error('Send invoice email (compose) error:', error);
+    const msg = error instanceof Error ? error.message : 'Internal server error';
+    return res.status(500).json({ message: msg });
   }
 });
 
@@ -4162,13 +4667,32 @@ app.delete('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenti
   if ((invCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
   const inv = invCheck.rows[0];
   if (!canAccessInvoice(inv, userId, isSuperAdmin)) return res.status(404).json({ message: 'Invoice not found' });
-  if (parseFloat(inv.total_paid) > 0) return res.status(400).json({ message: 'Cannot delete invoice with payments recorded' });
 
   try {
     await pool.query('DELETE FROM invoices WHERE id = $1', [id]);
     return res.status(204).send();
   } catch (error) {
     console.error('Delete invoice error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/invoices/delete-all', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body as { confirmation?: string };
+  if (body.confirmation !== 'DELETE ALL INVOICES') {
+    return res.status(400).json({ message: 'Confirmation must be exactly: DELETE ALL INVOICES' });
+  }
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    if (isSuperAdmin) {
+      await pool.query('DELETE FROM invoices');
+    } else {
+      await pool.query('DELETE FROM invoices WHERE created_by = $1', [userId]);
+    }
+    return res.json({ success: true, message: 'All invoices deleted.' });
+  } catch (error) {
+    console.error('Delete all invoices error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -4635,19 +5159,82 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
   const userId = req.user!.userId;
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
-  const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
+  const qCheck = await pool.query<
+    DbQuotation & { customer_email?: string | null; customer_full_name?: string | null }
+  >(
+    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name
+     FROM quotations q JOIN customers c ON c.id = q.customer_id WHERE q.id = $1`,
+    [id],
+  );
   if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
   const q = qCheck.rows[0];
   if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
   if (q.state !== 'draft') return res.status(400).json({ message: 'Only draft quotations can be sent' });
 
   try {
+    const emailCfg = await loadEmailSettingsPayload(userId);
+    const transport = createMailTransport(emailCfg);
+    if (!emailCfg.smtp_enabled || !transport) {
+      return res.status(400).json({
+        message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending a quotation by email.',
+      });
+    }
+    if (!emailCfg.from_email?.trim()) {
+      return res.status(400).json({ message: 'Set From email in Settings → Email.' });
+    }
+    if (!q.customer_email?.trim()) {
+      return res.status(400).json({ message: 'Customer has no email address.' });
+    }
+
     await pool.query("UPDATE quotations SET state = 'sent', updated_at = NOW() WHERE id = $1", [id]);
-    await logQuotationActivity(id, 'sent_to_client', {}, userId);
-    return res.json({ success: true, state: 'sent', message: 'Quotation sent (email integration placeholder)' });
+    await ensureDefaultEmailTemplates(userId);
+    const invSettings = await getInvoiceSettings(userId);
+    const tpl = await pool.query<{ subject: string; body_html: string }>(
+      `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'quotation'`,
+      [userId],
+    );
+    const row = tpl.rows[0];
+    if (!row) {
+      return res.status(500).json({ message: 'Quotation email template missing' });
+    }
+    const qDate = (q.quotation_date as Date).toISOString().slice(0, 10);
+    const validUntil = (q.valid_until as Date).toISOString().slice(0, 10);
+    const vars: Record<string, string> = {
+      company_name: invSettings.company_name ?? 'WorkPilot',
+      customer_name: q.customer_full_name ?? '',
+      quotation_number: q.quotation_number,
+      quotation_total: parseFloat(String(q.total_amount)).toFixed(2),
+      currency: q.currency,
+      quotation_date: qDate,
+      valid_until: validUntil,
+    };
+    const subject = applyTemplateVars(row.subject, vars);
+    const bodyInner = applyTemplateVars(row.body_html, vars);
+    const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
+    const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
+    await sendSmtpMessage(transport, {
+      from,
+      to: q.customer_email.trim(),
+      subject,
+      html,
+      replyTo: emailCfg.reply_to,
+    });
+    await logQuotationActivity(
+      id,
+      'sent_to_client',
+      {
+        channel: 'email',
+        subject,
+        to_email: q.customer_email,
+        sent_via: 'smtp',
+      },
+      userId,
+    );
+    return res.json({ success: true, state: 'sent', message: 'Quotation sent by email.' });
   } catch (error) {
     console.error('Send quotation error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    const msg = error instanceof Error ? error.message : 'Internal server error';
+    return res.status(500).json({ message: msg });
   }
 });
 
@@ -4749,8 +5336,8 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, 
         invoice_number: inv.invoice_number,
         customer_id: inv.customer_id,
         job_id: inv.job_id ?? null,
-        invoice_date: (inv.invoice_date as Date).toISOString().slice(0, 10),
-        due_date: (inv.due_date as Date).toISOString().slice(0, 10),
+        invoice_date: formatInvoiceDateFromDb(inv.invoice_date),
+        due_date: formatInvoiceDateFromDb(inv.due_date),
         subtotal: parseFloat(inv.subtotal),
         tax_amount: parseFloat(inv.tax_amount),
         total_amount: parseFloat(inv.total_amount),
@@ -4984,6 +5571,196 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, async (req: Authe
     return res.json({ settings });
   } catch (error) {
     console.error('Update invoice settings error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- Email / SMTP settings & templates ----------
+app.get('/api/settings/email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    const s = await loadEmailSettingsPayload(userId);
+    const { smtp_password: _pw, ...rest } = s;
+    return res.json({
+      settings: {
+        ...rest,
+        smtp_password: undefined,
+        smtp_password_set: s.smtp_password_set,
+      },
+    });
+  } catch (error) {
+    console.error('Get email settings error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const body = req.body as Record<string, unknown>;
+  try {
+    const cur = await loadEmailSettingsPayload(userId);
+    const smtpEnabled = typeof body.smtp_enabled === 'boolean' ? body.smtp_enabled : cur.smtp_enabled;
+    const smtpHost = typeof body.smtp_host === 'string' ? body.smtp_host.trim() || null : cur.smtp_host;
+    const smtpPort =
+      typeof body.smtp_port === 'number'
+        ? Math.max(1, Math.min(65535, Math.floor(body.smtp_port)))
+        : cur.smtp_port ?? 587;
+    const smtpSecure = typeof body.smtp_secure === 'boolean' ? body.smtp_secure : cur.smtp_secure;
+    const smtpUser = typeof body.smtp_user === 'string' ? body.smtp_user.trim() || null : cur.smtp_user;
+    let smtpPassword = cur.smtp_password;
+    if (typeof body.smtp_password === 'string' && body.smtp_password.length > 0) {
+      smtpPassword = body.smtp_password;
+    }
+    const smtpReject =
+      typeof body.smtp_reject_unauthorized === 'boolean' ? body.smtp_reject_unauthorized : cur.smtp_reject_unauthorized;
+    const fromName = typeof body.from_name === 'string' ? body.from_name.trim() || null : cur.from_name;
+    const fromEmail = typeof body.from_email === 'string' ? body.from_email.trim() || null : cur.from_email;
+    const replyTo = typeof body.reply_to === 'string' ? body.reply_to.trim() || null : cur.reply_to;
+    const defaultSig =
+      typeof body.default_signature_html === 'string'
+        ? body.default_signature_html.trim() || null
+        : cur.default_signature_html;
+
+    await pool.query(
+      `INSERT INTO email_settings (
+        created_by, smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password,
+        smtp_reject_unauthorized, from_name, from_email, reply_to, default_signature_html, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+      ON CONFLICT (created_by) DO UPDATE SET
+        smtp_enabled = EXCLUDED.smtp_enabled,
+        smtp_host = EXCLUDED.smtp_host,
+        smtp_port = EXCLUDED.smtp_port,
+        smtp_secure = EXCLUDED.smtp_secure,
+        smtp_user = EXCLUDED.smtp_user,
+        smtp_password = EXCLUDED.smtp_password,
+        smtp_reject_unauthorized = EXCLUDED.smtp_reject_unauthorized,
+        from_name = EXCLUDED.from_name,
+        from_email = EXCLUDED.from_email,
+        reply_to = EXCLUDED.reply_to,
+        default_signature_html = EXCLUDED.default_signature_html,
+        updated_at = NOW()`,
+      [
+        userId,
+        smtpEnabled,
+        smtpHost,
+        smtpPort,
+        smtpSecure,
+        smtpUser,
+        smtpPassword,
+        smtpReject,
+        fromName,
+        fromEmail,
+        replyTo,
+        defaultSig,
+      ],
+    );
+
+    const s = await loadEmailSettingsPayload(userId);
+    const { smtp_password: _p, ...rest } = s;
+    return res.json({
+      settings: {
+        ...rest,
+        smtp_password: undefined,
+        smtp_password_set: s.smtp_password_set,
+      },
+    });
+  } catch (error) {
+    console.error('Patch email settings error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const body = req.body as { to?: string };
+  const to = typeof body.to === 'string' ? body.to.trim() : '';
+  if (!to) return res.status(400).json({ message: 'Recipient email (to) is required' });
+  try {
+    const s = await loadEmailSettingsPayload(userId);
+    const transport = createMailTransport(s);
+    if (!transport) {
+      return res.status(400).json({ message: 'Enable SMTP and set host, port, and authentication to send a test email.' });
+    }
+    const from = formatFromHeader(s.from_name, s.from_email);
+    if (!from || !s.from_email?.trim()) {
+      return res.status(400).json({ message: 'Set From name and From email before sending.' });
+    }
+    const html = wrapEmailHtml(
+      '<p>This is a test message from WorkPilot.</p><p>If you received this, your SMTP settings are working.</p>',
+      s.default_signature_html,
+    );
+    await sendSmtpMessage(transport, {
+      from,
+      to,
+      subject: 'WorkPilot — SMTP test',
+      html,
+      replyTo: s.reply_to,
+    });
+    return res.json({ success: true, message: 'Test email sent.' });
+  } catch (error) {
+    console.error('Email test error:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to send test email';
+    return res.status(500).json({ message: msg });
+  }
+});
+
+app.get('/api/settings/email-templates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    await ensureDefaultEmailTemplates(userId);
+    const r = await pool.query(
+      `SELECT template_key, name, subject, body_html, updated_at FROM email_templates WHERE created_by = $1 ORDER BY template_key ASC`,
+      [userId],
+    );
+    return res.json({ templates: r.rows });
+  } catch (error) {
+    console.error('List email templates error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const keyParam = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
+  const templateKey = typeof keyParam === 'string' ? keyParam.trim() : '';
+  if (!/^[a-z0-9_-]{1,64}$/i.test(templateKey)) {
+    return res.status(400).json({ message: 'Invalid template key' });
+  }
+  const body = req.body as { name?: string; subject?: string; body_html?: string };
+  try {
+    await ensureDefaultEmailTemplates(userId);
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+    if (typeof body.name === 'string') {
+      updates.push(`name = $${idx++}`);
+      values.push(body.name.trim() || templateKey);
+    }
+    if (typeof body.subject === 'string') {
+      updates.push(`subject = $${idx++}`);
+      values.push(body.subject);
+    }
+    if (typeof body.body_html === 'string') {
+      updates.push(`body_html = $${idx++}`);
+      values.push(body.body_html);
+    }
+    if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
+    updates.push('updated_at = NOW()');
+    const whereUserIdx = values.length + 1;
+    const whereKeyIdx = values.length + 2;
+    values.push(userId, templateKey);
+    const result = await pool.query(
+      `UPDATE email_templates SET ${updates.join(', ')} WHERE created_by = $${whereUserIdx} AND template_key = $${whereKeyIdx}`,
+      values,
+    );
+    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Template not found' });
+    const r = await pool.query(
+      `SELECT template_key, name, subject, body_html, updated_at FROM email_templates WHERE created_by = $1 AND template_key = $2`,
+      [userId, templateKey],
+    );
+    return res.json({ template: r.rows[0] });
+  } catch (error) {
+    console.error('Patch email template error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

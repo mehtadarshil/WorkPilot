@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getJson, postJson } from '../../../apiClient';
-import { Info, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { getJson, postJson, deleteRequest } from '../../../apiClient';
+import { Info, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
-import Link from 'next/link';
 import Image from 'next/image';
 import InvoiceNotesPanel from './InvoiceNotesPanel';
+import InvoiceEmailComposer from './InvoiceEmailComposer';
 
 interface InvoiceDetails {
   id: number;
@@ -146,8 +147,7 @@ export default function InvoiceDetailsView() {
   const [job, setJob] = useState<JobDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [sendingChannel, setSendingChannel] = useState<'email' | 'sms' | null>(null);
+  const [emailComposerOpen, setEmailComposerOpen] = useState(false);
 
   // Payment Modal
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -157,6 +157,9 @@ export default function InvoiceDetailsView() {
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'notes'>('details');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchInvoice = useCallback(async (opts?: { silent?: boolean }) => {
     const token = window.localStorage.getItem('wp_token');
@@ -183,22 +186,6 @@ export default function InvoiceDetailsView() {
   useEffect(() => {
     fetchInvoice();
   }, [fetchInvoice]);
-
-  const handleSend = async (channel: 'email' | 'sms') => {
-    const token = window.localStorage.getItem('wp_token');
-    if (!token || !invoice) return;
-    setSending(true);
-    setSendingChannel(channel);
-    try {
-      await postJson(`/invoices/${invoiceId}/send`, { channel }, token);
-      fetchInvoice();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to send');
-    } finally {
-      setSending(false);
-      setSendingChannel(null);
-    }
-  };
 
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -228,6 +215,21 @@ export default function InvoiceDetailsView() {
       fetchInvoice();
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : 'Failed to record payment.');
+    }
+  };
+
+  const handleDeleteInvoice = async () => {
+    const token = window.localStorage.getItem('wp_token');
+    if (!token) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteRequest(`/invoices/${invoiceId}`, token);
+      router.push('/dashboard/invoices');
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete invoice.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -628,19 +630,19 @@ export default function InvoiceDetailsView() {
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold text-slate-900">Invoice breakdown</h3>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => handleSend('sms')}
-                    disabled={sending}
-                    className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#13a89a] focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40 disabled:opacity-50"
+                  <Link
+                    href={`/dashboard/invoices/${invoiceId}/edit`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
                   >
-                    {sending && sendingChannel === 'sms' ? 'Sending SMS...' : 'SMS invoice'}
-                  </button>
+                    <Pencil className="size-3.5" />
+                    Edit invoice
+                  </Link>
                   <button
-                    onClick={() => handleSend('email')}
-                    disabled={sending}
-                    className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#13a89a] focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40 disabled:opacity-50"
+                    type="button"
+                    onClick={() => setEmailComposerOpen(true)}
+                    className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#13a89a] focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40"
                   >
-                    {sending && sendingChannel === 'email' ? 'Sending email...' : 'Email invoice'}
+                    Email invoice
                   </button>
                   <button
                     type="button"
@@ -648,6 +650,17 @@ export default function InvoiceDetailsView() {
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
                   >
                     Print invoice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeleteDialogOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition-colors hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                  >
+                    <Trash2 className="size-3.5" />
+                    Delete
                   </button>
                 </div>
               </div>
@@ -768,6 +781,52 @@ export default function InvoiceDetailsView() {
                 <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] transition-colors">Record Payment</button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      <InvoiceEmailComposer
+        open={emailComposerOpen}
+        onClose={() => setEmailComposerOpen(false)}
+        invoiceId={invoiceId}
+        onSent={() => fetchInvoice({ silent: true })}
+      />
+
+      {deleteDialogOpen && (
+        <div
+          className="no-print fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={() => !deleting && setDeleteDialogOpen(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900">Delete invoice?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This will permanently delete <strong>{invoice.invoice_number}</strong> and related line items
+              {invoice.payments.length > 0 ? ', payments, and payment history' : ''}. This cannot be undone.
+            </p>
+            {deleteError && <p className="mt-3 text-sm text-rose-600">{deleteError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteDialogOpen(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteInvoice}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete invoice'}
+              </button>
+            </div>
           </motion.div>
         </div>
       )}

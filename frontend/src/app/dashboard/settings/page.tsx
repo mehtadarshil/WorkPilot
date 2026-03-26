@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon } from 'lucide-react';
+import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getJson, patchJson } from '../../apiClient';
 import CustomerTypesSettings from './CustomerTypesSettings';
@@ -9,6 +9,7 @@ import PriceBooksSettings from './PriceBooksSettings';
 import JobDescriptionsSettings from './JobDescriptionsSettings';
 import BusinessUnitsSettings from './BusinessUnitsSettings';
 import UserGroupsSettings from './UserGroupsSettings';
+import EmailSettings from './EmailSettings';
 import { BookOpen, Wrench, Briefcase, Users2 } from 'lucide-react';
 
 interface InvoiceSettings {
@@ -61,7 +62,9 @@ const INVOICE_THEME_PRESETS = [
 ] as const;
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'company' | 'invoice' | 'quotation' | 'customer-types' | 'price-books' | 'job-descriptions' | 'business-units' | 'user-groups'>('company');
+  const [activeTab, setActiveTab] = useState<
+    'company' | 'invoice' | 'quotation' | 'email' | 'customer-types' | 'price-books' | 'job-descriptions' | 'business-units' | 'user-groups'
+  >('company');
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [quotationSettings, setQuotationSettings] = useState<QuotationSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -296,6 +299,16 @@ export default function SettingsPage() {
           >
             <Quote className="size-4" />
             Quotation Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('email')}
+            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${
+              activeTab === 'email' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Mail className="size-4" />
+            Email
           </button>
           <button
             type="button"
@@ -684,6 +697,16 @@ export default function SettingsPage() {
                 {saved && <span className="text-sm font-medium text-emerald-600">Saved!</span>}
               </div>
             </form>
+          </motion.div>
+        )}
+
+        {activeTab === 'email' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-t-0 border-slate-200 bg-white p-8 shadow-sm"
+          >
+            <EmailSettings />
           </motion.div>
         )}
 
