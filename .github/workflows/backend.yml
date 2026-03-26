@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'backend/**'
+      - '.github/workflows/backend.yml'
 
 jobs:
   deploy-backend:
@@ -37,8 +38,11 @@ jobs:
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-            cd WorkPilot/backend
-            git pull origin main
-            npm install
+            # Pull from repo root; dirty files under backend/ (e.g. package-lock.json) block pull when cwd is backend/.
+            cd WorkPilot
+            git fetch origin main
+            git reset --hard origin/main
+            cd backend
+            npm ci || npm install
             npm run build
             pm2 restart workpilot-backend
