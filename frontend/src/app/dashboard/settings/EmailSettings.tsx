@@ -351,9 +351,9 @@ export default function EmailSettings() {
   return (
     <div className="space-y-10">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Email & SMTP</h2>
+        <h2 className="text-lg font-bold text-slate-900">Email Settings</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Configure outgoing mail for invoices, quotations, and future automations. Use placeholders in templates below.
+          Configure outgoing mail for invoices, quotations, and future automations. Connect your mailbox below.
         </p>
       </div>
 
@@ -367,7 +367,7 @@ export default function EmailSettings() {
           Direct Mailbox Connection (OAuth)
         </h2>
         <p className="text-sm text-slate-500">
-          Connect your Gmail or Outlook account to send emails directly from your own mailbox. This is more reliable than SMTP and bypasses blocked server ports.
+          Connect your Gmail or Outlook account to send emails directly from your own mailbox. This is the most reliable way to send emails and bypasses server port restrictions.
         </p>
         
         {oauthConnected ? (
@@ -475,104 +475,25 @@ export default function EmailSettings() {
         )}
       </section>
 
-      <form onSubmit={handleSaveSmtp} className={`space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm ${oauthConnected ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-        <div className="flex flex-col">
-          <div className="flex items-center gap-3">
-            <Mail className="size-5 text-[#14B8A6]" />
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
-              <input
-                type="checkbox"
-                checked={smtpEnabled}
-                onChange={(e) => setSmtpEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              Enable SMTP / Mailgun Relay
-            </label>
-          </div>
-          {oauthConnected && (
-            <p className="mt-2 text-xs text-rose-600 font-medium">
-              Note: SMTP is disabled while an OAuth mailbox is connected.
-            </p>
-          )}
-        </div>
-
+      <form onSubmit={handleSaveSmtp} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-slate-700">SMTP host</label>
-            <input type="text" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder="smtp.gmail.com" className={inputClass} />
+          <div>
+            <label className="block text-sm font-medium text-slate-700">From name</label>
+            <input type="text" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your company" className={inputClass} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Port</label>
-            <input
-              type="number"
-              min={1}
-              max={65535}
-              value={smtpPort}
-              onChange={(e) => setSmtpPort(parseInt(e.target.value, 10) || 587)}
-              className={inputClass}
-            />
-            <p className="mt-1 text-xs text-slate-500">Common: 587 (STARTTLS), 465 (SSL), 25 (often blocked).</p>
-          </div>
-          <div className="flex flex-col justify-end">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={smtpSecure}
-                onChange={(e) => setSmtpSecure(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              Use SSL (secure: true — typical for port 465)
-            </label>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Username</label>
-            <input type="text" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} autoComplete="off" className={inputClass} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Password / app password</label>
-            <input
-              type="password"
-              value={smtpPassword}
-              onChange={(e) => setSmtpPassword(e.target.value)}
-              placeholder={smtpPasswordSet ? 'Leave blank to keep existing' : 'Optional if server allows open relay'}
-              autoComplete="new-password"
-              className={inputClass}
-            />
+            <label className="block text-sm font-medium text-slate-700">From email (display only)</label>
+            <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="billing@yourdomain.com" className={inputClass} />
           </div>
           <div className="sm:col-span-2">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
-              <input
-                type="checkbox"
-                checked={smtpRejectUnauthorized}
-                onChange={(e) => setSmtpRejectUnauthorized(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              Reject unauthorized TLS certificates (disable only for self-signed dev servers)
-            </label>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-100 pt-6">
-          <h3 className="text-sm font-semibold text-slate-900">Sender identity</h3>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-700">From name</label>
-              <input type="text" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your company" className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700">From email *</label>
-              <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="billing@yourdomain.com" className={inputClass} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-slate-700">Reply-To (optional)</label>
-              <input type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="support@yourdomain.com" className={inputClass} />
-            </div>
+            <label className="block text-sm font-medium text-slate-700">Reply-To (optional)</label>
+            <input type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="support@yourdomain.com" className={inputClass} />
           </div>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-700">Default email signature (HTML)</label>
-          <p className="mt-0.5 text-xs text-slate-500">Appended to all outgoing template emails. You can use simple HTML.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Appended to all outgoing template emails.</p>
           <textarea
             rows={5}
             value={signatureHtml}
@@ -588,14 +509,14 @@ export default function EmailSettings() {
             disabled={saving}
             className="rounded-lg bg-[#14B8A6] px-5 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save email settings'}
+            {saving ? 'Saving…' : 'Save general email settings'}
           </button>
         </div>
       </form>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-6">
         <h3 className="text-sm font-semibold text-slate-900">Send test email</h3>
-        <p className="mt-1 text-xs text-slate-500">Uses your SMTP and signature above. Save settings first if you just changed them.</p>
+        <p className="mt-1 text-xs text-slate-500">Uses your connected mailbox and signature above. Save settings first if you just changed them.</p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <div className="min-w-[200px] flex-1">
             <input

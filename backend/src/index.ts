@@ -4653,7 +4653,7 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
       const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
       if (!canSendMail) {
         return res.status(400).json({
-          message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending by email.',
+          message: 'Configure Email Settings before sending.',
         });
       }
       if (!emailCfg.from_email?.trim()) {
@@ -4868,7 +4868,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
   const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
   if (!canSendMail) {
     return res.status(400).json({
-      message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending.',
+      message: 'Configure Email Settings before sending.',
     });
   }
   if (!emailCfg.from_email?.trim()) {
@@ -5581,7 +5581,7 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
     const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
     if (!canSendMail) {
       return res.status(400).json({
-        message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending a quotation by email.',
+        message: 'Configure Email Settings before sending.',
       });
     }
     if (!emailCfg.from_email?.trim()) {
@@ -6095,14 +6095,14 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
     const s = await loadEmailSettingsPayload(userId);
     const canSendMail = s.oauth_provider || (s.smtp_enabled && createMailTransport(s));
     if (!canSendMail) {
-      return res.status(400).json({ message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending a test email.' });
+      return res.status(400).json({ message: 'Configure Email Settings before sending a test email.' });
     }
     const from = formatFromHeader(s.from_name, s.from_email);
     if (!from || !s.from_email?.trim()) {
       return res.status(400).json({ message: 'Set From name and From email before sending.' });
     }
     const html = wrapEmailHtml(
-      '<p>This is a test message from WorkPilot.</p><p>If you received this, your SMTP settings are working.</p>',
+      '<p>This is a test message from WorkPilot.</p><p>If you received this, your email settings are working.</p>',
       s.default_signature_html,
     );
     await sendUserEmail(pool, userId, s, {

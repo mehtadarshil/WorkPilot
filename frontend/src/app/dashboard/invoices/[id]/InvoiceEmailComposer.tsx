@@ -195,7 +195,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
       return;
     }
     if (!draft.smtp_ready) {
-      setError('Configure SMTP in Settings → Email before sending.');
+      setError('Configure Email Settings before sending.');
       return;
     }
     if (!to.trim()) {
@@ -299,7 +299,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
 
             {!draft?.smtp_ready && (
               <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-                SMTP is not configured or incomplete. Open <strong>Settings → Email</strong> to enable outgoing mail.
+                Email connection is not configured or incomplete. Open <strong>Settings → Email</strong> to connect your mailbox.
               </div>
             )}
 
