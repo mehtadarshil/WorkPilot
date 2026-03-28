@@ -71,7 +71,13 @@ export default function PublicInvoicePage() {
     <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
-          body { background: white !important; padding: 0 !important; }
+          html, body { 
+            background: white !important; 
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
           .no-print { display: none !important; }
           #invoice-print { 
             box-shadow: none !important; 
@@ -81,12 +87,20 @@ export default function PublicInvoicePage() {
             margin: 0 !important; 
             max-width: none !important;
             overflow: visible !important;
+            display: block !important;
           }
-          /* Force backgrounds and colors to appear */
+          /* Force backgrounds and gradients to appear */
           #invoice-print, #invoice-print * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             color-adjust: exact !important;
+          }
+          /* Ensure the top accent bar prints as a block */
+          #print-accent-bar {
+            display: block !important;
+            min-height: 4px !important;
+            width: 100% !important;
+            background: linear-gradient(to right, ${accent}, ${accentEnd}) !important;
           }
           @page { margin: 10mm; }
         }
@@ -112,6 +126,7 @@ export default function PublicInvoicePage() {
         {/* Exact Copy of Dashboard Template Content */}
         <div className="relative border-b border-slate-200 bg-white px-8 py-10">
           <div
+            id="print-accent-bar"
             className="absolute left-0 top-0 h-1 w-full"
             style={{ background: `linear-gradient(to right, ${accent}, ${accentEnd})` }}
           />
