@@ -8,6 +8,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { getJson, postJson, patchJson } from '../../apiClient';
+import { Pagination } from '../Pagination';
 
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
@@ -104,7 +105,10 @@ export default function ClientsPage() {
   }, [token, page, searchDebounced]);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(search), 300);
+    const t = setTimeout(() => {
+      setSearchDebounced(search);
+      setPage(1);
+    }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -426,29 +430,14 @@ export default function ClientsPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <p className="text-xs font-medium text-slate-500">
-                Showing {total === 0 ? 0 : start + 1}–{Math.min(start + PAGE_SIZE, total)} of {total} clients
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              itemName="clients"
+            />
           </div>
         </div>
       </div>

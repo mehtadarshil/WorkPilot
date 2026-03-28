@@ -6,6 +6,7 @@ import { Search, MoreVertical, Plus, Award, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { Pagination } from '../Pagination';
 
 interface Officer {
   id: number;
@@ -98,9 +99,16 @@ export default function OfficersPage() {
   }, [token, page, searchDebounced, stateFilter]);
 
   useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(search), 300);
+    const t = setTimeout(() => {
+      setSearchDebounced(search);
+      setPage(1);
+    }, 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [stateFilter]);
 
   useEffect(() => {
     fetchOfficers();
@@ -425,58 +433,14 @@ export default function OfficersPage() {
               </table>
             </div>
 
-            <div className="flex flex-col gap-4 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-sm text-slate-500">
-                Showing <span className="font-semibold text-slate-900">{total === 0 ? 0 : start + 1}</span> to{' '}
-                <span className="font-semibold text-slate-900">{Math.min(start + PAGE_SIZE, total)}</span> of{' '}
-                <span className="font-semibold text-slate-900">{total}</span> officers
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  const p = i + 1;
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                        page === p ? 'bg-[#14B8A6] text-white' : 'border border-transparent hover:bg-slate-100'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
-                {totalPages > 5 && (
-                  <>
-                    <span className="px-2 text-slate-400">...</span>
-                    <button
-                      type="button"
-                      onClick={() => setPage(totalPages)}
-                      className="rounded-lg border border-transparent px-3 py-1.5 text-sm font-medium hover:bg-slate-100"
-                    >
-                      {totalPages}
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              itemName="officers"
+            />
           </motion.div>
         </div>
       </div>
