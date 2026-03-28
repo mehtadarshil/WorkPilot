@@ -223,7 +223,7 @@ export default function NewCustomerPage() {
                       <input type="text" value={town} onChange={e => setTown(e.target.value)} className={inputClass} />
                     </div>
                     <div>
-                      <label className={labelClass}>County</label>
+                      <label className={labelClass}>City</label>
                       <input type="text" value={county} onChange={e => setCounty(e.target.value)} className={inputClass} />
                     </div>
                   </div>

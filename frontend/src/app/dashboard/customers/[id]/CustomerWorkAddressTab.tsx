@@ -265,7 +265,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Address line 1</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Address line 2</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Town</th>
-                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">County</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">City</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Postcode</th>
                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide">Actions</th>
               </tr>
@@ -379,7 +379,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                     <input value={form.company_name} onChange={(e) => setForm((f) => ({ ...f, company_name: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
                   <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">County</label>
+                    <label className="text-sm text-slate-600">City</label>
                     <input value={form.county} onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
                   <div className="grid grid-cols-[130px_1fr] items-center gap-2">

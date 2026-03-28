@@ -87,7 +87,7 @@ export default function EditCustomerPage() {
       setPostcode(customer.postcode || '');
       setLandline(customer.landline || '');
       
-      setCompany(customer.company || customer.full_name || '');
+      setCompany(customer.company || '');
       setContactTitle(customer.contact_title || '');
       setContactFirstName(customer.contact_first_name || '');
       setContactSurname(customer.contact_surname || '');
@@ -260,7 +260,7 @@ export default function EditCustomerPage() {
                       <input type="text" value={town} onChange={e => setTown(e.target.value)} className={inputClass} />
                     </div>
                     <div>
-                      <label className={labelClass}>County</label>
+                      <label className={labelClass}>City</label>
                       <input type="text" value={county} onChange={e => setCounty(e.target.value)} className={inputClass} />
                     </div>
                   </div>

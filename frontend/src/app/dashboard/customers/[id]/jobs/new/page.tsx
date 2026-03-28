@@ -13,6 +13,8 @@ interface JobDescription {
   default_priority: string;
   default_business_unit: string | null;
   is_service_job: boolean;
+  service_reminder_frequency?: number | null;
+  service_reminder_unit?: string | null;
   pricing_items: DescPricingItem[];
 }
 
@@ -62,6 +64,8 @@ interface EditableJob {
   skills?: string | null;
   job_notes?: string | null;
   is_service_job?: boolean;
+  service_reminder_frequency?: number | null;
+  service_reminder_unit?: string | null;
   expected_completion?: string | null;
   priority?: string | null;
   user_group?: string | null;
@@ -99,6 +103,8 @@ export default function AddNewJobPage() {
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
   const [isServiceJob, setIsServiceJob] = useState(false);
+  const [reminderFrequency, setReminderFrequency] = useState<number | ''>('');
+  const [reminderUnit, setReminderUnit] = useState<string>('years');
 
   // Right side
   const [expectedDate, setExpectedDate] = useState('');
@@ -147,6 +153,8 @@ export default function AddNewJobPage() {
         setSkills(j.skills || '');
         setJobNotes(j.job_notes || '');
         setIsServiceJob(!!j.is_service_job);
+        setReminderFrequency(j.service_reminder_frequency || '');
+        setReminderUnit(j.service_reminder_unit || 'years');
         
         if (j.expected_completion) {
           const d = new Date(j.expected_completion);
@@ -207,6 +215,8 @@ export default function AddNewJobPage() {
       setSkills('');
       setJobNotes('');
       setIsServiceJob(false);
+      setReminderFrequency('');
+      setReminderUnit('years');
       setPriority('medium');
       setBusinessUnit('');
       setPricingItems([]);
@@ -219,7 +229,14 @@ export default function AddNewJobPage() {
       setSkills(desc.default_skills || '');
       setJobNotes(desc.default_job_notes || '');
       setIsServiceJob(desc.is_service_job);
-      if (!desc.is_service_job) setCompletedServiceItems([]);
+      if (desc.is_service_job) {
+        setReminderFrequency(desc.service_reminder_frequency || '');
+        setReminderUnit(desc.service_reminder_unit || 'years');
+      } else {
+        setCompletedServiceItems([]);
+        setReminderFrequency('');
+        setReminderUnit('years');
+      }
       setPriority(desc.default_priority || 'medium');
       setBusinessUnit(desc.default_business_unit || '');
 
@@ -298,6 +315,8 @@ export default function AddNewJobPage() {
         skills,
         job_notes: jobNotes,
         is_service_job: isServiceJob,
+        service_reminder_frequency: isServiceJob && reminderFrequency ? reminderFrequency : null,
+        service_reminder_unit: isServiceJob ? reminderUnit : null,
         completed_service_items: isServiceJob ? completedServiceItems : [],
         quoted_amount: quotedAmount ? Number(quotedAmount) : null,
         customer_reference: customerReference || null,
@@ -442,6 +461,33 @@ export default function AddNewJobPage() {
                       </div>
                     </label>
                   </div>
+
+                  {isServiceJob && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                      <label className="block text-sm font-medium text-slate-700">Service reminder frequency</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          value={reminderFrequency}
+                          onChange={e => setReminderFrequency(e.target.value ? Number(e.target.value) : '')}
+                          className={inputClass}
+                          placeholder="e.g. 1"
+                        />
+                        <select
+                          value={reminderUnit}
+                          onChange={e => setReminderUnit(e.target.value)}
+                          className={inputClass}
+                        >
+                          <option value="days">Days</option>
+                          <option value="weeks">Weeks</option>
+                          <option value="months">Months</option>
+                          <option value="years">Years</option>
+                        </select>
+                      </div>
+                      <p className="text-xs text-slate-500">How often should a reminder be triggered for this service job?</p>
+                    </div>
+                  )}
 
                   {isServiceJob && (
                     <div>

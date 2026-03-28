@@ -12,6 +12,8 @@ interface JobDescription {
   default_priority: string;
   default_business_unit: string | null;
   is_service_job: boolean;
+  service_reminder_frequency?: number | null;
+  service_reminder_unit?: string | null;
 }
 
 interface PricingItem {
@@ -42,6 +44,8 @@ export default function JobDescriptionsSettings() {
   const [formPriority, setFormPriority] = useState('medium');
   const [formBusinessUnit, setFormBusinessUnit] = useState('');
   const [formIsService, setFormIsService] = useState(false);
+  const [formReminderFrequency, setFormReminderFrequency] = useState<number | ''>('');
+  const [formReminderUnit, setFormReminderUnit] = useState<string>('years');
   const [error, setError] = useState<string | null>(null);
 
   // Pricing items for editing
@@ -106,6 +110,8 @@ export default function JobDescriptionsSettings() {
     setFormPriority('medium');
     setFormBusinessUnit('');
     setFormIsService(false);
+    setFormReminderFrequency('');
+    setFormReminderUnit('years');
     setError(null);
   };
 
@@ -117,6 +123,8 @@ export default function JobDescriptionsSettings() {
     setFormPriority(d.default_priority || 'medium');
     setFormBusinessUnit(d.default_business_unit || '');
     setFormIsService(d.is_service_job);
+    setFormReminderFrequency(d.service_reminder_frequency || '');
+    setFormReminderUnit(d.service_reminder_unit || 'years');
     setError(null);
   };
 
@@ -144,6 +152,8 @@ export default function JobDescriptionsSettings() {
         default_priority: formPriority,
         default_business_unit: formBusinessUnit.trim() || null,
         is_service_job: formIsService,
+        service_reminder_frequency: formIsService && formReminderFrequency ? formReminderFrequency : null,
+        service_reminder_unit: formIsService ? formReminderUnit : null,
       };
 
       if (editingId) {
@@ -272,6 +282,33 @@ export default function JobDescriptionsSettings() {
               <input type="checkbox" checked={formIsService} onChange={e => setFormIsService(e.target.checked)} className="size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]" />
               This is a service job (enables service reminder setup)
             </label>
+
+            {formIsService && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                <label className="block text-sm font-medium text-slate-700">Service reminder frequency</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    value={formReminderFrequency}
+                    onChange={e => setFormReminderFrequency(e.target.value ? Number(e.target.value) : '')}
+                    className={inputClass}
+                    placeholder="e.g. 1"
+                  />
+                  <select
+                    value={formReminderUnit}
+                    onChange={e => setFormReminderUnit(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="days">Days</option>
+                    <option value="weeks">Weeks</option>
+                    <option value="months">Months</option>
+                    <option value="years">Years</option>
+                  </select>
+                </div>
+                <p className="text-xs text-slate-500">How often should a reminder be triggered for this service job?</p>
+              </div>
+            )}
 
             {error && <p className="text-sm text-red-600 font-medium pt-2">{error}</p>}
 

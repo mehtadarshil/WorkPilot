@@ -14,8 +14,58 @@ import {
   type EmailSettingsPayload,
 } from './emailHelpers';
 import { generateInvoicePdfBuffer } from './invoicePdf';
+import { encryptString, decryptString } from './cryptoHelper';
+import { 
+  getGoogleAuthUrl, 
+  getMicrosoftAuthUrl, 
+  exchangeGoogleCode, 
+  exchangeMicrosoftCode,
+  refreshGoogleToken, 
+  refreshMicrosoftToken, 
+  sendEmailViaGoogle, 
+  sendEmailViaMicrosoft 
+} from './oauthEmail';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+async function sendUserEmail(pool: Pool, userId: number, emailCfg: any, opts: any) {
+  if (emailCfg.oauth_provider && emailCfg.oauth_access_token) {
+    let accessToken = decryptString(emailCfg.oauth_access_token);
+    let refreshToken = emailCfg.oauth_refresh_token ? decryptString(emailCfg.oauth_refresh_token) : null;
+    let expiry = emailCfg.oauth_expiry || 0;
+
+    // Refresh token if expired or close to expiry (within 5 minutes)
+    if (Date.now() > expiry - 300000 && refreshToken) {
+      const refreshed = emailCfg.oauth_provider === 'google' 
+        ? await refreshGoogleToken(refreshToken)
+        : await refreshMicrosoftToken(refreshToken);
+        
+      accessToken = refreshed.access_token;
+      expiry = refreshed.expiry;
+      if ('refresh_token' in refreshed && refreshed.refresh_token) {
+        refreshToken = refreshed.refresh_token as string;
+      }
+
+      await pool.query(
+        'UPDATE email_settings SET oauth_access_token = $1, oauth_refresh_token = $2, oauth_expiry = $3 WHERE created_by = $4',
+        [encryptString(accessToken), refreshToken ? encryptString(refreshToken) : null, expiry, userId]
+      );
+    }
+
+    if (emailCfg.oauth_provider === 'google') {
+      await sendEmailViaGoogle(accessToken, opts);
+    } else {
+      await sendEmailViaMicrosoft(accessToken, opts);
+    }
+    return;
+  }
+
+  // Fallback to SMTP/Mailgun configuration
+  const transport = createMailTransport(emailCfg);
+  if (!transport) throw new Error('No valid email configuration found (SMTP/Mailgun or OAuth).');
+  await sendSmtpMessage(transport, opts);
+}
+
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -852,6 +902,13 @@ async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
+
+  try {
+    await pool.query(`ALTER TABLE email_settings ADD COLUMN IF NOT EXISTS oauth_provider VARCHAR(50)`);
+    await pool.query(`ALTER TABLE email_settings ADD COLUMN IF NOT EXISTS oauth_access_token TEXT`);
+    await pool.query(`ALTER TABLE email_settings ADD COLUMN IF NOT EXISTS oauth_refresh_token TEXT`);
+    await pool.query(`ALTER TABLE email_settings ADD COLUMN IF NOT EXISTS oauth_expiry BIGINT`);
+  } catch { /* columns may already exist */ }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS email_templates (
@@ -3399,7 +3456,7 @@ app.patch('/api/jobs/:id/dispatch', authenticate, requireAdmin, async (req: Auth
 async function loadEmailSettingsPayload(userId: number): Promise<EmailSettingsPayload & { smtp_password_set: boolean }> {
   const r = await pool.query(
     `SELECT smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_reject_unauthorized,
-            from_name, from_email, reply_to, default_signature_html
+            from_name, from_email, reply_to, default_signature_html, oauth_provider, oauth_access_token, oauth_refresh_token, oauth_expiry
      FROM email_settings WHERE created_by = $1`,
     [userId],
   );
@@ -3434,6 +3491,10 @@ async function loadEmailSettingsPayload(userId: number): Promise<EmailSettingsPa
     reply_to: (row.reply_to as string) ?? null,
     default_signature_html: (row.default_signature_html as string) ?? null,
     smtp_password_set: !!(pass && String(pass).length > 0),
+    oauth_provider: (row.oauth_provider as 'google' | 'microsoft') ?? null,
+    oauth_access_token: (row.oauth_access_token as string) ?? null,
+    oauth_refresh_token: (row.oauth_refresh_token as string) ?? null,
+    oauth_expiry: row.oauth_expiry ? Number(row.oauth_expiry) : null,
   };
 }
 
@@ -4589,10 +4650,10 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
   try {
     if (channel === 'email') {
       const emailCfg = await loadEmailSettingsPayload(userId);
-      const transport = createMailTransport(emailCfg);
-      if (!emailCfg.smtp_enabled || !transport) {
+      const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
+      if (!canSendMail) {
         return res.status(400).json({
-          message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending by email.',
+          message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending by email.',
         });
       }
       if (!emailCfg.from_email?.trim()) {
@@ -4648,7 +4709,7 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
       console.error('Invoice PDF generation error:', pdfErr);
       return res.status(500).json({ message: 'Could not generate invoice PDF for attachment.' });
     }
-    await sendSmtpMessage(transport, {
+    await sendUserEmail(pool, userId, emailCfg, {
       from,
       to: inv.customer_email!.trim(),
       subject,
@@ -4804,10 +4865,10 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
   if (!bodyHtmlRaw) return res.status(400).json({ message: 'Message body is required' });
 
   const emailCfg = await loadEmailSettingsPayload(userId);
-  const transport = createMailTransport(emailCfg);
-  if (!emailCfg.smtp_enabled || !transport) {
+  const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
+  if (!canSendMail) {
     return res.status(400).json({
-      message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending.',
+      message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending.',
     });
   }
   if (!emailCfg.from_email?.trim()) {
@@ -4853,7 +4914,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
     const invoicePdfAtt = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' as const };
     const allAttachments = [invoicePdfAtt, ...userAttachments];
 
-    await sendSmtpMessage(transport, {
+    await sendUserEmail(pool, userId, emailCfg, {
       from,
       to,
       cc: cc || undefined,
@@ -5517,10 +5578,10 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
 
   try {
     const emailCfg = await loadEmailSettingsPayload(userId);
-    const transport = createMailTransport(emailCfg);
-    if (!emailCfg.smtp_enabled || !transport) {
+    const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
+    if (!canSendMail) {
       return res.status(400).json({
-        message: 'Configure SMTP in Settings → Email (enable and set host, port, and sender) before sending a quotation by email.',
+        message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending a quotation by email.',
       });
     }
     if (!emailCfg.from_email?.trim()) {
@@ -5566,7 +5627,7 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
     const bodyInner = applyTemplateVars(row.body_html, vars);
     const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
     const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
-    await sendSmtpMessage(transport, {
+    await sendUserEmail(pool, userId, emailCfg, {
       from,
       to: q.customer_email.trim(),
       subject,
@@ -5934,12 +5995,13 @@ app.get('/api/settings/email', authenticate, requireAdmin, async (req: Authentic
   const userId = req.user!.userId;
   try {
     const s = await loadEmailSettingsPayload(userId);
-    const { smtp_password: _pw, ...rest } = s;
+    const { smtp_password: _pw, oauth_access_token, oauth_refresh_token, oauth_expiry, ...rest } = s;
     return res.json({
       settings: {
         ...rest,
         smtp_password: undefined,
         smtp_password_set: s.smtp_password_set,
+        oauth_connected: !!oauth_access_token,
       },
     });
   } catch (error) {
@@ -6031,9 +6093,9 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
   if (!to) return res.status(400).json({ message: 'Recipient email (to) is required' });
   try {
     const s = await loadEmailSettingsPayload(userId);
-    const transport = createMailTransport(s);
-    if (!transport) {
-      return res.status(400).json({ message: 'Enable SMTP and set host, port, and authentication to send a test email.' });
+    const canSendMail = s.oauth_provider || (s.smtp_enabled && createMailTransport(s));
+    if (!canSendMail) {
+      return res.status(400).json({ message: 'Configure Email in Settings (SMTP/Mailgun or OAuth) before sending a test email.' });
     }
     const from = formatFromHeader(s.from_name, s.from_email);
     if (!from || !s.from_email?.trim()) {
@@ -6043,10 +6105,10 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
       '<p>This is a test message from WorkPilot.</p><p>If you received this, your SMTP settings are working.</p>',
       s.default_signature_html,
     );
-    await sendSmtpMessage(transport, {
+    await sendUserEmail(pool, userId, s, {
       from,
       to,
-      subject: 'WorkPilot — SMTP test',
+      subject: 'WorkPilot — Email test',
       html,
       replyTo: s.reply_to,
     });
@@ -6057,6 +6119,80 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
     return res.status(500).json({ message: msg });
   }
 });
+
+// ---------- OAuth Email Auth flow ----------
+
+app.get('/api/auth/google/url', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const url = await getGoogleAuthUrl();
+    res.json({ url });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/auth/microsoft/url', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const url = await getMicrosoftAuthUrl();
+    res.json({ url });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get('/api/auth/google/callback', async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+  const state = req.query.state as string; // Ideally you'd use state to verify the user
+  // In our case we'll handle setting the tokens in a redirect or via a separate flow.
+  // We'll provide a response that can be handled by the frontend.
+  res.send(`<html><body><script>window.opener.postMessage({ type: 'GOOGLE_AUTH_CODE', code: '${code}' }, '*'); window.close();</script></body></html>`);
+});
+
+app.get('/api/auth/microsoft/callback', async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+  res.send(`<html><body><script>window.opener.postMessage({ type: 'MS_AUTH_CODE', code: '${code}' }, '*'); window.close();</script></body></html>`);
+});
+
+app.post('/api/settings/email/oauth/exchange', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { code, provider } = req.body as { code: string; provider: 'google' | 'microsoft' };
+  const userId = req.user!.userId;
+  if (!code || !provider) return res.status(400).json({ message: 'Code and provider required' });
+
+  try {
+    const tokens = provider === 'google' ? await exchangeGoogleCode(code) : await exchangeMicrosoftCode(code);
+    
+    await pool.query(
+      `INSERT INTO email_settings (created_by, oauth_provider, oauth_access_token, oauth_refresh_token, oauth_expiry, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (created_by) DO UPDATE SET
+         oauth_provider = EXCLUDED.oauth_provider,
+         oauth_access_token = EXCLUDED.oauth_access_token,
+         oauth_refresh_token = EXCLUDED.oauth_refresh_token,
+         oauth_expiry = EXCLUDED.oauth_expiry,
+         updated_at = NOW()`,
+      [userId, provider, encryptString(tokens.access_token), tokens.refresh_token ? encryptString(tokens.refresh_token) : null, tokens.expiry]
+    );
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('OAuth exchange error:', err);
+    res.status(500).json({ message: 'Failed to exchange tokens' });
+  }
+});
+
+app.post('/api/settings/email/oauth/disconnect', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  try {
+    await pool.query(
+      `UPDATE email_settings SET oauth_provider = NULL, oauth_access_token = NULL, oauth_refresh_token = NULL, oauth_expiry = NULL, updated_at = NOW() WHERE created_by = $1`,
+      [userId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 
 app.get('/api/settings/email-templates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!.userId;

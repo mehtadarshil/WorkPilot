@@ -88,7 +88,6 @@ export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [stateCounts, setStateCounts] = useState<Record<string, number>>({});
@@ -105,7 +104,6 @@ export default function QuotationsPage() {
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [formCustomerId, setFormCustomerId] = useState<string>('');
-  const [formJobId, setFormJobId] = useState<string>('');
   const [formQuotationDate, setFormQuotationDate] = useState('');
   const [formValidUntil, setFormValidUntil] = useState('');
   const [formCurrency, setFormCurrency] = useState('USD');
@@ -148,16 +146,6 @@ export default function QuotationsPage() {
     }
   }, [token]);
 
-  const fetchJobs = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<{ jobs: Job[] }>('/jobs?limit=100&page=1', token);
-      setJobs(data.jobs ?? []);
-    } catch {
-      setJobs([]);
-    }
-  }, [token]);
-
   const fetchQuotationSettings = useCallback(async () => {
     if (!token) return null;
     try {
@@ -180,15 +168,13 @@ export default function QuotationsPage() {
   useEffect(() => {
     if (addModalOpen) {
       fetchCustomers();
-      fetchJobs();
     }
-  }, [addModalOpen, fetchCustomers, fetchJobs]);
+  }, [addModalOpen, fetchCustomers]);
 
   const start = (page - 1) * PAGE_SIZE;
 
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId('');
-    setFormJobId('');
     const today = new Date().toISOString().slice(0, 10);
     const validDays = settings?.default_valid_days ?? 30;
     const valid = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -344,7 +330,6 @@ export default function QuotationsPage() {
         '/quotations',
         {
           customer_id: parseInt(formCustomerId, 10),
-          job_id: formJobId ? parseInt(formJobId, 10) : undefined,
           quotation_date: formQuotationDate,
           valid_until: formValidUntil,
           currency: formCurrency,
@@ -468,7 +453,6 @@ export default function QuotationsPage() {
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Quotation</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Job</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Valid until</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Amount</th>
@@ -479,7 +463,7 @@ export default function QuotationsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {quotations.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                         No quotations yet. Create one to get started.
                       </td>
                     </tr>
@@ -502,7 +486,6 @@ export default function QuotationsPage() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{q.customer_full_name || '—'}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{q.job_id && q.job_title ? q.job_title : '—'}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatDate(q.quotation_date)}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatDate(q.valid_until)}</td>
                           <td className="px-6 py-4 text-sm font-medium text-slate-900">{formatCurrency(q.total_amount, q.currency)}</td>
@@ -545,9 +528,8 @@ export default function QuotationsPage() {
                       key={p}
                       type="button"
                       onClick={() => setPage(p)}
-                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                        page === p ? 'bg-[#14B8A6] text-white' : 'border border-transparent hover:bg-slate-100'
-                      }`}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${page === p ? 'bg-[#14B8A6] text-white' : 'border border-transparent hover:bg-slate-100'
+                        }`}
                     >
                       {p}
                     </button>
@@ -596,15 +578,6 @@ export default function QuotationsPage() {
                     <option value="">Select customer</option>
                     {customers.map((c) => (
                       <option key={c.id} value={c.id}>{c.full_name} ({c.email})</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Related job</label>
-                  <select value={formJobId} onChange={(e) => setFormJobId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
-                    <option value="">None</option>
-                    {jobs.map((j) => (
-                      <option key={j.id} value={j.id}>{j.title}</option>
                     ))}
                   </select>
                 </div>

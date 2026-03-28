@@ -18,6 +18,8 @@ interface EmailSettingsState {
   from_email: string | null;
   reply_to: string | null;
   default_signature_html: string | null;
+  oauth_connected?: boolean;
+  oauth_provider?: 'google' | 'microsoft' | null;
 }
 
 interface EmailTemplateRow {
@@ -122,6 +124,9 @@ export default function EmailSettings() {
   const [fromEmail, setFromEmail] = useState('');
   const [replyTo, setReplyTo] = useState('');
   const [signatureHtml, setSignatureHtml] = useState('');
+  
+  const [oauthConnected, setOauthConnected] = useState(false);
+  const [oauthProvider, setOauthProvider] = useState<'google' | 'microsoft' | null>(null);
 
   const [templates, setTemplates] = useState<EmailTemplateRow[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -165,6 +170,8 @@ export default function EmailSettings() {
       setFromEmail(s.from_email ?? '');
       setReplyTo(s.reply_to ?? '');
       setSignatureHtml(s.default_signature_html ?? '');
+      setOauthConnected(!!s.oauth_connected);
+      setOauthProvider(s.oauth_provider ?? null);
       setTemplates(tplRes.templates ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load email settings');
@@ -354,18 +361,139 @@ export default function EmailSettings() {
       {saved && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Settings saved.</p>}
       {testMsg && <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900">{testMsg}</p>}
 
-      <form onSubmit={handleSaveSmtp} className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3">
+      <section className="mb-6 space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
           <Mail className="size-5 text-[#14B8A6]" />
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
-            <input
-              type="checkbox"
-              checked={smtpEnabled}
-              onChange={(e) => setSmtpEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-            />
-            Enable SMTP sending
-          </label>
+          Direct Mailbox Connection (OAuth)
+        </h2>
+        <p className="text-sm text-slate-500">
+          Connect your Gmail or Outlook account to send emails directly from your own mailbox. This is more reliable than SMTP and bypasses blocked server ports.
+        </p>
+        
+        {oauthConnected ? (
+          <div className="flex items-center justify-between rounded-lg bg-emerald-50 border border-emerald-100 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <Mail className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">Connected to {oauthProvider === 'google' ? 'Gmail' : 'Outlook'}</p>
+                <p className="text-xs text-emerald-700">Emails will be sent from your personal mailbox.</p>
+              </div>
+            </div>
+            <button
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!confirm('Are you sure you want to disconnect your mailbox?')) return;
+                try {
+                  await postJson('/settings/email/oauth/disconnect', {}, token);
+                  setOauthConnected(false);
+                  setOauthProvider(null);
+                  setSaved(true);
+                  setTimeout(() => setSaved(false), 3000);
+                } catch (err: any) {
+                  setError(err.message || 'Failed to disconnect');
+                }
+              }}
+              className="rounded-lg bg-white border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const data = await getJson<{ url: string }>('/auth/google/url', token);
+                  const popup = window.open(data.url, 'google_auth', 'width=600,height=700');
+                  
+                  const handleMessage = async (event: MessageEvent) => {
+                    if (event.data?.type === 'GOOGLE_AUTH_CODE') {
+                      window.removeEventListener('message', handleMessage);
+                      const { code } = event.data;
+                      try {
+                        setSaving(true);
+                        await postJson('/settings/email/oauth/exchange', { code, provider: 'google' }, token);
+                        await load();
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 3000);
+                      } catch (err: any) {
+                        setError(err.message || 'OAuth exchange failed');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }
+                  };
+                  window.addEventListener('message', handleMessage);
+                } catch (err: any) {
+                  setError(err.message || 'Failed to start Google OAuth');
+                }
+              }}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+            >
+              <img src="https://www.google.com/favicon.ico" className="size-4" alt="G" />
+              Connect Gmail
+            </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const data = await getJson<{ url: string }>('/auth/microsoft/url', token);
+                  const popup = window.open(data.url, 'ms_auth', 'width=600,height=700');
+                  
+                  const handleMessage = async (event: MessageEvent) => {
+                    if (event.data?.type === 'MS_AUTH_CODE') {
+                      window.removeEventListener('message', handleMessage);
+                      const { code } = event.data;
+                      try {
+                        setSaving(true);
+                        await postJson('/settings/email/oauth/exchange', { code, provider: 'microsoft' }, token);
+                        await load();
+                        setSaved(true);
+                        setTimeout(() => setSaved(false), 3000);
+                      } catch (err: any) {
+                        setError(err.message || 'OAuth exchange failed');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }
+                  };
+                  window.addEventListener('message', handleMessage);
+                } catch (err: any) {
+                  setError(err.message || 'Failed to start Microsoft OAuth');
+                }
+              }}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+            >
+              <img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" className="size-4" alt="M" />
+              Connect Outlook
+            </button>
+          </div>
+        )}
+      </section>
+
+      <form onSubmit={handleSaveSmtp} className={`space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm ${oauthConnected ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-3">
+            <Mail className="size-5 text-[#14B8A6]" />
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
+              <input
+                type="checkbox"
+                checked={smtpEnabled}
+                onChange={(e) => setSmtpEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+              />
+              Enable SMTP / Mailgun Relay
+            </label>
+          </div>
+          {oauthConnected && (
+            <p className="mt-2 text-xs text-rose-600 font-medium">
+              Note: SMTP is disabled while an OAuth mailbox is connected.
+            </p>
+          )}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
