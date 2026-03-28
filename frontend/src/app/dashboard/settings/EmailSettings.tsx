@@ -407,11 +407,12 @@ export default function EmailSettings() {
               onClick={async () => {
                 try {
                   const data = await getJson<{ url: string }>('/auth/google/url', token);
-                  const popup = window.open(data.url, 'google_auth', 'width=600,height=700');
+                  window.open(data.url, 'google_auth', 'width=600,height=700');
                   
-                  const handleMessage = async (event: MessageEvent) => {
+                  const channel = new BroadcastChannel('google_auth');
+                  channel.onmessage = async (event) => {
                     if (event.data?.type === 'GOOGLE_AUTH_CODE') {
-                      window.removeEventListener('message', handleMessage);
+                      channel.close();
                       const { code } = event.data;
                       try {
                         setSaving(true);
@@ -426,7 +427,6 @@ export default function EmailSettings() {
                       }
                     }
                   };
-                  window.addEventListener('message', handleMessage);
                 } catch (err: any) {
                   setError(err.message || 'Failed to start Google OAuth');
                 }
@@ -442,11 +442,12 @@ export default function EmailSettings() {
               onClick={async () => {
                 try {
                   const data = await getJson<{ url: string }>('/auth/microsoft/url', token);
-                  const popup = window.open(data.url, 'ms_auth', 'width=600,height=700');
+                  window.open(data.url, 'ms_auth', 'width=600,height=700');
                   
-                  const handleMessage = async (event: MessageEvent) => {
+                  const channel = new BroadcastChannel('ms_auth');
+                  channel.onmessage = async (event) => {
                     if (event.data?.type === 'MS_AUTH_CODE') {
-                      window.removeEventListener('message', handleMessage);
+                      channel.close();
                       const { code } = event.data;
                       try {
                         setSaving(true);
@@ -461,7 +462,6 @@ export default function EmailSettings() {
                       }
                     }
                   };
-                  window.addEventListener('message', handleMessage);
                 } catch (err: any) {
                   setError(err.message || 'Failed to start Microsoft OAuth');
                 }

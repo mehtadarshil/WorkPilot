@@ -6,9 +6,13 @@ export default function MicrosoftCallback() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
-    if (code && typeof window !== 'undefined' && window.opener) {
-      window.opener.postMessage({ type: 'MS_AUTH_CODE', code }, '*');
-      window.close();
+    if (code) {
+      const channel = new BroadcastChannel('ms_auth');
+      channel.postMessage({ type: 'MS_AUTH_CODE', code });
+      setTimeout(() => {
+        channel.close();
+        window.close();
+      }, 1000);
     }
   }, []);
 
