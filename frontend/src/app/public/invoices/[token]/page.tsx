@@ -80,6 +80,13 @@ export default function PublicInvoicePage() {
             width: 100% !important; 
             margin: 0 !important; 
             max-width: none !important;
+            overflow: visible !important;
+          }
+          /* Force backgrounds and colors to appear */
+          #invoice-print, #invoice-print * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
           }
           @page { margin: 10mm; }
         }
