@@ -8113,33 +8113,31 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
   if (!token) return res.status(400).json({ message: 'Token required' });
 
   try {
-    const invResult = await pool.query<
-      DbInvoice & { 
-        customer_full_name: string; 
-        customer_email: string; 
-        customer_phone: string; 
-        customer_address: string;
-        customer_type_name: string;
-        work_address_line: string;
-      }
-    >(
+    const invResult = await pool.query<any>(
       `SELECT i.*, 
               c.full_name AS customer_full_name, 
               c.email AS customer_email, 
               c.phone AS customer_phone, 
-              c.address AS customer_address,
-              ct.name AS customer_type_name,
-              wad.address_line AS work_address_line
+              c.address AS address,
+              c.address_line_1, c.address_line_2, c.address_line_3, 
+              c.town, c.county, c.postcode, 
+              c.city, c.region, c.country,
+              ct.name AS customer_type_name
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN customer_types ct ON ct.id = c.customer_type_id
-       LEFT JOIN customer_work_addresses wad ON wad.id = i.invoice_work_address_id
        WHERE i.public_token = $1`,
       [token]
     );
 
     if ((invResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
-    const invoice = invResult.rows[0];
+    const rawInv = invResult.rows[0];
+    const customer_address = formatCustomerAddressSingleLine(rawInv);
+
+    const invoice = {
+       ...rawInv,
+       customer_address // override with formatted
+    };
 
     const itemsResult = await pool.query(
       'SELECT * FROM invoice_line_items WHERE invoice_id = $1 ORDER BY sort_order ASC, id ASC',
@@ -8148,21 +8146,22 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
 
     // Load business settings for logo/info (using the creator's ID as a proxy for the org)
     const creatorId = invoice.created_by || 1; 
-    const logoResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_logo_url', creatorId]);
-    const nameResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_display_name', creatorId]);
-    const addrResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_address', creatorId]);
+    const invSettings = await getInvoiceSettings(creatorId);
     
     res.json({
-      invoice,
+      invoice: {
+        ...invoice,
+        settings: invSettings,
+      },
       line_items: itemsResult.rows,
       business: {
-        logo: logoResult.rows[0]?.value || null,
-        name: nameResult.rows[0]?.value || 'WorkPilot',
-        address: addrResult.rows[0]?.value || '',
+        logo: invSettings.company_logo,
+        name: invSettings.company_name,
+        address: invSettings.company_address,
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Public invoice fetch error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', details: error.message });
   }
 });
