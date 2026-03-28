@@ -34,7 +34,7 @@ const BUILTIN_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general']);
 
 const VARS_HELP: Record<string, string> = {
   invoice:
-    '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{invoice_number}}, {{invoice_total}}, {{currency}}, {{invoice_date}}, {{due_date}}',
+    '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{invoice_number}}, {{invoice_total}}, {{currency}}, {{invoice_date}}, {{due_date}}, {{invoice_link}}',
   quotation:
     '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{quotation_number}}, {{quotation_total}}, {{currency}}, {{quotation_date}}, {{valid_until}}',
   general: '{{company_name}}, {{message}}',
@@ -65,6 +65,7 @@ const PLACEHOLDER_REFERENCE: {
       { tag: '{{due_date}}', purpose: 'Payment due date in the same format.' },
       { tag: '{{customer_address}}', purpose: 'Customer billing address as one comma-separated line (address lines, town, county, postcode).' },
       { tag: '{{work_address}}', purpose: 'Work/site address when the invoice is linked to a work address; empty if billing uses only the customer address.' },
+      { tag: '{{invoice_link}}', purpose: 'A secure, public link for customers to view and print their invoice online.' },
     ],
   },
   {

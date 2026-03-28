@@ -25,6 +25,7 @@ import {
   sendEmailViaGoogle, 
   sendEmailViaMicrosoft 
 } from './oauthEmail';
+import crypto from 'crypto';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -216,6 +217,7 @@ interface DbInvoice {
   created_at: Date;
   updated_at: Date;
   created_by: number | null;
+  public_token: string | null;
 }
 
 interface DbQuotation {
@@ -235,6 +237,7 @@ interface DbQuotation {
   created_at: Date;
   updated_at: Date;
   created_by: number | null;
+  public_token: string | null;
 }
 
 interface DbUser {
@@ -743,9 +746,25 @@ async function initDb() {
       state VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'issued', 'pending_payment', 'partially_paid', 'paid', 'overdue', 'cancelled')),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      public_token VARCHAR(100) UNIQUE
     );
   `);
+
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
+  
+  // Backfill public_token for existing invoices
+  const existingInvoices = await pool.query('SELECT id FROM invoices WHERE public_token IS NULL');
+  for (const inv of existingInvoices.rows) {
+    await pool.query('UPDATE invoices SET public_token = $1 WHERE id = $2', [crypto.randomBytes(32).toString('hex'), inv.id]);
+  }
+
+  // Same for quotations
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
+  const existingQuotations = await pool.query('SELECT id FROM quotations WHERE public_token IS NULL');
+  for (const q of existingQuotations.rows) {
+    await pool.query('UPDATE quotations SET public_token = $1 WHERE id = $2', [crypto.randomBytes(32).toString('hex'), q.id]);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoice_line_items (
@@ -833,12 +852,14 @@ async function initDb() {
       currency VARCHAR(10) NOT NULL DEFAULT 'USD',
       notes TEXT,
       billing_address TEXT,
-      state VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'sent', 'accepted', 'rejected', 'expired')),
+      state VARCHAR(30) NOT NULL DEFAULT 'draft',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      public_token VARCHAR(100) UNIQUE
     );
   `);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_line_items (
       id SERIAL PRIMARY KEY,
@@ -3505,7 +3526,7 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
       name: 'Invoice — send to customer',
       subject: '{{company_name}} — Invoice {{invoice_number}}',
       body:
-        '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>Customer address: {{customer_address}}<br/>Work / site: {{work_address}}</p><p>Thank you,<br/>{{company_name}}</p>',
+        '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>View your invoice online: {{invoice_link}}</p><p>Customer address: {{customer_address}}<br/>Work / site: {{work_address}}</p><p>Thank you,<br/>{{company_name}}</p>',
     },
     {
       key: 'quotation',
@@ -3839,6 +3860,7 @@ async function buildInvoiceEmailTemplateVars(
     due_date: dueDate,
     customer_address,
     work_address,
+    invoice_link: `<a href="https://work-pilot.co/public/invoices/${inv.public_token}">${inv.invoice_number}</a>`,
   };
 }
 
@@ -4294,10 +4316,11 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     }
     const validStates = ['draft', 'issued', 'pending_payment'];
     const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
+    const publicToken = crypto.randomBytes(32).toString('hex');
 
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
-       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
       [
         invoiceNumber,
@@ -4315,6 +4338,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
         custRef,
         targetState,
         userId,
+        publicToken,
       ],
     );
     const inv = invResult.rows[0];
@@ -4780,7 +4804,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
     const row = tpl.rows[0];
     const vars = await buildInvoiceEmailTemplateVars(inv, invSettings);
     const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} — ${inv.invoice_number}`;
-    const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Please find your invoice <strong>${inv.invoice_number}</strong>.</p>`;
+    const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Hi ${inv.customer_full_name || 'there'},</p><p>Please find your invoice <strong>${inv.invoice_number}</strong> attached below.</p><p>You can also view it online here: ${vars.invoice_link}</p>`;
     const transport = createMailTransport(emailCfg);
 
     const customerEmailRaw = (inv.customer_email ?? '').trim();
@@ -4882,7 +4906,15 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
     }
 
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
-    const html = wrapEmailHtml(bodyHtmlRaw, sigHtml);
+    
+    // Replace placeholder if exists, but DO NOT auto-append anymore
+    const publicLink = `https://work-pilot.co/public/invoices/${inv.public_token || ''}`;
+    let processedBody = bodyHtmlRaw;
+    if (processedBody.includes('{{invoice_link}}')) {
+      processedBody = processedBody.replace(/{{invoice_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
+    }
+
+    const html = wrapEmailHtml(processedBody, sigHtml);
     const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
 
     const userAttachments: { filename: string; content: Buffer; contentType?: string }[] = [];
@@ -8075,3 +8107,62 @@ initDb()
     console.error('Failed to initialize database:', error);
     process.exit(1);
   });
+
+app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
+  const { token } = req.params;
+  if (!token) return res.status(400).json({ message: 'Token required' });
+
+  try {
+    const invResult = await pool.query<
+      DbInvoice & { 
+        customer_full_name: string; 
+        customer_email: string; 
+        customer_phone: string; 
+        customer_address: string;
+        customer_type_name: string;
+        work_address_line: string;
+      }
+    >(
+      `SELECT i.*, 
+              c.full_name AS customer_full_name, 
+              c.email AS customer_email, 
+              c.phone AS customer_phone, 
+              c.address AS customer_address,
+              ct.name AS customer_type_name,
+              wad.address_line AS work_address_line
+       FROM invoices i
+       JOIN customers c ON c.id = i.customer_id
+       LEFT JOIN customer_types ct ON ct.id = c.customer_type_id
+       LEFT JOIN customer_work_addresses wad ON wad.id = i.invoice_work_address_id
+       WHERE i.public_token = $1`,
+      [token]
+    );
+
+    if ((invResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
+    const invoice = invResult.rows[0];
+
+    const itemsResult = await pool.query(
+      'SELECT * FROM invoice_line_items WHERE invoice_id = $1 ORDER BY sort_order ASC, id ASC',
+      [invoice.id]
+    );
+
+    // Load business settings for logo/info (using the creator's ID as a proxy for the org)
+    const creatorId = invoice.created_by || 1; 
+    const logoResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_logo_url', creatorId]);
+    const nameResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_display_name', creatorId]);
+    const addrResult = await pool.query('SELECT value FROM business_settings WHERE key = $1 AND created_by = $2', ['company_address', creatorId]);
+    
+    res.json({
+      invoice,
+      line_items: itemsResult.rows,
+      business: {
+        logo: logoResult.rows[0]?.value || null,
+        name: nameResult.rows[0]?.value || 'WorkPilot',
+        address: addrResult.rows[0]?.value || '',
+      }
+    });
+  } catch (error) {
+    console.error('Public invoice fetch error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});

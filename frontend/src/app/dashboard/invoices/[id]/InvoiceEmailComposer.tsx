@@ -521,7 +521,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               onDrop={handleDrop}
             >
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                <span className="font-semibold text-slate-800">Invoice PDF</span> is attached automatically. Drag files here or use the paperclip to add more attachments.
+                Drag files here or use the paperclip to add more attachments.
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
