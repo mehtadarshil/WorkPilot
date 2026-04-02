@@ -128,6 +128,7 @@ export default function EmailSettings() {
   
   const [oauthConnected, setOauthConnected] = useState(false);
   const [oauthProvider, setOauthProvider] = useState<'google' | 'microsoft' | null>(null);
+  const [signatureSession, setSignatureSession] = useState(0);
 
   const [templates, setTemplates] = useState<EmailTemplateRow[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -171,6 +172,7 @@ export default function EmailSettings() {
       setFromEmail(s.from_email ?? '');
       setReplyTo(s.reply_to ?? '');
       setSignatureHtml(s.default_signature_html ?? '');
+      setSignatureSession((v) => v + 1);
       setOauthConnected(!!s.oauth_connected);
       setOauthProvider(s.oauth_provider ?? null);
       setTemplates(tplRes.templates ?? []);
@@ -495,12 +497,11 @@ export default function EmailSettings() {
         <div>
           <label className="block text-sm font-medium text-slate-700">Default email signature (HTML)</label>
           <p className="mt-0.5 text-xs text-slate-500">Appended to all outgoing template emails.</p>
-          <textarea
-            rows={5}
+          <EmailTemplateRichEditor
             value={signatureHtml}
-            onChange={(e) => setSignatureHtml(e.target.value)}
-            placeholder={'<p>Best regards,<br/>Your Team</p>'}
-            className={`${inputClass} font-mono text-xs`}
+            onChange={setSignatureHtml}
+            placeholderTags={[]}
+            remountKey={signatureSession}
           />
         </div>
 

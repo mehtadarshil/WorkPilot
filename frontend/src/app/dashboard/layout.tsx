@@ -136,17 +136,6 @@ export default function DashboardLayout({
               Customers
             </Link>
             <Link
-              href="/dashboard/officers"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname === '/dashboard/officers'
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <UserCog className="size-4" />
-              Officers
-            </Link>
-            <Link
               href="/dashboard/certifications"
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
                 pathname.startsWith('/dashboard/certifications')

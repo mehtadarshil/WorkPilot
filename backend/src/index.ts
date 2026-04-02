@@ -15,15 +15,15 @@ import {
 } from './emailHelpers';
 import { generateInvoicePdfBuffer } from './invoicePdf';
 import { encryptString, decryptString } from './cryptoHelper';
-import { 
-  getGoogleAuthUrl, 
-  getMicrosoftAuthUrl, 
-  exchangeGoogleCode, 
+import {
+  getGoogleAuthUrl,
+  getMicrosoftAuthUrl,
+  exchangeGoogleCode,
   exchangeMicrosoftCode,
-  refreshGoogleToken, 
-  refreshMicrosoftToken, 
-  sendEmailViaGoogle, 
-  sendEmailViaMicrosoft 
+  refreshGoogleToken,
+  refreshMicrosoftToken,
+  sendEmailViaGoogle,
+  sendEmailViaMicrosoft
 } from './oauthEmail';
 import crypto from 'crypto';
 
@@ -37,10 +37,10 @@ async function sendUserEmail(pool: Pool, userId: number, emailCfg: any, opts: an
 
     // Refresh token if expired or close to expiry (within 5 minutes)
     if (Date.now() > expiry - 300000 && refreshToken) {
-      const refreshed = emailCfg.oauth_provider === 'google' 
+      const refreshed = emailCfg.oauth_provider === 'google'
         ? await refreshGoogleToken(refreshToken)
         : await refreshMicrosoftToken(refreshToken);
-        
+
       accessToken = refreshed.access_token;
       expiry = refreshed.expiry;
       if ('refresh_token' in refreshed && refreshed.refresh_token) {
@@ -448,7 +448,7 @@ async function initDb() {
   `);
 
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_type_id INTEGER REFERENCES customer_types(id) ON DELETE SET NULL;`);
-  
+
   // New Customer Details Fields
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_line_1 VARCHAR(255);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_line_2 VARCHAR(255);`);
@@ -458,7 +458,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS postcode VARCHAR(50);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS landline VARCHAR(50);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_days VARCHAR(50);`);
-  
+
   // New Contact Details Fields
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_title VARCHAR(20);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_first_name VARCHAR(100);`);
@@ -467,7 +467,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_mobile VARCHAR(50);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_landline VARCHAR(50);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255);`);
-  
+
   // Preferences & Meta
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_phone BOOLEAN DEFAULT false;`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_sms BOOLEAN DEFAULT false;`);
@@ -752,7 +752,7 @@ async function initDb() {
   `);
 
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
-  
+
   // Backfill public_token for existing invoices
   const existingInvoices = await pool.query('SELECT id FROM invoices WHERE public_token IS NULL');
   for (const inv of existingInvoices.rows) {
@@ -1622,7 +1622,7 @@ app.get('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedR
 app.get('/api/customers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
-  
+
   const userId = req.user!.userId;
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownerClause = isSuperAdmin ? '' : 'AND c.created_by = $2';
@@ -1645,7 +1645,7 @@ app.get('/api/customers/:id', authenticate, requireAdmin, async (req: Authentica
     `, params);
 
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
-    
+
     return res.json(result.rows[0]);
   } catch (error) {
     console.error('Get customer error:', error);
@@ -1683,7 +1683,7 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   const country = str(body.country);
   const notes = str(body.notes);
   const customerTypeId = typeof body.customer_type_id === 'number' ? body.customer_type_id : null;
-  
+
   const b = body as any;
   const addressLine1 = str(b.address_line_1);
   const addressLine2 = str(b.address_line_2);
@@ -1706,7 +1706,7 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   const prefersLetter = !!b.prefers_letter;
   const leadSource = str(b.lead_source);
   const priceBookId = typeof b.price_book_id === 'number' ? b.price_book_id : null;
-  
+
   const createdBy = req.user!.userId;
 
   try {
@@ -2835,9 +2835,9 @@ app.post('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedReque
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const completedServiceItems = Array.isArray(body.completed_service_items)
     ? body.completed_service_items
-        .filter((v): v is string => typeof v === 'string')
-        .map((v) => v.trim())
-        .filter(Boolean)
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter(Boolean)
     : [];
   const createdBy = req.user!.userId;
 
@@ -2963,9 +2963,9 @@ app.patch('/api/jobs/:id', authenticate, requireAdmin, async (req: Authenticated
   if (body.completed_service_items !== undefined) {
     const completedServiceItems = Array.isArray(body.completed_service_items)
       ? body.completed_service_items
-          .filter((v): v is string => typeof v === 'string')
-          .map((v) => v.trim())
-          .filter(Boolean)
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => v.trim())
+        .filter(Boolean)
       : [];
     updates.push(`completed_service_items = $${idx++}`);
     values.push(JSON.stringify(completedServiceItems));
@@ -3193,7 +3193,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
   try {
     const fromDate = typeof req.query.from === 'string' ? req.query.from : '2000-01-01';
     const toDate = typeof req.query.to === 'string' ? req.query.to : '3000-01-01';
-    
+
     // We fetch diary events joined with jobs and customers
     const result = await pool.query(
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status as event_status,
@@ -3238,7 +3238,7 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
   try {
     const jobId = parseInt(String(req.params.id), 10);
     const { officer_id, start_time, duration_minutes, notes } = req.body;
-    
+
     const ures = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user!.userId]);
     const creatorName = ures.rows[0]?.full_name || 'System User';
 
@@ -3939,7 +3939,7 @@ async function createInvoiceFromJob(jobId: number, userId: number) {
 
   const settings = await getInvoiceSettings(userId);
   const invoiceNumber = await generateInvoiceNumber(settings.invoice_prefix);
-  
+
   const invoiceDate = new Date();
   const dueDate = new Date(invoiceDate.getTime() + settings.default_due_days * 24 * 60 * 60 * 1000);
 
@@ -3947,7 +3947,7 @@ async function createInvoiceFromJob(jobId: number, userId: number) {
   for (const item of pricingItems) {
     subtotal += Number(item.total);
   }
-  
+
   const taxPercentage = settings.default_tax_percentage;
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
   const totalAmount = subtotal + taxAmount;
@@ -3958,7 +3958,7 @@ async function createInvoiceFromJob(jobId: number, userId: number) {
      RETURNING id`,
     [invoiceNumber, job.customer_id, jobId, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, settings.default_currency, userId]
   );
-  
+
   const invoiceId = invResult.rows[0].id;
 
   for (let i = 0; i < pricingItems.length; i++) {
@@ -4906,7 +4906,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
     }
 
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
-    
+
     // Replace placeholder if exists, but DO NOT auto-append anymore
     const publicLink = `https://work-pilot.co/public/invoices/${inv.public_token || ''}`;
     let processedBody = bodyHtmlRaw;
@@ -6192,7 +6192,7 @@ app.post('/api/settings/email/oauth/exchange', authenticate, requireAdmin, async
 
   try {
     const tokens = provider === 'google' ? await exchangeGoogleCode(code) : await exchangeMicrosoftCode(code);
-    
+
     await pool.query(
       `INSERT INTO email_settings (created_by, oauth_provider, oauth_access_token, oauth_refresh_token, oauth_expiry, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW())
@@ -6546,7 +6546,7 @@ app.post('/api/settings/customer-types', authenticate, requireAdmin, async (req:
   const body = req.body as { name?: string; description?: string; company_name_required?: boolean; allow_branches?: boolean; work_address_name?: string };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Name is required' });
-  
+
   const desc = typeof body.description === 'string' ? body.description.trim() : null;
   const companyReq = !!body.company_name_required;
   const branches = !!body.allow_branches;
@@ -6576,7 +6576,7 @@ app.put('/api/settings/customer-types/:id', authenticate, requireAdmin, async (r
   const body = req.body as any;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Name is required' });
-  
+
   const desc = typeof body.description === 'string' ? body.description.trim() : null;
   const companyReq = !!body.company_name_required;
   const branches = !!body.allow_branches;
@@ -6960,9 +6960,9 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireAdmin, async (r
 
   const completedServiceItems = Array.isArray(completed_service_items)
     ? completed_service_items
-        .filter((v: unknown): v is string => typeof v === 'string')
-        .map((v: string) => v.trim())
-        .filter(Boolean)
+      .filter((v: unknown): v is string => typeof v === 'string')
+      .map((v: string) => v.trim())
+      .filter(Boolean)
     : [];
 
   try {
@@ -8135,8 +8135,8 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
     const customer_address = formatCustomerAddressSingleLine(rawInv);
 
     const invoice = {
-       ...rawInv,
-       customer_address // override with formatted
+      ...rawInv,
+      customer_address // override with formatted
     };
 
     const itemsResult = await pool.query(
@@ -8145,9 +8145,9 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
     );
 
     // Load business settings for logo/info (using the creator's ID as a proxy for the org)
-    const creatorId = invoice.created_by || 1; 
+    const creatorId = invoice.created_by || 1;
     const invSettings = await getInvoiceSettings(creatorId);
-    
+
     res.json({
       invoice: {
         ...invoice,

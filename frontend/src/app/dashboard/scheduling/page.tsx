@@ -446,7 +446,7 @@ export default function SchedulingPage() {
             onChange={(e) => setOfficerFilter(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium"
           >
-            <option value="">All officers</option>
+            <option value="">All users</option>
             {officers.map((o) => (
               <option key={o.id} value={String(o.id)}>{o.full_name}</option>
             ))}

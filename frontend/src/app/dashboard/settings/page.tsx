@@ -9,8 +9,10 @@ import PriceBooksSettings from './PriceBooksSettings';
 import JobDescriptionsSettings from './JobDescriptionsSettings';
 import BusinessUnitsSettings from './BusinessUnitsSettings';
 import UserGroupsSettings from './UserGroupsSettings';
+import UsersSettings from './UsersSettings';
 import EmailSettings from './EmailSettings';
-import { BookOpen, Wrench, Briefcase, Users2 } from 'lucide-react';
+import ImportSettings from './ImportSettings';
+import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog } from 'lucide-react';
 
 interface InvoiceSettings {
   default_currency: string;
@@ -67,7 +69,7 @@ const THEME_PRESETS = [
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<
-    'company' | 'invoice' | 'quotation' | 'email' | 'customer-types' | 'price-books' | 'job-descriptions' | 'business-units' | 'user-groups'
+    'company' | 'invoice' | 'quotation' | 'email' | 'customer-types' | 'price-books' | 'job-descriptions' | 'business-units' | 'user-groups' | 'users' | 'import'
   >('company');
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [quotationSettings, setQuotationSettings] = useState<QuotationSettings | null>(null);
@@ -419,6 +421,24 @@ export default function SettingsPage() {
           >
             <Users2 className="size-4" />
             User Groups
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'users' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <UserCog className="size-4" />
+            Users
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('import')}
+            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'import' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <Database className="size-4" />
+            Import CSV
           </button>
         </div>
 
@@ -1289,6 +1309,16 @@ export default function SettingsPage() {
             className="rounded-b-xl border border-transparent mt-4"
           >
             <UserGroupsSettings />
+          </motion.div>
+        )}
+
+        {activeTab === 'import' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-transparent mt-4"
+          >
+            <ImportSettings />
           </motion.div>
         )}
       </div>

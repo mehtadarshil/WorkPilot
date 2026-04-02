@@ -6,8 +6,6 @@ import Link from 'next/link';
 import { Search, Quote, Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
-import { groupBy, parseCsv, toObjects } from '../csvUtils';
-import ImportCustomerSelect from '../ImportCustomerSelect';
 import { Pagination } from '../Pagination';
 
 interface Quotation {
@@ -42,29 +40,10 @@ interface Customer {
   email: string;
 }
 
-interface Job {
-  id: number;
-  title: string;
-  state: string;
-}
-
 interface QuotationSettings {
   default_currency: string;
   default_valid_days: number;
   default_tax_percentage: number;
-}
-
-interface QuotationImportRow {
-  csvQuoteNumber: string;
-  customerName: string;
-  customerId: number | null;
-  quotationDate: string;
-  validUntil: string;
-  notes: string;
-  taxPercentage: number;
-  currency: string;
-  lineItems: { description: string; quantity: number; unit_price: number }[];
-  missing: string[];
 }
 
 const PAGE_SIZE = 10;
@@ -98,11 +77,6 @@ export default function QuotationsPage() {
   const [page, setPage] = useState(1);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importRows, setImportRows] = useState<QuotationImportRow[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
 
   const [formCustomerId, setFormCustomerId] = useState<string>('');
   const [formQuotationDate, setFormQuotationDate] = useState('');
@@ -179,8 +153,6 @@ export default function QuotationsPage() {
     }
   }, [addModalOpen, fetchCustomers]);
 
-  const start = (page - 1) * PAGE_SIZE;
-
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId('');
     const today = new Date().toISOString().slice(0, 10);
@@ -199,104 +171,6 @@ export default function QuotationsPage() {
     const settings = await fetchQuotationSettings();
     resetForm(settings);
     setAddModalOpen(true);
-  };
-
-  const openImport = async () => {
-    await fetchCustomers();
-    setImportRows([]);
-    setImportError(null);
-    setImportProgress(null);
-    setImportModalOpen(true);
-  };
-
-  const handleQuotationCsvFile = async (file: File) => {
-    const text = await file.text();
-    const objects = toObjects(parseCsv(text));
-    const grouped = groupBy(objects, (o) => o['Quote No'] || '');
-    const rows: QuotationImportRow[] = Object.keys(grouped).filter(Boolean).map((quoteNo) => {
-      const g = grouped[quoteNo];
-      const first = g[0];
-      const customerName = first['Customer Name'] || '';
-      const customer = customers.find((c) => c.full_name.trim().toLowerCase() === customerName.trim().toLowerCase());
-      const taxRaw = first['Line Tax Rate Percentage'] || first['Tax'] || '0';
-      const taxPercentage = parseFloat(String(taxRaw).replace(/[^\d.-]/g, '')) || 0;
-      const lineItems = g.map((r) => ({
-        description: r['Line Description'] || r['Description'] || `Imported item ${r['Line Number'] || ''}`.trim(),
-        quantity: parseFloat(r['Line Quantity'] || '1') || 1,
-        unit_price: parseFloat((r['Line Unit Price'] || r['Line Amount'] || '0').replace(/,/g, '')) || 0,
-      }));
-      const row: QuotationImportRow = {
-        csvQuoteNumber: quoteNo,
-        customerName,
-        customerId: customer?.id ?? null,
-        quotationDate: first['Quote Date'] || new Date().toISOString().slice(0, 10),
-        validUntil: first['Expiry Date'] || new Date().toISOString().slice(0, 10),
-        notes: first['Reference'] || first['Description'] || '',
-        taxPercentage,
-        currency: 'GBP',
-        lineItems,
-        missing: [],
-      };
-      const missing: string[] = [];
-      if (!row.customerId) missing.push('Customer mapping');
-      if (!row.quotationDate) missing.push('Quote date');
-      if (!row.validUntil) missing.push('Expiry date');
-      if (!row.lineItems.length || row.lineItems.every((li) => !li.description.trim())) missing.push('Line items');
-      row.missing = missing;
-      return row;
-    });
-    setImportRows(rows);
-  };
-
-  const updateImportRow = (idx: number, patch: Partial<QuotationImportRow>) => {
-    setImportRows((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const next = { ...r, ...patch };
-      const missing: string[] = [];
-      if (!next.customerId) missing.push('Customer mapping');
-      if (!next.quotationDate) missing.push('Quote date');
-      if (!next.validUntil) missing.push('Expiry date');
-      if (!next.lineItems.length || next.lineItems.every((li) => !li.description.trim())) missing.push('Line items');
-      next.missing = missing;
-      return next;
-    }));
-  };
-
-  const runQuotationImport = async () => {
-    if (!token) return;
-    const validRows = importRows.filter((r) => r.missing.length === 0);
-    if (validRows.length === 0) {
-      setImportError('No valid rows to import. Please fix missing fields first.');
-      return;
-    }
-    setImporting(true);
-    setImportError(null);
-    const total = validRows.length;
-    setImportProgress({ done: 0, total });
-    try {
-      let done = 0;
-      for (const row of validRows) {
-        await postJson('/quotations', {
-          customer_id: row.customerId,
-          quotation_date: row.quotationDate,
-          valid_until: row.validUntil,
-          currency: row.currency,
-          notes: row.notes || undefined,
-          line_items: row.lineItems,
-          tax_percentage: row.taxPercentage,
-        }, token);
-        done += 1;
-        setImportProgress({ done, total });
-      }
-      setImportModalOpen(false);
-      setImportRows([]);
-      fetchQuotations();
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setImporting(false);
-      setImportProgress(null);
-    }
   };
 
   const addLineItem = () => {
@@ -404,9 +278,6 @@ export default function QuotationsPage() {
               <Plus className="size-5" />
               Create Quotation
             </motion.button>
-            <button type="button" onClick={openImport} className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Import CSV
-            </button>
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -603,84 +474,6 @@ export default function QuotationsPage() {
               </div>
             </form>
           </motion.div>
-        </div>
-      )}
-
-      {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => !importing && setImportModalOpen(false)}>
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900">Import Quotations from CSV</h3>
-            <input type="file" accept=".csv,text/csv" className="mt-4 block w-full text-sm" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleQuotationCsvFile(f); }} />
-            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2">Quote</th>
-                    <th className="px-3 py-2">Customer</th>
-                    <th className="px-3 py-2">Dates</th>
-                    <th className="px-3 py-2">Items</th>
-                    <th className="px-3 py-2">Missing</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {importRows.length === 0 ? (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400">Upload a CSV file to preview imports.</td></tr>
-                  ) : importRows.map((r, idx) => (
-                    <tr key={`${r.csvQuoteNumber}-${idx}`}>
-                      <td className="px-3 py-2 font-medium">{r.csvQuoteNumber}</td>
-                      <td className="px-3 py-2">
-                        <ImportCustomerSelect
-                          customers={customers}
-                          value={r.customerId}
-                          onChange={(id) => updateImportRow(idx, { customerId: id })}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-2">
-                          <input type="date" value={r.quotationDate} onChange={(e) => updateImportRow(idx, { quotationDate: e.target.value })} className="rounded border border-slate-200 px-2 py-1" />
-                          <input type="date" value={r.validUntil} onChange={(e) => updateImportRow(idx, { validUntil: e.target.value })} className="rounded border border-slate-200 px-2 py-1" />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">{r.lineItems.length}</td>
-                      <td className="px-3 py-2">
-                        {r.missing.length === 0 ? <span className="text-emerald-600">Ready</span> : <span className="text-rose-600">{r.missing.join(', ')}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {importError && <p className="mt-3 text-sm text-rose-600">{importError}</p>}
-            {importing && importProgress && importProgress.total > 0 && (
-              <div className="mt-4 space-y-1.5">
-                <div className="flex justify-between text-xs font-medium text-slate-600">
-                  <span>Importing quotations</span>
-                  <span>
-                    {importProgress.done} / {importProgress.total}
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-[#14B8A6] transition-[width] duration-200 ease-out"
-                    style={{ width: `${Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(false)}
-                disabled={importing}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Close
-              </button>
-              <button onClick={runQuotationImport} disabled={importing} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] disabled:opacity-50">
-                {importing ? 'Importing...' : 'Import valid rows'}
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </>

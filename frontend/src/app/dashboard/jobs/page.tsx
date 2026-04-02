@@ -624,7 +624,7 @@ function JobModal({
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Assigned officer</label>
+            <label className="block text-sm font-medium text-slate-700">Assigned user</label>
             <select value={formOfficerId} onChange={(e) => setFormOfficerId(e.target.value)} className={inputClass}>
               <option value="">Unassigned</option>
               {officers.filter((o) => o.state === 'active').map((o) => (

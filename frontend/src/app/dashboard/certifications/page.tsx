@@ -263,7 +263,7 @@ export default function CertificationsPage() {
             <div>
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Certification Management</h1>
               <p className="mt-1 text-slate-500">
-                Manage certifications, assign them to officers, and track compliance.
+                Manage certifications, assign them to users, and track compliance.
               </p>
             </div>
             {activeTab === 'certifications' && (
@@ -348,7 +348,7 @@ export default function CertificationsPage() {
                           onClick={() => openAssign(c)}
                           className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
-                          Assign to officer
+                          Assign to user
                         </button>
                         <button
                           type="button"
@@ -418,7 +418,7 @@ export default function CertificationsPage() {
                         <table className="w-full text-sm">
                           <thead className="bg-rose-50">
                             <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-rose-800">Officer</th>
+                              <th className="px-4 py-2 text-left font-semibold text-rose-800">User</th>
                               <th className="px-4 py-2 text-left font-semibold text-rose-800">Certification</th>
                               <th className="px-4 py-2 text-left font-semibold text-rose-800">Expired</th>
                               <th className="px-4 py-2 text-right font-semibold text-rose-800">Days overdue</th>
@@ -454,7 +454,7 @@ export default function CertificationsPage() {
                         <table className="w-full text-sm">
                           <thead className="bg-amber-50">
                             <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-amber-800">Officer</th>
+                              <th className="px-4 py-2 text-left font-semibold text-amber-800">User</th>
                               <th className="px-4 py-2 text-left font-semibold text-amber-800">Certification</th>
                               <th className="px-4 py-2 text-left font-semibold text-amber-800">Expires</th>
                               <th className="px-4 py-2 text-right font-semibold text-amber-800">Days left</th>
@@ -490,7 +490,7 @@ export default function CertificationsPage() {
                         <table className="w-full text-sm">
                           <thead className="bg-emerald-50">
                             <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-emerald-800">Officer</th>
+                              <th className="px-4 py-2 text-left font-semibold text-emerald-800">User</th>
                               <th className="px-4 py-2 text-left font-semibold text-emerald-800">Certification</th>
                               <th className="px-4 py-2 text-left font-semibold text-emerald-800">Expires</th>
                               <th className="px-4 py-2 text-right font-semibold text-emerald-800"></th>
@@ -516,7 +516,7 @@ export default function CertificationsPage() {
                   )}
 
                   {compliance.expired.length === 0 && compliance.expiring_soon.length === 0 && compliance.valid.length === 0 && (
-                    <p className="text-center text-slate-500">No certifications assigned yet. Assign certifications to officers to see them here.</p>
+                    <p className="text-center text-slate-500">No certifications assigned yet. Assign certifications to users to see them here.</p>
                   )}
                 </div>
               )}
@@ -536,7 +536,7 @@ export default function CertificationsPage() {
           >
             <h3 className="text-lg font-bold text-slate-900">{modalOpen === 'add' ? 'Add certification type' : 'Edit certification type'}</h3>
             <p className="mt-1 text-sm text-slate-500">
-              {modalOpen === 'add' ? 'Define a certification (e.g. OSHA 30, CPR) that you can issue to officers.' : ''}
+              {modalOpen === 'add' ? 'Define a certification (e.g. OSHA 30, CPR) that you can issue to users.' : ''}
             </p>
             <form onSubmit={handleSubmitCert} className="mt-6 space-y-4">
               <div>
@@ -577,10 +577,10 @@ export default function CertificationsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold text-slate-900">
-              {modalOpen === 'create' ? 'Create certificate' : `Assign "${assignCert?.name}" to officer`}
+              {modalOpen === 'create' ? 'Create certificate' : `Assign "${assignCert?.name}" to user`}
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              {modalOpen === 'create' ? 'Issue a certificate to an officer. The certificate document will open after saving.' : ''}
+              {modalOpen === 'create' ? 'Issue a certificate to a user. The certificate document will open after saving.' : ''}
             </p>
             <form onSubmit={handleAssign} className="mt-6 space-y-4">
               {modalOpen === 'create' && (
@@ -608,9 +608,9 @@ export default function CertificationsPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-slate-700">Officer *</label>
+                <label className="block text-sm font-medium text-slate-700">User *</label>
                 <select value={assignOfficerId ?? ''} onChange={(e) => setAssignOfficerId(e.target.value ? parseInt(e.target.value, 10) : null)} className={inputClass} required>
-                  <option value="">Select officer</option>
+                  <option value="">Select user</option>
                   {officers.filter((o) => o.state === 'active').map((o) => (
                     <option key={o.id} value={o.id}>{o.full_name} {o.department ? `(${o.department})` : ''}</option>
                   ))}
@@ -660,7 +660,7 @@ export default function CertificationsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="font-semibold text-slate-900">Delete this certification?</p>
-            <p className="mt-1 text-sm text-slate-500">Officer assignments will also be removed.</p>
+            <p className="mt-1 text-sm text-slate-500">User assignments will also be removed.</p>
             <div className="mt-6 flex gap-3">
               <button type="button" onClick={() => setDeleteConfirm(null)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
               <button type="button" onClick={() => handleDelete(deleteConfirm)} className="flex-1 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>

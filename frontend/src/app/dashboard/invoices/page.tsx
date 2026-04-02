@@ -1,13 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Search, FileText, Plus, ChevronRight, Upload } from 'lucide-react';
+import { Search, FileText, Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
-import { groupBy, normalizeCsvDateToIso, parseCsv, toObjects } from '../csvUtils';
-import ImportCustomerSelect from '../ImportCustomerSelect';
 import { Pagination } from '../Pagination';
 
 interface Invoice {
@@ -55,20 +53,6 @@ interface InvoiceSettings {
   default_tax_percentage: number;
 }
 
-interface InvoiceImportRow {
-  csvInvoiceNumber: string;
-  customerName: string;
-  customerId: number | null;
-  invoiceDate: string;
-  dueDate: string;
-  notes: string;
-  taxPercentage: number;
-  currency: string;
-  enteredOn: string;
-  lineItems: { description: string; quantity: number; unit_price: number }[];
-  missing: string[];
-}
-
 const PAGE_SIZE = 10;
 const INVOICE_STATES = [
   { value: 'draft', label: 'Draft', color: 'bg-slate-100 text-slate-600' },
@@ -103,17 +87,10 @@ export default function InvoicesPage() {
   const [page, setPage] = useState(1);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importRows, setImportRows] = useState<InvoiceImportRow[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState('');
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
   const [deleteAllBusy, setDeleteAllBusy] = useState(false);
-  const importCsvInputRef = useRef<HTMLInputElement>(null);
-  const [importCsvFileName, setImportCsvFileName] = useState<string | null>(null);
 
   const [formCustomerId, setFormCustomerId] = useState<string>('');
   const [formJobId, setFormJobId] = useState<string>('');
@@ -203,8 +180,6 @@ export default function InvoicesPage() {
     }
   }, [addModalOpen, fetchCustomers, fetchJobs]);
 
-  const start = (page - 1) * PAGE_SIZE;
-
   const resetForm = (settings: InvoiceSettings | null) => {
     setFormCustomerId('');
     setFormJobId('');
@@ -225,130 +200,6 @@ export default function InvoicesPage() {
     const settings = await fetchInvoiceSettings();
     resetForm(settings);
     setAddModalOpen(true);
-  };
-
-  const openImport = async () => {
-    await fetchCustomers();
-    setImportRows([]);
-    setImportError(null);
-    setImportCsvFileName(null);
-    setImportProgress(null);
-    setImportModalOpen(true);
-  };
-
-  const handleInvoiceCsvFile = async (file: File) => {
-    const text = await file.text();
-    const objects = toObjects(parseCsv(text));
-    const grouped = groupBy(objects, (o) => o['Invoice Number'] || '');
-    const rows: InvoiceImportRow[] = Object.keys(grouped).filter(Boolean).map((invoiceNo) => {
-      const g = grouped[invoiceNo];
-      const first = g[0];
-      const customerName = first['Customer'] || '';
-      const customer = customers.find((c) => c.full_name.trim().toLowerCase() === customerName.trim().toLowerCase());
-      const taxRaw = first['Line Tax Rate Percentage'] || first['Tax'] || '0';
-      const taxPercentage = parseFloat(String(taxRaw).replace(/[^\d.-]/g, '')) || 0;
-      const lineItems = g.map((r) => ({
-        description: r['Line Description'] || r['Description'] || `Imported item ${r['Line Number'] || ''}`.trim(),
-        quantity: parseFloat(r['Line Quantity'] || '1') || 1,
-        unit_price: parseFloat((r['Line Unit Price'] || r['Line Amount'] || '0').replace(/,/g, '')) || 0,
-      }));
-      const invoiceDateRaw =
-        first['Invoice Date'] || first['Invoice date'] || first['invoice_date'] || first['Date'] || '';
-      const dueDateRaw = first['Due Date'] || first['Due date'] || first['due_date'] || first['Payment due'] || '';
-      const invoiceDateParsed = normalizeCsvDateToIso(invoiceDateRaw);
-      const dueDateParsed = normalizeCsvDateToIso(dueDateRaw);
-      const row: InvoiceImportRow = {
-        csvInvoiceNumber: invoiceNo,
-        customerName,
-        customerId: customer?.id ?? null,
-        invoiceDate: invoiceDateParsed ?? new Date().toISOString().slice(0, 10),
-        dueDate: dueDateParsed ?? new Date().toISOString().slice(0, 10),
-        notes: first['Reference'] || '',
-        taxPercentage,
-        currency: 'GBP',
-        enteredOn: first['Entered On'] || '',
-        lineItems,
-        missing: [],
-      };
-      const missing: string[] = [];
-      if (!row.customerId) missing.push('Customer mapping');
-      if (invoiceDateRaw && !invoiceDateParsed) missing.push('Invoice date (unrecognised format)');
-      if (dueDateRaw && !dueDateParsed) missing.push('Due date (unrecognised format)');
-      if (!row.invoiceDate) missing.push('Invoice date');
-      if (!row.dueDate) missing.push('Due date');
-      if (!row.lineItems.length || row.lineItems.every((li) => !li.description.trim())) missing.push('Line items');
-      row.missing = missing;
-      return row;
-    });
-    setImportRows(rows);
-  };
-
-  const updateImportRow = (idx: number, patch: Partial<InvoiceImportRow>) => {
-    setImportRows((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const next = { ...r, ...patch };
-      const missing: string[] = [];
-      if (!next.customerId) missing.push('Customer mapping');
-      if (!next.invoiceDate) missing.push('Invoice date');
-      if (!next.dueDate) missing.push('Due date');
-      if (!next.lineItems.length || next.lineItems.every((li) => !li.description.trim())) missing.push('Line items');
-      next.missing = missing;
-      return next;
-    }));
-  };
-
-  const runInvoiceImport = async () => {
-    if (!token) return;
-    const validRows = importRows.filter((r) => r.missing.length === 0);
-    if (validRows.length === 0) {
-      setImportError('No valid rows to import. Please fix missing fields first.');
-      return;
-    }
-    setImporting(true);
-    setImportError(null);
-    const total = validRows.length;
-    setImportProgress({ done: 0, total });
-    try {
-      let done = 0;
-      for (const row of validRows) {
-        const invIso = normalizeCsvDateToIso(row.invoiceDate) ?? row.invoiceDate;
-        const dueIso = normalizeCsvDateToIso(row.dueDate) ?? row.dueDate;
-        const csvInvNo = row.csvInvoiceNumber.trim();
-        const created = await postJson<{ invoice?: { id: number } }>('/invoices', {
-          customer_id: row.customerId,
-          invoice_date: invIso,
-          due_date: dueIso,
-          currency: row.currency,
-          notes: row.notes || undefined,
-          line_items: row.lineItems,
-          tax_percentage: row.taxPercentage,
-          ...(csvInvNo ? { invoice_number: csvInvNo } : {}),
-        }, token);
-        if (row.enteredOn.trim()) {
-          const parsedEntered = new Date(row.enteredOn);
-          const labelDate = Number.isNaN(parsedEntered.getTime()) ? row.enteredOn : parsedEntered.toLocaleString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          if (created.invoice?.id) {
-            await postJson(`/invoices/${created.invoice.id}/communications`, { type: 'note', text: `Imported on ${labelDate}` }, token);
-          }
-        }
-        done += 1;
-        setImportProgress({ done, total });
-      }
-      setImportModalOpen(false);
-      setImportRows([]);
-      fetchInvoices();
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Import failed');
-    } finally {
-      setImporting(false);
-      setImportProgress(null);
-    }
   };
 
   const addLineItem = () => {
@@ -458,9 +309,6 @@ export default function InvoicesPage() {
               <Plus className="size-5" />
               Create Invoice
             </motion.button>
-            <button type="button" onClick={openImport} className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Import CSV
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -690,7 +538,7 @@ export default function InvoicesPage() {
                   <p className="text-sm font-semibold text-slate-700">Total: {formatCurrency(totalAmount, formCurrency)}</p>
                 </div>
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-slate-700">Notes</label>
                 <textarea rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Payment terms, instructions..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
               </div>
@@ -700,181 +548,6 @@ export default function InvoicesPage() {
                 <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a]">Create Invoice</button>
               </div>
             </form>
-          </motion.div>
-        </div>
-      )}
-
-      {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => !importing && setImportModalOpen(false)}>
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900">Import Invoices from CSV</h3>
-            <p className="mt-2 text-xs text-slate-500">
-              If the CSV includes an invoice number column, values are normalized to your prefix format (e.g. INV545 → INV-000545). Invoice date and due date columns accept{' '}
-              <span className="font-medium text-slate-700">YYYY-MM-DD</span>,{' '}
-              <span className="font-medium text-slate-700">DD/MM/YYYY</span> (UK), month names (e.g. 15 Mar 2024), or Excel serial numbers. Headers: Invoice Date, Due Date.
-            </p>
-            <div className="mt-4">
-              <input
-                ref={importCsvInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) {
-                    setImportCsvFileName(f.name);
-                    handleInvoiceCsvFile(f);
-                  }
-                  e.target.value = '';
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => importCsvInputRef.current?.click()}
-                className="inline-flex w-full max-w-md items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#14B8A6] bg-emerald-50 px-5 py-3.5 text-sm font-semibold text-[#0d9488] shadow-sm transition hover:bg-emerald-100/80 hover:shadow focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40"
-              >
-                <Upload className="size-5 shrink-0" aria-hidden />
-                Choose CSV file
-              </button>
-              <p className="mt-2 text-xs text-slate-500">Click to browse — CSV files only</p>
-              {importCsvFileName && (
-                <p className="mt-2 text-sm text-slate-700">
-                  <span className="text-slate-500">Selected:</span>{' '}
-                  <span className="font-medium text-slate-900">{importCsvFileName}</span>
-                </p>
-              )}
-            </div>
-            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2">Invoice</th>
-                    <th className="px-3 py-2">Customer</th>
-                    <th className="px-3 py-2">Dates</th>
-                    <th className="px-3 py-2">Items</th>
-                    <th className="px-3 py-2">Missing</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {importRows.length === 0 ? (
-                    <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400">Upload a CSV file to preview imports.</td></tr>
-                  ) : importRows.map((r, idx) => (
-                    <tr key={`${r.csvInvoiceNumber}-${idx}`}>
-                      <td className="px-3 py-2 font-medium">{r.csvInvoiceNumber}</td>
-                      <td className="px-3 py-2">
-                        <ImportCustomerSelect
-                          customers={customers}
-                          value={r.customerId}
-                          onChange={(id) => updateImportRow(idx, { customerId: id })}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-2">
-                          <input type="date" value={r.invoiceDate} onChange={(e) => updateImportRow(idx, { invoiceDate: e.target.value })} className="rounded border border-slate-200 px-2 py-1" />
-                          <input type="date" value={r.dueDate} onChange={(e) => updateImportRow(idx, { dueDate: e.target.value })} className="rounded border border-slate-200 px-2 py-1" />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">{r.lineItems.length}</td>
-                      <td className="px-3 py-2">
-                        {r.missing.length === 0 ? <span className="text-emerald-600">Ready</span> : <span className="text-rose-600">{r.missing.join(', ')}</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {importError && <p className="mt-3 text-sm text-rose-600">{importError}</p>}
-            {importing && importProgress && importProgress.total > 0 && (
-              <div className="mt-4 space-y-1.5">
-                <div className="flex justify-between text-xs font-medium text-slate-600">
-                  <span>Importing invoices</span>
-                  <span>
-                    {importProgress.done} / {importProgress.total}
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-[#14B8A6] transition-[width] duration-200 ease-out"
-                    style={{ width: `${Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(false)}
-                disabled={importing}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Close
-              </button>
-              <button onClick={runInvoiceImport} disabled={importing} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] disabled:opacity-50">
-                {importing ? 'Importing...' : 'Import valid rows'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {deleteAllOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          onClick={() => !deleteAllBusy && setDeleteAllOpen(false)}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-slate-900">Delete all invoices</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              This removes every invoice you can access (for your account: all invoices you created; super admins: all invoices in the system), including line items and payments. Type the phrase below to confirm.
-            </p>
-            <p className="mt-3 font-mono text-xs font-semibold text-rose-700">DELETE ALL INVOICES</p>
-            <input
-              type="text"
-              value={deleteAllConfirm}
-              onChange={(e) => setDeleteAllConfirm(e.target.value)}
-              placeholder="Type confirmation phrase"
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-              autoComplete="off"
-            />
-            {deleteAllError && <p className="mt-2 text-sm text-rose-600">{deleteAllError}</p>}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={deleteAllBusy}
-                onClick={() => setDeleteAllOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deleteAllBusy || deleteAllConfirm !== 'DELETE ALL INVOICES'}
-                onClick={async () => {
-                  if (!token) return;
-                  setDeleteAllBusy(true);
-                  setDeleteAllError(null);
-                  try {
-                    await postJson('/invoices/delete-all', { confirmation: 'DELETE ALL INVOICES' }, token);
-                    setDeleteAllOpen(false);
-                    setDeleteAllConfirm('');
-                    setPage(1);
-                    fetchInvoices();
-                  } catch (e) {
-                    setDeleteAllError(e instanceof Error ? e.message : 'Delete failed');
-                  } finally {
-                    setDeleteAllBusy(false);
-                  }
-                }}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
-              >
-                {deleteAllBusy ? 'Deleting…' : 'Delete all'}
-              </button>
-            </div>
           </motion.div>
         </div>
       )}
