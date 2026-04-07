@@ -3523,15 +3523,15 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
   const defaults: { key: string; name: string; subject: string; body: string }[] = [
     {
       key: 'invoice',
-      name: 'Invoice — send to customer',
-      subject: '{{company_name}} — Invoice {{invoice_number}}',
+      name: 'Invoice - send to customer',
+      subject: '{{company_name}} - Invoice {{invoice_number}}',
       body:
         '<p>Hi {{customer_name}},</p><p>Your invoice <strong>{{invoice_number}}</strong> is ready.</p><p>Amount due: <strong>{{currency}} {{invoice_total}}</strong><br/>Invoice date: {{invoice_date}}<br/>Due date: {{due_date}}</p><p>View your invoice online: {{invoice_link}}</p><p>Customer address: {{customer_address}}<br/>Work / site: {{work_address}}</p><p>Thank you,<br/>{{company_name}}</p>',
     },
     {
       key: 'quotation',
-      name: 'Quotation — send to customer',
-      subject: '{{company_name}} — Quotation {{quotation_number}}',
+      name: 'Quotation - send to customer',
+      subject: '{{company_name}} - Quotation {{quotation_number}}',
       body:
         '<p>Hi {{customer_name}},</p><p>Your quotation <strong>{{quotation_number}}</strong> is ready.</p><p>Total: <strong>{{currency}} {{quotation_total}}</strong><br/>Valid until: {{valid_until}}<br/>Quotation date: {{quotation_date}}</p><p>Thank you,<br/>{{company_name}}</p>',
     },
@@ -4819,7 +4819,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
     );
     const row = tpl.rows[0];
     const vars = await buildInvoiceEmailTemplateVars(inv, invSettings);
-    const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} — ${inv.invoice_number}`;
+    const subject = row ? applyTemplateVars(row.subject, vars) : `${invSettings.company_name ?? 'Invoice'} - ${inv.invoice_number}`;
     const bodyInner = row ? applyTemplateVars(row.body_html, vars) : `<p>Hi ${inv.customer_full_name || 'there'},</p><p>Please find your invoice <strong>${inv.invoice_number}</strong> attached below.</p><p>You can also view it online here: ${vars.invoice_link}</p>`;
     const transport = createMailTransport(emailCfg);
 
@@ -6162,7 +6162,7 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
     await sendUserEmail(pool, userId, s, {
       from,
       to,
-      subject: 'WorkPilot — Email test',
+      subject: 'WorkPilot - Email test',
       html,
       replyTo: s.reply_to,
     });
