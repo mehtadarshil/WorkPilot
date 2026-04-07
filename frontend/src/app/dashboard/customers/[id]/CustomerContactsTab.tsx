@@ -32,6 +32,7 @@ interface ContactsResponse {
 
 interface Props {
   customerId: string;
+  workAddressId?: string;
 }
 
 type ContactForm = {
@@ -74,7 +75,7 @@ const emptyForm: ContactForm = {
   prefers_letter: true,
 };
 
-export default function CustomerContactsTab({ customerId }: Props) {
+export default function CustomerContactsTab({ customerId, workAddressId }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState('');
@@ -91,6 +92,7 @@ export default function CustomerContactsTab({ customerId }: Props) {
     try {
       const q = new URLSearchParams();
       if (search.trim()) q.set('search', search.trim());
+      if (workAddressId) q.set('work_address_id', workAddressId);
       const res = await getJson<ContactsResponse>(`/customers/${customerId}/contacts${q.toString() ? `?${q.toString()}` : ''}`, token);
       setContacts(res.contacts || []);
     } catch (err) {
@@ -98,7 +100,7 @@ export default function CustomerContactsTab({ customerId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [token, customerId, search]);
+  }, [token, customerId, search, workAddressId]);
 
   useEffect(() => {
     fetchContacts();

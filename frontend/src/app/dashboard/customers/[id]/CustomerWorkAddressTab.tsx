@@ -289,7 +289,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                         type="button"
                         onClick={() =>
                           router.push(
-                            `/dashboard/customers/${customerId}/work-addresses/${r.id}?tab=invoices`,
+                            `/dashboard/customers/${customerId}?work_address_id=${r.id}`,
                           )
                         }
                         className="font-semibold text-[#14B8A6] hover:underline"

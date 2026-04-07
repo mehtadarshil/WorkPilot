@@ -336,114 +336,108 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-8">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-6xl">
         <h1 className="text-3xl font-black tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-slate-500">Configure your application preferences.</p>
 
-        <div className="mt-8 flex gap-1 border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setActiveTab('company')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'company' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Building2 className="size-4" />
-            Company
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('invoice')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'invoice' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <FileText className="size-4" />
-            Invoice Settings
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('quotation')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'quotation' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Quote className="size-4" />
-            Quotation Settings
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('email')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'email' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Mail className="size-4" />
-            Email
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('customer-types')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'customer-types' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Users className="size-4" />
-            Customer Types
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('price-books')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'price-books' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <BookOpen className="size-4" />
-            Price Books
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('job-descriptions')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'job-descriptions' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Wrench className="size-4" />
-            Job Descriptions
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('business-units')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'business-units' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Briefcase className="size-4" />
-            Business Units
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('user-groups')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'user-groups' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Users2 className="size-4" />
-            User Groups
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'users' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <UserCog className="size-4" />
-            Users
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('import')}
-            className={`flex items-center gap-2 rounded-t-lg px-4 py-3 text-sm font-semibold transition ${activeTab === 'import' ? 'border border-b-0 border-slate-200 border-b-white bg-white text-[#14B8A6]' : 'text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Database className="size-4" />
-            Import CSV
-          </button>
-        </div>
+        <div className="mt-8 flex flex-col md:flex-row gap-8">
+          {/* Sidebar */}
+          <div className="flex flex-col gap-1 w-full md:w-64 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('company')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'company' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Building2 className="size-4" />
+              Company
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('invoice')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'invoice' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <FileText className="size-4" />
+              Invoice Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('quotation')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'quotation' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Quote className="size-4" />
+              Quotation Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('email')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'email' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Mail className="size-4" />
+              Email
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('customer-types')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'customer-types' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Users className="size-4" />
+              Customer Types
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('price-books')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'price-books' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <BookOpen className="size-4" />
+              Price Books
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('job-descriptions')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'job-descriptions' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Wrench className="size-4" />
+              Job Descriptions
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('business-units')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'business-units' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Briefcase className="size-4" />
+              Business Units
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('user-groups')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'user-groups' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Users2 className="size-4" />
+              User Groups
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('users')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'users' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <UserCog className="size-4" />
+              Users
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('import')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'import' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Database className="size-4" />
+              Import CSV
+            </button>
+          </div>
+
+          {/* Content Area */}
+          <div className="flex-1 min-w-0">
 
         {activeTab === 'company' && (
-          <div className="mt-6">
+          <div className="mt-0">
             <div className="mb-4 flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
               <button
                 type="button"
@@ -1312,6 +1306,16 @@ export default function SettingsPage() {
           </motion.div>
         )}
 
+        {activeTab === 'users' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-transparent mt-4"
+          >
+            <UsersSettings />
+          </motion.div>
+        )}
+
         {activeTab === 'import' && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -1321,6 +1325,8 @@ export default function SettingsPage() {
             <ImportSettings />
           </motion.div>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );

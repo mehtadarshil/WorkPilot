@@ -49,6 +49,7 @@ interface CustomerBasics {
 interface Props {
   customerId: string;
   customer: CustomerBasics;
+  workAddressId?: string;
 }
 
 const TYPE_FILTERS: { key: RecordType; label: string; dot: string }[] = [
@@ -64,7 +65,7 @@ function getTypeIcon(type: RecordType) {
   return CalendarDays;
 }
 
-export default function CustomerCommunicationsTab({ customerId, customer }: Props) {
+export default function CustomerCommunicationsTab({ customerId, customer, workAddressId }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const [records, setRecords] = useState<Communication[]>([]);
@@ -104,6 +105,7 @@ export default function CustomerCommunicationsTab({ customerId, customer }: Prop
     if (typeFilter) params.set('type', typeFilter);
     if (createdByFilter) params.set('created_by', createdByFilter);
     if (objectFilter) params.set('object_type', objectFilter);
+    if (workAddressId) params.set('work_address_id', workAddressId);
 
     const url = `/customers/${customerId}/communications${params.toString() ? `?${params.toString()}` : ''}`;
     try {
@@ -113,7 +115,7 @@ export default function CustomerCommunicationsTab({ customerId, customer }: Prop
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load communications');
     }
-  }, [token, customerId, query, fromDate, toDate, typeFilter, createdByFilter, objectFilter]);
+  }, [token, customerId, query, fromDate, toDate, typeFilter, createdByFilter, objectFilter, workAddressId]);
 
   useEffect(() => {
     fetchCommunications();
@@ -293,7 +295,7 @@ export default function CustomerCommunicationsTab({ customerId, customer }: Prop
         ) : (
           grouped.map(([day, items]) => (
             <div key={day}>
-              <div className="mb-3 inline-block rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-white">{dayjs(day).format('dddd Do MMMM YYYY')}</div>
+              <div className="mb-3 inline-block rounded bg-slate-700 px-3 py-1 text-xs font-semibold text-white">{dayjs(day).format('dddd D MMMM YYYY')}</div>
               <div className="space-y-3">
                 {items.map((item) => {
                   const Icon = getTypeIcon(item.record_type);

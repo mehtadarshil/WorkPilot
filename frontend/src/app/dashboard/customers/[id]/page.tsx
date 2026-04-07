@@ -71,6 +71,7 @@ export default function CustomerDetailsPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const id = params?.id as string;
+  const workAddressId = searchParams.get('work_address_id') || null;
   
   const [data, setData] = useState<CustomerDetails | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -112,23 +113,26 @@ export default function CustomerDetailsPage() {
   const fetchJobs = useCallback(async () => {
     if (!token || !id) return;
     try {
-      const res = await getJson<Job[]>(`/customers/${id}/jobs`, token);
+      const q = workAddressId ? `?work_address_id=${workAddressId}` : '';
+      const res = await getJson<Job[]>(`/customers/${id}/jobs${q}`, token);
       setJobs(res || []);
     } catch (err) {
       console.error('Failed to fetch jobs', err);
     }
-  }, [id, token]);
+  }, [id, token, workAddressId]);
 
   const fetchInvoices = useCallback(async () => {
     if (!token || !id) return;
     try {
-      const res = await getJson<{ invoices: CustomerInvoice[] }>(`/invoices?customer_id=${id}&limit=100`, token);
+      const qp = new URLSearchParams({ customer_id: id, limit: '100' });
+      if (workAddressId) qp.set('invoice_work_address_id', workAddressId);
+      const res = await getJson<{ invoices: CustomerInvoice[] }>(`/invoices?${qp.toString()}`, token);
       setInvoices(res.invoices || []);
     } catch (err) {
       console.error('Failed to fetch invoices', err);
       setInvoices([]);
     }
-  }, [id, token]);
+  }, [id, token, workAddressId]);
 
   useEffect(() => {
     fetchDetails();
@@ -218,6 +222,20 @@ export default function CustomerDetailsPage() {
           </div>
         </div>
       </header>
+
+      {workAddressId && (
+        <div className="flex items-center justify-between bg-amber-50 border-b border-amber-200 px-4 py-2 md:px-6">
+          <p className="text-sm font-medium text-amber-800">
+            🏠 Viewing data scoped to work address #{workAddressId}
+          </p>
+          <button
+            onClick={() => router.push(`/dashboard/customers/${id}`)}
+            className="text-sm font-semibold text-amber-700 hover:underline"
+          >
+            ← Back to full customer view
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col lg:flex-row h-full">
@@ -530,11 +548,12 @@ export default function CustomerDetailsPage() {
                     contact_email: data.contact_email,
                     contact_mobile: data.contact_mobile,
                   }}
+                  workAddressId={workAddressId || undefined}
                 />
               )}
 
               {activeTab === 'Contacts' && (
-                <CustomerContactsTab customerId={id} />
+                <CustomerContactsTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
               {activeTab === 'Branches' && (data.customer_type_allow_branches !== false) && (
@@ -546,7 +565,7 @@ export default function CustomerDetailsPage() {
               )}
 
               {activeTab === 'Assets' && (
-                <CustomerAssetsTab customerId={id} />
+                <CustomerAssetsTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
               {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && (

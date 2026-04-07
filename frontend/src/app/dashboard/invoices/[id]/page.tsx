@@ -3,13 +3,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getJson, postJson, deleteRequest } from '../../../apiClient';
+import { getJson, postJson, deleteRequest, patchJson } from '../../../apiClient';
 import { Info, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import Image from 'next/image';
 import InvoiceNotesPanel from './InvoiceNotesPanel';
 import InvoiceEmailComposer from './InvoiceEmailComposer';
+
+const INVOICE_STATES = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'issued', label: 'Issued' },
+  { value: 'pending_payment', label: 'Pending payment' },
+  { value: 'partially_paid', label: 'Partially paid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'cancelled', label: 'Cancelled' },
+] as const;
 
 interface InvoiceDetails {
   id: number;
@@ -240,6 +250,20 @@ export default function InvoiceDetailsView() {
     }
   };
 
+  const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newState = e.target.value;
+    const token = window.localStorage.getItem('wp_token');
+    if (!token || !invoice) return;
+    try {
+      setLoading(true);
+      await patchJson(`/invoices/${invoiceId}`, { state: newState }, token);
+      await fetchInvoice();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update status');
+      setLoading(false);
+    }
+  };
+
   if (loading) return <div className="p-8 font-medium text-slate-500">Loading invoice details...</div>;
   if (error || !invoice) return <div className="p-8 text-rose-500">{error || 'Invoice not found'}</div>;
 
@@ -272,7 +296,7 @@ export default function InvoiceDetailsView() {
         const createdDate = dayjs(invoice.invoice_date).isValid()
           ? dayjs(invoice.invoice_date).format('DD MMM YYYY')
           : formatDate(invoice.invoice_date);
-        const importedAt = dayjs(latestActivity.created_at).format('dddd Do MMMM YYYY (hh:mm a)');
+        const importedAt = dayjs(latestActivity.created_at).format('dddd D MMMM YYYY (hh:mm a)');
         return `${createdDate} created and ${importedAt} imported.`;
       }
 
@@ -280,11 +304,11 @@ export default function InvoiceDetailsView() {
         const createdAt = dayjs(latestActivity.created_at);
         const invoiceDate = dayjs(invoice.invoice_date);
         if (invoiceDate.isValid() && createdAt.isValid() && createdAt.diff(invoiceDate, 'day') >= 1) {
-          return `${invoiceDate.format('DD MMM YYYY')} created and ${createdAt.format('dddd Do MMMM YYYY (hh:mm a)')} imported.`;
+          return `${invoiceDate.format('DD MMM YYYY')} created and ${createdAt.format('dddd D MMMM YYYY (hh:mm a)')} imported.`;
         }
       }
 
-      return `${dayjs(latestActivity.created_at).format('dddd Do MMMM YYYY (hh:mm a)')} ${getActivityLabel(latestActivity.action, latestActivity.details)}.`;
+      return `${dayjs(latestActivity.created_at).format('dddd D MMMM YYYY (hh:mm a)')} ${getActivityLabel(latestActivity.action, latestActivity.details)}.`;
     })()
     : '';
 
@@ -729,9 +753,19 @@ export default function InvoiceDetailsView() {
                     </div>
                     <div className="rounded border border-slate-100 bg-slate-50 px-4 py-3">
                       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</div>
-                      <div className="mt-1 flex items-center gap-2 font-semibold text-slate-900">
-                        <span className="capitalize">{invoice.state.replace('_', ' ')}</span>
-                        {isOverdue && <span className="rounded-full bg-[#b91c1c] px-2 py-0.5 text-[10px] font-bold text-white">Overdue by {overDueDays} days</span>}
+                      <div className="mt-1 flex flex-wrap items-center gap-2 font-semibold text-slate-900">
+                        <select
+                          value={invoice.state}
+                          onChange={handleStatusChange}
+                          className="rounded-md border border-slate-200 py-1 pl-2 pr-6 text-sm font-semibold capitalize outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]/30 bg-transparent"
+                        >
+                          {INVOICE_STATES.map((s) => (
+                            <option key={s.value} value={s.value}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                        {isOverdue && <span className="rounded-full bg-[#b91c1c] px-2 py-0.5 text-[10px] font-bold text-white whitespace-nowrap">Overdue by {overDueDays} days</span>}
                       </div>
                     </div>
                   </div>

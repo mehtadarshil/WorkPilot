@@ -488,7 +488,7 @@ export default function InvoiceNotesPanel({
               {groupedByDay.map(([dayKey, dayItems]) => (
                 <div key={dayKey}>
                   <div className="mb-4 rounded-md bg-slate-700 px-4 py-2 text-center text-sm font-semibold text-white">
-                    {dayjs(dayKey).format('dddd Do MMMM YYYY')}
+                    {dayjs(dayKey).format('dddd D MMMM YYYY')}
                   </div>
                   <div className="relative ms-4 border-l-2 border-slate-200 pb-2 ps-8">
                     {dayItems.map((entry) => {
@@ -518,7 +518,7 @@ export default function InvoiceNotesPanel({
                                 </p>
                               )}
                               <p className="font-semibold text-slate-900">{entry.title}</p>
-                              {entry.body ? <p className="whitespace-pre-wrap text-slate-600">{entry.body}</p> : null}
+                              {entry.body ? <div className="whitespace-pre-wrap text-slate-600 prose prose-sm max-w-none break-words" dangerouslySetInnerHTML={{ __html: entry.body }} /> : null}
                               {entry.attachment && (
                                 <p className="pt-2 text-xs text-[#14B8A6]">
                                   <span className="font-semibold text-slate-700">Attachment:</span> {entry.attachment}
@@ -529,7 +529,7 @@ export default function InvoiceNotesPanel({
                               <p className="font-medium text-slate-700">
                                 {entry.kind === 'email' || entry.kind === 'sms' ? 'Sent' : 'Logged'}
                               </p>
-                              <p>{dayjs(entry.created_at).format('dddd Do MMMM YYYY [at] h:mm a')}</p>
+                              <p>{dayjs(entry.created_at).format('dddd D MMMM YYYY [at] h:mm a')}</p>
                               {entry.statusBadge && entry.kind === 'email' && (
                                 <span className="mt-2 inline-block rounded-full bg-[#14B8A6] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                                   {entry.statusBadge}
@@ -563,7 +563,7 @@ export default function InvoiceNotesPanel({
                           {dayjs(entry.created_at).format('DD MMM YYYY, HH:mm')}
                         </span>
                       </div>
-                      {entry.body ? <p className="mt-1 text-slate-600">{entry.body}</p> : null}
+                      {entry.body ? <div className="mt-1 text-slate-600 prose prose-sm max-w-none break-words" dangerouslySetInnerHTML={{ __html: entry.body }} /> : null}
                     </div>
                   </li>
                 );

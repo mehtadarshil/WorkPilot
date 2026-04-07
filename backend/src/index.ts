@@ -3804,9 +3804,13 @@ function canAccessInvoice(invoice: DbInvoice, userId: number, isSuperAdmin: bool
 
 /** Single-line customer address — same field order as customer detail page (`[id]/page.tsx`). */
 function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
-  const parts = [row.address_line_1, row.address_line_2, row.address_line_3, row.town, row.county, row.postcode]
-    .map((x) => (typeof x === 'string' ? x.trim() : ''))
-    .filter(Boolean);
+  const parts: string[] = [];
+  [row.address_line_1, row.address_line_2, row.address_line_3, row.town, row.county, row.postcode].forEach((x) => {
+    const t = typeof x === 'string' ? x.trim() : '';
+    if (t && !parts.some((p) => p.toLowerCase() === t.toLowerCase())) {
+      parts.push(t);
+    }
+  });
   if (parts.length) return parts.join(', ');
   const legacy = typeof row.address === 'string' ? row.address.trim() : '';
   if (legacy) return legacy;
@@ -3850,6 +3854,12 @@ async function buildInvoiceEmailTemplateVars(
       work_address = formatWorkAddressSingleLine(wr.rows[0]);
     }
   }
+  let pToken = inv.public_token;
+  if (!pToken) {
+    pToken = crypto.randomBytes(32).toString('hex');
+    await pool.query('UPDATE invoices SET public_token = $1 WHERE id = $2', [pToken, inv.id]);
+  }
+
   return {
     company_name: invSettings.company_name ?? 'WorkPilot',
     customer_name: inv.customer_full_name ?? '',
@@ -3860,7 +3870,7 @@ async function buildInvoiceEmailTemplateVars(
     due_date: dueDate,
     customer_address,
     work_address,
-    invoice_link: `<a href="https://work-pilot.co/public/invoices/${inv.public_token}">${inv.invoice_number}</a>`,
+    invoice_link: `<a href="https://work-pilot.co/public/invoices/${pToken}">${inv.invoice_number}</a>`,
   };
 }
 
@@ -3869,7 +3879,7 @@ function formatWorkAddressSingleLine(row: Record<string, unknown>): string {
   const parts: string[] = [];
   const push = (v: unknown) => {
     const t = typeof v === 'string' ? v.trim() : '';
-    if (t) parts.push(t);
+    if (t && !parts.some((p) => p.toLowerCase() === t.toLowerCase())) parts.push(t);
   };
   push(row.name);
   push(row.branch_name);
@@ -3889,7 +3899,9 @@ function formatWorkAddressSingleLineWithoutName(row: Record<string, unknown>): s
   const parts: string[] = [];
   const push = (v: unknown) => {
     const t = typeof v === 'string' ? v.trim() : '';
-    if (t) parts.push(t);
+    if (t && !parts.some((p) => p.toLowerCase() === t.toLowerCase())) {
+      parts.push(t);
+    }
   };
   push(row.branch_name);
   push(row.company_name);
@@ -3898,18 +3910,21 @@ function formatWorkAddressSingleLineWithoutName(row: Record<string, unknown>): s
   push(row.address_line_3);
   const town = typeof row.town === 'string' ? row.town.trim() : '';
   const county = typeof row.county === 'string' ? row.county.trim() : '';
-  if (town || county) parts.push([town, county].filter(Boolean).join(', '));
+  if (town) push(town);
+  if (county) push(county);
   push(row.postcode);
   return parts.join(', ');
 }
 
 /** Normalize legacy invoice rows that stored work address with newlines. */
 function workSiteAddressAsSingleLine(stored: string): string {
-  return stored
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .join(', ');
+  const parts: string[] = [];
+  stored.split(/\r?\n/).map(s => s.trim()).filter(Boolean).forEach(s => {
+    if (!parts.some(p => p.toLowerCase() === s.toLowerCase())) {
+      parts.push(s);
+    }
+  });
+  return parts.join(', ');
 }
 
 async function resolveInvoiceBillingFromWorkAddress(
@@ -3952,11 +3967,12 @@ async function createInvoiceFromJob(jobId: number, userId: number) {
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
   const totalAmount = subtotal + taxAmount;
 
+  const publicToken = crypto.randomBytes(32).toString('hex');
   const invResult = await pool.query(
-    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10)
+    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11)
      RETURNING id`,
-    [invoiceNumber, job.customer_id, jobId, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, settings.default_currency, userId]
+    [invoiceNumber, job.customer_id, jobId, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, settings.default_currency, userId, publicToken]
   );
 
   const invoiceId = invResult.rows[0].id;
@@ -4908,7 +4924,12 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
 
     // Replace placeholder if exists, but DO NOT auto-append anymore
-    const publicLink = `https://work-pilot.co/public/invoices/${inv.public_token || ''}`;
+    let pToken = inv.public_token;
+    if (!pToken) {
+      pToken = crypto.randomBytes(32).toString('hex');
+      await pool.query('UPDATE invoices SET public_token = $1 WHERE id = $2', [pToken, inv.id]);
+    }
+    const publicLink = `https://work-pilot.co/public/invoices/${pToken}`;
     let processedBody = bodyHtmlRaw;
     if (processedBody.includes('{{invoice_link}}')) {
       processedBody = processedBody.replace(/{{invoice_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
@@ -5753,11 +5774,12 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, 
     const taxAmount = parseFloat(q.tax_amount);
     const totalAmount = parseFloat(q.total_amount);
 
+    const publicToken = crypto.randomBytes(32).toString('hex');
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 'draft', $12)
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 'draft', $12, $13)
        RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
-      [invoiceNumber, q.customer_id, q.job_id, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, q.currency, q.notes, q.billing_address, userId],
+      [invoiceNumber, q.customer_id, q.job_id, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, q.currency, q.notes, q.billing_address, userId, publicToken],
     );
     const inv = invResult.rows[0];
     const invId = inv.id;
@@ -7010,12 +7032,19 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireAdmin, async (r
 app.get('/api/customers/:customerId/jobs', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+  const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
   try {
+    const params: any[] = [customerId];
+    let whereClause = 'WHERE j.customer_id = $1';
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      whereClause += ' AND j.work_address_id = $2';
+      params.push(workAddressId);
+    }
     const result = await pool.query(
       `SELECT j.*, jd.name as description_name FROM jobs j 
        LEFT JOIN job_descriptions jd ON j.job_description_id = jd.id
-       WHERE j.customer_id = $1 ORDER BY j.created_at DESC`,
-      [customerId]
+       ${whereClause} ORDER BY j.created_at DESC`,
+      params
     );
     return res.json(result.rows);
   } catch (error) {
@@ -7037,9 +7066,14 @@ app.get('/api/customers/:customerId/contacts', authenticate, requireAdmin, async
 
     const params: unknown[] = [customerId];
     let whereClause = 'WHERE customer_id = $1';
+    const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      whereClause += ` AND work_address_id = $${params.length + 1}`;
+      params.push(workAddressId);
+    }
     if (search) {
       params.push(`%${search}%`);
-      whereClause += ` AND (COALESCE(title,'') ILIKE $2 OR COALESCE(first_name,'') ILIKE $2 OR surname ILIKE $2 OR COALESCE(position,'') ILIKE $2 OR COALESCE(email,'') ILIKE $2 OR COALESCE(mobile,'') ILIKE $2)`;
+      whereClause += ` AND (COALESCE(title,'') ILIKE $${params.length} OR COALESCE(first_name,'') ILIKE $${params.length} OR surname ILIKE $${params.length} OR COALESCE(position,'') ILIKE $${params.length} OR COALESCE(email,'') ILIKE $${params.length} OR COALESCE(mobile,'') ILIKE $${params.length})`;
     }
 
     const result = await pool.query(
@@ -7485,9 +7519,10 @@ app.post(
       const validStates = ['draft', 'issued', 'pending_payment'];
       const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
 
+      const publicToken = crypto.randomBytes(32).toString('hex');
       const invResult = await pool.query<DbInvoice>(
-        `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by)
-         VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token)
+         VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
         [
           invoiceNumber,
@@ -7505,6 +7540,7 @@ app.post(
           custRef,
           targetState,
           userId,
+          publicToken,
         ],
       );
       const inv = invResult.rows[0];
@@ -7661,9 +7697,14 @@ app.get('/api/customers/:customerId/assets', authenticate, requireAdmin, async (
 
     const params: unknown[] = [customerId];
     let whereClause = 'WHERE customer_id = $1';
+    const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      whereClause += ` AND work_address_id = $${params.length + 1}`;
+      params.push(workAddressId);
+    }
     if (search) {
       params.push(`%${search}%`);
-      whereClause += ` AND (asset_group ILIKE $2 OR COALESCE(asset_type,'') ILIKE $2 OR description ILIKE $2 OR COALESCE(make,'') ILIKE $2 OR COALESCE(model,'') ILIKE $2 OR COALESCE(serial_number,'') ILIKE $2 OR COALESCE(location,'') ILIKE $2)`;
+      whereClause += ` AND (asset_group ILIKE $${params.length} OR COALESCE(asset_type,'') ILIKE $${params.length} OR description ILIKE $${params.length} OR COALESCE(make,'') ILIKE $${params.length} OR COALESCE(model,'') ILIKE $${params.length} OR COALESCE(serial_number,'') ILIKE $${params.length} OR COALESCE(location,'') ILIKE $${params.length})`;
     }
     const orderBy = groupBy === 'group' ? 'ORDER BY asset_group ASC, created_at ASC' : 'ORDER BY created_at ASC';
 
@@ -7965,6 +8006,12 @@ app.get('/api/customers/:customerId/communications', authenticate, requireAdmin,
     const conditions: string[] = ['cc.customer_id = $1'];
     const params: unknown[] = [customerId];
     let p = 2;
+
+    const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      conditions.push(`cc.work_address_id = $${p++}`);
+      params.push(workAddressId);
+    }
 
     if (type && ['note', 'email', 'sms', 'phone', 'schedule'].includes(type)) {
       conditions.push(`cc.record_type = $${p++}`);

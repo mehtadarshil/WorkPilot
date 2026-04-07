@@ -24,6 +24,7 @@ interface Asset {
 
 interface Props {
   customerId: string;
+  workAddressId?: string;
 }
 
 type AssetForm = {
@@ -59,7 +60,7 @@ const emptyForm: AssetForm = {
 const ASSET_GROUPS = ['Audio', 'Audio Visual', 'Electrical', 'HVAC', 'Fire', 'Security', 'Other'];
 const FUNCTIONING_OPTIONS = ['Yes', 'No', 'Unknown'];
 
-export default function CustomerAssetsTab({ customerId }: Props) {
+export default function CustomerAssetsTab({ customerId, workAddressId }: Props) {
   const router = useRouter();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -79,6 +80,7 @@ export default function CustomerAssetsTab({ customerId }: Props) {
       const q = new URLSearchParams();
       if (search.trim()) q.set('search', search.trim());
       if (groupBy) q.set('group_by', groupBy);
+      if (workAddressId) q.set('work_address_id', workAddressId);
       const res = await getJson<{ assets: Asset[] }>(`/customers/${customerId}/assets${q.toString() ? `?${q.toString()}` : ''}`, token);
       setAssets(res.assets || []);
     } catch (err) {
@@ -86,7 +88,7 @@ export default function CustomerAssetsTab({ customerId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [token, customerId, search, groupBy]);
+  }, [token, customerId, search, groupBy, workAddressId]);
 
   useEffect(() => {
     fetchAssets();
