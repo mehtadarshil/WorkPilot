@@ -4066,14 +4066,24 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
 
     const ownerClause = isSuperAdmin ? '' : 'WHERE created_by = $1';
     const countParams2 = isSuperAdmin ? [] : [userId];
-    const stateCounts: Record<string, number> = {};
+    const stateStats: Record<string, { count: number; total_amount: number }> = {};
     for (const s of INVOICE_STATES) {
       const r = await pool.query(
-        `SELECT COUNT(*)::int AS c FROM invoices ${ownerClause} ${isSuperAdmin ? 'WHERE' : 'AND'} state = $${isSuperAdmin ? 1 : 2}`,
+        `SELECT COUNT(*)::int AS c, SUM(total_amount)::numeric AS s FROM invoices
+         ${ownerClause} ${ownerClause ? 'AND' : 'WHERE'} state = $${isSuperAdmin ? 1 : 2}`,
         isSuperAdmin ? [s] : [userId, s],
       );
-      stateCounts[s] = Number((r.rows[0] as { c: number }).c);
+      stateStats[s] = {
+        count: Number((r.rows[0] as { c: number }).c),
+        total_amount: parseFloat(String((r.rows[0] as { s: string | null }).s ?? '0')),
+      };
     }
+
+    const overallRes = await pool.query(
+      `SELECT SUM(total_amount - total_paid)::numeric AS outstanding FROM invoices ${ownerClause}`,
+      countParams2,
+    );
+    const overallOutstanding = parseFloat(String((overallRes.rows[0] as { outstanding: string | null }).outstanding ?? '0'));
 
     const invoices = listResult.rows.map((r) => ({
       id: r.id,
@@ -4099,7 +4109,8 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
       page,
       limit,
       totalPages,
-      stateCounts,
+      stateStats,
+      overallOutstanding,
     });
   } catch (error) {
     console.error('List invoices error:', error);

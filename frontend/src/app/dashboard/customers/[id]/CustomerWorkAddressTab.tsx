@@ -86,7 +86,7 @@ const emptyForm: WorkAddressForm = {
   prefers_phone: false,
   prefers_sms: false,
   prefers_email: false,
-  prefers_letter: true,
+  prefers_letter: false,
   uprn: '',
   is_active: true,
 };

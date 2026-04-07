@@ -167,7 +167,6 @@ export default function PublicInvoicePage() {
             <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice for</p>
               <p className="text-base font-semibold text-slate-900">{invoice.customer_full_name || '-'}</p>
-              {invoice.customer_email && <p className="mt-1 text-sm text-slate-600">{invoice.customer_email}</p>}
               {invoice.customer_phone && <p className="text-sm text-slate-600">{invoice.customer_phone}</p>}
               <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{invoice.billing_address || invoice.customer_address || '—'}</p>

@@ -206,7 +206,6 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     doc.moveDown(0.25);
     doc.fontSize(10).fillColor('#334155');
     doc.text(inv.customer_full_name || 'Customer', { width: 260 });
-    if (inv.customer_email) doc.fontSize(9).text(inv.customer_email);
     if (inv.customer_phone) doc.fontSize(9).text(inv.customer_phone);
     if (custRefLine) doc.fontSize(9).text(`Customer reference: ${custRefLine}`);
     doc.fontSize(9).fillColor('#334155').text(customerAddrFormatted || '—', { width: 260 });

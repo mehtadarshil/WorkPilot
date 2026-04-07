@@ -32,7 +32,8 @@ interface InvoicesResponse {
   page: number;
   limit: number;
   totalPages: number;
-  stateCounts: Record<string, number>;
+  stateStats: Record<string, { count: number; total_amount: number }>;
+  overallOutstanding: number;
 }
 
 interface Customer {
@@ -80,7 +81,8 @@ export default function InvoicesPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [stateCounts, setStateCounts] = useState<Record<string, number>>({});
+  const [stateStats, setStateStats] = useState<Record<string, { count: number; total_amount: number }>>({});
+  const [overallOutstanding, setOverallOutstanding] = useState(0);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -118,12 +120,14 @@ export default function InvoicesPage() {
       setInvoices(data.invoices ?? []);
       setTotal(data.total ?? 0);
       setTotalPages(data.totalPages ?? 1);
-      setStateCounts(data.stateCounts ?? {});
+      setStateStats(data.stateStats ?? {});
+      setOverallOutstanding(data.overallOutstanding ?? 0);
     } catch {
       setInvoices([]);
       setTotal(0);
       setTotalPages(1);
-      setStateCounts({});
+      setStateStats({});
+      setOverallOutstanding(0);
     }
   }, [token, page, searchDebounced, stateFilter]);
 
@@ -293,7 +297,7 @@ export default function InvoicesPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="mx-auto max-w-6xl space-y-8">
+        <div className="mx-auto max-w-full space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Invoice Management</h1>
@@ -322,7 +326,17 @@ export default function InvoicesPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-rose-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-rose-500">Outstanding</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallOutstanding, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">across all invoices</p>
+            </motion.div>
+
             {INVOICE_STATES.map((s) => (
               <motion.div
                 key={s.value}
@@ -330,8 +344,12 @@ export default function InvoicesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
               >
-                <p className="mb-1 text-xs font-medium text-slate-500">{s.label}</p>
-                <h3 className="text-2xl font-bold text-slate-900">{stateCounts[s.value] ?? 0}</h3>
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">{s.label}</p>
+                <div className="flex items-baseline gap-1.5">
+                  <h3 className="text-2xl font-black text-slate-900">{stateStats[s.value]?.count ?? 0}</h3>
+                  <span className="text-[11px] font-bold text-slate-400 italic">inv</span>
+                </div>
+                <p className="mt-1 text-base font-bold text-slate-600">{formatCurrency(stateStats[s.value]?.total_amount ?? 0, 'GBP')}</p>
               </motion.div>
             ))}
           </div>
