@@ -4852,7 +4852,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
       signature_html: emailCfg.default_signature_html,
       from_display: formatFromHeader(emailCfg.from_name, emailCfg.from_email) || emailCfg.from_email || '',
       reply_to: emailCfg.reply_to,
-      smtp_ready: !!(emailCfg.smtp_enabled && transport && emailCfg.from_email?.trim()),
+      smtp_ready: !!((emailCfg.smtp_enabled && transport) || emailCfg.oauth_provider) && !!emailCfg.from_email?.trim(),
       can_send: inv.state === 'issued',
       invoice_state: inv.state,
       default_to: inv.customer_email ?? '',
