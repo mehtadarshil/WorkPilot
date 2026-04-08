@@ -59,6 +59,11 @@ export default function EditCustomerPage() {
   const [leadSource, setLeadSource] = useState('');
   const [priceBookId, setPriceBookId] = useState<number | ''>('');
   const [creditDays, setCreditDays] = useState('');
+  
+  const [w3w, setW3W] = useState('');
+  const [waterSupply, setWaterSupply] = useState('');
+  const [powerSupply, setPowerSupply] = useState('');
+  const [technicalNotes, setTechnicalNotes] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +110,11 @@ export default function EditCustomerPage() {
       setLeadSource(customer.lead_source || '');
       setPriceBookId(customer.price_book_id || '');
       setCreditDays(customer.credit_days ? customer.credit_days.toString() : '');
+      
+      setW3W(customer.w3w || '');
+      setWaterSupply(customer.water_supply || '');
+      setPowerSupply(customer.power_supply || '');
+      setTechnicalNotes(customer.technical_notes || '');
 
     } catch (e: any) {
       setError(e.message || 'Failed to fetch data');
@@ -158,7 +168,11 @@ export default function EditCustomerPage() {
         prefers_letter: prefersLetter,
         lead_source: leadSource,
         price_book_id: priceBookId === '' ? null : Number(priceBookId),
-        credit_days: creditDays
+        credit_days: creditDays,
+        w3w: w3w.trim() || null,
+        water_supply: waterSupply.trim() || null,
+        power_supply: powerSupply.trim() || null,
+        technical_notes: technicalNotes.trim() || null
       }, token);
 
       router.back();
@@ -359,12 +373,28 @@ export default function EditCustomerPage() {
                 </div>
               </div>
 
+
+
               <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                  <div className="border-b border-slate-200 bg-slate-100/50 px-5 py-3">
-                  <h3 className="font-bold text-slate-800">Accounts Options</h3>
+                  <h3 className="font-bold text-slate-800">Historical / Technical Details</h3>
                 </div>
                 <div className="p-5 space-y-4">
-                   <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>W3W (What3Words)</label>
+                      <input type="text" value={w3w} onChange={e => setW3W(e.target.value)} className={inputClass} placeholder="e.g. filled.count.soap" />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Water Supply Ref</label>
+                      <input type="text" value={waterSupply} onChange={e => setWaterSupply(e.target.value)} className={inputClass} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Power Supply Ref</label>
+                      <input type="text" value={powerSupply} onChange={e => setPowerSupply(e.target.value)} className={inputClass} />
+                    </div>
                     <div>
                       <label className={labelClass}>Lead Source</label>
                       <select value={leadSource} onChange={e => setLeadSource(e.target.value)} className={inputClass}>
@@ -376,6 +406,29 @@ export default function EditCustomerPage() {
                         <option value="Cold Call">Cold Call</option>
                       </select>
                     </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Technical Notes</label>
+                    <textarea 
+                      value={technicalNotes} 
+                      onChange={e => setTechnicalNotes(e.target.value)} 
+                      className={`${inputClass} min-h-[100px] resize-y`}
+                      placeholder="Enter any additional technical details or specific site instructions..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                 <div className="border-b border-slate-200 bg-slate-100/50 px-5 py-3">
+                  <h3 className="font-bold text-slate-800">Accounts Options</h3>
+                </div>
+                <div className="p-5 space-y-4">
+                   <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Default Credit Days</label>
+                      <input type="text" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={inputClass} placeholder="e.g. 30" />
+                    </div>
                     <div>
                       <label className={labelClass}>Price Book</label>
                       <select value={priceBookId} onChange={e => setPriceBookId(e.target.value as any)} className={inputClass}>
@@ -386,13 +439,11 @@ export default function EditCustomerPage() {
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className={labelClass}>Default Credit Days</label>
-                    <input type="text" value={creditDays} onChange={e => setCreditDays(e.target.value)} className={inputClass} placeholder="e.g. 30" />
-                  </div>
                 </div>
               </div>
+
             </div>
+
           </div>
         </form>
       </div>

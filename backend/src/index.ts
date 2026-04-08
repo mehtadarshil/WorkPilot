@@ -142,6 +142,10 @@ interface DbCustomer {
   created_at: Date;
   updated_at: Date;
   created_by: number | null;
+  w3w: string | null;
+  water_supply: string | null;
+  power_supply: string | null;
+  technical_notes: string | null;
 }
 
 interface DbJob {
@@ -1706,6 +1710,10 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   const prefersLetter = !!b.prefers_letter;
   const leadSource = str(b.lead_source);
   const priceBookId = typeof b.price_book_id === 'number' ? b.price_book_id : null;
+  const w3w = str(b.w3w);
+  const waterSupply = str(b.water_supply);
+  const powerSupply = str(b.power_supply);
+  const technicalNotes = str(b.technical_notes);
 
   const createdBy = req.user!.userId;
 
@@ -1716,13 +1724,16 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
          address_line_1, address_line_2, address_line_3, town, county, postcode, landline, credit_days,
          contact_title, contact_first_name, contact_surname, contact_position, contact_mobile, contact_landline, contact_email,
          prefers_phone, prefers_sms, prefers_email, prefers_letter, lead_source, price_book_id,
+         w3w, water_supply, power_supply, technical_notes,
          created_by
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
          $12, $13, $14, $15, $16, $17, $18, $19,
          $20, $21, $22, $23, $24, $25, $26,
-         $27, $28, $29, $30, $31, $32, $33
+         $27, $28, $29, $30, $31, $32,
+         $33, $34, $35, $36,
+         $37
        )
        RETURNING *`,
       [
@@ -1730,6 +1741,7 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
         addressLine1, addressLine2, addressLine3, town, county, postcode, landline, creditDays,
         contactTitle, contactFirstName, contactSurname, contactPosition, contactMobile, contactLandline, contactEmail,
         prefersPhone, prefersSms, prefersEmail, prefersLetter, leadSource, priceBookId,
+        w3w, waterSupply, powerSupply, technicalNotes,
         createdBy
       ],
     );
@@ -1839,6 +1851,10 @@ app.patch('/api/customers/:id', authenticate, requireAdmin, async (req: Authenti
   if (body.prefers_letter !== undefined) { updates.push(`prefers_letter = $${idx++}`); values.push(!!body.prefers_letter); }
   if (str('lead_source') !== undefined) { updates.push(`lead_source = $${idx++}`); values.push(str('lead_source')); }
   if (body.price_book_id !== undefined) { updates.push(`price_book_id = $${idx++}`); values.push(typeof body.price_book_id === 'number' ? body.price_book_id : null); }
+  if (str('w3w') !== undefined) { updates.push(`w3w = $${idx++}`); values.push(str('w3w')); }
+  if (str('water_supply') !== undefined) { updates.push(`water_supply = $${idx++}`); values.push(str('water_supply')); }
+  if (str('power_supply') !== undefined) { updates.push(`power_supply = $${idx++}`); values.push(str('power_supply')); }
+  if (str('technical_notes') !== undefined) { updates.push(`technical_notes = $${idx++}`); values.push(str('technical_notes')); }
 
   if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
   updates.push('updated_at = NOW()');

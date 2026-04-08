@@ -43,6 +43,10 @@ interface CustomerDetails {
   contact_email: string | null;
   contact_mobile: string | null;
   contact_landline: string | null;
+  w3w: string | null;
+  water_supply: string | null;
+  power_supply: string | null;
+  technical_notes: string | null;
 }
 
 interface Job {
@@ -66,6 +70,14 @@ interface CustomerInvoice {
   job_title: string | null;
 }
 
+interface WorkAddressDetails {
+  id: number;
+  name: string;
+  address_line_1: string;
+  town: string | null;
+  postcode: string | null;
+}
+
 export default function CustomerDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -76,13 +88,16 @@ export default function CustomerDetailsPage() {
   const [data, setData] = useState<CustomerDetails | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<CustomerInvoice[]>([]);
+  const [workAddressDetails, setWorkAddressDetails] = useState<WorkAddressDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
     const allowed = ['All works', 'Communications', 'Contacts', 'Branches', 'Work address', 'Assets', 'Files'];
-    return tab && allowed.includes(tab) ? tab : 'All works';
+    let initial = tab && allowed.includes(tab) ? tab : 'All works';
+    if (workAddressId && initial === 'Work address') initial = 'All works';
+    return initial;
   });
   const [historySearch, setHistorySearch] = useState('');
   const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
@@ -93,9 +108,15 @@ export default function CustomerDetailsPage() {
     const tab = searchParams.get('tab');
     const allowed = ['All works', 'Communications', 'Contacts', 'Branches', 'Work address', 'Assets', 'Files'];
     if (tab && allowed.includes(tab)) {
-      setActiveTab(tab);
+      if (workAddressId && tab === 'Work address') {
+        setActiveTab('All works');
+      } else {
+        setActiveTab(tab);
+      }
+    } else if (workAddressId && activeTab === 'Work address') {
+      setActiveTab('All works');
     }
-  }, [searchParams]);
+  }, [searchParams, workAddressId, activeTab]);
 
   const fetchDetails = useCallback(async () => {
     if (!token || !id) return;
@@ -134,11 +155,26 @@ export default function CustomerDetailsPage() {
     }
   }, [id, token, workAddressId]);
 
+  const fetchWorkAddressDetails = useCallback(async () => {
+    if (!token || !id || !workAddressId) {
+      setWorkAddressDetails(null);
+      return;
+    }
+    try {
+      const res = await getJson<{ work_address: WorkAddressDetails }>(`/customers/${id}/work-addresses/${workAddressId}`, token);
+      setWorkAddressDetails(res.work_address || null);
+    } catch (err) {
+      console.error('Failed to fetch work address details', err);
+      setWorkAddressDetails(null);
+    }
+  }, [id, token, workAddressId]);
+
   useEffect(() => {
     fetchDetails();
     fetchJobs();
     fetchInvoices();
-  }, [fetchDetails, fetchJobs, fetchInvoices]);
+    fetchWorkAddressDetails();
+  }, [fetchDetails, fetchJobs, fetchInvoices, fetchWorkAddressDetails]);
 
   const historyRows = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
@@ -200,7 +236,7 @@ export default function CustomerDetailsPage() {
     { key: 'Communications', label: 'Communications' },
     { key: 'Contacts', label: 'Contacts' },
     ...(allowBranches ? [{ key: 'Branches', label: 'Branches' }] : []),
-    { key: 'Work address', label: workAddressLabel },
+    ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
     { key: 'Assets', label: 'Assets' },
     { key: 'Files', label: 'Files' },
   ];
@@ -226,7 +262,12 @@ export default function CustomerDetailsPage() {
       {workAddressId && (
         <div className="flex items-center justify-between bg-amber-50 border-b border-amber-200 px-4 py-2 md:px-6">
           <p className="text-sm font-medium text-amber-800">
-            🏠 Viewing data scoped to work address #{workAddressId}
+            🏠 Viewing data scoped to: <span className="font-bold">{workAddressDetails?.name || `Work address #${workAddressId}`}</span>
+            {workAddressDetails && (
+              <span className="ml-2 opacity-75 hidden sm:inline">
+                ({[workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode].filter(Boolean).join(', ')})
+              </span>
+            )}
           </p>
           <button
             onClick={() => router.push(`/dashboard/customers/${id}`)}
@@ -257,7 +298,7 @@ export default function CustomerDetailsPage() {
             </div>
 
             {/* Primary Details Card */}
-            <div className="p-5 border-b border-slate-100 relative group">
+             <div className="p-5 border-b border-slate-100 relative group">
               <button onClick={() => router.push(`/dashboard/customers/${id}/edit`)} className="absolute top-5 right-5 text-sm font-semibold text-[#14B8A6] hover:underline opacity-0 group-hover:opacity-100 transition-opacity">Edit</button>
               
               <div className="space-y-3.5 mt-1">
@@ -279,6 +320,23 @@ export default function CustomerDetailsPage() {
                  </div>
               </div>
             </div>
+
+            {workAddressDetails && (
+              <div className="p-5 border-b border-amber-100 bg-amber-50/30">
+                <p className="text-[11px] font-extrabold uppercase tracking-widest text-amber-600 mb-2">Work Site Address</p>
+                <div className="space-y-2.5">
+                  <div className="flex gap-3 items-start">
+                    <MapPin className="size-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-800">{workAddressDetails.name}</span>
+                      <span className="text-xs text-slate-600 leading-relaxed">
+                        {[workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Service Reminders (Mocked) */}
             <div className="p-5 border-b border-slate-100">
@@ -332,25 +390,34 @@ export default function CustomerDetailsPage() {
                </div>
             </div>
 
-            {/* Technical References */}
             <div className="p-5 pb-10 relative group">
-               <div className="flex justify-between items-center mb-3">
+               <div className="justify-between items-center mb-3 hidden group-hover:flex">
                  <h3 className="font-bold text-slate-800 text-[15px]">Technical references</h3>
-                 <button onClick={() => router.push(`/dashboard/customers/${id}/edit`)} className="text-sm font-semibold text-[#14B8A6] hover:underline opacity-0 group-hover:opacity-100 transition-opacity">Edit</button>
+                 <button onClick={() => router.push(`/dashboard/customers/${id}/edit`)} className="text-sm font-semibold text-[#14B8A6] hover:underline transition-opacity">Edit</button>
                </div>
+               <div className="flex justify-between items-center mb-3 group-hover:hidden">
+                 <h3 className="font-bold text-slate-800 text-[15px]">Technical references</h3>
+               </div>
+               
                <div className="space-y-4">
                  <div>
                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">W3W</label>
-                   <span className="text-sm text-slate-600">-</span>
+                   <span className="text-sm text-slate-600">{data.w3w || '-'}</span>
                  </div>
                  <div>
                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">Water supply</label>
-                   <span className="text-sm text-slate-600">-</span>
+                   <span className="text-sm text-slate-600">{data.water_supply || '-'}</span>
                  </div>
                  <div>
                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">Power supply</label>
-                   <span className="text-sm text-slate-600">-</span>
+                   <span className="text-sm text-slate-600">{data.power_supply || '-'}</span>
                  </div>
+                 {data.technical_notes && (
+                   <div>
+                     <label className="text-xs font-semibold text-slate-700 block mb-0.5">Technical notes</label>
+                     <span className="text-sm text-slate-600 leading-relaxed block break-words">{data.technical_notes}</span>
+                   </div>
+                 )}
                </div>
                <button className="text-[13px] font-medium text-[#3E8ED0] hover:underline mt-4 block">Click here to view more technical references</button>
             </div>
