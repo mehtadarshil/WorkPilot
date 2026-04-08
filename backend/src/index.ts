@@ -4295,6 +4295,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     state?: string;
     /** Raw value from CSV import; normalized to PREFIX-000001 and checked for duplicates. */
     invoice_number?: string;
+    invoice_work_address_id?: number;
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
@@ -4324,9 +4325,9 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
     const custRef =
       typeof body.customer_reference === 'string' ? body.customer_reference.trim() || null : null;
-    /** Work/site linkage is only set via POST .../work-addresses/:workAddressId/invoices, not the generic create endpoint. */
+    /** Work/site linkage. */
     const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
-    const invoiceWorkAddressId: number | null = null;
+    const invoiceWorkAddressId = typeof body.invoice_work_address_id === 'number' ? body.invoice_work_address_id : null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     let subtotal = 0;

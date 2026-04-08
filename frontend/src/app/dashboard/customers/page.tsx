@@ -453,85 +453,80 @@ export default function CustomersPage() {
                       </td>
                     </tr>
                   ) : (
-                    <AnimatePresence>
-                      {customers.map((c, i) => (
-                        <motion.tr
-                          key={c.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: i * 0.02 }}
-                          onClick={() => router.push(`/dashboard/customers/${c.id}`)}
-                          className="group bg-white hover:bg-slate-50 transition-colors cursor-pointer"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#14B8A6]/20 font-bold text-xs text-[#14B8A6]">
-                                {initials(c.full_name)}
-                              </div>
-                              <div>
-                                <span className="text-sm font-semibold text-slate-900">{c.full_name}</span>
-                                <span className="block text-xs text-slate-500">{locationStr(c)}</span>
-                              </div>
+                    customers.map((c, i) => (
+                      <tr
+                        key={c.id}
+                        onClick={() => router.push(`/dashboard/customers/${c.id}`)}
+                        className="group bg-white hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 cursor-pointer"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#14B8A6]/20 font-bold text-xs text-[#14B8A6]">
+                              {initials(c.full_name)}
                             </div>
-                          </td>
-                          <td className="px-6 py-4">{statusBadge(c.status)}</td>
-                          <td className="px-6 py-4 text-sm text-slate-900">{c.company || '—'}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{c.email}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{formatLastContact(c.last_contact)}</td>
-                          <td
-                            className="relative px-6 py-4 text-right"
-                            onClick={(e) => e.stopPropagation()}
+                            <div>
+                              <span className="text-sm font-semibold text-slate-900">{c.full_name}</span>
+                              <span className="block text-xs text-slate-500">{locationStr(c)}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">{statusBadge(c.status)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-900">{c.company || '—'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{c.email}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{formatLastContact(c.last_contact)}</td>
+                        <td
+                          className="relative px-6 py-4 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (actionMenu === c.id) {
+                                setActionMenu(null);
+                              } else {
+                                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                                setMenuPosition({ top: rect.bottom + 4, left: rect.right - 120 });
+                                setActionMenu(c.id);
+                              }
+                            }}
+                            className="rounded p-1 transition hover:bg-slate-200"
                           >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (actionMenu === c.id) {
-                                  setActionMenu(null);
-                                } else {
-                                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                  setMenuPosition({ top: rect.bottom + 4, left: rect.right - 120 });
-                                  setActionMenu(c.id);
-                                }
-                              }}
-                              className="rounded p-1 transition hover:bg-slate-200"
+                            <MoreVertical className="size-5 text-slate-500" />
+                          </button>
+                          {actionMenu === c.id && typeof document !== 'undefined' && createPortal(
+                            <div
+                              className="fixed z-[100] w-28 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                              style={{ top: menuPosition.top, left: menuPosition.left }}
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <MoreVertical className="size-5 text-slate-500" />
-                            </button>
-                            {actionMenu === c.id && typeof document !== 'undefined' && createPortal(
-                              <div
-                                className="fixed z-[100] w-28 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
-                                style={{ top: menuPosition.top, left: menuPosition.left }}
-                                onClick={(e) => e.stopPropagation()}
+                              <button
+                                type="button"
+                                onClick={() => { setActionMenu(null); router.push(`/dashboard/customers/${c.id}/edit`); }}
+                                className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => { setActionMenu(null); router.push(`/dashboard/customers/${c.id}/edit`); }}
-                                  className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/customers/${c.id}`); }}
-                                  className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                                >
-                                  View detail
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(c.id)}
-                                  className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                                >
-                                  Delete
-                                </button>
-                              </div>,
-                              document.body,
-                            )}
-                          </td>
-                        </motion.tr>
-                      ))}
-                    </AnimatePresence>
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/customers/${c.id}`); }}
+                                className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                View detail
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(c.id)}
+                                className="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </div>,
+                            document.body,
+                          )}
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

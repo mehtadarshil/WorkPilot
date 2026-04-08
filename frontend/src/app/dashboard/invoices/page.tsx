@@ -408,40 +408,35 @@ export default function InvoicesPage() {
                       </td>
                     </tr>
                   ) : (
-                    <AnimatePresence>
-                      {invoices.map((inv, i) => (
-                        <motion.tr
-                          key={inv.id}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: i * 0.02 }}
-                          className="group transition-colors hover:bg-slate-50"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#14B8A6]/20">
-                                <FileText className="size-5 text-[#14B8A6]" />
-                              </div>
-                              <span className="text-sm font-semibold text-slate-900">{inv.invoice_number}</span>
+                    invoices.map((inv, i) => (
+                      <tr
+                        key={inv.id}
+                        className="group transition-colors outline-none hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#14B8A6]/20">
+                              <FileText className="size-5 text-[#14B8A6]" />
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{inv.customer_full_name || '—'}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{inv.job_id && inv.job_title ? inv.job_title : '—'}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.invoice_date)}</td>
-                          <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.due_date)}</td>
-                          <td className="px-6 py-4 text-sm font-medium text-slate-900">{formatCurrency(inv.total_amount, inv.currency)}</td>
-                          <td className="px-6 py-4">{stateBadge(inv.state)}</td>
-                          <td className="px-6 py-4">
-                            <Link
-                              href={`/dashboard/invoices/${inv.id}`}
-                              className="inline-flex items-center gap-1 rounded p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
-                            >
-                              View <ChevronRight className="size-4" />
-                            </Link>
-                          </td>
-                        </motion.tr>
-                      ))}
-                    </AnimatePresence>
+                            <span className="text-sm font-semibold text-slate-900">{inv.invoice_number}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-700">{inv.customer_full_name || '—'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{inv.job_id && inv.job_title ? inv.job_title : '—'}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.due_date)}</td>
+                        <td className="px-6 py-4 text-sm font-medium text-slate-900">{formatCurrency(inv.total_amount, inv.currency)}</td>
+                        <td className="px-6 py-4">{stateBadge(inv.state)}</td>
+                        <td className="px-6 py-4">
+                          <Link
+                            href={`/dashboard/invoices/${inv.id}`}
+                            className="inline-flex items-center gap-1 rounded p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+                          >
+                            View <ChevronRight className="size-4" />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

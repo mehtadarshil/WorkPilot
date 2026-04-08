@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { getJson } from '../../../apiClient';
-import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter } from 'lucide-react';
+import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight } from 'lucide-react';
 import dayjs from 'dayjs';
 import CustomerCommunicationsTab from './CustomerCommunicationsTab';
 import CustomerContactsTab from './CustomerContactsTab';
 import CustomerBranchesTab from './CustomerBranchesTab';
 import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
+import CustomerInvoicesTab from './CustomerInvoicesTab';
 
 interface CustomerDetails {
   id: number;
@@ -94,7 +95,7 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Branches', 'Work address', 'Assets', 'Files'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
     let initial = tab && allowed.includes(tab) ? tab : 'All works';
     if (workAddressId && initial === 'Work address') initial = 'All works';
     return initial;
@@ -106,7 +107,7 @@ export default function CustomerDetailsPage() {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Branches', 'Work address', 'Assets', 'Files'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
         setActiveTab('All works');
@@ -235,6 +236,7 @@ export default function CustomerDetailsPage() {
     { key: 'All works', label: 'All works' },
     { key: 'Communications', label: 'Communications' },
     { key: 'Contacts', label: 'Contacts' },
+    ...(workAddressId ? [{ key: 'Invoices', label: 'Invoices' }] : []),
     ...(allowBranches ? [{ key: 'Branches', label: 'Branches' }] : []),
     ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
     { key: 'Assets', label: 'Assets' },
@@ -567,7 +569,7 @@ export default function CustomerDetailsPage() {
                                </tr>
                              ) : (
                                historyRows.map((r) => (
-                                 <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                                 <tr key={r.id} className="hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
                                    <td className="px-5 py-4">{dayjs(r.date).format('ddd D MMM YYYY')}</td>
                                    <td className="px-5 py-4 font-medium uppercase text-[11px] text-slate-400 tracking-wide">
                                       <span className={`px-2 py-1 rounded ${r.badgeClass}`}>{r.typeLabel}</span>
@@ -577,7 +579,13 @@ export default function CustomerDetailsPage() {
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.total}</td>
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.balance}</td>
                                    <td className="px-5 py-4 text-right">
-                                     <button onClick={() => router.push(r.viewPath)} className="text-[#14B8A6] font-semibold hover:underline">View</button>
+                                     <button 
+                                       onClick={() => router.push(r.viewPath)} 
+                                       className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+                                     >
+                                       <span className="text-xs font-semibold">View</span>
+                                       <ChevronRight className="size-4" />
+                                     </button>
                                    </td>
                                  </tr>
                                ))
@@ -621,6 +629,10 @@ export default function CustomerDetailsPage() {
 
               {activeTab === 'Contacts' && (
                 <CustomerContactsTab customerId={id} workAddressId={workAddressId || undefined} />
+              )}
+
+              {activeTab === 'Invoices' && (
+                <CustomerInvoicesTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
               {activeTab === 'Branches' && (data.customer_type_allow_branches !== false) && (

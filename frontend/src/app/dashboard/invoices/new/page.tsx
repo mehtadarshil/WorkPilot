@@ -8,14 +8,15 @@ import { ArrowLeft, ChevronDown, Search, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 
-interface JobDetails {
+interface InvoiceTarget {
   id: number;
-  title: string;
-  description_name: string | null;
   customer_id: number;
   customer_full_name: string;
   customer_address: string | null;
   customer_email: string | null;
+  job_id: number | null;
+  job_title: string | null;
+  description_name: string | null;
   expected_completion: string | null;
   pricing_items: { id: number; item_name: string; quantity: number; total: string | number }[];
 }
@@ -24,8 +25,10 @@ function AddInvoiceInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams?.get('jobId') || '';
+  const customerIdParam = searchParams?.get('customerId') || '';
+  const workAddressIdParam = searchParams?.get('workAddressId') || '';
 
-  const [job, setJob] = useState<JobDetails | null>(null);
+  const [target, setTarget] = useState<InvoiceTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,17 +81,61 @@ function AddInvoiceInner() {
 
   useEffect(() => {
     const token = window.localStorage.getItem('wp_token');
-    if (!token || !jobId) return;
+    if (!token) return;
     
     setLoading(true);
-    getJson<{ job: JobDetails }>(`/jobs/${jobId}`, token)
-      .then(res => setJob(res.job))
-      .catch(err => setError(err?.message || 'Failed to load info'))
-      .finally(() => setLoading(false));
-  }, [jobId]);
+    const run = async () => {
+      try {
+        if (jobId) {
+          const res = await getJson<{ job: any }>(`/jobs/${jobId}`, token);
+          const job = res.job;
+          setTarget({
+            id: job.id,
+            customer_id: job.customer_id,
+            customer_full_name: job.customer_full_name,
+            customer_address: job.customer_address,
+            customer_email: job.customer_email,
+            job_id: job.id,
+            job_title: job.title,
+            description_name: job.description_name,
+            expected_completion: job.expected_completion,
+            pricing_items: job.pricing_items || []
+          });
+          setDescription(job.description_name || job.title);
+        } else if (customerIdParam) {
+           const cust = await getJson<any>(`/customers/${customerIdParam}`, token);
+           let siteAddress = cust.address;
+           if (workAddressIdParam) {
+              const site = await getJson<any>(`/customers/${customerIdParam}/work-addresses/${workAddressIdParam}`, token);
+              if (site.work_address) {
+                const s = site.work_address;
+                siteAddress = [s.address_line_1, s.address_line_2, s.town, s.county, s.postcode].filter(Boolean).join(', ');
+              }
+           }
+           setTarget({
+             id: 0,
+             customer_id: cust.id,
+             customer_full_name: cust.full_name,
+             customer_address: siteAddress,
+             customer_email: cust.email,
+             job_id: null,
+             job_title: null,
+             description_name: null,
+             expected_completion: null,
+             pricing_items: []
+           });
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load info');
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [jobId, customerIdParam, workAddressIdParam]);
 
   if (loading) return <div className="p-8 font-medium text-slate-500">Loading form...</div>;
-  if (!job) return <div className="p-8 text-rose-500">{error || 'Job not found'}</div>;
+  if (!target) return <div className="p-8 text-rose-500">{error || 'Target not found'}</div>;
 
   const subTotalNum = parseFloat(subTotal) || 0;
   const vatAmount = subTotalNum * (vatRate / 100);
@@ -106,10 +153,9 @@ function AddInvoiceInner() {
     setSubmitting(true);
     try {
       let finalItems = [];
-      const selectedPricingItems = job.pricing_items?.filter(p => selectedPIs.includes(p.id)) || [];
+      const selectedPricingItems = target.pricing_items?.filter(p => selectedPIs.includes(p.id)) || [];
       const piSum = selectedPricingItems.reduce((sum, p) => sum + Number(p.total || 0), 0);
 
-      // If user selected line items and didn't manually tweak the subtotal away from their sum, use them as line items!
       if (selectedPricingItems.length > 0 && Math.abs(piSum - subTotalNum) < 0.01) {
          finalItems = selectedPricingItems.map(p => ({
             description: p.item_name,
@@ -124,9 +170,10 @@ function AddInvoiceInner() {
          }];
       }
 
-      await postJson('/invoices', {
-        job_id: job.id,
-        customer_id: job.customer_id,
+      const res = await postJson<{ invoice: any }>('/invoices', {
+        job_id: target.job_id,
+        customer_id: target.customer_id,
+        invoice_work_address_id: workAddressIdParam ? Number(workAddressIdParam) : undefined,
         invoice_date: new Date(invoiceDate).toISOString(),
         due_date: new Date(dueDate).toISOString(),
         notes: notes || undefined,
@@ -135,7 +182,13 @@ function AddInvoiceInner() {
         line_items: finalItems
       }, token);
       
-      router.push(`/dashboard/jobs/${job.id}`);
+      if (res.invoice?.id) {
+        router.push(`/dashboard/invoices/${res.invoice.id}`);
+      } else if (target.job_id) {
+        router.push(`/dashboard/jobs/${target.job_id}`);
+      } else {
+        router.push(`/dashboard/customers/${target.customer_id}${workAddressIdParam ? `?work_address_id=${workAddressIdParam}&tab=Invoices` : '?tab=Invoices'}`);
+      }
     } catch (err: any) {
       alert(err?.message || 'Failed to create invoice');
       setSubmitting(false);
@@ -143,7 +196,7 @@ function AddInvoiceInner() {
   };
 
   const copyFromJob = () => {
-    setDescription(job.description_name || job.title);
+    setDescription(target.description_name || target.job_title || '');
   };
 
   return (
@@ -157,11 +210,11 @@ function AddInvoiceInner() {
           <div className="flex items-center text-[13px] font-medium text-slate-600">
              <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push('/dashboard/customers')}>Customers</span>
              <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/customers/${job.customer_id}`)}>{job.customer_full_name}</span>
+             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/customers/${target.customer_id}`)}>{target.customer_full_name}</span>
              <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${job.id}`)}>Job no. {job.id.toString().padStart(4, '0')}</span>
+             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Job no. {target.id.toString().padStart(4, '0')}</span>
              <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${job.id}`)}>Invoices</span>
+             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Invoices</span>
              <span className="mx-2 text-slate-300">/</span>
              <span className="text-slate-900 font-bold">additional</span>
           </div>
@@ -170,10 +223,10 @@ function AddInvoiceInner() {
 
       {/* Info Banner */}
       <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-baseline gap-x-8 gap-y-2 text-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-        <span className="text-slate-500">Customer name: <strong className="text-slate-800 font-bold ml-1">{job.customer_full_name}</strong></span>
-        <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{job.id.toString().padStart(4, '0')}</strong></span>
-        <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{job.description_name || job.title}</strong></span>
-        <span className="text-slate-500">Address: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{job.customer_address || 'N/A'}</strong></span>
+        <span className="text-slate-500">Customer name: <strong className="text-slate-800 font-bold ml-1">{target.customer_full_name}</strong></span>
+        <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{target.id.toString().padStart(4, '0')}</strong></span>
+        <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{target.description_name || target.job_title || '-'}</strong></span>
+        <span className="text-slate-500">Address: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{target.customer_address || 'N/A'}</strong></span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-8">
@@ -416,7 +469,7 @@ function AddInvoiceInner() {
                <div className="p-5 flex items-center justify-end gap-6 bg-slate-50">
                   <label className="flex items-center gap-2.5 text-slate-600 text-[13px] font-medium cursor-pointer select-none">
                       <input type="checkbox" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]" />
-                      Send invoice to: <span className="text-[#14B8A6]">{job.customer_email || 'No email provided'}</span>
+                      Send invoice to: <span className="text-[#14B8A6]">{target.customer_email || 'No email provided'}</span>
                   </label>
                   <button onClick={() => router.back()} disabled={submitting} className="text-[13px] font-bold text-slate-500 hover:text-slate-800 transition-colors ml-2">Cancel</button>
                   <button 
@@ -458,7 +511,7 @@ function AddInvoiceInner() {
                {/* Info box */}
                <div className="px-6 pt-6 pb-4 shrink-0">
                   <p className="text-[13px] text-[#15803d] leading-relaxed">
-                     Below is a list of diary events associated with this job. You can add diary events to the invoice by clicking the checkbox on the left of the diary events you wish to add and clicking 'Save and add line items' at the bottom of the page.
+                     Below is a list of diary events associated with this target. You can add diary events to the invoice by clicking the checkbox on the left of the diary events you wish to add and clicking 'Save and add line items' at the bottom of the page.
                   </p>
                </div>
 
@@ -481,17 +534,17 @@ function AddInvoiceInner() {
                      <div className="absolute left-0 top-3 bottom-0 w-px bg-slate-300"></div>
                      <div className="flex items-center gap-4 relative z-10 mb-6 -ml-[25px]">
                         <div className="bg-slate-500 text-white text-[11px] font-bold px-3 py-1 rounded shadow-sm">
-                           {job.expected_completion ? dayjs(job.expected_completion).format('DD MMM YYYY') : dayjs().format('DD MMM YYYY')}
+                           {target.expected_completion ? dayjs(target.expected_completion).format('DD MMM YYYY') : dayjs().format('DD MMM YYYY')}
                         </div>
                         <div className="flex-1 border-t border-dashed border-slate-300 mt-[1px]"></div>
                      </div>
 
                      {/* Item Node */}
-                     {(!job.pricing_items || job.pricing_items.length === 0) && (
-                        <div className="text-sm text-slate-500 pl-4 py-2 italic -ml-6">No pricing items associated with this job.</div>
+                     {(!target.pricing_items || target.pricing_items.length === 0) && (
+                        <div className="text-sm text-slate-500 pl-4 py-2 italic -ml-6">No pricing items associated with this target.</div>
                      )}
                      
-                     {job.pricing_items?.map((pi, i) => (
+                     {target.pricing_items?.map((pi, i) => (
                         <div key={pi.id} className="relative flex items-center gap-4 mb-4 -ml-6 group">
                            {/* Circle Node overlaying line */}
                            <div className="relative z-10 bg-white border-2 border-slate-300 rounded-full w-8 h-8 flex items-center justify-center text-[10px] font-bold text-slate-500 shadow-sm shrink-0 mt-0.5">
@@ -525,8 +578,8 @@ function AddInvoiceInner() {
                      onClick={() => {
                         // Calculate sums
                         let sum = 0;
-                        if (job.pricing_items) {
-                           job.pricing_items.forEach(p => {
+                        if (target.pricing_items) {
+                           target.pricing_items.forEach(p => {
                               if (selectedPIs.includes(p.id)) {
                                  sum += Number(p.total || 0);
                               }
