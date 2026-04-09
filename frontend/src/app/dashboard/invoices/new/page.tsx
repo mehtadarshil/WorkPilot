@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getJson, postJson } from '../../../apiClient';
-import { ArrowLeft, ChevronDown, Search, X, Check } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Search, X, Check, Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 
@@ -44,7 +44,9 @@ function AddInvoiceInner() {
   const [breakdown, setBreakdown] = useState('No breakdown');
   const [amountType, setAmountType] = useState('VAT Exclusive');
   
-  const [subTotal, setSubTotal] = useState('0');
+  const [lineItems, setLineItems] = useState<{ description: string; quantity: number; unit_price: number }[]>(
+    [{ description: '', quantity: 1, unit_price: 0 }]
+  );
   const [cis, setCis] = useState('No');
   const [vatRate, setVatRate] = useState(20);
   const [nominalCode, setNominalCode] = useState('Sales');
@@ -137,9 +139,26 @@ function AddInvoiceInner() {
   if (loading) return <div className="p-8 font-medium text-slate-500">Loading form...</div>;
   if (!target) return <div className="p-8 text-rose-500">{error || 'Target not found'}</div>;
 
-  const subTotalNum = parseFloat(subTotal) || 0;
+  const subTotalNum = lineItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
   const vatAmount = subTotalNum * (vatRate / 100);
   const total = subTotalNum + vatAmount;
+
+  const addLineItem = () => {
+    setLineItems(prev => [...prev, { description: '', quantity: 1, unit_price: 0 }]);
+  };
+
+  const removeLineItem = (index: number) => {
+    if (lineItems.length <= 1) return;
+    setLineItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateLineItem = (index: number, field: 'description' | 'quantity' | 'unit_price', value: string | number) => {
+    setLineItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
 
   const handleSubmit = async (targetState: 'draft' | 'issued') => {
     const token = window.localStorage.getItem('wp_token');
@@ -152,23 +171,17 @@ function AddInvoiceInner() {
 
     setSubmitting(true);
     try {
-      let finalItems = [];
-      const selectedPricingItems = target.pricing_items?.filter(p => selectedPIs.includes(p.id)) || [];
-      const piSum = selectedPricingItems.reduce((sum, p) => sum + Number(p.total || 0), 0);
-
-      if (selectedPricingItems.length > 0 && Math.abs(piSum - subTotalNum) < 0.01) {
-         finalItems = selectedPricingItems.map(p => ({
-            description: p.item_name,
-            quantity: Number(p.quantity),
-            unit_price: Number(p.total) / (Number(p.quantity) || 1)
-         }));
-      } else {
-         finalItems = [{
-            description: description,
-            quantity: 1,
-            unit_price: subTotalNum
-         }];
+      const validItems = lineItems.filter(item => item.description.trim() && item.unit_price > 0);
+      if (validItems.length === 0) {
+        alert('Please add at least one line item with a description and price.');
+        setSubmitting(false);
+        return;
       }
+      const finalItems = validItems.map(item => ({
+        description: item.description.trim(),
+        quantity: item.quantity,
+        unit_price: item.unit_price
+      }));
 
       const res = await postJson<{ invoice: any }>('/invoices', {
         job_id: target.job_id,
@@ -375,77 +388,147 @@ function AddInvoiceInner() {
                </div>
             </div>
 
-            {/* No Breakdown Box */}
+            {/* Line Items + Settings Box */}
             <div className="mt-8 text-[13px]">
-               <div className="bg-slate-50 border-x border-t border-slate-200 rounded-t-lg px-6 py-4 shadow-sm">
-                 <h3 className="font-bold text-slate-800 text-[15px]">{breakdown}</h3>
+               <div className="bg-slate-50 border-x border-t border-slate-200 rounded-t-lg px-6 py-4 shadow-sm flex items-center justify-between">
+                 <h3 className="font-bold text-slate-800 text-[15px]">Invoice Line Items</h3>
+                 <button type="button" onClick={addLineItem} className="inline-flex items-center gap-1.5 text-[#14B8A6] font-bold hover:underline text-[13px]">
+                    <Plus className="size-4" /> Add line item
+                 </button>
                </div>
-               <div className="border border-slate-200 rounded-b-lg p-8 bg-white shadow-sm space-y-8">
-                  <div className="text-[#15803d] font-medium bg-[#15803d]/5 py-3 px-4 rounded border border-[#15803d]/10">
-                     Additional invoices can be raised against a job and will contribute towards the overall profitability of the job, but will not be considered when calculating the final invoice.
+               <div className="border border-slate-200 rounded-b-lg bg-white shadow-sm overflow-hidden">
+                  {/* Line items table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-bold tracking-wider">
+                        <tr>
+                          <th className="px-5 py-3 border-b border-slate-200 w-[50%]">Description</th>
+                          <th className="px-5 py-3 border-b border-slate-200 w-[15%]">Qty</th>
+                          <th className="px-5 py-3 border-b border-slate-200 w-[15%]">Unit Price (£)</th>
+                          <th className="px-5 py-3 border-b border-slate-200 w-[12%] text-right">Total</th>
+                          <th className="px-3 py-3 border-b border-slate-200 w-[8%]"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {lineItems.map((item, i) => (
+                          <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-5 py-2.5">
+                              <input 
+                                type="text" 
+                                value={item.description} 
+                                onChange={e => updateLineItem(i, 'description', e.target.value)} 
+                                placeholder="Item description" 
+                                className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
+                              />
+                            </td>
+                            <td className="px-5 py-2.5">
+                              <input 
+                                type="number" 
+                                min={0} 
+                                step={0.01} 
+                                value={item.quantity} 
+                                onChange={e => updateLineItem(i, 'quantity', parseFloat(e.target.value) || 0)} 
+                                className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
+                              />
+                            </td>
+                            <td className="px-5 py-2.5">
+                              <input 
+                                type="number" 
+                                min={0} 
+                                step={0.01} 
+                                value={item.unit_price} 
+                                onChange={e => updateLineItem(i, 'unit_price', parseFloat(e.target.value) || 0)} 
+                                className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
+                              />
+                            </td>
+                            <td className="px-5 py-2.5 text-right font-bold text-slate-800">
+                              £{(item.quantity * item.unit_price).toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <button 
+                                type="button" 
+                                onClick={() => removeLineItem(i)} 
+                                disabled={lineItems.length <= 1}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
 
-                  {/* Details (using grid) */}
-                  <div className="flex flex-col md:flex-row gap-12">
-                     <div className="w-full md:w-1/2 space-y-4">
-                        {/* Sub total * */}
-                        <div className="grid grid-cols-3 gap-4 items-center">
-                           <label className="text-right font-bold text-slate-600">Sub total <span className="text-rose-500">*</span></label>
-                           <div className="col-span-2">
-                              <input type="number" step="0.01" value={subTotal} onChange={(e) => setSubTotal(e.target.value)} className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6]" />
-                           </div>
-                        </div>
-                        {/* CIS */}
-                        <div className="grid grid-cols-3 gap-4 items-center">
-                           <label className="text-right font-bold text-slate-600">CIS <span className="text-rose-500">*</span></label>
-                           <div className="col-span-2">
-                              <select value={cis} onChange={e => setCis(e.target.value)} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
-                                 <option>No</option>
-                                 <option>Yes</option>
-                              </select>
-                           </div>
-                        </div>
-                        {/* VAT */}
-                        <div className="grid grid-cols-3 gap-4 items-center">
-                           <label className="text-right font-bold text-slate-600">VAT <span className="text-rose-500">*</span></label>
-                           <div className="col-span-2">
-                              <select value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
-                                 <option value={20}>20.00</option>
-                                 <option value={5}>5.00</option>
-                                 <option value={0}>0.00</option>
-                              </select>
-                           </div>
-                        </div>
-                        {/* Nominal code */}
-                        <div className="grid grid-cols-3 gap-4 items-center">
-                           <label className="text-right font-bold text-slate-600">Nominal code <span className="text-rose-500">*</span></label>
-                           <div className="col-span-2">
-                              <select value={nominalCode} onChange={e => setNominalCode(e.target.value)} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
-                                 <option>Sales</option>
-                                 <option>Services</option>
-                              </select>
-                           </div>
-                        </div>
+                  {/* Add another row link */}
+                  <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+                    <button type="button" onClick={addLineItem} className="text-[#14B8A6] font-bold hover:underline text-[13px] inline-flex items-center gap-1.5">
+                      <Plus className="size-3.5" /> Add another line item
+                    </button>
+                  </div>
+
+                  <hr className="border-slate-100" />
+
+                  {/* Settings + Summary */}
+                  <div className="p-8 space-y-8">
+                     <div className="text-[#15803d] font-medium bg-[#15803d]/5 py-3 px-4 rounded border border-[#15803d]/10">
+                        Additional invoices can be raised against a job and will contribute towards the overall profitability of the job, but will not be considered when calculating the final invoice.
                      </div>
 
-                     {/* Summary Table */}
-                     <div className="w-full md:w-1/2 flex items-start justify-end">
-                        <table className="w-full max-w-[320px] border border-slate-200">
-                           <tbody className="divide-y divide-slate-100 bg-white shadow-sm">
-                              <tr>
-                                <td className="px-5 py-3.5 font-bold text-slate-600">Total price (exc VAT)</td>
-                                <td className="px-5 py-3.5 font-medium text-slate-700 text-right w-32 border-l border-slate-100 bg-slate-50/50">£{subTotalNum.toFixed(2)}</td>
-                              </tr>
-                              <tr>
-                                <td className="px-5 py-3.5 font-bold text-slate-600">VAT ({vatRate}%)</td>
-                                <td className="px-5 py-3.5 font-medium text-slate-700 text-right w-32 border-l border-slate-100 bg-slate-50/50">£{vatAmount.toFixed(2)}</td>
-                              </tr>
-                              <tr className="bg-slate-50/80">
-                                <td className="px-5 py-4 font-black text-slate-800">Grand total</td>
-                                <td className="px-5 py-4 font-black text-slate-800 text-right w-32 border-l border-slate-100 bg-white">£{total.toFixed(2)}</td>
-                              </tr>
-                           </tbody>
-                        </table>
+                     <div className="flex flex-col md:flex-row gap-12">
+                        <div className="w-full md:w-1/2 space-y-4">
+                           {/* CIS */}
+                           <div className="grid grid-cols-3 gap-4 items-center">
+                              <label className="text-right font-bold text-slate-600">CIS <span className="text-rose-500">*</span></label>
+                              <div className="col-span-2">
+                                 <select value={cis} onChange={e => setCis(e.target.value)} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
+                                    <option>No</option>
+                                    <option>Yes</option>
+                                 </select>
+                              </div>
+                           </div>
+                           {/* VAT */}
+                           <div className="grid grid-cols-3 gap-4 items-center">
+                              <label className="text-right font-bold text-slate-600">VAT <span className="text-rose-500">*</span></label>
+                              <div className="col-span-2">
+                                 <select value={vatRate} onChange={(e) => setVatRate(Number(e.target.value))} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
+                                    <option value={20}>20.00</option>
+                                    <option value={5}>5.00</option>
+                                    <option value={0}>0.00</option>
+                                 </select>
+                              </div>
+                           </div>
+                           {/* Nominal code */}
+                           <div className="grid grid-cols-3 gap-4 items-center">
+                              <label className="text-right font-bold text-slate-600">Nominal code <span className="text-rose-500">*</span></label>
+                              <div className="col-span-2">
+                                 <select value={nominalCode} onChange={e => setNominalCode(e.target.value)} className="w-full border border-slate-200 rounded px-3 py-2 bg-white text-slate-700 outline-none focus:border-[#14B8A6]">
+                                    <option>Sales</option>
+                                    <option>Services</option>
+                                 </select>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* Summary Table */}
+                        <div className="w-full md:w-1/2 flex items-start justify-end">
+                           <table className="w-full max-w-[320px] border border-slate-200">
+                              <tbody className="divide-y divide-slate-100 bg-white shadow-sm">
+                                 <tr>
+                                   <td className="px-5 py-3.5 font-bold text-slate-600">Total price (exc VAT)</td>
+                                   <td className="px-5 py-3.5 font-medium text-slate-700 text-right w-32 border-l border-slate-100 bg-slate-50/50">£{subTotalNum.toFixed(2)}</td>
+                                 </tr>
+                                 <tr>
+                                   <td className="px-5 py-3.5 font-bold text-slate-600">VAT ({vatRate}%)</td>
+                                   <td className="px-5 py-3.5 font-medium text-slate-700 text-right w-32 border-l border-slate-100 bg-slate-50/50">£{vatAmount.toFixed(2)}</td>
+                                 </tr>
+                                 <tr className="bg-slate-50/80">
+                                   <td className="px-5 py-4 font-black text-slate-800">Grand total</td>
+                                   <td className="px-5 py-4 font-black text-slate-800 text-right w-32 border-l border-slate-100 bg-white">£{total.toFixed(2)}</td>
+                                 </tr>
+                              </tbody>
+                           </table>
+                        </div>
                      </div>
                   </div>
                </div>
@@ -576,17 +659,19 @@ function AddInvoiceInner() {
                   <button onClick={() => setIsSidebarOpen(false)} className="text-[14px] font-bold text-slate-500 hover:text-slate-800 transition-colors mr-3">Cancel</button>
                   <button 
                      onClick={() => {
-                        // Calculate sums
-                        let sum = 0;
-                        if (target.pricing_items) {
-                           target.pricing_items.forEach(p => {
-                              if (selectedPIs.includes(p.id)) {
-                                 sum += Number(p.total || 0);
-                              }
+                        // Build line items from selected pricing items
+                        const selectedItems = (target.pricing_items || []).filter(p => selectedPIs.includes(p.id));
+                        if (selectedItems.length > 0) {
+                           const newItems = selectedItems.map(p => ({
+                              description: p.item_name,
+                              quantity: Number(p.quantity),
+                              unit_price: Number(p.total) / (Number(p.quantity) || 1)
+                           }));
+                           setLineItems(prev => {
+                              // Remove empty placeholder rows, then append selected items
+                              const existing = prev.filter(item => item.description.trim() || item.unit_price > 0);
+                              return existing.length > 0 ? [...existing, ...newItems] : newItems;
                            });
-                        }
-                        if (sum > 0) {
-                           setSubTotal(sum.toString());
                         }
                         setIsSidebarOpen(false);
                      }}

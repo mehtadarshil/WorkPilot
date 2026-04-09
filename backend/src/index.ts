@@ -8209,9 +8209,31 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
     const rawInv = invResult.rows[0];
     const customer_address = formatCustomerAddressSingleLine(rawInv);
 
+    // Resolve work/site address (same logic as dashboard detail endpoint)
+    let workSiteName: string | null = null;
+    let workSiteAddress: string | null = null;
+    if (rawInv.invoice_work_address_id) {
+      const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+        rawInv.invoice_work_address_id,
+        rawInv.customer_id,
+      ]);
+      if ((waRes.rowCount ?? 0) > 0) {
+        const wa = waRes.rows[0] as Record<string, unknown>;
+        const n = typeof wa.name === 'string' ? wa.name.trim() : '';
+        workSiteName = n || null;
+        const addrOnly = formatWorkAddressSingleLineWithoutName(wa).trim();
+        workSiteAddress = addrOnly || null;
+      }
+      if (!workSiteName && !workSiteAddress && rawInv.billing_address?.trim()) {
+        workSiteAddress = workSiteAddressAsSingleLine(rawInv.billing_address.trim());
+      }
+    }
+
     const invoice = {
       ...rawInv,
-      customer_address // override with formatted
+      customer_address, // override with formatted
+      work_site_name: workSiteName,
+      work_site_address: workSiteAddress,
     };
 
     const itemsResult = await pool.query(

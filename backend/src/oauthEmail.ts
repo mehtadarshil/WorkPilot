@@ -94,23 +94,63 @@ export async function refreshMicrosoftToken(refreshToken: string) {
   };
 }
 
-// Minimal RFC822 builder for Gmail API
-function buildRawEmail(opts: { to: string; subject: string; html: string; cc?: string; bcc?: string }): string {
+interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
+interface SendEmailOpts {
+  to: string;
+  subject: string;
+  html: string;
+  cc?: string;
+  bcc?: string;
+  attachments?: EmailAttachment[];
+}
+
+// RFC822 builder for Gmail API – supports multipart/mixed with attachments
+function buildRawEmail(opts: SendEmailOpts): string {
   const boundary = 'foo_bar_baz_mixed';
+  const altBoundary = 'foo_bar_baz_alt';
+  const hasAttachments = opts.attachments && opts.attachments.length > 0;
+
   let raw = `To: ${opts.to}\r\n`;
   if (opts.cc) raw += `Cc: ${opts.cc}\r\n`;
   if (opts.bcc) raw += `Bcc: ${opts.bcc}\r\n`;
   raw += `Subject: ${opts.subject}\r\n`;
   raw += `MIME-Version: 1.0\r\n`;
-  raw += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n\r\n`;
-  raw += `--${boundary}\r\n`;
-  raw += `Content-Type: text/html; charset="UTF-8"\r\n\r\n`;
-  raw += `${opts.html}\r\n\r\n`;
-  raw += `--${boundary}--`;
+
+  if (hasAttachments) {
+    // multipart/mixed envelope (body + attachments)
+    raw += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n`;
+    // HTML body part
+    raw += `--${boundary}\r\n`;
+    raw += `Content-Type: text/html; charset="UTF-8"\r\n\r\n`;
+    raw += `${opts.html}\r\n\r\n`;
+    // Attachment parts
+    for (const att of opts.attachments!) {
+      const ct = att.contentType || 'application/octet-stream';
+      raw += `--${boundary}\r\n`;
+      raw += `Content-Type: ${ct}; name="${att.filename}"\r\n`;
+      raw += `Content-Disposition: attachment; filename="${att.filename}"\r\n`;
+      raw += `Content-Transfer-Encoding: base64\r\n\r\n`;
+      raw += att.content.toString('base64') + '\r\n\r\n';
+    }
+    raw += `--${boundary}--`;
+  } else {
+    // Simple HTML-only email
+    raw += `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n\r\n`;
+    raw += `--${altBoundary}\r\n`;
+    raw += `Content-Type: text/html; charset="UTF-8"\r\n\r\n`;
+    raw += `${opts.html}\r\n\r\n`;
+    raw += `--${altBoundary}--`;
+  }
+
   return Buffer.from(raw).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export async function sendEmailViaGoogle(accessToken: string, opts: { to: string; subject: string; html: string; cc?: string; bcc?: string }) {
+export async function sendEmailViaGoogle(accessToken: string, opts: SendEmailOpts) {
   const rawMsg = buildRawEmail(opts);
   await axios.post(
     'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
@@ -119,7 +159,7 @@ export async function sendEmailViaGoogle(accessToken: string, opts: { to: string
   );
 }
 
-export async function sendEmailViaMicrosoft(accessToken: string, opts: { to: string; subject: string; html: string; cc?: string; bcc?: string }) {
+export async function sendEmailViaMicrosoft(accessToken: string, opts: SendEmailOpts) {
   const message: any = {
     subject: opts.subject,
     body: { contentType: 'HTML', content: opts.html },
@@ -131,6 +171,16 @@ export async function sendEmailViaMicrosoft(accessToken: string, opts: { to: str
   }
   if (opts.bcc) {
     message.bccRecipients = opts.bcc.split(',').map(e => ({ emailAddress: { address: e.trim() } }));
+  }
+
+  // Add file attachments
+  if (opts.attachments && opts.attachments.length > 0) {
+    message.attachments = opts.attachments.map(att => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: att.filename,
+      contentType: att.contentType || 'application/octet-stream',
+      contentBytes: att.content.toString('base64'),
+    }));
   }
 
   await axios.post(

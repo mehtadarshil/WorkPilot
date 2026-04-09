@@ -171,6 +171,19 @@ export default function PublicInvoicePage() {
               <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{invoice.billing_address || invoice.customer_address || '—'}</p>
             </div>
+            {(invoice.work_site_name?.trim() || invoice.work_site_address?.trim()) && (
+              <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
+                {invoice.work_site_name?.trim() && (
+                  <p className="text-base font-bold text-slate-900">{invoice.work_site_name.trim()}</p>
+                )}
+                {invoice.work_site_address?.trim() && (
+                  <p className={`text-sm leading-relaxed text-slate-600 ${invoice.work_site_name?.trim() ? 'mt-1' : ''}`}>
+                    {invoice.work_site_address.trim()}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-6 sm:justify-end sm:gap-8">
             <div>
