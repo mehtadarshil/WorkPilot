@@ -230,22 +230,27 @@ export default function EditQuotationPage() {
                   ))}
                 </select>
               </label>
-              <label className="block text-sm sm:col-span-2">
+              <div className="block text-sm sm:col-span-2">
                 <span className="font-medium text-slate-700">Customer</span>
-                <select
-                  required
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                >
-                  <option value="">Select customer</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div className="mt-1 flex gap-2">
+                  <select
+                    required
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  >
+                    <option value="">Select customer</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
+                    <Plus className="size-4" />
+                  </button>
+                </div>
+              </div>
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">Quotation date</span>
                 <input

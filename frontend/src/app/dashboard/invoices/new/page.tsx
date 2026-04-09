@@ -44,8 +44,8 @@ function AddInvoiceInner() {
   const [breakdown, setBreakdown] = useState('No breakdown');
   const [amountType, setAmountType] = useState('VAT Exclusive');
   
-  const [lineItems, setLineItems] = useState<{ description: string; quantity: number; unit_price: number }[]>(
-    [{ description: '', quantity: 1, unit_price: 0 }]
+  const [lineItems, setLineItems] = useState<{ description: string; quantity: string; unit_price: string }[]>(
+    [{ description: '', quantity: '1', unit_price: '' }]
   );
   const [cis, setCis] = useState('No');
   const [vatRate, setVatRate] = useState(20);
@@ -139,12 +139,12 @@ function AddInvoiceInner() {
   if (loading) return <div className="p-8 font-medium text-slate-500">Loading form...</div>;
   if (!target) return <div className="p-8 text-rose-500">{error || 'Target not found'}</div>;
 
-  const subTotalNum = lineItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+  const subTotalNum = lineItems.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)), 0);
   const vatAmount = subTotalNum * (vatRate / 100);
   const total = subTotalNum + vatAmount;
 
   const addLineItem = () => {
-    setLineItems(prev => [...prev, { description: '', quantity: 1, unit_price: 0 }]);
+    setLineItems(prev => [...prev, { description: '', quantity: '1', unit_price: '' }]);
   };
 
   const removeLineItem = (index: number) => {
@@ -152,7 +152,7 @@ function AddInvoiceInner() {
     setLineItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  const updateLineItem = (index: number, field: 'description' | 'quantity' | 'unit_price', value: string | number) => {
+  const updateLineItem = (index: number, field: 'description' | 'quantity' | 'unit_price', value: string) => {
     setLineItems(prev => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
@@ -171,7 +171,7 @@ function AddInvoiceInner() {
 
     setSubmitting(true);
     try {
-      const validItems = lineItems.filter(item => item.description.trim() && item.unit_price > 0);
+      const validItems = lineItems.filter(item => item.description.trim() && (parseFloat(item.unit_price) || 0) > 0);
       if (validItems.length === 0) {
         alert('Please add at least one line item with a description and price.');
         setSubmitting(false);
@@ -179,8 +179,8 @@ function AddInvoiceInner() {
       }
       const finalItems = validItems.map(item => ({
         description: item.description.trim(),
-        quantity: item.quantity,
-        unit_price: item.unit_price
+        quantity: parseFloat(item.quantity) || 1,
+        unit_price: parseFloat(item.unit_price) || 0
       }));
 
       const res = await postJson<{ invoice: any }>('/invoices', {
@@ -427,7 +427,7 @@ function AddInvoiceInner() {
                                 min={0} 
                                 step={0.01} 
                                 value={item.quantity} 
-                                onChange={e => updateLineItem(i, 'quantity', parseFloat(e.target.value) || 0)} 
+                                onChange={e => updateLineItem(i, 'quantity', e.target.value)} 
                                 className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
                               />
                             </td>
@@ -437,12 +437,13 @@ function AddInvoiceInner() {
                                 min={0} 
                                 step={0.01} 
                                 value={item.unit_price} 
-                                onChange={e => updateLineItem(i, 'unit_price', parseFloat(e.target.value) || 0)} 
+                                onChange={e => updateLineItem(i, 'unit_price', e.target.value)} 
+                                placeholder="0" 
                                 className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
                               />
                             </td>
                             <td className="px-5 py-2.5 text-right font-bold text-slate-800">
-                              £{(item.quantity * item.unit_price).toFixed(2)}
+                              £{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button 
@@ -664,12 +665,12 @@ function AddInvoiceInner() {
                         if (selectedItems.length > 0) {
                            const newItems = selectedItems.map(p => ({
                               description: p.item_name,
-                              quantity: Number(p.quantity),
-                              unit_price: Number(p.total) / (Number(p.quantity) || 1)
+                              quantity: String(Number(p.quantity)),
+                              unit_price: String(Number(p.total) / (Number(p.quantity) || 1))
                            }));
                            setLineItems(prev => {
                               // Remove empty placeholder rows, then append selected items
-                              const existing = prev.filter(item => item.description.trim() || item.unit_price > 0);
+                              const existing = prev.filter(item => item.description.trim() || (parseFloat(item.unit_price) || 0) > 0);
                               return existing.length > 0 ? [...existing, ...newItems] : newItems;
                            });
                         }

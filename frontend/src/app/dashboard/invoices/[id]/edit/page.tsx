@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
 
-type LineItemForm = { description: string; quantity: number; unit_price: number };
+type LineItemForm = { description: string; quantity: string; unit_price: string };
 
 type InvoiceDetail = {
   id: number;
@@ -67,7 +67,7 @@ export default function EditInvoicePage() {
   const [customerReference, setCustomerReference] = useState('');
   const [state, setState] = useState('draft');
   const [totalPaid, setTotalPaid] = useState('');
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0 }]);
+  const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: '1', unit_price: '' }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
 
   const load = useCallback(async () => {
@@ -109,10 +109,10 @@ export default function EditInvoicePage() {
         inv.line_items.length > 0
           ? inv.line_items.map((li) => ({
               description: li.description,
-              quantity: li.quantity,
-              unit_price: li.unit_price,
+              quantity: String(li.quantity),
+              unit_price: String(li.unit_price),
             }))
-          : [{ description: '', quantity: 1, unit_price: 0 }];
+          : [{ description: '', quantity: '1', unit_price: '' }];
       setLineItems(items);
       const tp =
         inv.subtotal > 0 ? Math.round((inv.tax_amount / inv.subtotal) * 10000) / 100 : 0;
@@ -130,11 +130,11 @@ export default function EditInvoicePage() {
     load();
   }, [load]);
 
-  const subtotal = lineItems.reduce((s, li) => s + li.quantity * li.unit_price, 0);
+  const subtotal = lineItems.reduce((s, li) => s + (parseFloat(li.quantity) || 0) * (parseFloat(li.unit_price) || 0), 0);
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
   const totalAmount = subtotal + taxAmount;
 
-  const updateLine = (i: number, field: keyof LineItemForm, value: string | number) => {
+  const updateLine = (i: number, field: keyof LineItemForm, value: string) => {
     setLineItems((prev) => {
       const next = [...prev];
       next[i] = { ...next[i], [field]: value };
@@ -142,7 +142,7 @@ export default function EditInvoicePage() {
     });
   };
 
-  const addLine = () => setLineItems((p) => [...p, { description: '', quantity: 1, unit_price: 0 }]);
+  const addLine = () => setLineItems((p) => [...p, { description: '', quantity: '1', unit_price: '' }]);
   const removeLine = (i: number) => {
     if (lineItems.length <= 1) return;
     setLineItems((p) => p.filter((_, idx) => idx !== i));
@@ -186,8 +186,8 @@ export default function EditInvoicePage() {
         total_paid: Number.isFinite(tp) ? Math.max(0, tp) : 0,
         line_items: validItems.map((li) => ({
           description: li.description.trim(),
-          quantity: li.quantity,
-          unit_price: li.unit_price,
+          quantity: parseFloat(li.quantity) || 1,
+          unit_price: parseFloat(li.unit_price) || 0,
         })),
         tax_percentage: taxPercentage,
       }, token);
@@ -259,32 +259,37 @@ export default function EditInvoicePage() {
                   ))}
                 </select>
               </label>
-              <label className="block text-sm sm:col-span-2">
+              <div className="block text-sm sm:col-span-2">
                 <span className="font-medium text-slate-700">Customer</span>
-                <select
-                  required
-                  value={customerId}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setCustomerId(next);
-                    if (invoiceHasWorkSite && next !== initialCustomerId) {
-                      setInvoiceHasWorkSite(false);
-                      setAddressKind('customer');
-                      setBillingAddress('');
-                    } else {
-                      setAddressKind('customer');
-                    }
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                >
-                  <option value="">Select customer</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.full_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div className="mt-1 flex gap-2">
+                  <select
+                    required
+                    value={customerId}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCustomerId(next);
+                      if (invoiceHasWorkSite && next !== initialCustomerId) {
+                        setInvoiceHasWorkSite(false);
+                        setAddressKind('customer');
+                        setBillingAddress('');
+                      } else {
+                        setAddressKind('customer');
+                      }
+                    }}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  >
+                    <option value="">Select customer</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
+                    <Plus className="size-4" />
+                  </button>
+                </div>
+              </div>
               <label className="block text-sm sm:col-span-2">
                 <span className="font-medium text-slate-700">Job (optional)</span>
                 <select
@@ -455,7 +460,7 @@ export default function EditInvoicePage() {
                         step="0.01"
                         min={0}
                         value={li.quantity}
-                        onChange={(e) => updateLine(i, 'quantity', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateLine(i, 'quantity', e.target.value)}
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>
@@ -466,7 +471,8 @@ export default function EditInvoicePage() {
                         step="0.01"
                         min={0}
                         value={li.unit_price}
-                        onChange={(e) => updateLine(i, 'unit_price', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => updateLine(i, 'unit_price', e.target.value)}
+                        placeholder="0"
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>

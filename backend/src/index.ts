@@ -479,6 +479,10 @@ async function initDb() {
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_letter BOOLEAN DEFAULT false;`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS lead_source VARCHAR(255);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS price_book_id INTEGER REFERENCES price_books(id) ON DELETE SET NULL;`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS w3w VARCHAR(255);`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS water_supply TEXT;`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS power_supply TEXT;`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS technical_notes TEXT;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_contacts (
