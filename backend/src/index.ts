@@ -115,6 +115,14 @@ function createPool(): Pool {
 
 const pool = createPool();
 
+// Database initialization / migrations
+pool.query('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS description TEXT')
+  .then(() => console.log('Checked quotations description column'))
+  .catch(err => console.error('Migration error (quotations):', err));
+pool.query('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description TEXT')
+  .then(() => console.log('Checked invoices description column'))
+  .catch(err => console.error('Migration error (invoices):', err));
+
 type UserRole = 'SUPER_ADMIN' | 'ADMIN';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
@@ -214,6 +222,7 @@ interface DbInvoice {
   total_paid: string;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   invoice_work_address_id?: number | null;
   customer_reference?: string | null;
@@ -236,6 +245,7 @@ interface DbQuotation {
   total_amount: string;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   state: string;
   created_at: Date;
@@ -755,10 +765,12 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      public_token VARCHAR(100) UNIQUE
+      public_token VARCHAR(100) UNIQUE,
+      description TEXT
     );
   `);
 
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description TEXT;`);
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
 
   // Backfill public_token for existing invoices
@@ -864,9 +876,11 @@ async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      public_token VARCHAR(100) UNIQUE
+      public_token VARCHAR(100) UNIQUE,
+      description TEXT
     );
   `);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS description TEXT;`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_line_items (
@@ -4253,6 +4267,33 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
 
     const customerAddressFormatted = formatCustomerAddressSingleLine(inv as unknown as Record<string, unknown>) || null;
 
+    const quotation = {
+      id: inv.id,
+      invoice_number: inv.invoice_number,
+      customer_id: inv.customer_id,
+      customer_full_name: inv.customer_full_name ?? null,
+      customer_email: inv.customer_email ?? null,
+      customer_phone: inv.customer_phone ?? null,
+      customer_address: customerAddressFormatted,
+      job_id: inv.job_id ?? null,
+      job_title: inv.job_title ?? null,
+      customer_reference: customerReferenceDisplay,
+      invoice_date: (inv.invoice_date as Date).toISOString().slice(0, 10),
+      due_date: (inv.due_date as Date).toISOString().slice(0, 10),
+      subtotal: parseFloat(inv.subtotal),
+      tax_amount: parseFloat(inv.tax_amount),
+      total_amount: parseFloat(inv.total_amount),
+      total_paid: parseFloat(inv.total_paid),
+      currency: inv.currency,
+      notes: inv.notes ?? null,
+      description: inv.description ?? null,
+      billing_address: inv.billing_address ?? null,
+      invoice_work_address_id: inv.invoice_work_address_id ?? null,
+      state: inv.state,
+      created_at: (inv.created_at as Date).toISOString(),
+      updated_at: (inv.updated_at as Date).toISOString(),
+    };
+
     let workSiteName: string | null = null;
     let workSiteAddressOnly: string | null = null;
     if (inv.invoice_work_address_id) {
@@ -4299,6 +4340,7 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
       total_paid: parseFloat(inv.total_paid),
       currency: inv.currency,
       notes: inv.notes ?? null,
+      description: inv.description ?? null,
       billing_address: inv.billing_address ?? null,
       state: inv.state,
       created_at: (inv.created_at as Date).toISOString(),
@@ -4353,6 +4395,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     /** Raw value from CSV import; normalized to PREFIX-000001 and checked for duplicates. */
     invoice_number?: string;
     invoice_work_address_id?: number;
+    description?: string;
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
@@ -4384,6 +4427,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
       typeof body.customer_reference === 'string' ? body.customer_reference.trim() || null : null;
     /** Work/site linkage. */
     const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    const description = typeof body.description === 'string' ? body.description.trim() || null : null;
     const invoiceWorkAddressId = typeof body.invoice_work_address_id === 'number' ? body.invoice_work_address_id : null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
@@ -4420,9 +4464,9 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
     const publicToken = crypto.randomBytes(32).toString('hex');
 
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token)
-       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token, description)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by, description`,
       [
         invoiceNumber,
         customerId,
@@ -4440,6 +4484,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
         targetState,
         userId,
         publicToken,
+        description,
       ],
     );
     const inv = invResult.rows[0];
@@ -4471,6 +4516,8 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
         total_amount: parseFloat(inv.total_amount),
         total_paid: parseFloat(inv.total_paid),
         currency: inv.currency,
+        notes: inv.notes,
+        description: inv.description,
         state: inv.state,
         created_at: (inv.created_at as Date).toISOString(),
       },
@@ -4542,6 +4589,7 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
   }
   if (str('currency') !== undefined) { updates.push(`currency = $${idx++}`); values.push(str('currency')); }
   if (str('notes') !== undefined) { updates.push(`notes = $${idx++}`); values.push(str('notes')); }
+  if (str('description') !== undefined) { updates.push(`description = $${idx++}`); values.push(str('description')); }
 
   const customerChanged =
     body.customer_id !== undefined &&
@@ -5481,6 +5529,7 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
       total_amount: parseFloat(q.total_amount),
       currency: q.currency,
       notes: q.notes ?? null,
+      description: q.description ?? null,
       billing_address: q.billing_address ?? null,
       state: q.state,
       created_at: (q.created_at as Date).toISOString(),
@@ -5743,6 +5792,7 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
     billing_address?: string;
     line_items?: { description: string; quantity: number; unit_price: number }[];
     tax_percentage?: number;
+    description?: string;
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
@@ -5770,6 +5820,7 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
     const currency = typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim() : settings.default_currency;
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
     const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    const description = typeof body.description === 'string' ? body.description.trim() || null : null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     let subtotal = 0;
@@ -5784,10 +5835,10 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
 
     const quotationNumber = await generateQuotationNumber(settings.quotation_prefix);
     const qResult = await pool.query<DbQuotation>(
-      `INSERT INTO quotations (quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft', $12)
-       RETURNING id, quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_at, updated_at, created_by`,
-      [quotationNumber, customerId, jobId, quotationDate, validUntil, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, userId],
+      `INSERT INTO quotations (quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_by, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft', $12, $13)
+       RETURNING id, quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_at, updated_at, created_by, description`,
+      [quotationNumber, customerId, jobId, quotationDate, validUntil, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, userId, description],
     );
     const q = qResult.rows[0];
     const qId = q.id;
@@ -5817,6 +5868,8 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
         tax_amount: parseFloat(q.tax_amount),
         total_amount: parseFloat(q.total_amount),
         currency: q.currency,
+        notes: q.notes,
+        description: q.description,
         state: q.state,
         created_at: (q.created_at as Date).toISOString(),
       },
@@ -5859,6 +5912,7 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
   if (str('currency') !== undefined) { updates.push(`currency = $${idx++}`); values.push(str('currency')); }
   if (str('notes') !== undefined) { updates.push(`notes = $${idx++}`); values.push(str('notes')); }
   if (str('billing_address') !== undefined) { updates.push(`billing_address = $${idx++}`); values.push(str('billing_address')); }
+  if (str('description') !== undefined) { updates.push(`description = $${idx++}`); values.push(str('description')); }
   if (body.state && QUOTATION_STATES.includes(body.state as typeof QUOTATION_STATES[number])) {
     updates.push(`state = $${idx++}`);
     values.push(body.state);
@@ -8644,6 +8698,7 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
       total_amount: parseFloat(rawQ.total_amount),
       currency: rawQ.currency,
       notes: rawQ.notes ?? null,
+      description: rawQ.description ?? null,
       billing_address: rawQ.billing_address ?? null,
       state: rawQ.state,
       settings: mergedSettings,

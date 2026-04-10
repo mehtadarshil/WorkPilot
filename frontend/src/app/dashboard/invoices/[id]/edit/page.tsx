@@ -21,6 +21,7 @@ type InvoiceDetail = {
   total_paid: number;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   invoice_work_address_id?: number | null;
   customer_reference?: string | null;
@@ -59,6 +60,7 @@ export default function EditInvoicePage() {
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [notes, setNotes] = useState('');
+  const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
   /** Set at load when invoice was created from a work/site address — not editable here. */
@@ -90,6 +92,7 @@ export default function EditInvoicePage() {
       setDueDate(inv.due_date);
       setCurrency(inv.currency);
       setNotes(inv.notes ?? '');
+      setDescription(inv.description ?? '');
       setCustomerReference(inv.customer_reference ?? '');
       if (inv.invoice_work_address_id) {
         setInvoiceHasWorkSite(true);
@@ -180,6 +183,7 @@ export default function EditInvoicePage() {
         due_date: dueDate,
         currency: currency.trim(),
         notes: notes.trim() || null,
+        description: description.trim() || null,
         ...addressPatch,
         customer_reference: customerReference.trim() || null,
         state,
@@ -421,7 +425,17 @@ export default function EditInvoicePage() {
                 />
               </label>
               <label className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">Notes</span>
+                <span className="font-medium text-slate-700">Description (Project overview)</span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  placeholder="Summarize the project scope or works involved..."
+                />
+              </label>
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">Notes (internal reference)</span>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}

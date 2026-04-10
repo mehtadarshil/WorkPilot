@@ -102,7 +102,10 @@ export default function PublicInvoicePage() {
             width: 100% !important;
             background: linear-gradient(to right, ${accent}, ${accentEnd}) !important;
           }
-          @page { margin: 10mm; }
+          @page {
+            margin: 10mm 12mm;
+            size: auto;
+          }
         }
       `}} />
 
@@ -202,6 +205,13 @@ export default function PublicInvoicePage() {
             )}
           </div>
         </div>
+
+        {invoice.description && (
+          <div className="px-8 pt-4 pb-8">
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Description</p>
+            <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-700">{invoice.description}</p>
+          </div>
+        )}
 
         <div className="px-8 pb-8">
           <table className="w-full border-collapse">

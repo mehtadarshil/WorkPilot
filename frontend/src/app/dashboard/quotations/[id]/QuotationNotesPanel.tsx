@@ -524,7 +524,13 @@ export default function QuotationNotesPanel({
                                 </p>
                               )}
                               <p className="font-semibold text-slate-900">{entry.title}</p>
-                              {entry.body ? <p className="whitespace-pre-wrap text-slate-600">{entry.body}</p> : null}
+                              {entry.body ? (
+                                entry.kind === 'email' ? (
+                                  <div className="prose prose-sm max-w-none text-slate-600" dangerouslySetInnerHTML={{ __html: entry.body }} />
+                                ) : (
+                                  <p className="whitespace-pre-wrap text-slate-600">{entry.body}</p>
+                                )
+                              ) : null}
                               {entry.attachment && (
                                 <p className="pt-2 text-xs text-[#14B8A6]">
                                   <span className="font-semibold text-slate-700">Attachment:</span> {entry.attachment}
@@ -569,7 +575,13 @@ export default function QuotationNotesPanel({
                           {dayjs(entry.created_at).format('DD MMM YYYY, HH:mm')}
                         </span>
                       </div>
-                      {entry.body ? <p className="mt-1 text-slate-600">{entry.body}</p> : null}
+                      {entry.body ? (
+                        entry.kind === 'email' ? (
+                          <div className="prose prose-sm mt-1 max-w-none text-slate-600" dangerouslySetInnerHTML={{ __html: entry.body }} />
+                        ) : (
+                          <p className="mt-1 text-slate-600">{entry.body}</p>
+                        )
+                      ) : null}
                     </div>
                   </li>
                 );

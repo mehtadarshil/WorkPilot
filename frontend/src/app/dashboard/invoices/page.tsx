@@ -112,6 +112,7 @@ export default function InvoicesPage() {
   const [formDueDate, setFormDueDate] = useState('');
   const [formCurrency, setFormCurrency] = useState('USD');
   const [formNotes, setFormNotes] = useState('');
+  const [formDescription, setFormDescription] = useState('');
   const [formLineItems, setFormLineItems] = useState<{ description: string; quantity: number; unit_price: number }[]>([
     { description: '', quantity: 1, unit_price: 0 },
   ]);
@@ -206,6 +207,7 @@ export default function InvoicesPage() {
     setFormDueDate(due);
     setFormCurrency(settings?.default_currency ?? 'USD');
     setFormNotes('');
+    setFormDescription('');
     setFormLineItems([{ description: '', quantity: 1, unit_price: 0 }]);
     setFormTaxPercentage(settings?.default_tax_percentage ?? 0);
     setFormCustomerReference('');
@@ -262,6 +264,7 @@ export default function InvoicesPage() {
           due_date: formDueDate,
           currency: formCurrency,
           notes: formNotes.trim() || undefined,
+          description: formDescription.trim() || undefined,
           line_items: validItems.map((item) => ({
             description: item.description.trim(),
             quantity: item.quantity,
@@ -582,7 +585,11 @@ export default function InvoicesPage() {
                 </div>
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-slate-700">Notes</label>
+                <label className="block text-sm font-medium text-slate-700">Project Description</label>
+                <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Overview of the project scope..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-slate-700">Internal Notes</label>
                 <textarea rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Payment terms, instructions..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
               </div>
               {addError && <p className="text-sm text-red-600">{addError}</p>}

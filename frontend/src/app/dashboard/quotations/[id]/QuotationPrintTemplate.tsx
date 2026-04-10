@@ -33,6 +33,7 @@ export type QuotationPrintModel = {
   total_amount: number;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   line_items: {
     id: number;
@@ -130,6 +131,13 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
           </div>
         </div>
       </div>
+      
+      {quotation.description && (
+        <div className="px-8 pt-4 pb-8">
+          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Description</p>
+          <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-700">{quotation.description}</p>
+        </div>
+      )}
 
       <div className="px-8 pb-8">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">

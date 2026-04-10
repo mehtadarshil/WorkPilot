@@ -20,6 +20,7 @@ interface QuotationDetail {
   total_amount: number;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   state: string;
   line_items: { description: string; quantity: number; unit_price: number }[];
@@ -52,6 +53,7 @@ export default function EditQuotationPage() {
   const [validUntil, setValidUntil] = useState('');
   const [currency, setCurrency] = useState('GBP');
   const [notes, setNotes] = useState('');
+  const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
   const [state, setState] = useState('draft');
@@ -75,6 +77,7 @@ export default function EditQuotationPage() {
       setValidUntil(q.valid_until.split('T')[0]);
       setCurrency(q.currency);
       setNotes(q.notes ?? '');
+      setDescription(q.description ?? '');
       if (q.billing_address?.trim()) {
         setAddressKind('custom');
         setBillingAddress(q.billing_address);
@@ -149,6 +152,7 @@ export default function EditQuotationPage() {
         valid_until: validUntil,
         currency: currency.trim(),
         notes: notes.trim() || null,
+        description: description.trim() || null,
         billing_address: addressKind === 'custom' ? billingAddress.trim() || null : null,
         state,
         line_items: validItems.map((li) => ({
@@ -329,6 +333,16 @@ export default function EditQuotationPage() {
                   </label>
                 )}
               </div>
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">Description (Project overview)</span>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  placeholder="Summarize the project scope or works involved..."
+                />
+              </label>
               <label className="block text-sm sm:col-span-2">
                 <span className="font-medium text-slate-700">Notes (internal reference)</span>
                 <textarea

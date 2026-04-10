@@ -31,6 +31,7 @@ type PublicQuotationPayload = {
     total_amount: number;
     currency: string;
     notes: string | null;
+    description: string | null;
     billing_address: string | null;
     state: string;
     settings?: QuotationPrintSettings;
@@ -110,7 +111,10 @@ export default function PublicQuotationPage() {
             print-color-adjust: exact !important;
             color-adjust: exact !important;
           }
-          @page { margin: 12mm; }
+          @page {
+            margin: 10mm 12mm;
+            size: auto;
+          }
         }
       `,
         }}
@@ -148,6 +152,7 @@ export default function PublicQuotationPage() {
             total_amount: quotation.total_amount,
             currency: quotation.currency,
             notes: quotation.notes,
+            description: quotation.description ?? null,
             billing_address: quotation.billing_address,
             line_items,
           }}

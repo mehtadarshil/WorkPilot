@@ -46,6 +46,7 @@ interface InvoiceDetails {
   total_paid: number;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   state: string;
   created_at: string;
@@ -404,6 +405,13 @@ export default function InvoiceDetailsView() {
           )}
         </div>
       </div>
+
+      {invoice.description && (
+        <div className="px-8 pt-4 pb-8">
+          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Description</p>
+          <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-700">{invoice.description}</p>
+        </div>
+      )}
 
       <div className="px-8 pb-8">
         <table className="w-full border-collapse">

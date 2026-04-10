@@ -80,6 +80,7 @@ interface Quotation {
   total_amount: number;
   currency: string;
   notes: string | null;
+  description: string | null;
   billing_address: string | null;
   state: string;
   created_at: string;
@@ -335,16 +336,6 @@ export default function QuotationDetailPage() {
             print-color-adjust: exact !important;
           }
 
-          /* Ensure internal spacing stays balanced */
-          .px-8 { padding-left: 2rem !important; padding-right: 2rem !important; }
-          .py-10 { padding-top: 2.5rem !important; padding-bottom: 2.5rem !important; }
-          .py-8 { padding-top: 2rem !important; padding-bottom: 2rem !important; }
-
-          /* Ensure internal grids (like Bill To) still work */
-          #quotation-print .grid {
-            display: grid !important;
-          }
-
           /* Ensure colors and backgrounds print */
           * {
             -webkit-print-color-adjust: exact !important;
@@ -358,9 +349,9 @@ export default function QuotationDetailPage() {
             page-break-inside: avoid !important;
           }
 
-          /* Equal inset on left and right; browsers map this to the printable area */
           @page {
-            margin: 12mm;
+            margin: 10mm 12mm;
+            size: auto;
           }
         }
       `}} />
@@ -568,6 +559,7 @@ export default function QuotationDetailPage() {
                       total_amount: quotation.total_amount,
                       currency: quotation.currency,
                       notes: quotation.notes,
+                      description: quotation.description ?? null,
                       billing_address: quotation.billing_address,
                       line_items: quotation.line_items,
                     }}
