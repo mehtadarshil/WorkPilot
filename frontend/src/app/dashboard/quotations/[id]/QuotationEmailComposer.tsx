@@ -517,7 +517,7 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
               onDrop={handleDrop}
             >
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                <span className="font-semibold text-slate-800">Quotation PDF</span> is attached automatically. Drag files here or use the paperclip to add more attachments.
+                Drag files here or use the paperclip to add attachments (optional).
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">

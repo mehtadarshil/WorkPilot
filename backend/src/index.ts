@@ -14,7 +14,6 @@ import {
   type EmailSettingsPayload,
 } from './emailHelpers';
 import { generateInvoicePdfBuffer } from './invoicePdf';
-import { generateQuotationPdfBuffer } from './quotationPdf';
 import { encryptString, decryptString } from './cryptoHelper';
 import {
   getGoogleAuthUrl,
@@ -5701,17 +5700,6 @@ app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (re
       }
     }
 
-    const pdfName = `${String(qRow.quotation_number).replace(/[^\w.-]+/g, '_')}.pdf`;
-    let pdfBuf: Buffer;
-    try {
-      pdfBuf = await generateQuotationPdfBuffer(pool, id);
-    } catch (pdfErr) {
-      console.error('Quotation PDF generation error:', pdfErr);
-      return res.status(500).json({ message: 'Could not generate quotation PDF for attachment.' });
-    }
-    const quotationPdfAtt = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' as const };
-    const allAttachments = [quotationPdfAtt, ...userAttachments];
-
     await sendUserEmail(pool, userId, emailCfg, {
       from,
       to,
@@ -5720,7 +5708,7 @@ app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (re
       subject,
       html,
       replyTo: emailCfg.reply_to,
-      attachments: allAttachments,
+      attachments: userAttachments.length > 0 ? userAttachments : undefined,
     });
 
     await logQuotationActivity(id, 'comm_email', {
@@ -5732,8 +5720,8 @@ app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (re
       to_name: qRow.customer_full_name ?? null,
       status: 'sent',
       sent_via: 'smtp',
-      attachment_name: pdfName,
-      attachment_names: allAttachments.map((x) => x.filename),
+      attachment_name: userAttachments[0]?.filename ?? null,
+      attachment_names: userAttachments.map((x) => x.filename),
     }, userId);
 
     return res.json({ success: true, message: 'Quotation sent by email.' });

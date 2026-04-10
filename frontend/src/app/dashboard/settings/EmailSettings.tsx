@@ -72,7 +72,7 @@ const PLACEHOLDER_REFERENCE: {
     templateKey: 'quotation',
     title: 'Quotation template',
     whenUsed:
-      'When sending a quotation by email (or loading the quotation email composer). The quotation PDF is attached when using the composer; the simple “send” action uses this template without a PDF.',
+      'When sending a quotation by email (or loading the quotation email composer). No PDF is attached automatically; use {{quotation_link}} or add files manually if needed.',
     tags: [
       { tag: '{{company_name}}', purpose: "Your organisation name from Quotation settings (fallback: 'WorkPilot')." },
       { tag: '{{customer_name}}', purpose: 'The customer display name on the quotation.' },
