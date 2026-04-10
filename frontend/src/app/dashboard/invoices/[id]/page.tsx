@@ -451,29 +451,29 @@ export default function InvoiceDetailsView() {
           </div>
         </div>
         {invoice.notes && (
-          <div className="mt-6 rounded-lg border border-slate-100 bg-slate-50/50 p-4 print-break-avoid">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Notes</p>
-            <p className="mt-1 text-sm text-slate-700 leading-relaxed">{invoice.notes}</p>
+          <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/50 p-8 print-break-avoid">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Notes</p>
+            <p className="text-sm font-medium text-slate-700 leading-relaxed">{invoice.notes}</p>
           </div>
         )}
         {settings?.terms_and_conditions && (
-          <div className="mt-6 rounded-lg border border-slate-100 bg-slate-50/30 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Terms & conditions</p>
-            <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600 leading-relaxed">{settings.terms_and_conditions}</p>
+          <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50/50 p-8 print-break-avoid">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Terms & conditions</p>
+            <p className="whitespace-pre-wrap text-xs text-slate-600 leading-relaxed">{settings.terms_and_conditions}</p>
           </div>
         )}
         {(settings?.payment_terms || settings?.bank_details) && (
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 print:block">
+          <div className="mt-8 space-y-6">
             {settings?.payment_terms && (
-              <div className="rounded-lg border border-slate-100 bg-slate-50/30 p-4 print-break-avoid print:mb-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Payment terms</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600 leading-relaxed">{settings.payment_terms}</p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/30 p-8 print-break-avoid">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Payment terms</p>
+                <p className="whitespace-pre-wrap text-sm font-medium text-slate-600 leading-relaxed">{settings.payment_terms}</p>
               </div>
             )}
             {settings?.bank_details && (
-              <div className="rounded-lg border border-slate-100 bg-slate-50/30 p-4 print-break-avoid">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Bank details</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600 leading-relaxed">{settings.bank_details}</p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/30 p-8 print-break-avoid">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Bank details</p>
+                <p className="whitespace-pre-wrap text-sm font-medium text-slate-600 leading-relaxed">{settings.bank_details}</p>
               </div>
             )}
           </div>

@@ -14,6 +14,7 @@ import {
   type EmailSettingsPayload,
 } from './emailHelpers';
 import { generateInvoicePdfBuffer } from './invoicePdf';
+import { generateQuotationPdfBuffer } from './quotationPdf';
 import { encryptString, decryptString } from './cryptoHelper';
 import {
   getGoogleAuthUrl,
@@ -911,6 +912,10 @@ async function initDb() {
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_logo TEXT`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_website VARCHAR(255)`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_tax_id VARCHAR(100)`);
+    await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS payment_terms TEXT`);
+    await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS bank_details TEXT`);
+    await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS quotation_accent_color VARCHAR(32)`);
+    await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS quotation_accent_end_color VARCHAR(32)`);
   } catch { /* columns may already exist */ }
 
   await pool.query(`
@@ -3553,7 +3558,7 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
       name: 'Quotation - send to customer',
       subject: '{{company_name}} - Quotation {{quotation_number}}',
       body:
-        '<p>Hi {{customer_name}},</p><p>Your quotation <strong>{{quotation_number}}</strong> is ready.</p><p>Total: <strong>{{currency}} {{quotation_total}}</strong><br/>Valid until: {{valid_until}}<br/>Quotation date: {{quotation_date}}</p><p>Thank you,<br/>{{company_name}}</p>',
+        '<p>Hi {{customer_name}},</p><p>Your quotation <strong>{{quotation_number}}</strong> is ready.</p><p>Total: <strong>{{currency}} {{quotation_total}}</strong><br/>Valid until: {{valid_until}}<br/>Quotation date: {{quotation_date}}</p><p>View your quotation online: {{quotation_link}}</p><p>Customer address: {{customer_address}}<br/>Work / site: {{work_address}}</p><p>Thank you,<br/>{{company_name}}</p>',
     },
     {
       key: 'general',
@@ -3841,6 +3846,12 @@ function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
   return fb || '';
 }
 
+/** Public web app origin for customer links (set PUBLIC_APP_URL in production). */
+function getPublicAppBaseUrl(): string {
+  const raw = (process.env.PUBLIC_APP_URL || process.env.APP_ORIGIN || 'https://work-pilot.co').trim();
+  return raw.replace(/\/+$/, '');
+}
+
 /** Template vars for invoice emails (send + compose). */
 async function buildInvoiceEmailTemplateVars(
   inv: DbInvoice & {
@@ -3890,7 +3901,50 @@ async function buildInvoiceEmailTemplateVars(
     due_date: dueDate,
     customer_address,
     work_address,
-    invoice_link: `<a href="https://work-pilot.co/public/invoices/${pToken}">${inv.invoice_number}</a>`,
+    invoice_link: `<a href="${getPublicAppBaseUrl()}/public/invoices/${pToken}">${inv.invoice_number}</a>`,
+  };
+}
+
+/** Template vars for quotation emails (send + compose). */
+async function buildQuotationEmailTemplateVars(
+  q: DbQuotation & {
+    customer_full_name?: string | null;
+    cust_addr_line_1?: string | null;
+    cust_addr_line_2?: string | null;
+    cust_addr_line_3?: string | null;
+    cust_town?: string | null;
+    cust_county?: string | null;
+    cust_postcode?: string | null;
+  },
+  qSettings: { company_name?: string | null },
+): Promise<Record<string, string>> {
+  const qDate = (q.quotation_date as Date).toISOString().slice(0, 10);
+  const validUntil = (q.valid_until as Date).toISOString().slice(0, 10);
+  const customer_address = formatCustomerAddressSingleLine({
+    address_line_1: q.cust_addr_line_1,
+    address_line_2: q.cust_addr_line_2,
+    address_line_3: q.cust_addr_line_3,
+    town: q.cust_town,
+    county: q.cust_county,
+    postcode: q.cust_postcode,
+  });
+  let pToken = q.public_token;
+  if (!pToken) {
+    pToken = crypto.randomBytes(32).toString('hex');
+    await pool.query('UPDATE quotations SET public_token = $1 WHERE id = $2', [pToken, q.id]);
+  }
+  const base = getPublicAppBaseUrl();
+  return {
+    company_name: qSettings.company_name ?? 'WorkPilot',
+    customer_name: q.customer_full_name ?? '',
+    quotation_number: q.quotation_number,
+    quotation_total: parseFloat(String(q.total_amount)).toFixed(2),
+    currency: q.currency,
+    quotation_date: qDate,
+    valid_until: validUntil,
+    customer_address,
+    work_address: '',
+    quotation_link: `<a href="${base}/public/quotations/${pToken}">${q.quotation_number}</a>`,
   };
 }
 
@@ -4961,7 +5015,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
       pToken = crypto.randomBytes(32).toString('hex');
       await pool.query('UPDATE invoices SET public_token = $1 WHERE id = $2', [pToken, inv.id]);
     }
-    const publicLink = `https://work-pilot.co/public/invoices/${pToken}`;
+    const publicLink = `${getPublicAppBaseUrl()}/public/invoices/${pToken}`;
     let processedBody = bodyHtmlRaw;
     if (processedBody.includes('{{invoice_link}}')) {
       processedBody = processedBody.replace(/{{invoice_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
@@ -5194,6 +5248,10 @@ async function getQuotationSettings(userId: number): Promise<{
   tax_label: string;
   default_tax_percentage: number;
   footer_text: string | null;
+  payment_terms: string | null;
+  bank_details: string | null;
+  quotation_accent_color: string | null;
+  quotation_accent_end_color: string | null;
 }> {
   const r = await pool.query('SELECT * FROM quotation_settings WHERE created_by = $1', [userId]);
   if ((r.rowCount ?? 0) > 0) {
@@ -5213,6 +5271,10 @@ async function getQuotationSettings(userId: number): Promise<{
       tax_label: (row.tax_label as string) ?? 'Tax',
       default_tax_percentage: row.default_tax_percentage != null ? Math.max(0, Math.min(100, Number(row.default_tax_percentage))) : 0,
       footer_text: (row.footer_text as string) ?? null,
+      payment_terms: (row.payment_terms as string) ?? null,
+      bank_details: (row.bank_details as string) ?? null,
+      quotation_accent_color: (row.quotation_accent_color as string) ?? null,
+      quotation_accent_end_color: (row.quotation_accent_end_color as string) ?? null,
     };
   }
   return {
@@ -5230,6 +5292,10 @@ async function getQuotationSettings(userId: number): Promise<{
     tax_label: 'Tax',
     default_tax_percentage: 0,
     footer_text: null,
+    payment_terms: null,
+    bank_details: null,
+    quotation_accent_color: null,
+    quotation_accent_end_color: null,
   };
 }
 
@@ -5360,9 +5426,24 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
-    const qResult = await pool.query<DbQuotation & { customer_full_name?: string; customer_email?: string; customer_phone?: string; customer_address?: string; job_title?: string }>(
+    const qResult = await pool.query<DbQuotation & { 
+      customer_full_name?: string; 
+      customer_email?: string; 
+      customer_phone?: string; 
+      address_line_1?: string;
+      address_line_2?: string;
+      town?: string;
+      county?: string;
+      postcode?: string;
+      address?: string;
+      city?: string;
+      region?: string;
+      country?: string;
+      job_title?: string 
+    }>(
       `SELECT q.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
-        COALESCE(c.address, c.city || ', ' || c.region || ' ' || c.country) AS customer_address,
+        c.address_line_1, c.address_line_2, c.town, c.county, c.postcode,
+        c.address, c.city, c.region, c.country,
         j.title AS job_title
        FROM quotations q
        JOIN customers c ON c.id = q.customer_id
@@ -5391,7 +5472,7 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
       customer_full_name: q.customer_full_name ?? null,
       customer_email: q.customer_email ?? null,
       customer_phone: q.customer_phone ?? null,
-      customer_address: q.billing_address ?? q.customer_address ?? null,
+      customer_address: q.billing_address?.trim() || formatCustomerAddressSingleLine(q as unknown as Record<string, unknown>) || null,
       job_id: q.job_id ?? null,
       job_title: q.job_title ?? null,
       quotation_date: (q.quotation_date as Date).toISOString().slice(0, 10),
@@ -5406,6 +5487,7 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
       created_at: (q.created_at as Date).toISOString(),
       updated_at: (q.updated_at as Date).toISOString(),
       created_by: q.created_by,
+      public_token: q.public_token ?? null,
       line_items: lineItemsResult.rows.map((row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number }) => ({
         id: row.id,
         description: row.description,
@@ -5428,6 +5510,237 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
   } catch (error) {
     console.error('Get quotation error:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/quotations/:id/email-compose', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const qCheck = await pool.query<
+    DbQuotation & {
+      customer_email?: string | null;
+      customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
+    }
+  >(
+    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode
+     FROM quotations q JOIN customers c ON c.id = q.customer_id WHERE q.id = $1`,
+    [id],
+  );
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const qRow = qCheck.rows[0];
+  if (!canAccessQuotation(qRow, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+  try {
+    await ensureDefaultEmailTemplates(userId);
+    const qSettings = await getQuotationSettings(userId);
+    const emailCfg = await loadEmailSettingsPayload(userId);
+    const tpl = await pool.query<{ subject: string; body_html: string }>(
+      `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'quotation'`,
+      [userId],
+    );
+    const row = tpl.rows[0];
+    const vars = await buildQuotationEmailTemplateVars(qRow, qSettings);
+    const subject = row ? applyTemplateVars(row.subject, vars) : `${qSettings.company_name ?? 'Quotation'} - ${qRow.quotation_number}`;
+    const bodyInner = row
+      ? applyTemplateVars(row.body_html, vars)
+      : `<p>Hi ${qRow.customer_full_name || 'there'},</p><p>Please find your quotation <strong>${qRow.quotation_number}</strong> attached below.</p><p>You can also view it online here: ${vars.quotation_link}</p>`;
+    const transport = createMailTransport(emailCfg);
+
+    const customerEmailRaw = (qRow.customer_email ?? '').trim();
+    const contactsForTo = await pool.query<{ email: string; first_name: string | null; surname: string }>(
+      `SELECT email, first_name, surname FROM customer_contacts
+       WHERE customer_id = $1 AND COALESCE(TRIM(email), '') <> ''
+       ORDER BY is_primary DESC, created_at ASC`,
+      [qRow.customer_id],
+    );
+    const seenTo = new Set<string>();
+    const toEmailOptions: { email: string; label: string }[] = [];
+    const pushToOption = (email: string, label: string) => {
+      const e = email.trim().toLowerCase();
+      if (!e || seenTo.has(e)) return;
+      seenTo.add(e);
+      toEmailOptions.push({ email: email.trim(), label });
+    };
+    if (customerEmailRaw) {
+      pushToOption(customerEmailRaw, `Customer (${qRow.customer_full_name?.trim() || 'account'})`);
+    }
+    for (const c of contactsForTo.rows) {
+      const name = [c.first_name, c.surname].filter(Boolean).join(' ').trim() || 'Contact';
+      pushToOption(c.email, name);
+    }
+
+    const canSend = qRow.state === 'draft' || qRow.state === 'sent';
+
+    return res.json({
+      subject,
+      body_html: bodyInner,
+      signature_html: emailCfg.default_signature_html,
+      from_display: formatFromHeader(emailCfg.from_name, emailCfg.from_email) || emailCfg.from_email || '',
+      reply_to: emailCfg.reply_to,
+      smtp_ready: !!((emailCfg.smtp_enabled && transport) || emailCfg.oauth_provider) && !!emailCfg.from_email?.trim(),
+      can_send: canSend,
+      invoice_state: qRow.state,
+      default_to: qRow.customer_email ?? '',
+      customer_name: qRow.customer_full_name ?? '',
+      to_email_options: toEmailOptions,
+    });
+  } catch (error) {
+    console.error('Quotation email compose draft error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as {
+    to?: string;
+    cc?: string;
+    bcc?: string;
+    subject?: string;
+    body_html?: string;
+    append_signature?: boolean;
+    attachments?: { filename?: string; content_base64?: string; content_type?: string }[];
+  };
+
+  const qCheck = await pool.query<
+    DbQuotation & { customer_email?: string | null; customer_full_name?: string | null }
+  >(
+    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name
+     FROM quotations q JOIN customers c ON c.id = q.customer_id WHERE q.id = $1`,
+    [id],
+  );
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const qRow = qCheck.rows[0];
+  if (!canAccessQuotation(qRow, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+  const to = typeof body.to === 'string' ? body.to.trim() : '';
+  const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
+  const bodyHtmlRaw = typeof body.body_html === 'string' ? body.body_html.trim() : '';
+  const cc = typeof body.cc === 'string' ? body.cc.trim() : '';
+  const bcc = typeof body.bcc === 'string' ? body.bcc.trim() : '';
+  const appendSig = body.append_signature !== false;
+
+  if (!to) return res.status(400).json({ message: 'Recipient (To) is required' });
+  if (!subject) return res.status(400).json({ message: 'Subject is required' });
+  if (!bodyHtmlRaw) return res.status(400).json({ message: 'Message body is required' });
+
+  if (qRow.state !== 'draft' && qRow.state !== 'sent') {
+    return res.status(400).json({ message: 'Only draft or sent quotations can be emailed from here.' });
+  }
+
+  const emailCfg = await loadEmailSettingsPayload(userId);
+  const canSendMail = emailCfg.oauth_provider || (emailCfg.smtp_enabled && createMailTransport(emailCfg));
+  if (!canSendMail) {
+    return res.status(400).json({
+      message: 'Configure Email Settings before sending.',
+    });
+  }
+  if (!emailCfg.from_email?.trim()) {
+    return res.status(400).json({ message: 'Set From email in Settings → Email.' });
+  }
+
+  try {
+    if (qRow.state === 'draft') {
+      const upd = await pool.query(
+        "UPDATE quotations SET state = 'sent', updated_at = NOW() WHERE id = $1 AND state = 'draft' RETURNING id",
+        [id],
+      );
+      if ((upd.rowCount ?? 0) === 0) {
+        return res.status(400).json({ message: 'Quotation state changed; refresh and try again.' });
+      }
+    }
+
+    const sigHtml = appendSig ? emailCfg.default_signature_html : null;
+
+    let pToken = qRow.public_token;
+    if (!pToken) {
+      pToken = crypto.randomBytes(32).toString('hex');
+      await pool.query('UPDATE quotations SET public_token = $1 WHERE id = $2', [pToken, qRow.id]);
+    }
+    const publicLink = `${getPublicAppBaseUrl()}/public/quotations/${pToken}`;
+    let processedBody = bodyHtmlRaw;
+    if (processedBody.includes('{{quotation_link}}')) {
+      processedBody = processedBody.replace(/{{quotation_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
+    }
+
+    const html = wrapEmailHtml(processedBody, sigHtml);
+    const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
+
+    const userAttachments: { filename: string; content: Buffer; contentType?: string }[] = [];
+    if (Array.isArray(body.attachments)) {
+      for (const a of body.attachments) {
+        const fn = typeof a.filename === 'string' ? a.filename.trim() : '';
+        const b64 = typeof a.content_base64 === 'string' ? a.content_base64.trim() : '';
+        if (!fn || !b64) continue;
+        try {
+          userAttachments.push({
+            filename: fn,
+            content: Buffer.from(b64, 'base64'),
+            contentType: typeof a.content_type === 'string' ? a.content_type : undefined,
+          });
+        } catch {
+          return res.status(400).json({ message: `Invalid attachment data for ${fn}` });
+        }
+      }
+    }
+
+    const pdfName = `${String(qRow.quotation_number).replace(/[^\w.-]+/g, '_')}.pdf`;
+    let pdfBuf: Buffer;
+    try {
+      pdfBuf = await generateQuotationPdfBuffer(pool, id);
+    } catch (pdfErr) {
+      console.error('Quotation PDF generation error:', pdfErr);
+      return res.status(500).json({ message: 'Could not generate quotation PDF for attachment.' });
+    }
+    const quotationPdfAtt = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' as const };
+    const allAttachments = [quotationPdfAtt, ...userAttachments];
+
+    await sendUserEmail(pool, userId, emailCfg, {
+      from,
+      to,
+      cc: cc || undefined,
+      bcc: bcc || undefined,
+      subject,
+      html,
+      replyTo: emailCfg.reply_to,
+      attachments: allAttachments,
+    });
+
+    await logQuotationActivity(id, 'comm_email', {
+      subject,
+      body: bodyHtmlRaw,
+      to_email: to,
+      cc: cc || null,
+      bcc: bcc || null,
+      to_name: qRow.customer_full_name ?? null,
+      status: 'sent',
+      sent_via: 'smtp',
+      attachment_name: pdfName,
+      attachment_names: allAttachments.map((x) => x.filename),
+    }, userId);
+
+    return res.json({ success: true, message: 'Quotation sent by email.' });
+  } catch (error) {
+    console.error('Send quotation email (compose) error:', error);
+    const msg = error instanceof Error ? error.message : 'Internal server error';
+    return res.status(500).json({ message: msg });
   }
 });
 
@@ -5678,7 +5991,7 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
 
     await pool.query("UPDATE quotations SET state = 'sent', updated_at = NOW() WHERE id = $1", [id]);
     await ensureDefaultEmailTemplates(userId);
-    const invSettings = await getInvoiceSettings(userId);
+    const qSettings = await getQuotationSettings(userId);
     const tpl = await pool.query<{ subject: string; body_html: string }>(
       `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'quotation'`,
       [userId],
@@ -5687,27 +6000,7 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
     if (!row) {
       return res.status(500).json({ message: 'Quotation email template missing' });
     }
-    const qDate = (q.quotation_date as Date).toISOString().slice(0, 10);
-    const validUntil = (q.valid_until as Date).toISOString().slice(0, 10);
-    const customer_address = formatCustomerAddressSingleLine({
-      address_line_1: q.cust_addr_line_1,
-      address_line_2: q.cust_addr_line_2,
-      address_line_3: q.cust_addr_line_3,
-      town: q.cust_town,
-      county: q.cust_county,
-      postcode: q.cust_postcode,
-    });
-    const vars: Record<string, string> = {
-      company_name: invSettings.company_name ?? 'WorkPilot',
-      customer_name: q.customer_full_name ?? '',
-      quotation_number: q.quotation_number,
-      quotation_total: parseFloat(String(q.total_amount)).toFixed(2),
-      currency: q.currency,
-      quotation_date: qDate,
-      valid_until: validUntil,
-      customer_address,
-      work_address: '',
-    };
+    const vars = await buildQuotationEmailTemplateVars(q, qSettings);
     const subject = applyTemplateVars(row.subject, vars);
     const bodyInner = applyTemplateVars(row.body_html, vars);
     const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
@@ -5905,6 +6198,12 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, async (req: Aut
   const taxLabel = typeof body.tax_label === 'string' ? body.tax_label.trim() || 'Tax' : undefined;
   const defaultTaxPercentage = typeof body.default_tax_percentage === 'number' ? Math.max(0, Math.min(100, body.default_tax_percentage)) : undefined;
   const footerText = typeof body.footer_text === 'string' ? body.footer_text.trim() || null : undefined;
+  const paymentTerms = typeof body.payment_terms === 'string' ? body.payment_terms.trim() || null : undefined;
+  const bankDetails = typeof body.bank_details === 'string' ? body.bank_details.trim() || null : undefined;
+  const quotationAccentColor =
+    typeof body.quotation_accent_color === 'string' ? parseSafeHexColor(body.quotation_accent_color, '#14B8A6') : undefined;
+  const quotationAccentEndColor =
+    typeof body.quotation_accent_end_color === 'string' ? parseSafeHexColor(body.quotation_accent_end_color, '#0d9488') : undefined;
 
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -5923,6 +6222,10 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, async (req: Aut
   if (taxLabel !== undefined) { updates.push(`tax_label = $${idx++}`); values.push(taxLabel); }
   if (defaultTaxPercentage !== undefined) { updates.push(`default_tax_percentage = $${idx++}`); values.push(defaultTaxPercentage); }
   if (footerText !== undefined) { updates.push(`footer_text = $${idx++}`); values.push(footerText); }
+  if (paymentTerms !== undefined) { updates.push(`payment_terms = $${idx++}`); values.push(paymentTerms); }
+  if (bankDetails !== undefined) { updates.push(`bank_details = $${idx++}`); values.push(bankDetails); }
+  if (quotationAccentColor !== undefined) { updates.push(`quotation_accent_color = $${idx++}`); values.push(quotationAccentColor); }
+  if (quotationAccentEndColor !== undefined) { updates.push(`quotation_accent_end_color = $${idx++}`); values.push(quotationAccentEndColor); }
 
   if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
   updates.push('updated_at = NOW()');
@@ -5952,12 +6255,36 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, async (req: Aut
         tax_label: taxLabel ?? def.tax_label,
         default_tax_percentage: defaultTaxPercentage ?? def.default_tax_percentage,
         footer_text: footerText !== undefined ? footerText : def.footer_text,
+        payment_terms: paymentTerms !== undefined ? paymentTerms : def.payment_terms,
+        bank_details: bankDetails !== undefined ? bankDetails : def.bank_details,
+        quotation_accent_color: quotationAccentColor !== undefined ? quotationAccentColor : def.quotation_accent_color,
+        quotation_accent_end_color: quotationAccentEndColor !== undefined ? quotationAccentEndColor : def.quotation_accent_end_color,
       };
       await pool.query(
-        `INSERT INTO quotation_settings (created_by, default_currency, quotation_prefix, terms_and_conditions, default_valid_days, company_name, company_address, company_phone, company_email, company_logo, company_website, company_tax_id, tax_label, default_tax_percentage, footer_text)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-         ON CONFLICT (created_by) DO UPDATE SET default_currency = EXCLUDED.default_currency, quotation_prefix = EXCLUDED.quotation_prefix, terms_and_conditions = EXCLUDED.terms_and_conditions, default_valid_days = EXCLUDED.default_valid_days, company_name = EXCLUDED.company_name, company_address = EXCLUDED.company_address, company_phone = EXCLUDED.company_phone, company_email = EXCLUDED.company_email, company_logo = EXCLUDED.company_logo, company_website = EXCLUDED.company_website, company_tax_id = EXCLUDED.company_tax_id, tax_label = EXCLUDED.tax_label, default_tax_percentage = EXCLUDED.default_tax_percentage, footer_text = EXCLUDED.footer_text, updated_at = NOW()`,
-        [userId, merged.default_currency, merged.quotation_prefix, merged.terms_and_conditions, merged.default_valid_days, merged.company_name, merged.company_address, merged.company_phone, merged.company_email, merged.company_logo, merged.company_website, merged.company_tax_id, merged.tax_label, merged.default_tax_percentage, merged.footer_text],
+        `INSERT INTO quotation_settings (created_by, default_currency, quotation_prefix, terms_and_conditions, default_valid_days, company_name, company_address, company_phone, company_email, company_logo, company_website, company_tax_id, tax_label, default_tax_percentage, footer_text, payment_terms, bank_details, quotation_accent_color, quotation_accent_end_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+         ON CONFLICT (created_by) DO UPDATE SET default_currency = EXCLUDED.default_currency, quotation_prefix = EXCLUDED.quotation_prefix, terms_and_conditions = EXCLUDED.terms_and_conditions, default_valid_days = EXCLUDED.default_valid_days, company_name = EXCLUDED.company_name, company_address = EXCLUDED.company_address, company_phone = EXCLUDED.company_phone, company_email = EXCLUDED.company_email, company_logo = EXCLUDED.company_logo, company_website = EXCLUDED.company_website, company_tax_id = EXCLUDED.company_tax_id, tax_label = EXCLUDED.tax_label, default_tax_percentage = EXCLUDED.default_tax_percentage, footer_text = EXCLUDED.footer_text, payment_terms = EXCLUDED.payment_terms, bank_details = EXCLUDED.bank_details, quotation_accent_color = EXCLUDED.quotation_accent_color, quotation_accent_end_color = EXCLUDED.quotation_accent_end_color, updated_at = NOW()`,
+        [
+          userId,
+          merged.default_currency,
+          merged.quotation_prefix,
+          merged.terms_and_conditions,
+          merged.default_valid_days,
+          merged.company_name,
+          merged.company_address,
+          merged.company_phone,
+          merged.company_email,
+          merged.company_logo,
+          merged.company_website,
+          merged.company_tax_id,
+          merged.tax_label,
+          merged.default_tax_percentage,
+          merged.footer_text,
+          merged.payment_terms,
+          merged.bank_details,
+          merged.quotation_accent_color,
+          merged.quotation_accent_end_color,
+        ],
       );
     }
     const settings = await getQuotationSettings(userId);
@@ -8264,5 +8591,97 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Public invoice fetch error:', error);
     res.status(500).json({ message: 'Internal server error', details: error.message });
+  }
+});
+
+app.get('/api/public/quotations/:token', async (req: Request, res: Response) => {
+  const { token } = req.params;
+  if (!token) return res.status(400).json({ message: 'Token required' });
+
+  try {
+    const qResult = await pool.query<
+      DbQuotation & {
+        customer_full_name?: string | null;
+        customer_email?: string | null;
+        customer_phone?: string | null;
+        address_line_1?: string | null;
+        address_line_2?: string | null;
+        address_line_3?: string | null;
+        town?: string | null;
+        county?: string | null;
+        postcode?: string | null;
+        address?: string | null;
+        city?: string | null;
+        region?: string | null;
+        country?: string | null;
+      }
+    >(
+      `SELECT q.*,
+              c.full_name AS customer_full_name,
+              c.email AS customer_email,
+              c.phone AS customer_phone,
+              c.address_line_1, c.address_line_2, c.address_line_3,
+              c.town, c.county, c.postcode,
+              c.address, c.city, c.region, c.country
+       FROM quotations q
+       JOIN customers c ON c.id = q.customer_id
+       WHERE q.public_token = $1`,
+      [token],
+    );
+
+    if ((qResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    const rawQ = qResult.rows[0];
+    const customer_address = formatCustomerAddressSingleLine(rawQ as unknown as Record<string, unknown>);
+
+    const itemsResult = await pool.query(
+      'SELECT id, description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
+      [rawQ.id],
+    );
+
+    const creatorId = rawQ.created_by || 1;
+    const mergedSettings = await getQuotationSettings(creatorId);
+
+    const quotation = {
+      id: rawQ.id,
+      quotation_number: rawQ.quotation_number,
+      customer_id: rawQ.customer_id,
+      customer_full_name: rawQ.customer_full_name ?? null,
+      customer_email: rawQ.customer_email ?? null,
+      customer_phone: rawQ.customer_phone ?? null,
+      customer_address,
+      quotation_date: (rawQ.quotation_date as Date).toISOString().slice(0, 10),
+      valid_until: (rawQ.valid_until as Date).toISOString().slice(0, 10),
+      subtotal: parseFloat(rawQ.subtotal),
+      tax_amount: parseFloat(rawQ.tax_amount),
+      total_amount: parseFloat(rawQ.total_amount),
+      currency: rawQ.currency,
+      notes: rawQ.notes ?? null,
+      billing_address: rawQ.billing_address ?? null,
+      state: rawQ.state,
+      settings: mergedSettings,
+    };
+
+    const line_items = itemsResult.rows.map((row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number }) => ({
+      id: row.id,
+      description: row.description,
+      quantity: parseFloat(row.quantity),
+      unit_price: parseFloat(row.unit_price),
+      amount: parseFloat(row.amount),
+      sort_order: row.sort_order,
+    }));
+
+    res.json({
+      quotation,
+      line_items,
+      business: {
+        logo: mergedSettings.company_logo,
+        name: mergedSettings.company_name,
+        address: mergedSettings.company_address,
+      },
+    });
+  } catch (error: unknown) {
+    console.error('Public quotation fetch error:', error);
+    const msg = error instanceof Error ? error.message : 'Internal server error';
+    res.status(500).json({ message: 'Internal server error', details: msg });
   }
 });

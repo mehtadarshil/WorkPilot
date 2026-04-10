@@ -7,6 +7,9 @@ import { ChevronDown } from 'lucide-react';
 export interface ImportCustomerOption {
   id: number;
   full_name: string;
+  address_line_1?: string;
+  town?: string;
+  postcode?: string;
 }
 
 type Props = {
@@ -91,10 +94,12 @@ export default function ImportCustomerSelect({ customers, value, onChange, class
           if (!open) updatePosition();
           setOpen((o) => !o);
         }}
-        className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-left text-sm text-slate-900"
+        className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900 outline-none transition focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 ${
+          open ? 'border-[#14B8A6] ring-2 ring-[#14B8A6]/30' : ''
+        }`}
       >
-        <span className="min-w-0 truncate">{selected ? selected.full_name : 'Select customer'}</span>
-        <ChevronDown className={`size-4 shrink-0 text-slate-500 transition ${open ? 'rotate-180' : ''}`} />
+        <span className="min-w-0 truncate font-medium">{selected ? selected.full_name : 'Select customer'}</span>
+        <ChevronDown className={`size-4 shrink-0 text-slate-400 transition ${open ? 'rotate-180 text-[#14B8A6]' : ''}`} />
       </button>
       {open &&
         typeof document !== 'undefined' &&
@@ -118,7 +123,7 @@ export default function ImportCustomerSelect({ customers, value, onChange, class
                 placeholder="Search customers…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm text-black placeholder:text-slate-500 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-black placeholder:text-slate-500 outline-none transition focus:bg-white focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                 autoFocus
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
@@ -127,7 +132,7 @@ export default function ImportCustomerSelect({ customers, value, onChange, class
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50"
+                className="w-full px-3 py-2 text-left text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-rose-600"
                 onClick={() => {
                   onChange(null);
                   setOpen(false);
@@ -142,15 +147,22 @@ export default function ImportCustomerSelect({ customers, value, onChange, class
                   <button
                     key={c.id}
                     type="button"
-                    className={`w-full min-w-0 truncate px-3 py-1.5 text-left text-sm hover:bg-slate-50 ${
-                      c.id === value ? 'bg-[#14B8A6]/10 font-medium text-[#14B8A6]' : 'text-slate-900'
-                    }`}
+                    className={`w-full min-w-0 px-3 py-2 text-left text-sm transition ${
+                      c.id === value ? 'bg-[#14B8A6]/10 font-medium text-[#14B8A6]' : 'text-slate-900 group'
+                    } hover:bg-slate-50`}
                     onClick={() => {
                       onChange(c.id);
                       setOpen(false);
                     }}
                   >
-                    {c.full_name}
+                    <div className="flex flex-col">
+                      <span className="truncate">{c.full_name}</span>
+                      {(c.address_line_1 || c.town || c.postcode) && (
+                        <span className="truncate text-[10px] text-slate-400 font-normal group-hover:text-[#14B8A6]/70">
+                          {[c.address_line_1, c.town, c.postcode].filter(Boolean).join(', ')}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 ))
               )}

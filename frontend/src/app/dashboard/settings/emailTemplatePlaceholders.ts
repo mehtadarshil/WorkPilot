@@ -12,6 +12,7 @@ const INVOICE_TAGS = [
   '{{currency}}',
   '{{invoice_date}}',
   '{{due_date}}',
+  '{{invoice_link}}',
 ] as const;
 
 const QUOTATION_TAGS = [
@@ -24,6 +25,7 @@ const QUOTATION_TAGS = [
   '{{currency}}',
   '{{quotation_date}}',
   '{{valid_until}}',
+  '{{quotation_link}}',
 ] as const;
 
 const GENERAL_TAGS = ['{{company_name}}', '{{message}}'] as const;

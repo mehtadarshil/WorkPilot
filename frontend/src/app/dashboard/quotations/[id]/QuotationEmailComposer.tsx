@@ -190,6 +190,10 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
 
   const handleSend = async () => {
     if (!token || !draft) return;
+    if (!draft.can_send) {
+      setError('Only draft or sent quotations can be emailed from here.');
+      return;
+    }
     if (!draft.smtp_ready) {
       setError('Configure Email Settings before sending.');
       return;
@@ -295,6 +299,12 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
             {!draft?.smtp_ready && (
               <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
                 Email connection is not configured or incomplete. Open <strong>Settings → Email</strong> to connect your mailbox.
+              </div>
+            )}
+
+            {!draft?.can_send && (
+              <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
+                This quotation is <strong>{draft?.invoice_state?.replace(/_/g, ' ') ?? 'not available'}</strong>. Only draft or sent quotations can be emailed.
               </div>
             )}
 
@@ -573,7 +583,7 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={sending || !draft?.smtp_ready}
+                    disabled={sending || !draft?.smtp_ready || !draft?.can_send}
                     className="inline-flex items-center gap-2 rounded-full bg-[#1a73e8] px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#1557b0] disabled:opacity-50"
                   >
                     <Send className="size-4" />

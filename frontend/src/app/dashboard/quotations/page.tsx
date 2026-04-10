@@ -7,6 +7,7 @@ import { Search, Quote, Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
+import ImportCustomerSelect from '../ImportCustomerSelect';
 
 interface Quotation {
   id: number;
@@ -38,6 +39,11 @@ interface Customer {
   id: number;
   full_name: string;
   email: string;
+  address_line_1?: string;
+  address_line_2?: string;
+  town?: string;
+  county?: string;
+  postcode?: string;
 }
 
 interface QuotationSettings {
@@ -64,6 +70,12 @@ function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
 }
 
+function formatCustomerAddress(c: Customer): string {
+  return [c.address_line_1, c.address_line_2, c.town, c.county, c.postcode]
+    .filter((p) => typeof p === 'string' && p.trim() !== '')
+    .join(', ');
+}
+
 export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -78,7 +90,7 @@ export default function QuotationsPage() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  const [formCustomerId, setFormCustomerId] = useState<string>('');
+  const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
   const [formQuotationDate, setFormQuotationDate] = useState('');
   const [formValidUntil, setFormValidUntil] = useState('');
   const [formCurrency, setFormCurrency] = useState('USD');
@@ -154,7 +166,7 @@ export default function QuotationsPage() {
   }, [addModalOpen, fetchCustomers]);
 
   const resetForm = (settings: QuotationSettings | null) => {
-    setFormCustomerId('');
+    setFormCustomerId(null);
     const today = new Date().toISOString().slice(0, 10);
     const validDays = settings?.default_valid_days ?? 30;
     const valid = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -197,7 +209,7 @@ export default function QuotationsPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
-    if (!formCustomerId) {
+    if (formCustomerId === null) {
       setAddError('Customer is required.');
       return;
     }
@@ -211,7 +223,7 @@ export default function QuotationsPage() {
       const res = await postJson<{ quotation: Quotation }>(
         '/quotations',
         {
-          customer_id: parseInt(formCustomerId, 10),
+          customer_id: formCustomerId,
           quotation_date: formQuotationDate,
           valid_until: formValidUntil,
           currency: formCurrency,
@@ -409,16 +421,34 @@ export default function QuotationsPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Customer *</label>
                 <div className="mt-1 flex gap-2">
-                  <select required value={formCustomerId} onChange={(e) => setFormCustomerId(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
-                    <option value="">Select customer</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>{c.full_name} ({c.email})</option>
-                    ))}
-                  </select>
+                  <div className="flex-1">
+                    <ImportCustomerSelect
+                      customers={customers}
+                      value={formCustomerId}
+                      onChange={setFormCustomerId}
+                      className="w-full"
+                    />
+                  </div>
                   <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
                     <Plus className="size-4" />
                   </button>
                 </div>
+                {formCustomerId && (
+                  <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                    {(() => {
+                      const c = customers.find(x => x.id === formCustomerId);
+                      if (!c) return null;
+                      const addr = formatCustomerAddress(c);
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <p className="font-semibold text-slate-800">{c.full_name}</p>
+                          <p>{c.email}</p>
+                          {addr && <p className="mt-1 border-t border-slate-200 pt-1 text-slate-500">{addr}</p>}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>

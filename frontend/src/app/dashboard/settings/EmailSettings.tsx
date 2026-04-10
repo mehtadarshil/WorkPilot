@@ -36,7 +36,7 @@ const VARS_HELP: Record<string, string> = {
   invoice:
     '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{invoice_number}}, {{invoice_total}}, {{currency}}, {{invoice_date}}, {{due_date}}, {{invoice_link}}',
   quotation:
-    '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{quotation_number}}, {{quotation_total}}, {{currency}}, {{quotation_date}}, {{valid_until}}',
+    '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{quotation_number}}, {{quotation_total}}, {{currency}}, {{quotation_date}}, {{valid_until}}, {{quotation_link}}',
   general: '{{company_name}}, {{message}}',
 };
 
@@ -71,9 +71,10 @@ const PLACEHOLDER_REFERENCE: {
   {
     templateKey: 'quotation',
     title: 'Quotation template',
-    whenUsed: 'When sending a quotation by email to the customer.',
+    whenUsed:
+      'When sending a quotation by email (or loading the quotation email composer). The quotation PDF is attached when using the composer; the simple “send” action uses this template without a PDF.',
     tags: [
-      { tag: '{{company_name}}', purpose: "Your organisation name from Invoice settings (fallback: 'WorkPilot')." },
+      { tag: '{{company_name}}', purpose: "Your organisation name from Quotation settings (fallback: 'WorkPilot')." },
       { tag: '{{customer_name}}', purpose: 'The customer display name on the quotation.' },
       { tag: '{{quotation_number}}', purpose: 'Quotation reference number.' },
       { tag: '{{quotation_total}}', purpose: 'Total amount as a decimal string with two places.' },
@@ -82,6 +83,7 @@ const PLACEHOLDER_REFERENCE: {
       { tag: '{{valid_until}}', purpose: 'Validity / expiry date (YYYY-MM-DD).' },
       { tag: '{{customer_address}}', purpose: 'Customer address as one comma-separated line.' },
       { tag: '{{work_address}}', purpose: 'Currently empty for quotations; reserved if site linkage is added later.' },
+      { tag: '{{quotation_link}}', purpose: 'A secure, public link for customers to view and print their quotation online.' },
     ],
   },
   {

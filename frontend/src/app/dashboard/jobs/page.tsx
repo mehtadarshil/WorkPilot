@@ -7,6 +7,7 @@ import { Search, MoreVertical, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
+import ImportCustomerSelect from '../ImportCustomerSelect';
 
 interface Job {
   id: number;
@@ -102,7 +103,7 @@ export default function JobsPage() {
   const [formOfficerId, setFormOfficerId] = useState<string>('');
   const [formStartDate, setFormStartDate] = useState('');
   const [formDeadline, setFormDeadline] = useState('');
-  const [formCustomerId, setFormCustomerId] = useState<string>('');
+  const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
   const [formLocation, setFormLocation] = useState('');
   const [formRequiredCertifications, setFormRequiredCertifications] = useState('');
   const [formState, setFormState] = useState('draft');
@@ -193,7 +194,7 @@ export default function JobsPage() {
     setFormOfficerId('');
     setFormStartDate('');
     setFormDeadline('');
-    setFormCustomerId('');
+    setFormCustomerId(null);
     setFormLocation('');
     setFormRequiredCertifications('');
     setFormState('draft');
@@ -208,7 +209,7 @@ export default function JobsPage() {
     setFormOfficerId(j.officer_id ? String(j.officer_id) : '');
     setFormStartDate(j.start_date ? j.start_date.slice(0, 16) : '');
     setFormDeadline(j.deadline ? j.deadline.slice(0, 16) : '');
-    setFormCustomerId(j.customer_id ? String(j.customer_id) : '');
+    setFormCustomerId(j.customer_id);
     setFormLocation(j.location ?? '');
     setFormRequiredCertifications(j.required_certifications ?? '');
     setFormState(j.state);
@@ -230,7 +231,7 @@ export default function JobsPage() {
           officer_id: formOfficerId ? parseInt(formOfficerId, 10) : null,
           start_date: formStartDate ? new Date(formStartDate).toISOString() : null,
           deadline: formDeadline ? new Date(formDeadline).toISOString() : null,
-          customer_id: formCustomerId ? parseInt(formCustomerId, 10) : null,
+          customer_id: formCustomerId,
           location: formLocation.trim() || null,
           required_certifications: formRequiredCertifications.trim() || null,
           state: formState,
@@ -575,8 +576,8 @@ function JobModal({
   setFormStartDate: (v: string) => void;
   formDeadline: string;
   setFormDeadline: (v: string) => void;
-  formCustomerId: string;
-  setFormCustomerId: (v: string) => void;
+  formCustomerId: number | null;
+  setFormCustomerId: (v: number | null) => void;
   formLocation: string;
   setFormLocation: (v: string) => void;
   formRequiredCertifications: string;
@@ -644,12 +645,14 @@ function JobModal({
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700">Related customer</label>
-            <select value={formCustomerId} onChange={(e) => setFormCustomerId(e.target.value)} className={inputClass}>
-              <option value="">None</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.full_name} ({c.email})</option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <ImportCustomerSelect
+                customers={customers}
+                value={formCustomerId}
+                onChange={setFormCustomerId}
+                className="w-full"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700">Location</label>

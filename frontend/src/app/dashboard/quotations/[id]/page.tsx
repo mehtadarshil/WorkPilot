@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import {
   ArrowLeft,
   Quote,
@@ -16,7 +15,9 @@ import {
   FileText,
   Info,
   Pencil,
-  Trash2
+  Trash2,
+  ExternalLink,
+  Copy,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
@@ -28,6 +29,7 @@ dayjs.extend(advancedFormat);
 import { getJson, postJson, deleteRequest } from '../../../apiClient';
 import QuotationNotesPanel from './QuotationNotesPanel';
 import QuotationEmailComposer from './QuotationEmailComposer';
+import QuotationPrintTemplate from './QuotationPrintTemplate';
 
 interface LineItem {
   id: number;
@@ -82,6 +84,7 @@ interface Quotation {
   state: string;
   created_at: string;
   updated_at: string;
+  public_token?: string | null;
   line_items: LineItem[];
   activities: Activity[];
   settings?: QuotationSettings;
@@ -118,8 +121,14 @@ export default function QuotationDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [appOrigin, setAppOrigin] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') setAppOrigin(window.location.origin);
+  }, []);
 
   const fetchQuotation = useCallback(async (opts?: { silent?: boolean }) => {
     if (!token || !id) return;
@@ -204,56 +213,139 @@ export default function QuotationDetailPage() {
   }
 
   const s = quotation.settings;
-  const companyName = s?.company_name ?? 'WorkPilot';
   const taxLabel = s?.tax_label ?? 'Tax';
-  const accentColor = s?.quotation_accent_color || '#14B8A6';
-  const accentEndColor = s?.quotation_accent_end_color || s?.quotation_accent_color || '#0D9488';
 
   const stateOpt = QUOTATION_STATES.find((st) => st.value === quotation.state) ?? QUOTATION_STATES[0];
 
   const canAcceptReject = quotation.state === 'sent';
   const canTransferToInvoice = quotation.state === 'accepted';
 
+  const publicCustomerUrl =
+    quotation.public_token && appOrigin ? `${appOrigin}/public/quotations/${quotation.public_token}` : null;
+  const printPageHref =
+    token && appOrigin ? `${appOrigin}/quotation-print/${id}?token=${encodeURIComponent(token)}` : null;
+
+  const handleCopyPublicLink = async () => {
+    if (!publicCustomerUrl || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(publicCustomerUrl);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <>
       <style dangerouslySetInnerHTML={{
         __html: `
         @media print {
-          /* Force all parents to show full height and allow breaks */
-          html, body, #wp-dashboard-root, #wp-dashboard-root > main, .quotation-page-root, .min-h-0.flex-1 {
+          /* Force entire document structure to full width but keep it clean */
+          html, body, #wp-dashboard-root, #wp-dashboard-root > main, #quotation-detail-page, .quotation-page-body, .quotation-page-root, .quotation-page-container {
             height: auto !important;
             min-height: 0 !important;
-            overflow: visible !important;
-            display: block !important;
-            position: static !important;
-            background: #fff !important;
-          }
-
-          /* Hide UI elements */
-          .no-print, header, aside {
-            display: none !important;
-          }
-
-          /* Print area cleanup */
-          .mx-auto.max-w-6xl {
-            max-width: none !important;
             width: 100% !important;
+            max-width: none !important;
+            display: block !important;
+            overflow: visible !important;
+            overflow-x: visible !important;
+            position: static !important;
             margin: 0 !important;
             padding: 0 !important;
+            background: #fff !important;
+            box-sizing: border-box !important;
           }
 
-          .rounded-2xl, .rounded-xl {
-            border-radius: 0 !important;
+          #wp-dashboard-root > main {
+            flex: none !important;
+            min-width: 0 !important;
+          }
+
+          /* Hide ALL non-essential elements */
+          .no-print, header, aside, .context-ribbon, .no-print-important, [class*="no-print"] {
+            display: none !important;
+            height: 0 !important;
+            width: 0 !important;
+            overflow: hidden !important;
+          }
+
+          /*
+           * Collapse the details + sidebar grid so the quotation uses the full page width.
+           * At lg breakpoints the template is 2/3 + 1/3; without this, print stays ~66% wide and left-aligned.
+           */
+          .quotation-print-layout {
+            display: block !important;
+            grid-template-columns: none !important;
+            width: 100% !important;
+            max-width: none !important;
+          }
+
+          .quotation-print-layout > *:not(.no-print) {
+            width: 100% !important;
+            max-width: none !important;
+            grid-column: auto !important;
+            display: block !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+          }
+
+          /* Target the specific layout grid that separates sidebar (fallback) */
+          .quotation-page-body .grid.lg\:grid-cols-3 {
+            display: block !important;
+            grid-template-columns: none !important;
+            width: 100% !important;
+          }
+
+          /* Ensure the content column takes full width */
+          .lg\:col-span-2, .lg\:col-span-3 {
+            width: 100% !important;
+            max-width: none !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            grid-column: auto !important;
+          }
+
+          /* Targeted printable area cleanup */
+          #quotation-print {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
             border: none !important;
             box-shadow: none !important;
+            border-radius: 0 !important;
+            display: block !important;
+            visibility: visible !important;
+            overflow: visible !important;
+            box-sizing: border-box !important;
           }
 
-          .quotation-page-root {
-            padding: 0 !important;
-            margin: 0 !important;
+          #quotation-print table {
+            width: 100% !important;
+            table-layout: auto !important;
           }
 
-          /* Ensure colors print */
+          /* Preserve specific UI boxes during print */
+          .rounded-xl, .rounded-2xl {
+            border: 1px solid #e2e8f0 !important;
+            background-color: #f8fafc !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* Ensure internal spacing stays balanced */
+          .px-8 { padding-left: 2rem !important; padding-right: 2rem !important; }
+          .py-10 { padding-top: 2.5rem !important; padding-bottom: 2.5rem !important; }
+          .py-8 { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+
+          /* Ensure internal grids (like Bill To) still work */
+          #quotation-print .grid {
+            display: grid !important;
+          }
+
+          /* Ensure colors and backgrounds print */
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -266,14 +358,14 @@ export default function QuotationDetailPage() {
             page-break-inside: avoid !important;
           }
 
+          /* Equal inset on left and right; browsers map this to the printable area */
           @page {
-            margin: 10mm 12mm;
-            size: auto;
+            margin: 12mm;
           }
         }
       `}} />
 
-      <div className="quotation-page-root flex flex-1 flex-col overflow-hidden bg-[#f8fafc] print:bg-white">
+      <div id="quotation-detail-page" className="quotation-page-root flex flex-1 flex-col overflow-hidden bg-[#f8fafc] print:bg-white">
 
         {/* Header */}
         <div className="no-print border-b border-slate-200 bg-white px-8 py-4 shadow-sm">
@@ -390,12 +482,50 @@ export default function QuotationDetailPage() {
               <span className="font-medium text-slate-500">Expires:</span>
               <span className="font-medium text-slate-900">{formatDate(quotation.valid_until)}</span>
             </div>
+            {publicCustomerUrl ? (
+              <div className="flex w-full flex-col gap-2 border-t border-slate-200/80 pt-3 mt-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-slate-500">Customer link </span>
+                  <span className="break-all text-xs text-slate-700">{publicCustomerUrl}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyPublicLink}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <Copy className="size-3.5" />
+                    {linkCopied ? 'Copied' : 'Copy link'}
+                  </button>
+                  <a
+                    href={publicCustomerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    Open customer page
+                  </a>
+                  {printPageHref ? (
+                    <a
+                      href={printPageHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    >
+                      <Printer className="size-3.5" />
+                      Print layout
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
         {/* Main Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto print:overflow-visible">
-          <div className="mx-auto max-w-6xl p-8 print:p-0">
+        <div className="quotation-page-body min-h-0 flex-1 overflow-y-auto print:overflow-visible">
+          <div className="quotation-page-container mx-auto max-w-6xl p-8 print:p-0">
 
             {/* Tabs Toggle */}
             <div className="no-print mb-6 flex gap-1 rounded-xl bg-slate-200/50 p-1 w-fit">
@@ -422,149 +552,27 @@ export default function QuotationDetailPage() {
             )}
 
             {activeTab === 'details' ? (
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+              <div className="quotation-print-layout grid grid-cols-1 gap-8 lg:grid-cols-3">
                 <div className="lg:col-span-2">
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl print:shadow-none print:border-0">
-
-                    {/* Quotation Header Decoration */}
-                    <div
-                      className="h-1.5 w-full"
-                      style={{ background: `linear-gradient(to right, ${accentColor}, ${accentEndColor})` }}
-                    />
-
-                    <div className="relative border-b border-slate-200 bg-white px-8 py-10 print:border-b">
-                      <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-white">
-                            {s?.company_logo ? (
-                              <img src={s.company_logo} alt={companyName} className="h-full w-full object-contain" />
-                            ) : (
-                              <Image src="/logo.jpg" alt={companyName} fill className="object-contain" />
-                            )}
-                          </div>
-                          <div>
-                            <h2 className="text-2xl font-bold tracking-tight text-slate-900">{companyName}</h2>
-                            <p className="text-sm font-semibold uppercase tracking-wider text-slate-500">QUOTATION</p>
-                            {(s?.company_address || s?.company_phone || s?.company_email) && (
-                              <div className="mt-3 space-y-0.5 text-xs text-slate-500 font-medium">
-                                {s.company_address && <p>{s.company_address}</p>}
-                                {s.company_phone && <p>{s.company_phone}</p>}
-                                {s.company_email && <p>{s.company_email}</p>}
-                                {s.company_website && <p>{s.company_website}</p>}
-                                {s.company_tax_id && <p>Tax ID: {s.company_tax_id}</p>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right sm:text-right">
-                          <p className="text-2xl font-black italic tracking-tighter" style={{ color: accentColor }}>
-                            {quotation.quotation_number}
-                          </p>
-                          <div className="mt-3 space-y-1">
-                            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Date</div>
-                            <div className="text-sm font-bold text-slate-900">{formatDate(quotation.quotation_date)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-8 px-8 py-8 sm:grid-cols-2 bg-slate-50/30">
-                      <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-                        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Bill To</p>
-                        <p className="text-base font-bold text-slate-900">{quotation.customer_full_name}</p>
-                        {quotation.customer_email && <p className="mt-1 text-sm font-medium text-slate-500">{quotation.customer_email}</p>}
-                        {quotation.customer_phone && <p className="text-sm font-medium text-slate-500">{quotation.customer_phone}</p>}
-                        {(quotation.billing_address || quotation.customer_address) && (
-                          <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
-                            {quotation.billing_address || quotation.customer_address}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-6 sm:items-end">
-                        <div className="text-right">
-                          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Valid Until</p>
-                          <p className="mt-1 text-base font-bold text-slate-900">{formatDate(quotation.valid_until)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="px-8 pb-8">
-                      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-200 bg-slate-50">
-                              <th className="px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Service Description</th>
-                              <th className="px-5 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Qty</th>
-                              <th className="px-5 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Rate</th>
-                              <th className="px-5 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {quotation.line_items.map((item) => (
-                              <tr key={item.id}>
-                                <td className="px-5 py-4 text-sm font-semibold text-slate-900">{item.description}</td>
-                                <td className="px-5 py-4 text-right text-sm font-medium text-slate-500">{item.quantity}</td>
-                                <td className="px-5 py-4 text-right text-sm font-medium text-slate-500">{formatCurrency(item.unit_price, quotation.currency)}</td>
-                                <td className="px-5 py-4 text-right text-sm font-bold text-slate-900">{formatCurrency(item.amount, quotation.currency)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="mt-8 flex flex-col items-end gap-2 pr-2 print-break-avoid">
-                        <div className="flex w-64 justify-between text-sm">
-                          <span className="font-semibold text-slate-500">Subtotal</span>
-                          <span className="font-bold text-slate-900">{formatCurrency(quotation.subtotal, quotation.currency)}</span>
-                        </div>
-                        <div className="flex w-64 justify-between text-sm">
-                          <span className="font-semibold text-slate-500">{taxLabel}</span>
-                          <span className="font-bold text-slate-900">{formatCurrency(quotation.tax_amount, quotation.currency)}</span>
-                        </div>
-                        <div className="mt-2 flex w-64 justify-between border-t border-slate-100 pt-3">
-                          <span className="text-base font-bold text-slate-900">Total</span>
-                          <span className="text-xl font-black" style={{ color: accentColor }}>
-                            {formatCurrency(quotation.total_amount, quotation.currency)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-12 grid grid-cols-1 gap-8 md:grid-cols-2 print:block">
-                        <div className="space-y-6">
-                          {quotation.notes && (
-                            <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5 print-break-avoid print:mb-6">
-                              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Service Notes</p>
-                              <p className="text-sm font-medium leading-relaxed text-slate-600">{quotation.notes}</p>
-                            </div>
-                          )}
-                          {s?.bank_details && (
-                            <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-5 print-break-avoid print:mb-6">
-                              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Payment Information</p>
-                              <p className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-slate-600">{s.bank_details}</p>
-                            </div>
-                          )}
-                        </div>
-                        <div className="space-y-6">
-                          {s?.terms_and_conditions && (
-                            <div className="rounded-xl border border-slate-100 bg-slate-50/30 p-5 print-break-avoid print:mb-6">
-                              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Terms & Conditions</p>
-                              <p className="whitespace-pre-wrap text-[10px] leading-relaxed text-slate-500">{s.terms_and_conditions}</p>
-                            </div>
-                          )}
-                          {s?.payment_terms && (
-                            <div className="rounded-xl border border-slate-100 bg-slate-50/30 p-5 print-break-avoid">
-                              <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Payment Terms</p>
-                              <p className="whitespace-pre-wrap text-xs font-medium leading-relaxed text-slate-600">{s.payment_terms}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {s?.footer_text && (
-                        <p className="mt-12 border-t border-slate-100 pt-8 text-center text-xs font-medium text-slate-400">{s.footer_text}</p>
-                      )}
-                    </div>
-                  </div>
+                  <QuotationPrintTemplate
+                    quotation={{
+                      quotation_number: quotation.quotation_number,
+                      customer_full_name: quotation.customer_full_name,
+                      customer_email: quotation.customer_email,
+                      customer_phone: quotation.customer_phone,
+                      customer_address: quotation.customer_address,
+                      quotation_date: quotation.quotation_date,
+                      valid_until: quotation.valid_until,
+                      subtotal: quotation.subtotal,
+                      tax_amount: quotation.tax_amount,
+                      total_amount: quotation.total_amount,
+                      currency: quotation.currency,
+                      notes: quotation.notes,
+                      billing_address: quotation.billing_address,
+                      line_items: quotation.line_items,
+                    }}
+                    settings={s}
+                  />
                 </div>
 
                 <div className="no-print lg:col-span-1 space-y-6">
