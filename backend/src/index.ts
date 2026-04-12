@@ -122,6 +122,18 @@ pool.query('ALTER TABLE quotations ADD COLUMN IF NOT EXISTS description TEXT')
 pool.query('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description TEXT')
   .then(() => console.log('Checked invoices description column'))
   .catch(err => console.error('Migration error (invoices):', err));
+pool.query(`
+  CREATE TABLE IF NOT EXISTS customer_specific_notes (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`)
+  .then(() => console.log('Checked customer_specific_notes table'))
+  .catch(err => console.error('Migration error (customer_specific_notes):', err));
 
 type UserRole = 'SUPER_ADMIN' | 'ADMIN';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
@@ -154,6 +166,15 @@ interface DbCustomer {
   water_supply: string | null;
   power_supply: string | null;
   technical_notes: string | null;
+}
+
+interface DbCustomerNote {
+  id: number;
+  customer_id: number;
+  title: string;
+  description: string;
+  sort_order: number;
+  created_at: Date;
 }
 
 interface DbJob {
@@ -1671,10 +1692,72 @@ app.get('/api/customers/:id', authenticate, requireAdmin, async (req: Authentica
     `, params);
 
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    const customer = result.rows[0];
 
-    return res.json(result.rows[0]);
+    const notesRes = await pool.query('SELECT * FROM customer_specific_notes WHERE customer_id = $1 ORDER BY sort_order ASC, created_at ASC', [id]);
+    
+    return res.json({
+      ...customer,
+      specific_notes: notesRes.rows
+    });
   } catch (error) {
     console.error('Get customer error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/customers/:id/specific-notes', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(req.params.id, 10);
+  const { title, description } = req.body as { title: string; description: string };
+  if (!title || !description) return res.status(400).json({ message: 'Title and description are required' });
+
+  try {
+    const result = await pool.query(
+      'INSERT INTO customer_specific_notes (customer_id, title, description) VALUES ($1, $2, $3) RETURNING *',
+      [customerId, title.trim(), description.trim()]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Create customer note error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const noteId = parseInt(req.params.noteId, 10);
+  const { title, description } = req.body as { title?: string; description?: string };
+
+  try {
+    const updates: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (title !== undefined) { updates.push(`title = $${idx++}`); values.push(title.trim()); }
+    if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description.trim()); }
+
+    if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
+
+    values.push(noteId);
+    const result = await pool.query(
+      `UPDATE customer_specific_notes SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+      values
+    );
+    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Update customer note error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const noteId = parseInt(req.params.noteId, 10);
+  try {
+    const result = await pool.query('DELETE FROM customer_specific_notes WHERE id = $1', [noteId]);
+    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete customer note error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

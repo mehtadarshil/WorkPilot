@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { getJson } from '../../../apiClient';
-import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight } from 'lucide-react';
+import { getJson, postJson, patchJson, deleteRequest } from '../../../apiClient';
+import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, FileText, Trash2, X, Check } from 'lucide-react';
 import dayjs from 'dayjs';
 import CustomerCommunicationsTab from './CustomerCommunicationsTab';
 import CustomerContactsTab from './CustomerContactsTab';
@@ -11,6 +11,13 @@ import CustomerBranchesTab from './CustomerBranchesTab';
 import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
 import CustomerInvoicesTab from './CustomerInvoicesTab';
+
+interface SpecificNote {
+  id: number;
+  title: string;
+  description: string;
+  created_at: string;
+}
 
 interface CustomerDetails {
   id: number;
@@ -44,10 +51,7 @@ interface CustomerDetails {
   contact_email: string | null;
   contact_mobile: string | null;
   contact_landline: string | null;
-  w3w: string | null;
-  water_supply: string | null;
-  power_supply: string | null;
-  technical_notes: string | null;
+  specific_notes: SpecificNote[];
 }
 
 interface Job {
@@ -100,6 +104,13 @@ export default function CustomerDetailsPage() {
     if (workAddressId && initial === 'Work address') initial = 'All works';
     return initial;
   });
+
+  // Dynamic Notes Management
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteDescription, setNoteDescription] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
 
@@ -392,36 +403,162 @@ export default function CustomerDetailsPage() {
                </div>
             </div>
 
-            <div className="p-5 pb-10 relative group">
-               <div className="justify-between items-center mb-3 hidden group-hover:flex">
-                 <h3 className="font-bold text-slate-800 text-[15px]">Technical references</h3>
-                 <button onClick={() => router.push(`/dashboard/customers/${id}/edit`)} className="text-sm font-semibold text-[#14B8A6] hover:underline transition-opacity">Edit</button>
-               </div>
-               <div className="flex justify-between items-center mb-3 group-hover:hidden">
-                 <h3 className="font-bold text-slate-800 text-[15px]">Technical references</h3>
+            {/* Notes Section (Replacement for Technical references) */}
+            <div className="p-5 pb-10">
+               <div className="flex justify-between items-center mb-4">
+                 <h3 className="font-bold text-slate-800 text-[15px]">Notes</h3>
+                 <button 
+                  onClick={() => {
+                    setIsAddingNote(true);
+                    setEditingNoteId(null);
+                    setNoteTitle('');
+                    setNoteDescription('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-[#14B8A6] hover:bg-emerald-50 px-2 py-1 rounded transition-colors"
+                >
+                   <Plus className="size-3" />
+                   Add note
+                 </button>
                </div>
                
                <div className="space-y-4">
-                 <div>
-                   <label className="text-xs font-semibold text-slate-700 block mb-0.5">W3W</label>
-                   <span className="text-sm text-slate-600">{data.w3w || '-'}</span>
-                 </div>
-                 <div>
-                   <label className="text-xs font-semibold text-slate-700 block mb-0.5">Water supply</label>
-                   <span className="text-sm text-slate-600">{data.water_supply || '-'}</span>
-                 </div>
-                 <div>
-                   <label className="text-xs font-semibold text-slate-700 block mb-0.5">Power supply</label>
-                   <span className="text-sm text-slate-600">{data.power_supply || '-'}</span>
-                 </div>
-                 {data.technical_notes && (
-                   <div>
-                     <label className="text-xs font-semibold text-slate-700 block mb-0.5">Technical notes</label>
-                     <span className="text-sm text-slate-600 leading-relaxed block break-words">{data.technical_notes}</span>
+                 {isAddingNote && (
+                   <div className="p-3 bg-emerald-50/50 rounded-lg border border-emerald-100 space-y-3">
+                      <input 
+                        autoFocus
+                        type="text" 
+                        placeholder="Title" 
+                        value={noteTitle}
+                        onChange={(e) => setNoteTitle(e.target.value)}
+                        className="w-full text-xs font-bold bg-white border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-[#14B8A6]"
+                      />
+                      <textarea 
+                        placeholder="Description" 
+                        rows={3}
+                        value={noteDescription}
+                        onChange={(e) => setNoteDescription(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-[#14B8A6] resize-none"
+                      />
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button 
+                          onClick={() => setIsAddingNote(false)}
+                          className="p-1 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="size-4" />
+                        </button>
+                        <button 
+                          disabled={noteSaving || !noteTitle.trim() || !noteDescription.trim()}
+                          onClick={async () => {
+                            setNoteSaving(true);
+                            try {
+                              const res = await postJson<SpecificNote>(`/customers/${id}/specific-notes`, { title: noteTitle, description: noteDescription }, token);
+                              setData(prev => prev ? { ...prev, specific_notes: [...prev.specific_notes, res] } : null);
+                              setIsAddingNote(false);
+                            } catch (err) {
+                              console.error('Failed to add note', err);
+                            } finally {
+                              setNoteSaving(false);
+                            }
+                          }}
+                          className="p-1 text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                        >
+                          <Check className="size-4" />
+                        </button>
+                      </div>
                    </div>
                  )}
+
+                 {data.specific_notes.length === 0 && !isAddingNote && (
+                   <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg">No notes found.</p>
+                 )}
+
+                 {data.specific_notes.map((note) => (
+                   <div key={note.id} className="group/note relative p-3 border border-slate-100 rounded-lg hover:border-slate-300 hover:bg-white transition-all">
+                      {editingNoteId === note.id ? (
+                        <div className="space-y-2">
+                          <input 
+                            autoFocus
+                            type="text" 
+                            value={noteTitle}
+                            onChange={(e) => setNoteTitle(e.target.value)}
+                            className="w-full text-xs font-bold bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-[#14B8A6]"
+                          />
+                          <textarea 
+                            rows={3}
+                            value={noteDescription}
+                            onChange={(e) => setNoteDescription(e.target.value)}
+                            className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1 outline-none focus:border-[#14B8A6] resize-none"
+                          />
+                          <div className="flex justify-end gap-2 pt-1">
+                            <button 
+                              onClick={() => setEditingNoteId(null)}
+                              className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                            >
+                              <X className="size-4" />
+                            </button>
+                            <button 
+                              disabled={noteSaving}
+                              onClick={async () => {
+                                setNoteSaving(true);
+                                try {
+                                  const res = await patchJson<SpecificNote>(`/customers/${id}/specific-notes/${note.id}`, { title: noteTitle, description: noteDescription }, token);
+                                  setData(prev => prev ? { 
+                                    ...prev, 
+                                    specific_notes: prev.specific_notes.map(n => n.id === note.id ? res : n) 
+                                  } : null);
+                                  setEditingNoteId(null);
+                                } catch (err) {
+                                  console.error('Failed to update note', err);
+                                } finally {
+                                  setNoteSaving(false);
+                                }
+                              }}
+                              className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                            >
+                              <Check className="size-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="text-xs font-bold text-slate-700">{note.title}</h4>
+                            <div className="flex gap-1 opacity-0 group-hover/note:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => {
+                                  setEditingNoteId(note.id);
+                                  setNoteTitle(note.title);
+                                  setNoteDescription(note.description);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-[#14B8A6] hover:bg-slate-100"
+                              >
+                                <Edit className="size-3" />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  if (!confirm('Are you sure you want to delete this note?')) return;
+                                  try {
+                                    await deleteRequest(`/customers/${id}/specific-notes/${note.id}`, token);
+                                    setData(prev => prev ? { 
+                                      ...prev, 
+                                      specific_notes: prev.specific_notes.filter(n => n.id !== note.id) 
+                                    } : null);
+                                  } catch (err) {
+                                    console.error('Failed to delete note', err);
+                                  }
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-rose-500 hover:bg-slate-100"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-wrap">{note.description}</p>
+                        </>
+                      )}
+                   </div>
+                 ))}
                </div>
-               <button className="text-[13px] font-medium text-[#3E8ED0] hover:underline mt-4 block">Click here to view more technical references</button>
             </div>
           </div>
 
