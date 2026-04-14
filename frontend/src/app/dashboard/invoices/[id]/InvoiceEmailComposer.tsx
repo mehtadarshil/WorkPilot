@@ -234,7 +234,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
           subject: subject.trim(),
           body_html: bodyHtml,
           append_signature: includeSignature,
-          attachments: attachments.length ? attachments : undefined,
+          attachments,
         },
         token,
       );
@@ -504,7 +504,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               </div>
             ) : null}
 
-            {/* Attachments + invoice PDF note */}
+            {/* Manual attachments only (no server-generated PDF) */}
             <div
               className={`shrink-0 border-t border-slate-200 px-3 py-2 ${dragOver ? 'bg-[#e8f0fe]' : 'bg-[#f6f8fc]'}`}
               onDragEnter={(e) => {
@@ -521,7 +521,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               onDrop={handleDrop}
             >
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                Drag files here or use the paperclip to add more attachments.
+                Drag files here or use the paperclip to attach files (optional). Nothing is attached automatically.
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">

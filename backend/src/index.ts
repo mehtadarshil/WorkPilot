@@ -13,7 +13,6 @@ import {
   sendSmtpMessage,
   type EmailSettingsPayload,
 } from './emailHelpers';
-import { generateInvoicePdfBuffer } from './invoicePdf';
 import { encryptString, decryptString } from './cryptoHelper';
 import {
   getGoogleAuthUrl,
@@ -5007,22 +5006,12 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
     const bodyInner = applyTemplateVars(row.body_html, vars);
     const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
     const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
-    const pdfName = `${String(inv.invoice_number).replace(/[^\w.-]+/g, '_')}.pdf`;
-    let pdfAttachment: { filename: string; content: Buffer; contentType: string };
-    try {
-      const pdfBuf = await generateInvoicePdfBuffer(pool, id);
-      pdfAttachment = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' };
-    } catch (pdfErr) {
-      console.error('Invoice PDF generation error:', pdfErr);
-      return res.status(500).json({ message: 'Could not generate invoice PDF for attachment.' });
-    }
     await sendUserEmail(pool, userId, emailCfg, {
       from,
       to: inv.customer_email!.trim(),
       subject,
       html,
       replyTo: emailCfg.reply_to,
-      attachments: [pdfAttachment],
     });
     await logInvoiceActivity(
       id,
@@ -5033,8 +5022,8 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
         to_email: inv.customer_email ?? null,
         to_name: inv.customer_full_name ?? null,
         status: 'sent',
-        attachment_name: pdfName,
-        attachment_names: [pdfName],
+        attachment_name: null,
+        attachment_names: [],
         sent_via: 'smtp',
       },
       userId,
@@ -5212,9 +5201,13 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
         const b64 = typeof a.content_base64 === 'string' ? a.content_base64.trim() : '';
         if (!fn || !b64) continue;
         try {
+          const buf = Buffer.from(b64, 'base64');
+          if (buf.length === 0 && b64.length > 0) {
+            return res.status(400).json({ message: `Invalid base64 attachment data for ${fn}` });
+          }
           userAttachments.push({
             filename: fn,
-            content: Buffer.from(b64, 'base64'),
+            content: buf,
             contentType: typeof a.content_type === 'string' ? a.content_type : undefined,
           });
         } catch {
@@ -5222,17 +5215,6 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
         }
       }
     }
-
-    const pdfName = `${String(inv.invoice_number).replace(/[^\w.-]+/g, '_')}.pdf`;
-    let pdfBuf: Buffer;
-    try {
-      pdfBuf = await generateInvoicePdfBuffer(pool, id);
-    } catch (pdfErr) {
-      console.error('Invoice PDF generation error:', pdfErr);
-      return res.status(500).json({ message: 'Could not generate invoice PDF for attachment.' });
-    }
-    const invoicePdfAtt = { filename: pdfName, content: pdfBuf, contentType: 'application/pdf' as const };
-    const allAttachments = [invoicePdfAtt, ...userAttachments];
 
     await sendUserEmail(pool, userId, emailCfg, {
       from,
@@ -5242,7 +5224,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
       subject,
       html,
       replyTo: emailCfg.reply_to,
-      attachments: allAttachments,
+      attachments: userAttachments.length > 0 ? userAttachments : undefined,
     });
 
     await logInvoiceActivity(
@@ -5257,8 +5239,8 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
         to_name: inv.customer_full_name ?? null,
         status: 'sent',
         sent_via: 'smtp',
-        attachment_name: pdfName,
-        attachment_names: allAttachments.map((x) => x.filename),
+        attachment_name: userAttachments[0]?.filename ?? null,
+        attachment_names: userAttachments.map((x) => x.filename),
       },
       userId,
     );
@@ -5884,9 +5866,13 @@ app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (re
         const b64 = typeof a.content_base64 === 'string' ? a.content_base64.trim() : '';
         if (!fn || !b64) continue;
         try {
+          const buf = Buffer.from(b64, 'base64');
+          if (buf.length === 0 && b64.length > 0) {
+            return res.status(400).json({ message: `Invalid base64 attachment data for ${fn}` });
+          }
           userAttachments.push({
             filename: fn,
-            content: Buffer.from(b64, 'base64'),
+            content: buf,
             contentType: typeof a.content_type === 'string' ? a.content_type : undefined,
           });
         } catch {

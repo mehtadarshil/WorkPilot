@@ -234,7 +234,7 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
           subject: subject.trim(),
           body_html: bodyHtml,
           append_signature: includeSignature,
-          attachments: attachments.length ? attachments : undefined,
+          attachments,
         },
         token,
       );
@@ -517,7 +517,7 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
               onDrop={handleDrop}
             >
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                Drag files here or use the paperclip to add attachments (optional).
+                Drag files here or use the paperclip to attach files (optional). Nothing is attached automatically.
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">

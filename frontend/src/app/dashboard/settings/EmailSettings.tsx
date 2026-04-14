@@ -54,7 +54,7 @@ const PLACEHOLDER_REFERENCE: {
   {
     templateKey: 'invoice',
     title: 'Invoice template',
-    whenUsed: 'When sending an invoice by email (or loading the invoice email composer). The invoice PDF is attached separately; it does not use these placeholders.',
+    whenUsed: 'When sending an invoice by email (or loading the invoice email composer). No PDF is attached automatically; use {{invoice_link}} or add files in the composer if needed.',
     tags: [
       { tag: '{{company_name}}', purpose: "Your organisation name from Invoice settings (fallback: 'WorkPilot')." },
       { tag: '{{customer_name}}', purpose: 'The customer display name on the invoice.' },
