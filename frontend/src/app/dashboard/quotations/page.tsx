@@ -100,8 +100,42 @@ export default function QuotationsPage() {
     { description: '', quantity: 1, unit_price: 0 },
   ]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
+  /** Empty string = none; otherwise work address id */
+  const [formWorkAddressId, setFormWorkAddressId] = useState('');
+  const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const fetchWorkAddressesForCustomer = useCallback(
+    async (customerId: number) => {
+      if (!token) {
+        setWorkAddressOptions([]);
+        return;
+      }
+      try {
+        const res = await getJson<{
+          work_addresses: {
+            id: number;
+            name: string;
+            address_line_1?: string | null;
+            town?: string | null;
+            postcode?: string | null;
+          }[];
+        }>(`/customers/${customerId}/work-addresses?status=active`, token);
+        const rows = res.work_addresses ?? [];
+        setWorkAddressOptions(
+          rows.map((w) => {
+            const addr = [w.address_line_1, w.town, w.postcode].filter((x): x is string => Boolean(x && String(x).trim())).join(', ');
+            const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
+            return { id: w.id, label: label || `Work #${w.id}` };
+          }),
+        );
+      } catch {
+        setWorkAddressOptions([]);
+      }
+    },
+    [token],
+  );
 
   const fetchQuotations = useCallback(async () => {
     if (!token) return;
@@ -166,8 +200,20 @@ export default function QuotationsPage() {
     }
   }, [addModalOpen, fetchCustomers]);
 
+  useEffect(() => {
+    if (!formCustomerId) {
+      setFormWorkAddressId('');
+      setWorkAddressOptions([]);
+      return;
+    }
+    setFormWorkAddressId('');
+    fetchWorkAddressesForCustomer(formCustomerId);
+  }, [formCustomerId, fetchWorkAddressesForCustomer]);
+
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId(null);
+    setFormWorkAddressId('');
+    setWorkAddressOptions([]);
     const today = new Date().toISOString().slice(0, 10);
     const validDays = settings?.default_valid_days ?? 30;
     const valid = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -222,6 +268,7 @@ export default function QuotationsPage() {
     }
     if (!token) return;
     try {
+      const waId = formWorkAddressId.trim() ? parseInt(formWorkAddressId, 10) : null;
       const res = await postJson<{ quotation: Quotation }>(
         '/quotations',
         {
@@ -231,6 +278,7 @@ export default function QuotationsPage() {
           currency: formCurrency,
           notes: formNotes.trim() || undefined,
           description: formDescription.trim() || undefined,
+          ...(waId !== null && Number.isFinite(waId) ? { quotation_work_address_id: waId } : {}),
           line_items: validItems.map((item) => ({
             description: item.description.trim(),
             quantity: item.quantity,
@@ -450,6 +498,26 @@ export default function QuotationsPage() {
                         </div>
                       );
                     })()}
+                  </div>
+                )}
+                {formCustomerId && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-slate-700">Work / site address (optional)</label>
+                    <select
+                      value={formWorkAddressId}
+                      onChange={(e) => setFormWorkAddressId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                    >
+                      <option value="">None — customer address only on quotation</option>
+                      {workAddressOptions.map((w) => (
+                        <option key={w.id} value={String(w.id)}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                    {workAddressOptions.length === 0 && (
+                      <p className="mt-1 text-xs text-slate-500">This customer has no active work addresses yet.</p>
+                    )}
                   </div>
                 )}
               </div>

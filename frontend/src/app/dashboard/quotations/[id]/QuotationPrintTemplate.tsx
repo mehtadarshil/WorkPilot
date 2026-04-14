@@ -26,6 +26,12 @@ export type QuotationPrintModel = {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  /** Site / work name (bold), separate from address line — same as invoice. */
+  work_site_name?: string | null;
+  /** Work/site address only (no site name). */
+  work_site_address?: string | null;
+  /** Custom billing when not using work/site (optional second block). */
+  quotation_custom_address?: string | null;
   quotation_date: string;
   valid_until: string;
   subtotal: number;
@@ -67,6 +73,7 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
   const taxLabel = s?.tax_label ?? 'Tax';
   const accentColor = s?.quotation_accent_color || '#14B8A6';
   const accentEndColor = s?.quotation_accent_end_color || s?.quotation_accent_color || '#0D9488';
+  const customerAddrLine = quotation.customer_address?.trim() || '—';
 
   const shell =
     shellClassName ??
@@ -113,16 +120,36 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
       </div>
 
       <div className="grid grid-cols-1 gap-8 bg-slate-50/30 px-8 py-8 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Bill To</p>
-          <p className="text-base font-bold text-slate-900">{quotation.customer_full_name}</p>
-          {quotation.customer_email && <p className="mt-1 text-sm font-medium text-slate-500">{quotation.customer_email}</p>}
-          {quotation.customer_phone && <p className="text-sm font-medium text-slate-500">{quotation.customer_phone}</p>}
-          {(quotation.billing_address || quotation.customer_address) && (
-            <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600">
-              {quotation.billing_address || quotation.customer_address}
-            </p>
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Bill To</p>
+            <p className="text-base font-bold text-slate-900">{quotation.customer_full_name}</p>
+            {quotation.customer_email && <p className="mt-1 text-sm font-medium text-slate-500">{quotation.customer_email}</p>}
+            {quotation.customer_phone && <p className="text-sm font-medium text-slate-500">{quotation.customer_phone}</p>}
+            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{customerAddrLine}</p>
+          </div>
+          {(quotation.work_site_name?.trim() || quotation.work_site_address?.trim()) && (
+            <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
+              {quotation.work_site_name?.trim() && (
+                <p className="text-base font-bold text-slate-900">{quotation.work_site_name.trim()}</p>
+              )}
+              {quotation.work_site_address?.trim() && (
+                <p className={`text-sm leading-relaxed text-slate-600 ${quotation.work_site_name?.trim() ? 'mt-1' : ''}`}>
+                  {quotation.work_site_address.trim()}
+                </p>
+              )}
+            </div>
           )}
+          {quotation.quotation_custom_address?.trim() &&
+            !quotation.work_site_name?.trim() &&
+            !quotation.work_site_address?.trim() && (
+              <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Billing address</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{quotation.quotation_custom_address.trim()}</p>
+              </div>
+            )}
         </div>
         <div className="flex flex-col gap-6 sm:items-end">
           <div className="text-right">

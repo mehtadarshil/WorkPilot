@@ -82,7 +82,7 @@ const PLACEHOLDER_REFERENCE: {
       { tag: '{{quotation_date}}', purpose: 'Quotation date (YYYY-MM-DD).' },
       { tag: '{{valid_until}}', purpose: 'Validity / expiry date (YYYY-MM-DD).' },
       { tag: '{{customer_address}}', purpose: 'Customer address as one comma-separated line.' },
-      { tag: '{{work_address}}', purpose: 'Currently empty for quotations; reserved if site linkage is added later.' },
+      { tag: '{{work_address}}', purpose: 'Work/site address when the quotation is linked to a customer work address; otherwise empty.' },
       { tag: '{{quotation_link}}', purpose: 'A secure, public link for customers to view and print their quotation online.' },
     ],
   },

@@ -268,6 +268,7 @@ interface DbQuotation {
   notes: string | null;
   description: string | null;
   billing_address: string | null;
+  quotation_work_address_id?: number | null;
   state: string;
   created_at: Date;
   updated_at: Date;
@@ -903,6 +904,9 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS description TEXT;`);
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
+  await pool.query(
+    `ALTER TABLE quotations ADD COLUMN IF NOT EXISTS quotation_work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_line_items (
       id SERIAL PRIMARY KEY,
@@ -4029,6 +4033,16 @@ async function buildQuotationEmailTemplateVars(
     pToken = crypto.randomBytes(32).toString('hex');
     await pool.query('UPDATE quotations SET public_token = $1 WHERE id = $2', [pToken, q.id]);
   }
+  let work_address = '';
+  if (q.quotation_work_address_id) {
+    const wr = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+      q.quotation_work_address_id,
+      q.customer_id,
+    ]);
+    if ((wr.rowCount ?? 0) > 0) {
+      work_address = formatWorkAddressSingleLine(wr.rows[0]);
+    }
+  }
   const base = getPublicAppBaseUrl();
   return {
     company_name: qSettings.company_name ?? 'WorkPilot',
@@ -4039,7 +4053,7 @@ async function buildQuotationEmailTemplateVars(
     quotation_date: qDate,
     valid_until: validUntil,
     customer_address,
-    work_address: '',
+    work_address,
     quotation_link: `<a href="${base}/public/quotations/${pToken}">${q.quotation_number}</a>`,
   };
 }
@@ -4095,6 +4109,43 @@ function workSiteAddressAsSingleLine(stored: string): string {
     }
   });
   return parts.join(', ');
+}
+
+/** Same resolution as invoice work/site display (GET invoice / public invoice). */
+async function resolveWorkSiteDisplayForCustomer(
+  customerId: number,
+  workAddressId: number | null | undefined,
+  billingAddress: string | null | undefined,
+): Promise<{
+  work_site_name: string | null;
+  work_site_address: string | null;
+  quotation_custom_address: string | null;
+}> {
+  let workSiteName: string | null = null;
+  let workSiteAddressOnly: string | null = null;
+  if (workAddressId) {
+    const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+      workAddressId,
+      customerId,
+    ]);
+    if ((waRes.rowCount ?? 0) > 0) {
+      const wa = waRes.rows[0] as Record<string, unknown>;
+      const n = typeof wa.name === 'string' ? wa.name.trim() : '';
+      workSiteName = n || null;
+      const addrOnly = formatWorkAddressSingleLineWithoutName(wa).trim();
+      workSiteAddressOnly = addrOnly || null;
+    }
+    if (!workSiteName && !workSiteAddressOnly && billingAddress?.trim()) {
+      workSiteAddressOnly = workSiteAddressAsSingleLine(billingAddress.trim());
+    }
+  }
+  const quotationCustomAddress =
+    !workAddressId && billingAddress?.trim() ? billingAddress.trim() : null;
+  return {
+    work_site_name: workSiteName,
+    work_site_address: workSiteAddressOnly,
+    quotation_custom_address: quotationCustomAddress,
+  };
 }
 
 async function resolveInvoiceBillingFromWorkAddress(
@@ -5595,6 +5646,14 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
     );
     const settings = await getQuotationSettings(q.created_by ?? userId);
 
+    const customerAddressFormatted =
+      formatCustomerAddressSingleLine(q as unknown as Record<string, unknown>) || null;
+    const workSite = await resolveWorkSiteDisplayForCustomer(
+      q.customer_id,
+      q.quotation_work_address_id,
+      q.billing_address,
+    );
+
     const quotation = {
       id: q.id,
       quotation_number: q.quotation_number,
@@ -5602,7 +5661,11 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
       customer_full_name: q.customer_full_name ?? null,
       customer_email: q.customer_email ?? null,
       customer_phone: q.customer_phone ?? null,
-      customer_address: q.billing_address?.trim() || formatCustomerAddressSingleLine(q as unknown as Record<string, unknown>) || null,
+      customer_address: customerAddressFormatted,
+      quotation_work_address_id: q.quotation_work_address_id ?? null,
+      work_site_name: workSite.work_site_name,
+      work_site_address: workSite.work_site_address,
+      quotation_custom_address: workSite.quotation_custom_address,
       job_id: q.job_id ?? null,
       job_title: q.job_title ?? null,
       quotation_date: (q.quotation_date as Date).toISOString().slice(0, 10),
@@ -5873,6 +5936,7 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
     currency?: string;
     notes?: string;
     billing_address?: string;
+    quotation_work_address_id?: number;
     line_items?: { description: string; quantity: number; unit_price: number }[];
     tax_percentage?: number;
     description?: string;
@@ -5902,7 +5966,20 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
       : new Date(quotationDate.getTime() + settings.default_valid_days * 24 * 60 * 60 * 1000);
     const currency = typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim() : settings.default_currency;
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
-    const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    let billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    let quotationWorkAddressId: number | null = null;
+    if (typeof body.quotation_work_address_id === 'number' && Number.isFinite(body.quotation_work_address_id)) {
+      try {
+        const resolved = await resolveInvoiceBillingFromWorkAddress(customerId, body.quotation_work_address_id);
+        billingAddress = resolved.billing_address;
+        quotationWorkAddressId = resolved.invoice_work_address_id;
+      } catch (e) {
+        if ((e as Error).message === 'INVALID_WORK_ADDRESS') {
+          return res.status(400).json({ message: 'Invalid work address for this customer' });
+        }
+        throw e;
+      }
+    }
     const description = typeof body.description === 'string' ? body.description.trim() || null : null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
@@ -5918,10 +5995,10 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
 
     const quotationNumber = await generateQuotationNumber(settings.quotation_prefix);
     const qResult = await pool.query<DbQuotation>(
-      `INSERT INTO quotations (quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_by, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft', $12, $13)
-       RETURNING id, quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, state, created_at, updated_at, created_by, description`,
-      [quotationNumber, customerId, jobId, quotationDate, validUntil, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, userId, description],
+      `INSERT INTO quotations (quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, quotation_work_address_id, state, created_by, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'draft', $13, $14)
+       RETURNING id, quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, billing_address, quotation_work_address_id, state, created_at, updated_at, created_by, description`,
+      [quotationNumber, customerId, jobId, quotationDate, validUntil, subtotal, taxAmount, totalAmount, currency, notes, billingAddress, quotationWorkAddressId, userId, description],
     );
     const q = qResult.rows[0];
     const qId = q.id;
@@ -5982,10 +6059,48 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
   let idx = 1;
 
   const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() || null : undefined);
+  let effectiveCustomerId = q.customer_id;
   if (body.customer_id !== undefined && Number.isFinite(body.customer_id)) {
     const custCheck = await pool.query('SELECT id FROM customers WHERE id = $1' + (isSuperAdmin ? '' : ' AND created_by = $2'), isSuperAdmin ? [body.customer_id] : [body.customer_id, userId]);
-    if ((custCheck.rowCount ?? 0) > 0) { updates.push(`customer_id = $${idx++}`); values.push(body.customer_id); }
+    if ((custCheck.rowCount ?? 0) > 0) {
+      updates.push(`customer_id = $${idx++}`);
+      values.push(body.customer_id);
+      effectiveCustomerId = body.customer_id as number;
+    }
   }
+  const customerChanged = effectiveCustomerId !== q.customer_id;
+
+  let workAddressFieldsHandled = false;
+  if (body.quotation_work_address_id !== undefined) {
+    const rawWa = body.quotation_work_address_id;
+    if (rawWa === null) {
+      updates.push(`quotation_work_address_id = $${idx++}`);
+      values.push(null);
+      updates.push(`billing_address = $${idx++}`);
+      values.push(str('billing_address') !== undefined ? str('billing_address') : null);
+      workAddressFieldsHandled = true;
+    } else if (typeof rawWa === 'number' && Number.isFinite(rawWa)) {
+      try {
+        const resolved = await resolveInvoiceBillingFromWorkAddress(effectiveCustomerId, rawWa);
+        updates.push(`quotation_work_address_id = $${idx++}`);
+        values.push(resolved.invoice_work_address_id);
+        updates.push(`billing_address = $${idx++}`);
+        values.push(resolved.billing_address);
+        workAddressFieldsHandled = true;
+      } catch (e) {
+        if ((e as Error).message === 'INVALID_WORK_ADDRESS') {
+          return res.status(400).json({ message: 'Invalid work address for this customer' });
+        }
+        throw e;
+      }
+    }
+  } else if (customerChanged && q.quotation_work_address_id) {
+    updates.push(`quotation_work_address_id = $${idx++}`);
+    values.push(null);
+  }
+
+  const workSiteLocked =
+    !!(q.quotation_work_address_id && !customerChanged && effectiveCustomerId === q.customer_id);
   if (body.job_id !== undefined) {
     const jid = body.job_id === null ? null : (Number.isFinite(body.job_id) ? body.job_id : parseInt(String(body.job_id), 10));
     if (jid === null || Number.isFinite(jid)) { updates.push(`job_id = $${idx++}`); values.push(jid); }
@@ -5994,7 +6109,10 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
   if (body.valid_until) { updates.push(`valid_until = $${idx++}`); values.push(new Date(body.valid_until as string)); }
   if (str('currency') !== undefined) { updates.push(`currency = $${idx++}`); values.push(str('currency')); }
   if (str('notes') !== undefined) { updates.push(`notes = $${idx++}`); values.push(str('notes')); }
-  if (str('billing_address') !== undefined) { updates.push(`billing_address = $${idx++}`); values.push(str('billing_address')); }
+  if (!workAddressFieldsHandled && !workSiteLocked && str('billing_address') !== undefined) {
+    updates.push(`billing_address = $${idx++}`);
+    values.push(str('billing_address'));
+  }
   if (str('description') !== undefined) { updates.push(`description = $${idx++}`); values.push(str('description')); }
   if (body.state && QUOTATION_STATES.includes(body.state as typeof QUOTATION_STATES[number])) {
     updates.push(`state = $${idx++}`);
@@ -6227,9 +6345,9 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, 
     const publicToken = crypto.randomBytes(32).toString('hex');
     const invResult = await pool.query<DbInvoice>(
       `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 'draft', $12, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, $12, NULL, 'draft', $13, $14)
        RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by`,
-      [invoiceNumber, q.customer_id, q.job_id, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, q.currency, q.notes, q.billing_address, userId, publicToken],
+      [invoiceNumber, q.customer_id, q.job_id, invoiceDate, dueDate, subtotal, taxAmount, totalAmount, q.currency, q.notes, q.billing_address, q.quotation_work_address_id ?? null, userId, publicToken],
     );
     const inv = invResult.rows[0];
     const invId = inv.id;
@@ -8757,6 +8875,11 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
     if ((qResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
     const rawQ = qResult.rows[0];
     const customer_address = formatCustomerAddressSingleLine(rawQ as unknown as Record<string, unknown>);
+    const workSite = await resolveWorkSiteDisplayForCustomer(
+      rawQ.customer_id,
+      rawQ.quotation_work_address_id,
+      rawQ.billing_address,
+    );
 
     const itemsResult = await pool.query(
       'SELECT id, description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
@@ -8774,6 +8897,10 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
       customer_email: rawQ.customer_email ?? null,
       customer_phone: rawQ.customer_phone ?? null,
       customer_address,
+      quotation_work_address_id: rawQ.quotation_work_address_id ?? null,
+      work_site_name: workSite.work_site_name,
+      work_site_address: workSite.work_site_address,
+      quotation_custom_address: workSite.quotation_custom_address,
       quotation_date: (rawQ.quotation_date as Date).toISOString().slice(0, 10),
       valid_until: (rawQ.valid_until as Date).toISOString().slice(0, 10),
       subtotal: parseFloat(rawQ.subtotal),

@@ -61,6 +61,9 @@ export default function QuotationPrintClient() {
     customer_email: quotation.customer_email,
     customer_phone: quotation.customer_phone,
     customer_address: quotation.customer_address,
+    work_site_name: quotation.work_site_name,
+    work_site_address: quotation.work_site_address,
+    quotation_custom_address: quotation.quotation_custom_address,
     quotation_date: quotation.quotation_date,
     valid_until: quotation.valid_until,
     subtotal: quotation.subtotal,
@@ -68,6 +71,7 @@ export default function QuotationPrintClient() {
     total_amount: quotation.total_amount,
     currency: quotation.currency,
     notes: quotation.notes,
+    description: quotation.description ?? null,
     billing_address: quotation.billing_address,
     line_items: quotation.line_items,
   };

@@ -31,6 +31,32 @@ function formatDate(isoDate: string): string {
   }
 }
 
+function workSiteAddressAsSingleLine(stored: string): string {
+  return stored
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+function formatWorkAddressSingleLineWithoutName(row: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t) parts.push(t);
+  };
+  push(row.branch_name);
+  push(row.company_name);
+  push(row.address_line_1);
+  push(row.address_line_2);
+  push(row.address_line_3);
+  const town = typeof row.town === 'string' ? row.town.trim() : '';
+  const county = typeof row.county === 'string' ? row.county.trim() : '';
+  if (town || county) parts.push([town, county].filter(Boolean).join(', '));
+  push(row.postcode);
+  return parts.join(', ');
+}
+
 /**
  * Server-side quotation PDF (pdfkit).
  */
@@ -60,6 +86,7 @@ export async function generateQuotationPdfBuffer(pool: Pool, quotationId: number
     currency: string;
     notes: string | null;
     created_by: number | null;
+    quotation_work_address_id: number | null;
   }>(
     `SELECT q.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
       c.address_line_1, c.address_line_2, c.town, c.county, c.postcode,
@@ -74,6 +101,27 @@ export async function generateQuotationPdfBuffer(pool: Pool, quotationId: number
   }
   const q = qResult.rows[0];
   const customerAddrFormatted = formatCustomerAddressSingleLine(q as unknown as Record<string, unknown>);
+
+  let workSiteName: string | null = null;
+  let workSiteAddrOnly: string | null = null;
+  if (q.quotation_work_address_id) {
+    const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
+      q.quotation_work_address_id,
+      q.customer_id,
+    ]);
+    if ((waRes.rowCount ?? 0) > 0) {
+      const wa = waRes.rows[0] as Record<string, unknown>;
+      const n = typeof wa.name === 'string' ? wa.name.trim() : '';
+      workSiteName = n || null;
+      const addr = formatWorkAddressSingleLineWithoutName(wa).trim();
+      workSiteAddrOnly = addr || null;
+    }
+    if (!workSiteName && !workSiteAddrOnly && q.billing_address?.trim()) {
+      workSiteAddrOnly = workSiteAddressAsSingleLine(q.billing_address.trim());
+    }
+  }
+  const customBillingAddr =
+    !q.quotation_work_address_id && q.billing_address?.trim() ? q.billing_address.trim() : null;
 
   const lineItemsResult = await pool.query<{
     description: string;
@@ -148,7 +196,24 @@ export async function generateQuotationPdfBuffer(pool: Pool, quotationId: number
     doc.text(q.customer_full_name || 'Customer', { width: 260 });
     if (q.customer_email) doc.fontSize(9).text(q.customer_email);
     if (q.customer_phone) doc.fontSize(9).text(q.customer_phone);
-    doc.fontSize(9).fillColor('#334155').text(q.billing_address || customerAddrFormatted || '—', { width: 260 });
+    doc.fontSize(8).fillColor('#64748b').text('Customer address');
+    doc.fontSize(9).fillColor('#334155').text(customerAddrFormatted || '—', { width: 260 });
+    if (workSiteName || workSiteAddrOnly) {
+      doc.moveDown(0.4);
+      doc.fontSize(8).fillColor('#64748b').text('Work / site address');
+      if (workSiteName) {
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text(workSiteName, { width: 260 });
+        doc.font('Helvetica');
+      }
+      if (workSiteAddrOnly) {
+        doc.fontSize(9).fillColor('#334155').text(workSiteAddrOnly, { width: 260 });
+      }
+    }
+    if (customBillingAddr) {
+      doc.moveDown(0.4);
+      doc.fontSize(8).fillColor('#64748b').text('Billing address');
+      doc.fontSize(9).fillColor('#334155').text(customBillingAddr, { width: 260 });
+    }
 
     doc.moveDown(1.2);
     const tableTop = doc.y;

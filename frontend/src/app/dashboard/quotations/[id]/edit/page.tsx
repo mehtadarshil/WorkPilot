@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
@@ -22,6 +22,7 @@ interface QuotationDetail {
   notes: string | null;
   description: string | null;
   billing_address: string | null;
+  quotation_work_address_id?: number | null;
   state: string;
   line_items: { description: string; quantity: number; unit_price: number }[];
 }
@@ -56,7 +57,11 @@ export default function EditQuotationPage() {
   const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
+  /** Empty = none; otherwise selected work address id */
+  const [workAddressSelect, setWorkAddressSelect] = useState('');
+  const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [state, setState] = useState('draft');
+  const skipNextWorkFetchReset = useRef(false);
   const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0 }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
 
@@ -78,13 +83,18 @@ export default function EditQuotationPage() {
       setCurrency(q.currency);
       setNotes(q.notes ?? '');
       setDescription(q.description ?? '');
-      if (q.billing_address?.trim()) {
+      setWorkAddressSelect(q.quotation_work_address_id ? String(q.quotation_work_address_id) : '');
+      if (q.quotation_work_address_id) {
+        setBillingAddress(q.billing_address ?? '');
+        setAddressKind('customer');
+      } else if (q.billing_address?.trim()) {
         setAddressKind('custom');
         setBillingAddress(q.billing_address);
       } else {
         setAddressKind('customer');
         setBillingAddress('');
       }
+      skipNextWorkFetchReset.current = true;
       setState(q.state);
       const items =
         q.line_items.length > 0
@@ -106,9 +116,51 @@ export default function EditQuotationPage() {
     }
   }, [id]);
 
+  const fetchWorkAddresses = useCallback(async (cid: string) => {
+    const token = window.localStorage.getItem('wp_token');
+    if (!token || !cid) {
+      setWorkAddressOptions([]);
+      return;
+    }
+    try {
+      const waRes = await getJson<{
+        work_addresses: {
+          id: number;
+          name: string;
+          address_line_1?: string | null;
+          town?: string | null;
+          postcode?: string | null;
+        }[];
+      }>(`/customers/${cid}/work-addresses?status=active`, token);
+      const rows = waRes.work_addresses ?? [];
+      setWorkAddressOptions(
+        rows.map((w) => {
+          const addr = [w.address_line_1, w.town, w.postcode].filter((x): x is string => Boolean(x && String(x).trim())).join(', ');
+          const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
+          return { id: w.id, label: label || `Work #${w.id}` };
+        }),
+      );
+    } catch {
+      setWorkAddressOptions([]);
+    }
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!customerId) {
+      setWorkAddressOptions([]);
+      return;
+    }
+    fetchWorkAddresses(customerId);
+    if (skipNextWorkFetchReset.current) {
+      skipNextWorkFetchReset.current = false;
+      return;
+    }
+    setWorkAddressSelect('');
+  }, [customerId, fetchWorkAddresses]);
 
   const subtotal = lineItems.reduce((s, li) => s + li.quantity * li.unit_price, 0);
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
@@ -145,7 +197,9 @@ export default function EditQuotationPage() {
     setSaving(true);
     setError(null);
     try {
-      await patchJson(`/quotations/${id}`, {
+      const waParsed = workAddressSelect.trim() ? parseInt(workAddressSelect, 10) : NaN;
+      const useWorkSite = Number.isFinite(waParsed);
+      const payload: Record<string, unknown> = {
         quotation_number: quotationNumber.trim(),
         customer_id: parseInt(customerId, 10),
         quotation_date: quotationDate,
@@ -153,7 +207,6 @@ export default function EditQuotationPage() {
         currency: currency.trim(),
         notes: notes.trim() || null,
         description: description.trim() || null,
-        billing_address: addressKind === 'custom' ? billingAddress.trim() || null : null,
         state,
         line_items: validItems.map((li) => ({
           description: li.description.trim(),
@@ -161,7 +214,14 @@ export default function EditQuotationPage() {
           unit_price: li.unit_price,
         })),
         tax_percentage: taxPercentage,
-      }, token);
+      };
+      if (useWorkSite) {
+        payload.quotation_work_address_id = waParsed;
+      } else {
+        payload.quotation_work_address_id = null;
+        payload.billing_address = addressKind === 'custom' ? billingAddress.trim() || null : null;
+      }
+      await patchJson(`/quotations/${id}`, payload, token);
       router.push(`/dashboard/quotations/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -240,7 +300,12 @@ export default function EditQuotationPage() {
                   <select
                     required
                     value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setCustomerId(next);
+                      setAddressKind('customer');
+                      setBillingAddress('');
+                    }}
                     className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                   >
                     <option value="">Select customer</option>
@@ -298,39 +363,65 @@ export default function EditQuotationPage() {
               </label>
               <div className="sm:col-span-2 space-y-3 rounded-lg border border-slate-100 bg-slate-50/60 p-4">
                 <p className="text-sm font-medium text-slate-800">Address on quotation</p>
-                <div className="flex flex-wrap gap-4">
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="radio"
-                      name="qAddrEdit"
-                      className="text-[#14B8A6] focus:ring-[#14B8A6]"
-                      checked={addressKind === 'customer'}
-                      onChange={() => setAddressKind('customer')}
-                    />
-                    Customer address
-                  </label>
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="radio"
-                      name="qAddrEdit"
-                      className="text-[#14B8A6] focus:ring-[#14B8A6]"
-                      checked={addressKind === 'custom'}
-                      onChange={() => setAddressKind('custom')}
-                    />
-                    Custom address
-                  </label>
-                </div>
-                {addressKind === 'custom' && (
-                  <label className="block text-sm">
-                    <span className="font-medium text-slate-700">Custom text</span>
-                    <textarea
-                      value={billingAddress}
-                      onChange={(e) => setBillingAddress(e.target.value)}
-                      rows={3}
-                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                      placeholder="Shown on quotation"
-                    />
-                  </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-slate-700">Work / site address (optional)</span>
+                  <select
+                    value={workAddressSelect}
+                    onChange={(e) => setWorkAddressSelect(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  >
+                    <option value="">None — use customer or custom address below</option>
+                    {workAddressOptions.map((w) => (
+                      <option key={w.id} value={String(w.id)}>
+                        {w.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {workAddressOptions.length === 0 && customerId ? (
+                  <p className="text-xs text-slate-500">This customer has no active work addresses.</p>
+                ) : null}
+                {workAddressSelect ? (
+                  <p className="text-xs text-slate-600">
+                    Billing and work/site lines on the printed quotation follow this work address. To use only the customer home address or custom text, clear the dropdown above.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="radio"
+                          name="qAddrEdit"
+                          className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          checked={addressKind === 'customer'}
+                          onChange={() => setAddressKind('customer')}
+                        />
+                        Customer address
+                      </label>
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="radio"
+                          name="qAddrEdit"
+                          className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          checked={addressKind === 'custom'}
+                          onChange={() => setAddressKind('custom')}
+                        />
+                        Custom address
+                      </label>
+                    </div>
+                    {addressKind === 'custom' && (
+                      <label className="block text-sm">
+                        <span className="font-medium text-slate-700">Custom text</span>
+                        <textarea
+                          value={billingAddress}
+                          onChange={(e) => setBillingAddress(e.target.value)}
+                          rows={3}
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                          placeholder="Shown on quotation"
+                        />
+                      </label>
+                    )}
+                  </>
                 )}
               </div>
               <label className="block text-sm sm:col-span-2">

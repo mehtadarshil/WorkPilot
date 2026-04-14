@@ -73,6 +73,10 @@ interface Quotation {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  quotation_work_address_id?: number | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  quotation_custom_address?: string | null;
   quotation_date: string;
   valid_until: string;
   subtotal: number;
@@ -552,6 +556,9 @@ export default function QuotationDetailPage() {
                       customer_email: quotation.customer_email,
                       customer_phone: quotation.customer_phone,
                       customer_address: quotation.customer_address,
+                      work_site_name: quotation.work_site_name,
+                      work_site_address: quotation.work_site_address,
+                      quotation_custom_address: quotation.quotation_custom_address,
                       quotation_date: quotation.quotation_date,
                       valid_until: quotation.valid_until,
                       subtotal: quotation.subtotal,
