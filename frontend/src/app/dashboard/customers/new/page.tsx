@@ -86,17 +86,13 @@ export default function NewCustomerPage() {
     setSaving(true);
     setError(null);
 
-    // The backend requires full_name and email minimally right now.
-    // We can infer full_name from Company Name or Contact Name
     if (companyRequired && !company.trim()) {
       setError('Company name is required for this customer type.');
       setSaving(false);
       return;
     }
     const derivedFullName = company.trim() || `${contactFirstName} ${contactSurname}`.trim() || 'Unknown Customer';
-    
-    // The older backend structure required 'email' at the top level
-    const derivedEmail = contactEmail || 'no-reply@workpilot.placeholder.com';
+    const derivedEmail = contactEmail.trim().toLowerCase();
 
     try {
       await postJson('/customers', {

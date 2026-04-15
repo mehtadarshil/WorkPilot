@@ -131,7 +131,7 @@ export default function EditCustomerPage() {
       return;
     }
     const derivedFullName = company.trim() || `${contactFirstName} ${contactSurname}`.trim() || 'Unknown Customer';
-    const derivedEmail = contactEmail || 'no-reply@workpilot.placeholder.com';
+    const derivedEmail = contactEmail.trim().toLowerCase();
 
     try {
       await patchJson(`/customers/${id}`, {
@@ -160,7 +160,6 @@ export default function EditCustomerPage() {
         prefers_letter: prefersLetter,
         lead_source: leadSource,
         price_book_id: priceBookId === '' ? null : Number(priceBookId),
-        credit_days: creditDays,
         credit_days: creditDays,
       }, token);
 

@@ -1781,7 +1781,7 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   };
   const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : '';
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (!fullName || !email) return res.status(400).json({ message: 'Full name and email are required' });
+  if (!fullName) return res.status(400).json({ message: 'Full name is required' });
   const status = body.status && CUSTOMER_STATUSES.includes(body.status as typeof CUSTOMER_STATUSES[number])
     ? body.status
     : 'LEAD';
@@ -7729,7 +7729,7 @@ app.post('/api/customers/:customerId/contacts', authenticate, requireAdmin, asyn
   const prefersPhone = !!body.prefers_phone;
   const prefersSms = !!body.prefers_sms;
   const prefersEmail = !!body.prefers_email;
-  const prefersLetter = body.prefers_letter === undefined ? true : !!body.prefers_letter;
+  const prefersLetter = !!body.prefers_letter;
 
   try {
     const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);

@@ -215,7 +215,7 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
           {quotation.notes && (
             <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-8 print-break-avoid">
               <p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Service Notes</p>
-              <p className="text-sm font-medium leading-relaxed text-slate-600">{quotation.notes}</p>
+              <p className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-slate-600">{quotation.notes}</p>
             </div>
           )}
           {s?.bank_details && (

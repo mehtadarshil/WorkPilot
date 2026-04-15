@@ -237,8 +237,8 @@ export default function CustomersPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
-    if (!formFullName.trim() || !formEmail.trim()) {
-      setAddError('Full name and email are required.');
+    if (!formFullName.trim()) {
+      setAddError('Full name is required.');
       return;
     }
     if (!token) return;
@@ -626,8 +626,8 @@ function CustomerModal({
               <input type="text" required value={formFullName} onChange={(e) => setFormFullName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Email *</label>
-              <input type="email" required value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
             </div>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
