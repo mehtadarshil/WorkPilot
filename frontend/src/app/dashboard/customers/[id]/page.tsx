@@ -51,7 +51,8 @@ interface CustomerDetails {
   contact_email: string | null;
   contact_mobile: string | null;
   contact_landline: string | null;
-  specific_notes: SpecificNote[];
+  /** May be absent on older API responses; always normalize to [] when setting state */
+  specific_notes?: SpecificNote[];
 }
 
 interface Job {
@@ -135,7 +136,7 @@ export default function CustomerDetailsPage() {
     setLoading(true);
     try {
       const res = await getJson<CustomerDetails>(`/customers/${id}`, token);
-      setData(res);
+      setData({ ...res, specific_notes: res.specific_notes ?? [] });
     } catch (err: any) {
       setError(err?.message || 'Failed to fetch customer details');
     } finally {
@@ -240,6 +241,8 @@ export default function CustomerDetailsPage() {
   const displayAddress = addressString || 'No address provided';
 
   const fullContactName = [data.contact_title, data.contact_first_name, data.contact_surname].filter(Boolean).join(' ');
+
+  const specificNotes = data.specific_notes ?? [];
 
   const allowBranches = data.customer_type_allow_branches !== false;
   const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
@@ -452,7 +455,7 @@ export default function CustomerDetailsPage() {
                             setNoteSaving(true);
                             try {
                               const res = await postJson<SpecificNote>(`/customers/${id}/specific-notes`, { title: noteTitle, description: noteDescription }, token);
-                              setData(prev => prev ? { ...prev, specific_notes: [...prev.specific_notes, res] } : null);
+                              setData(prev => prev ? { ...prev, specific_notes: [...(prev.specific_notes ?? []), res] } : null);
                               setIsAddingNote(false);
                             } catch (err) {
                               console.error('Failed to add note', err);
@@ -468,11 +471,11 @@ export default function CustomerDetailsPage() {
                    </div>
                  )}
 
-                 {data.specific_notes.length === 0 && !isAddingNote && (
+                 {specificNotes.length === 0 && !isAddingNote && (
                    <p className="text-xs text-slate-400 text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg">No notes found.</p>
                  )}
 
-                 {data.specific_notes.map((note) => (
+                 {specificNotes.map((note) => (
                    <div key={note.id} className="group/note relative p-3 border border-slate-100 rounded-lg hover:border-slate-300 hover:bg-white transition-all">
                       {editingNoteId === note.id ? (
                         <div className="space-y-2">
@@ -504,7 +507,7 @@ export default function CustomerDetailsPage() {
                                   const res = await patchJson<SpecificNote>(`/customers/${id}/specific-notes/${note.id}`, { title: noteTitle, description: noteDescription }, token);
                                   setData(prev => prev ? { 
                                     ...prev, 
-                                    specific_notes: prev.specific_notes.map(n => n.id === note.id ? res : n) 
+                                    specific_notes: (prev.specific_notes ?? []).map(n => n.id === note.id ? res : n) 
                                   } : null);
                                   setEditingNoteId(null);
                                 } catch (err) {
@@ -541,7 +544,7 @@ export default function CustomerDetailsPage() {
                                     await deleteRequest(`/customers/${id}/specific-notes/${note.id}`, token);
                                     setData(prev => prev ? { 
                                       ...prev, 
-                                      specific_notes: prev.specific_notes.filter(n => n.id !== note.id) 
+                                      specific_notes: (prev.specific_notes ?? []).filter(n => n.id !== note.id) 
                                     } : null);
                                   } catch (err) {
                                     console.error('Failed to delete note', err);

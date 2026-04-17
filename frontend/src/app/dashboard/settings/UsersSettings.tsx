@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
+import { UserDetailModal } from './UserDetailModal';
 
 interface User {
   id: number;
@@ -21,6 +22,8 @@ interface User {
   state: string;
   created_at: string;
   updated_at: string;
+  /** Mobile app login enabled (password set in User Management). */
+  has_mobile_login?: boolean;
 }
 
 interface UsersResponse {
@@ -64,6 +67,7 @@ export default function UsersSettings() {
   const [actionMenu, setActionMenu] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [certsModalUser, setCertsModalUser] = useState<User | null>(null);
+  const [detailUser, setDetailUser] = useState<User | null>(null);
 
   const [formFullName, setFormFullName] = useState('');
   const [formRolePosition, setFormRolePosition] = useState('');
@@ -74,6 +78,9 @@ export default function UsersSettings() {
   const [formCertifications, setFormCertifications] = useState('');
   const [formAssignedResponsibilities, setFormAssignedResponsibilities] = useState('');
   const [formState, setFormState] = useState('active');
+  const [formInitialPassword, setFormInitialPassword] = useState('');
+  const [formNewPassword, setFormNewPassword] = useState('');
+  const [formClearMobilePassword, setFormClearMobilePassword] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -134,6 +141,9 @@ export default function UsersSettings() {
     setFormCertifications('');
     setFormAssignedResponsibilities('');
     setFormState('active');
+    setFormInitialPassword('');
+    setFormNewPassword('');
+    setFormClearMobilePassword(false);
   };
 
   const openAdd = () => {
@@ -165,6 +175,19 @@ export default function UsersSettings() {
       setAddError('User name is required.');
       return;
     }
+    if (!formEmail.trim()) {
+      setAddError('Email is required.');
+      return;
+    }
+    const initialPassword = formInitialPassword.trim();
+    if (!initialPassword) {
+      setAddError('Password is required.');
+      return;
+    }
+    if (initialPassword.length < 8) {
+      setAddError('Password must be at least 8 characters.');
+      return;
+    }
     if (!token) return;
     try {
       await postJson<{ officer: User }>(
@@ -174,11 +197,12 @@ export default function UsersSettings() {
           role_position: formRolePosition.trim() || undefined,
           department: formDepartment.trim() || undefined,
           phone: formPhone.trim() || undefined,
-          email: formEmail.trim() || undefined,
+          email: formEmail.trim(),
           system_access_level: formSystemAccessLevel,
           certifications: formCertifications.trim() || undefined,
           assigned_responsibilities: formAssignedResponsibilities.trim() || undefined,
           state: formState,
+          initial_password: initialPassword,
         },
         token,
       );
@@ -194,7 +218,16 @@ export default function UsersSettings() {
     e.preventDefault();
     setAddError(null);
     if (!editingUser || !token) return;
+    if (!formEmail.trim()) {
+      setAddError('Email is required.');
+      return;
+    }
     try {
+      const newPw = formNewPassword.trim();
+      if (newPw && newPw.length < 8) {
+        setAddError('New password must be at least 8 characters.');
+        return;
+      }
       await patchJson<{ officer: User }>(
         `/officers/${editingUser.id}`,
         {
@@ -207,6 +240,8 @@ export default function UsersSettings() {
           certifications: formCertifications.trim() || null,
           assigned_responsibilities: formAssignedResponsibilities.trim() || null,
           state: formState,
+          ...(formClearMobilePassword ? { clear_mobile_password: true } : {}),
+          ...(newPw && !formClearMobilePassword ? { initial_password: newPw } : {}),
         },
         token,
       );
@@ -320,6 +355,7 @@ export default function UsersSettings() {
                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Contact</th>
                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Access Level</th>
+                <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Mobile app</th>
                 <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                 <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
               </tr>
@@ -327,7 +363,7 @@ export default function UsersSettings() {
             <tbody className="divide-y divide-slate-200">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     No users yet. Add one to get started.
                   </td>
                 </tr>
@@ -356,6 +392,13 @@ export default function UsersSettings() {
                         {u.phone && <div className="text-xs">{u.phone}</div>}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-700 capitalize">{u.system_access_level || '—'}</td>
+                      <td className="px-6 py-4 text-sm">
+                        {u.has_mobile_login ? (
+                          <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">Enabled</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4">{stateBadge(u.state)}</td>
                       <td className="relative px-6 py-4 text-right">
                         <button
@@ -375,10 +418,17 @@ export default function UsersSettings() {
                         </button>
                         {actionMenu === u.id && typeof document !== 'undefined' && createPortal(
                           <div
-                            className="fixed z-[100] w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                            className="fixed z-[100] w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
                             style={{ top: menuPosition.top, left: menuPosition.left }}
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <button
+                              type="button"
+                              onClick={() => { setDetailUser(u); setActionMenu(null); }}
+                              className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              View details
+                            </button>
                             <button
                               type="button"
                               onClick={() => { setCertsModalUser(u); setActionMenu(null); }}
@@ -426,6 +476,7 @@ export default function UsersSettings() {
       {addModalOpen && (
         <UserModal
           title="Add User"
+          mode="add"
           onSubmit={handleAdd}
           onClose={() => setAddModalOpen(false)}
           error={addError}
@@ -447,6 +498,12 @@ export default function UsersSettings() {
           setFormAssignedResponsibilities={setFormAssignedResponsibilities}
           formState={formState}
           setFormState={setFormState}
+          formInitialPassword={formInitialPassword}
+          setFormInitialPassword={setFormInitialPassword}
+          formNewPassword={formNewPassword}
+          setFormNewPassword={setFormNewPassword}
+          formClearMobilePassword={formClearMobilePassword}
+          setFormClearMobilePassword={setFormClearMobilePassword}
           submitLabel="Add"
         />
       )}
@@ -454,6 +511,8 @@ export default function UsersSettings() {
       {editModalOpen && editingUser && (
         <UserModal
           title="Edit User"
+          mode="edit"
+          hasMobileLogin={!!editingUser.has_mobile_login}
           onSubmit={handleEdit}
           onClose={() => { setEditModalOpen(false); setEditingUser(null); }}
           error={addError}
@@ -475,7 +534,21 @@ export default function UsersSettings() {
           setFormAssignedResponsibilities={setFormAssignedResponsibilities}
           formState={formState}
           setFormState={setFormState}
+          formInitialPassword={formInitialPassword}
+          setFormInitialPassword={setFormInitialPassword}
+          formNewPassword={formNewPassword}
+          setFormNewPassword={setFormNewPassword}
+          formClearMobilePassword={formClearMobilePassword}
+          setFormClearMobilePassword={setFormClearMobilePassword}
           submitLabel="Save Changes"
+        />
+      )}
+
+      {detailUser && token && (
+        <UserDetailModal
+          user={detailUser}
+          token={token}
+          onClose={() => setDetailUser(null)}
         />
       )}
 
@@ -683,6 +756,8 @@ function UserCertificationsModal({ user, token, onClose, onRefresh }: { user: Us
 
 function UserModal({
   title,
+  mode,
+  hasMobileLogin,
   onSubmit,
   onClose,
   error,
@@ -704,9 +779,17 @@ function UserModal({
   setFormAssignedResponsibilities,
   formState,
   setFormState,
+  formInitialPassword,
+  setFormInitialPassword,
+  formNewPassword,
+  setFormNewPassword,
+  formClearMobilePassword,
+  setFormClearMobilePassword,
   submitLabel,
 }: {
   title: string;
+  mode: 'add' | 'edit';
+  hasMobileLogin?: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onClose: () => void;
   error: string | null;
@@ -728,6 +811,12 @@ function UserModal({
   setFormAssignedResponsibilities: (v: string) => void;
   formState: string;
   setFormState: (v: string) => void;
+  formInitialPassword: string;
+  setFormInitialPassword: (v: string) => void;
+  formNewPassword: string;
+  setFormNewPassword: (v: string) => void;
+  formClearMobilePassword: boolean;
+  setFormClearMobilePassword: (v: boolean) => void;
   submitLabel: string;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -762,10 +851,68 @@ function UserModal({
               <input type="tel" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} placeholder="+1 234 567 8900" className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Email</label>
-              <input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="user@company.com" className={inputClass} />
+              <label className="block text-sm font-medium text-slate-700">Email *</label>
+              <input
+                type="email"
+                required
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder="user@company.com"
+                className={inputClass}
+              />
             </div>
           </div>
+          {mode === 'add' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Password (mobile app) *</label>
+              <input
+                type="password"
+                required
+                autoComplete="new-password"
+                minLength={8}
+                value={formInitialPassword}
+                onChange={(e) => setFormInitialPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Required for WorkPilot mobile sign-in. Users can change it later via Forgot password.
+              </p>
+            </div>
+          )}
+          {mode === 'edit' && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+              <p className="text-sm font-semibold text-slate-800">Mobile app sign-in</p>
+              {hasMobileLogin && (
+                <p className="text-xs text-slate-600">Mobile login is enabled for this user.</p>
+              )}
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={formClearMobilePassword}
+                  onChange={(e) => {
+                    setFormClearMobilePassword(e.target.checked);
+                    if (e.target.checked) setFormNewPassword('');
+                  }}
+                  className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                />
+                Remove mobile access (clear stored password)
+              </label>
+              {!formClearMobilePassword && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700">Set new password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={formNewPassword}
+                    onChange={(e) => setFormNewPassword(e.target.value)}
+                    placeholder="Leave blank to keep current — min. 8 characters"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-sm font-medium text-slate-700">System access level</label>

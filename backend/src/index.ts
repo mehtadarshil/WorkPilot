@@ -134,7 +134,7 @@ pool.query(`
   .then(() => console.log('Checked customer_specific_notes table'))
   .catch(err => console.error('Migration error (customer_specific_notes):', err));
 
-type UserRole = 'SUPER_ADMIN' | 'ADMIN';
+type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'OFFICER';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
 interface DbServicePlan {
@@ -295,6 +295,8 @@ interface JwtPayload {
   userId: number;
   email: string;
   role: UserRole;
+  /** Present when role is OFFICER (same as userId for officers). */
+  officerId?: number;
 }
 
 interface AuthenticatedRequest extends Request {
@@ -660,6 +662,10 @@ async function initDb() {
     );
   `);
 
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);`);
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(128);`);
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ;`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS jobs (
       id SERIAL PRIMARY KEY,
@@ -1022,6 +1028,24 @@ async function initDb() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS timesheet_entries (
+      id SERIAL PRIMARY KEY,
+      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
+      clock_in TIMESTAMPTZ NOT NULL,
+      clock_out TIMESTAMPTZ,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_timesheet_entries_officer_clock ON timesheet_entries(officer_id, clock_in DESC)`,
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_timesheet_entries_officer_open ON timesheet_entries(officer_id) WHERE clock_out IS NULL`,
+  );
+
   const plansExist = await pool.query('SELECT 1 FROM service_plans LIMIT 1');
   if ((plansExist.rowCount ?? 0) === 0) {
     await pool.query(`
@@ -1110,6 +1134,13 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
   next();
 }
 
+function requireOfficer(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.user || req.user.role !== 'OFFICER' || req.user.officerId == null) {
+    return res.status(403).json({ message: 'Officer access required' });
+  }
+  next();
+}
+
 app.get('/api/health', async (req: Request, res: Response) => {
   try {
     const result = await pool.query('SELECT NOW()');
@@ -1127,46 +1158,92 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Email and password are required' });
   }
 
+  const emailNorm = email.trim().toLowerCase();
+
   try {
     const result = await pool.query<DbUser>(
-      'SELECT id, email, password_hash, role, full_name, company_name, phone, service_plan, status, address, notes FROM users WHERE email = $1',
-      [email],
+      'SELECT id, email, password_hash, role, full_name, company_name, phone, service_plan, status, address, notes FROM users WHERE LOWER(TRIM(email)) = $1',
+      [emailNorm],
     );
 
-    if (result.rowCount === 0) {
+    if ((result.rowCount ?? 0) > 0) {
+      const user = result.rows[0];
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid email or password' });
+      }
+
+      const payload: JwtPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      };
+
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+
+      const responseUser: Record<string, unknown> = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      };
+      if (user.role === 'ADMIN') {
+        responseUser.full_name = user.full_name ?? null;
+        responseUser.company_name = user.company_name ?? null;
+        responseUser.phone = user.phone ?? null;
+        responseUser.service_plan = user.service_plan ?? 'Standard';
+        responseUser.status = user.status ?? 'ACTIVE';
+      }
+      return res.json({
+        token,
+        user: responseUser,
+      });
+    }
+
+    const officerResult = await pool.query<{
+      id: number;
+      email: string;
+      full_name: string;
+      password_hash: string;
+      state: string;
+    }>(
+      `SELECT id, email, full_name, password_hash, state FROM officers
+       WHERE LOWER(TRIM(email)) = $1 AND password_hash IS NOT NULL`,
+      [emailNorm],
+    );
+
+    if ((officerResult.rowCount ?? 0) === 0) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const user = result.rows[0];
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+    const officer = officerResult.rows[0];
+    if (officer.state !== 'active') {
+      return res.status(403).json({ message: 'This account is not active. Contact your administrator.' });
+    }
 
-    if (!isMatch) {
+    const officerMatch = await bcrypt.compare(password, officer.password_hash);
+    if (!officerMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const payload: JwtPayload = {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
+      userId: officer.id,
+      email: officer.email,
+      role: 'OFFICER',
+      officerId: officer.id,
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
-    const responseUser: Record<string, unknown> = {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    };
-    if (user.role === 'ADMIN') {
-      responseUser.full_name = user.full_name ?? null;
-      responseUser.company_name = user.company_name ?? null;
-      responseUser.phone = user.phone ?? null;
-      responseUser.service_plan = user.service_plan ?? 'Standard';
-      responseUser.status = user.status ?? 'ACTIVE';
-    }
     return res.json({
       token,
-      user: responseUser,
+      user: {
+        id: officer.id,
+        email: officer.email,
+        role: 'OFFICER',
+        full_name: officer.full_name,
+        officer_id: officer.id,
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -1407,6 +1484,343 @@ app.get('/api/clients', authenticate, requireSuperAdmin, async (req: Authenticat
 
 app.get('/api/auth/me', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   return res.json({ user: req.user });
+});
+
+// ---------- Mobile app: home summary + timesheet (field officers) ----------
+app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  if (u.role !== 'OFFICER' || u.officerId == null) {
+    return res.json({
+      officer_features: false,
+      role: u.role,
+      email: u.email,
+      profile: null,
+      stats: { assigned_jobs_open: 0, diary_upcoming_week: 0 },
+      upcoming_diary: [],
+      next_diary_event: null,
+      active_timesheet: null,
+    });
+  }
+
+  const oid = u.officerId;
+
+  try {
+    const profileRes = await pool.query<{
+      id: number;
+      full_name: string;
+      email: string | null;
+      phone: string | null;
+      department: string | null;
+      role_position: string | null;
+      state: string;
+    }>(
+      `SELECT id, full_name, email, phone, department, role_position, state FROM officers WHERE id = $1`,
+      [oid],
+    );
+    if ((profileRes.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Officer profile not found' });
+    }
+    const profile = profileRes.rows[0];
+
+    const jobsOpen = await pool.query<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM jobs
+       WHERE officer_id = $1 AND state NOT IN ('completed', 'closed')`,
+      [oid],
+    );
+    const assignedJobsOpen = parseInt(jobsOpen.rows[0]?.c || '0', 10);
+
+    const upcoming = await pool.query(
+      `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
+              d.notes, d.created_by_name, d.created_at,
+              j.title, j.description, j.location, j.customer_id,
+              c.full_name AS customer_full_name, c.email AS customer_email,
+              o.full_name AS officer_full_name
+       FROM diary_events d
+       JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN officers o ON o.id = d.officer_id
+       WHERE d.officer_id = $1
+         AND d.start_time >= NOW()
+         AND d.start_time < NOW() + INTERVAL '7 days'
+       ORDER BY d.start_time ASC
+       LIMIT 50`,
+      [oid],
+    );
+
+    const diaryUpcomingWeek = upcoming.rows.length;
+
+    const openTs = await pool.query<{ id: number; clock_in: Date; notes: string | null }>(
+      `SELECT id, clock_in, notes FROM timesheet_entries
+       WHERE officer_id = $1 AND clock_out IS NULL
+       ORDER BY clock_in DESC
+       LIMIT 1`,
+      [oid],
+    );
+    const activeTimesheet =
+      (openTs.rowCount ?? 0) > 0
+        ? {
+            id: openTs.rows[0].id,
+            clock_in: (openTs.rows[0].clock_in as Date).toISOString(),
+            notes: openTs.rows[0].notes,
+          }
+        : null;
+
+    const nextEvent = upcoming.rows.length > 0 ? upcoming.rows[0] : null;
+
+    return res.json({
+      officer_features: true,
+      role: u.role,
+      email: u.email,
+      profile: {
+        id: profile.id,
+        full_name: profile.full_name,
+        email: profile.email,
+        phone: profile.phone,
+        department: profile.department,
+        role_position: profile.role_position,
+        state: profile.state,
+      },
+      stats: {
+        assigned_jobs_open: assignedJobsOpen,
+        diary_upcoming_week: diaryUpcomingWeek,
+      },
+      upcoming_diary: upcoming.rows,
+      next_diary_event: nextEvent,
+      active_timesheet: activeTimesheet,
+    });
+  } catch (error) {
+    console.error('Mobile home error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Field officer: jobs assigned to me that are not completed/closed (matches home stats). */
+app.get('/api/mobile/open-jobs', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+  const oid = req.user!.officerId!;
+  try {
+    const listResult = await pool.query<
+      DbJob & { customer_full_name: string | null }
+    >(
+      `SELECT j.id, j.title, j.description, j.state, j.priority, j.location,
+              j.schedule_start, j.duration_minutes, j.scheduling_notes,
+              j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
+              c.full_name AS customer_full_name
+       FROM jobs j
+       LEFT JOIN customers c ON c.id = j.customer_id
+       WHERE j.officer_id = $1 AND j.state NOT IN ('completed', 'closed')
+       ORDER BY j.schedule_start ASC NULLS LAST, j.updated_at DESC
+       LIMIT 200`,
+      [oid],
+    );
+    const jobs = listResult.rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description ?? null,
+      state: r.state,
+      priority: r.priority ?? null,
+      location: r.location ?? null,
+      customer_full_name: r.customer_full_name ?? null,
+      customer_id: r.customer_id ?? null,
+      schedule_start: r.schedule_start ? (r.schedule_start as Date).toISOString() : null,
+      duration_minutes: r.duration_minutes ?? null,
+      scheduling_notes: r.scheduling_notes ?? null,
+      job_notes: r.job_notes ?? null,
+      dispatched_at: r.dispatched_at ? (r.dispatched_at as Date).toISOString() : null,
+      updated_at: (r.updated_at as Date).toISOString(),
+    }));
+    return res.json({ jobs });
+  } catch (error) {
+    console.error('Mobile open jobs error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/timesheet/clock-in', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+  const oid = req.user!.officerId!;
+  const body = req.body as { notes?: string };
+  const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+
+  try {
+    const existing = await pool.query(`SELECT id FROM timesheet_entries WHERE officer_id = $1 AND clock_out IS NULL`, [
+      oid,
+    ]);
+    if ((existing.rowCount ?? 0) > 0) {
+      return res.status(409).json({ message: 'Already clocked in. Clock out first.' });
+    }
+
+    const ins = await pool.query<{ id: number; clock_in: Date; clock_out: Date | null; notes: string | null }>(
+      `INSERT INTO timesheet_entries (officer_id, clock_in, notes, updated_at)
+       VALUES ($1, NOW(), $2, NOW())
+       RETURNING id, clock_in, clock_out, notes`,
+      [oid, notes],
+    );
+    const row = ins.rows[0];
+    return res.status(201).json({
+      entry: {
+        id: row.id,
+        clock_in: (row.clock_in as Date).toISOString(),
+        clock_out: row.clock_out ? (row.clock_out as Date).toISOString() : null,
+        notes: row.notes,
+      },
+    });
+  } catch (error) {
+    console.error('Timesheet clock-in error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/timesheet/clock-out', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+  const oid = req.user!.officerId!;
+  const body = req.body as { notes?: string };
+  const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+
+  try {
+    const open = await pool.query<{ id: number; clock_in: Date }>(
+      `SELECT id, clock_in FROM timesheet_entries WHERE officer_id = $1 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1`,
+      [oid],
+    );
+    if ((open.rowCount ?? 0) === 0) {
+      return res.status(409).json({ message: 'Not clocked in' });
+    }
+    const id = open.rows[0].id;
+    const upd = await pool.query<{ clock_in: Date; clock_out: Date; notes: string | null }>(
+      `UPDATE timesheet_entries
+       SET clock_out = NOW(), notes = COALESCE($2, notes), updated_at = NOW()
+       WHERE id = $1 AND officer_id = $3
+       RETURNING clock_in, clock_out, notes`,
+      [id, notes, oid],
+    );
+    if ((upd.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+    const row = upd.rows[0];
+    return res.json({
+      entry: {
+        id,
+        clock_in: (row.clock_in as Date).toISOString(),
+        clock_out: (row.clock_out as Date).toISOString(),
+        notes: row.notes,
+      },
+    });
+  } catch (error) {
+    console.error('Timesheet clock-out error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/timesheet/history', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+  const oid = req.user!.officerId!;
+  const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+
+  const fromDate =
+    typeof req.query.from === 'string' && req.query.from.length >= 10 ? req.query.from.slice(0, 10) : null;
+  const toDate = typeof req.query.to === 'string' && req.query.to.length >= 10 ? req.query.to.slice(0, 10) : null;
+
+  try {
+    const conditions: string[] = ['officer_id = $1'];
+    const params: unknown[] = [oid];
+    let p = 2;
+    if (fromDate) {
+      conditions.push(`clock_in >= $${p++}::date`);
+      params.push(fromDate);
+    }
+    if (toDate) {
+      conditions.push(`clock_in < ($${p++}::date + INTERVAL '1 day')`);
+      params.push(toDate);
+    }
+    params.push(limit);
+    const lim = `LIMIT $${params.length}`;
+
+    const result = await pool.query(
+      `SELECT id, officer_id, clock_in, clock_out, notes,
+              EXTRACT(EPOCH FROM (COALESCE(clock_out, NOW()) - clock_in))::bigint AS duration_seconds
+       FROM timesheet_entries
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY clock_in DESC
+       ${lim}`,
+      params,
+    );
+
+    const entries = result.rows.map((r) => ({
+      id: r.id as number,
+      officer_id: r.officer_id as number,
+      clock_in: (r.clock_in as Date).toISOString(),
+      clock_out: r.clock_out ? (r.clock_out as Date).toISOString() : null,
+      notes: r.notes as string | null,
+      duration_seconds: Number(r.duration_seconds),
+    }));
+
+    return res.json({ entries });
+  } catch (error) {
+    console.error('Timesheet history error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Admin: timesheet history for a field officer (same payload shape as GET /api/timesheet/history). */
+app.get('/api/officers/:id/timesheet-history', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const officerId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
+
+  const userId = req.user!.userId;
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const exists = await pool.query(
+      `SELECT id FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+      isSuperAdmin ? [officerId] : [officerId, userId],
+    );
+    if ((exists.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Officer not found' });
+    }
+
+    const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+
+    const fromDate =
+      typeof req.query.from === 'string' && req.query.from.length >= 10 ? req.query.from.slice(0, 10) : null;
+    const toDate = typeof req.query.to === 'string' && req.query.to.length >= 10 ? req.query.to.slice(0, 10) : null;
+
+    const conditions: string[] = ['officer_id = $1'];
+    const params: unknown[] = [officerId];
+    let p = 2;
+    if (fromDate) {
+      conditions.push(`clock_in >= $${p++}::date`);
+      params.push(fromDate);
+    }
+    if (toDate) {
+      conditions.push(`clock_in < ($${p++}::date + INTERVAL '1 day')`);
+      params.push(toDate);
+    }
+    params.push(limit);
+    const lim = `LIMIT $${params.length}`;
+
+    const result = await pool.query(
+      `SELECT id, officer_id, clock_in, clock_out, notes,
+              EXTRACT(EPOCH FROM (COALESCE(clock_out, NOW()) - clock_in))::bigint AS duration_seconds
+       FROM timesheet_entries
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY clock_in DESC
+       ${lim}`,
+      params,
+    );
+
+    const entries = result.rows.map((r) => ({
+      id: r.id as number,
+      officer_id: r.officer_id as number,
+      clock_in: (r.clock_in as Date).toISOString(),
+      clock_out: r.clock_out ? (r.clock_out as Date).toISOString() : null,
+      notes: r.notes as string | null,
+      duration_seconds: Number(r.duration_seconds),
+    }));
+
+    return res.json({ entries });
+  } catch (error) {
+    console.error('Officer timesheet history error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
 });
 
 // ---------- Service Plans (Super Admin only) ----------
@@ -2092,8 +2506,9 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbOfficer>(
-      `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by
+    const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean }>(
+      `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by,
+              (password_hash IS NOT NULL) AS has_mobile_login
        FROM officers ${whereClause}
        ORDER BY full_name ASC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -2128,6 +2543,7 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
       created_at: (r.created_at as Date).toISOString(),
       updated_at: (r.updated_at as Date).toISOString(),
       created_by: r.created_by,
+      has_mobile_login: !!r.has_mobile_login,
     }));
 
     return res.json({
@@ -2180,6 +2596,8 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
     certifications?: string;
     assigned_responsibilities?: string;
     state?: string;
+    /** Sets mobile app login (hashed); requires email. Min 8 characters. */
+    initial_password?: string;
   };
   const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : '';
   if (!fullName) return res.status(400).json({ message: 'Officer name is required' });
@@ -2198,12 +2616,27 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
   const assignedResponsibilities = typeof body.assigned_responsibilities === 'string' ? body.assigned_responsibilities.trim() || null : null;
   const createdBy = req.user!.userId;
 
+  const initialPassword = typeof body.initial_password === 'string' ? body.initial_password.trim() : '';
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  if (!initialPassword || initialPassword.length < 8) {
+    return res.status(400).json({ message: 'Password is required and must be at least 8 characters' });
+  }
+
   try {
+    const dup = await pool.query(`SELECT id FROM officers WHERE LOWER(TRIM(email)) = $1`, [email]);
+    if ((dup.rowCount ?? 0) > 0) {
+      return res.status(409).json({ message: 'Another user already has this email' });
+    }
+
+    const passwordHash = await bcrypt.hash(initialPassword, 10);
+
     const result = await pool.query<DbOfficer>(
-      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by`,
-      [fullName, rolePosition, department, phone, email, systemAccessLevel, certifications, assignedResponsibilities, state, createdBy],
+      [fullName, rolePosition, department, phone, email, systemAccessLevel, certifications, assignedResponsibilities, state, createdBy, passwordHash],
     );
     const r = result.rows[0];
     return res.status(201).json({
@@ -2221,6 +2654,7 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
         created_at: (r.created_at as Date).toISOString(),
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
+        has_mobile_login: !!(initialPassword && email),
       },
     });
   } catch (error) {
@@ -2238,13 +2672,39 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownershipCheck = isSuperAdmin ? '' : ' AND created_by = $1';
 
-  const body = req.body as Record<string, unknown>;
+  const body = req.body as Record<string, unknown> & { initial_password?: string; clear_mobile_password?: boolean };
   const updates: string[] = [];
   const values: unknown[] = [];
   let idx = 1;
 
   const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() || null : undefined);
   const strReq = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() : undefined);
+
+  if (body.clear_mobile_password === true) {
+    updates.push(`password_hash = NULL`);
+    updates.push(`password_reset_token = NULL`);
+    updates.push(`password_reset_expires_at = NULL`);
+  } else if (typeof body.initial_password === 'string' && body.initial_password.length > 0) {
+    if (body.initial_password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+    const cur = await pool.query<{ email: string | null }>(`SELECT email FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`, isSuperAdmin ? [id] : [id, userId]);
+    if ((cur.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
+    const nextEmail = str('email') !== undefined ? str('email') : cur.rows[0].email;
+    if (!nextEmail || !String(nextEmail).trim()) {
+      return res.status(400).json({ message: 'Email is required to set a mobile password' });
+    }
+    const dup = await pool.query(`SELECT id FROM officers WHERE LOWER(TRIM(email)) = $1 AND id <> $2`, [String(nextEmail).trim().toLowerCase(), id]);
+    if ((dup.rowCount ?? 0) > 0) {
+      return res.status(409).json({ message: 'Another user already has this email' });
+    }
+    const hash = await bcrypt.hash(body.initial_password, 10);
+    updates.push(`password_hash = $${idx++}`);
+    values.push(hash);
+    updates.push(`password_reset_token = NULL`);
+    updates.push(`password_reset_expires_at = NULL`);
+  }
+
   if (strReq('full_name') !== undefined) { updates.push(`full_name = $${idx++}`); values.push(strReq('full_name')); }
   if (str('role_position') !== undefined) { updates.push(`role_position = $${idx++}`); values.push(str('role_position')); }
   if (str('department') !== undefined) { updates.push(`department = $${idx++}`); values.push(str('department')); }
@@ -2272,12 +2732,22 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
   const ownershipClause = isSuperAdmin ? '' : ` AND created_by = $${idParamIdx + 1}`;
 
   try {
+    if (str('email') !== undefined) {
+      const newEm = str('email')?.trim().toLowerCase() ?? null;
+      if (newEm) {
+        const dup = await pool.query(`SELECT id FROM officers WHERE LOWER(TRIM(email)) = $1 AND id <> $2`, [newEm, id]);
+        if ((dup.rowCount ?? 0) > 0) {
+          return res.status(409).json({ message: 'Another user already has this email' });
+        }
+      }
+    }
+
     const result = await pool.query<DbOfficer>(
       `UPDATE officers SET ${updates.join(', ')} WHERE id = $${idParamIdx}${ownershipClause} RETURNING *`,
       values,
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
-    const r = result.rows[0];
+    const r = result.rows[0] as DbOfficer & { password_hash?: string | null };
     return res.json({
       officer: {
         id: r.id,
@@ -2293,6 +2763,7 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
         created_at: (r.created_at as Date).toISOString(),
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
+        has_mobile_login: !!r.password_hash,
       },
     });
   } catch (error) {
@@ -3318,6 +3789,19 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     const fromDate = typeof req.query.from === 'string' ? req.query.from : '2000-01-01';
     const toDate = typeof req.query.to === 'string' ? req.query.to : '3000-01-01';
 
+    const params: unknown[] = [fromDate, toDate];
+    let officerClause = '';
+    if (req.user!.role === 'OFFICER' && req.user!.officerId != null) {
+      officerClause = ' AND d.officer_id = $3';
+      params.push(req.user!.officerId);
+    } else if (typeof req.query.officer_id === 'string') {
+      const oid = parseInt(req.query.officer_id, 10);
+      if (Number.isFinite(oid)) {
+        officerClause = ' AND d.officer_id = $3';
+        params.push(oid);
+      }
+    }
+
     // We fetch diary events joined with jobs and customers
     const result = await pool.query(
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status as event_status,
@@ -3330,8 +3814,9 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE d.start_time >= $1::timestamptz AND d.start_time < ($2::timestamptz + INTERVAL '1 day')
+       ${officerClause}
        ORDER BY d.start_time ASC`,
-      [fromDate, toDate]
+      params,
     );
     res.json({ events: result.rows });
   } catch (error) {
@@ -3642,6 +4127,108 @@ async function loadEmailSettingsPayload(userId: number): Promise<EmailSettingsPa
     oauth_expiry: row.oauth_expiry ? Number(row.oauth_expiry) : null,
   };
 }
+
+async function findFirstEmailConfigUserId(): Promise<number | null> {
+  const r = await pool.query<{ id: number }>(
+    `SELECT es.created_by AS id FROM email_settings es
+     INNER JOIN users u ON u.id = es.created_by
+     WHERE (es.smtp_enabled = true AND es.from_email IS NOT NULL AND TRIM(es.from_email) <> '')
+        OR (es.oauth_provider IS NOT NULL AND es.oauth_access_token IS NOT NULL)
+     ORDER BY CASE WHEN u.role = 'SUPER_ADMIN' THEN 0 ELSE 1 END
+     LIMIT 1`,
+  );
+  return r.rows[0]?.id ?? null;
+}
+
+/** Officers with mobile password: request reset link by email (uses system email settings). */
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  const raw = req.body as { email?: string };
+  const emailNorm = typeof raw.email === 'string' ? raw.email.trim().toLowerCase() : '';
+  if (!emailNorm) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  const genericOk = { message: 'If an account exists with this email, you will receive reset instructions shortly.' };
+  try {
+    const o = await pool.query<{ id: number; full_name: string; email: string }>(
+      `SELECT id, full_name, email FROM officers
+       WHERE LOWER(TRIM(email)) = $1 AND password_hash IS NOT NULL`,
+      [emailNorm],
+    );
+    if ((o.rowCount ?? 0) === 0) {
+      return res.json(genericOk);
+    }
+    const officer = o.rows[0];
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 60 * 60 * 1000);
+    await pool.query(
+      `UPDATE officers SET password_reset_token = $1, password_reset_expires_at = $2, updated_at = NOW() WHERE id = $3`,
+      [resetToken, expires, officer.id],
+    );
+    const baseUrl = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+    const senderId = await findFirstEmailConfigUserId();
+    if (senderId != null) {
+      const emailCfg = await loadEmailSettingsPayload(senderId);
+      if (emailCfg.from_email) {
+        try {
+          await sendUserEmail(pool, senderId, emailCfg, {
+            from: formatFromHeader(emailCfg.from_name, emailCfg.from_email),
+            to: officer.email.trim(),
+            subject: 'Reset your WorkPilot password',
+            html: `<p>Hi ${officer.full_name},</p><p><a href="${resetLink}">Reset your password</a></p><p>If you did not request this, you can ignore this email.</p><p>This link expires in one hour.</p>`,
+            replyTo: emailCfg.reply_to ?? undefined,
+          });
+        } catch (sendErr) {
+          console.error('forgot-password email send:', sendErr);
+        }
+      } else {
+        console.warn('forgot-password: email settings missing from_email');
+      }
+    } else {
+      console.warn('forgot-password: no system email configuration; officer id', officer.id);
+    }
+    if (!isProduction && process.env.DEBUG_PASSWORD_RESET === 'true') {
+      return res.json({ ...genericOk, debug_reset_token: resetToken });
+    }
+    return res.json(genericOk);
+  } catch (error) {
+    console.error('forgot-password error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Complete password reset using token from forgot-password email. */
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  const raw = req.body as { token?: string; new_password?: string };
+  const token = typeof raw.token === 'string' ? raw.token.trim() : '';
+  const newPassword = typeof raw.new_password === 'string' ? raw.new_password : '';
+  if (!token || !newPassword) {
+    return res.status(400).json({ message: 'Token and new password are required' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters' });
+  }
+  try {
+    const r = await pool.query<{ id: number }>(
+      `SELECT id FROM officers
+       WHERE password_reset_token = $1 AND password_reset_expires_at IS NOT NULL AND password_reset_expires_at > NOW()`,
+      [token],
+    );
+    if ((r.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: 'Invalid or expired reset link' });
+    }
+    const id = r.rows[0].id;
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      `UPDATE officers SET password_hash = $1, password_reset_token = NULL, password_reset_expires_at = NULL, updated_at = NOW() WHERE id = $2`,
+      [hash, id],
+    );
+    return res.json({ message: 'Password updated. You can sign in with your new password.' });
+  } catch (error) {
+    console.error('reset-password error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
   const defaults: { key: string; name: string; subject: string; body: string }[] = [

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
+import { UserDetailModal } from '../settings/UserDetailModal';
 
 interface Officer {
   id: number;
@@ -64,6 +65,7 @@ export default function OfficersPage() {
   const [actionMenu, setActionMenu] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [certsModalOfficer, setCertsModalOfficer] = useState<Officer | null>(null);
+  const [detailOfficer, setDetailOfficer] = useState<Officer | null>(null);
 
   const [formFullName, setFormFullName] = useState('');
   const [formRolePosition, setFormRolePosition] = useState('');
@@ -395,10 +397,17 @@ export default function OfficersPage() {
                             </button>
                             {actionMenu === o.id && typeof document !== 'undefined' && createPortal(
                               <div
-                                className="fixed z-[100] w-36 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                                className="fixed z-[100] w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
                                 style={{ top: menuPosition.top, left: menuPosition.left }}
                                 onClick={(e) => e.stopPropagation()}
                               >
+                                <button
+                                  type="button"
+                                  onClick={() => { setDetailOfficer(o); setActionMenu(null); }}
+                                  className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  View details
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => { setCertsModalOfficer(o); setActionMenu(null); }}
@@ -498,6 +507,23 @@ export default function OfficersPage() {
           formState={formState}
           setFormState={setFormState}
           submitLabel="Save Changes"
+        />
+      )}
+
+      {detailOfficer && token && (
+        <UserDetailModal
+          user={{
+            id: detailOfficer.id,
+            full_name: detailOfficer.full_name,
+            role_position: detailOfficer.role_position,
+            department: detailOfficer.department,
+            phone: detailOfficer.phone,
+            email: detailOfficer.email,
+            system_access_level: detailOfficer.system_access_level,
+            state: detailOfficer.state,
+          }}
+          token={token}
+          onClose={() => setDetailOfficer(null)}
         />
       )}
 
