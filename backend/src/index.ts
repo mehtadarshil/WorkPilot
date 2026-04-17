@@ -2124,7 +2124,8 @@ app.get('/api/customers/:id', authenticate, requireAdmin, async (req: Authentica
 });
 
 app.post('/api/customers/:id/specific-notes', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const customerId = parseInt(req.params.id, 10);
+  const idRaw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const customerId = parseInt(String(idRaw), 10);
   const { title, description } = req.body as { title: string; description: string };
   if (!title || !description) return res.status(400).json({ message: 'Title and description are required' });
 
@@ -2141,7 +2142,8 @@ app.post('/api/customers/:id/specific-notes', authenticate, requireAdmin, async 
 });
 
 app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const noteId = parseInt(req.params.noteId, 10);
+  const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
+  const noteId = parseInt(String(noteIdRaw), 10);
   const { title, description } = req.body as { title?: string; description?: string };
 
   try {
@@ -2168,7 +2170,8 @@ app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmi
 });
 
 app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const noteId = parseInt(req.params.noteId, 10);
+  const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
+  const noteId = parseInt(String(noteIdRaw), 10);
   try {
     const result = await pool.query('DELETE FROM customer_specific_notes WHERE id = $1', [noteId]);
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
