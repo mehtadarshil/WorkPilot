@@ -361,6 +361,9 @@ export default function DiaryPage() {
             <form onSubmit={handleSaveEvent} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700">Date & Time</label>
+                <p className="mt-1 text-xs text-slate-500">
+                  The diary grid only picks half-hour slots for speed—set the exact start time here (any minute).
+                </p>
                 <input 
                    type="datetime-local" 
                    value={scheduleForm.start_time} 

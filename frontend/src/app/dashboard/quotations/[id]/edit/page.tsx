@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
+import ImportCustomerSelect, { type ImportCustomerOption } from '../../../ImportCustomerSelect';
+import WorkAddressSelect from '../../../WorkAddressSelect';
 
 type LineItemForm = { description: string; quantity: number; unit_price: number };
 
@@ -27,8 +29,13 @@ interface QuotationDetail {
   line_items: { description: string; quantity: number; unit_price: number }[];
 }
 
-type Customer = { id: number; full_name: string };
-type Job = { id: number; title: string };
+type CustomerRow = ImportCustomerOption & { email?: string };
+
+function formatCustomerAddress(c: ImportCustomerOption): string {
+  return [c.address_line_1, c.town, c.postcode]
+    .filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+    .join(', ');
+}
 
 const QUOTATION_STATES = [
   { value: 'draft', label: 'Draft' },
@@ -46,10 +53,10 @@ export default function EditQuotationPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
 
   const [quotationNumber, setQuotationNumber] = useState('');
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState<number | null>(null);
   const [quotationDate, setQuotationDate] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [currency, setCurrency] = useState('GBP');
@@ -57,8 +64,7 @@ export default function EditQuotationPage() {
   const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
-  /** Empty = none; otherwise selected work address id */
-  const [workAddressSelect, setWorkAddressSelect] = useState('');
+  const [workAddressId, setWorkAddressId] = useState<number | null>(null);
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [state, setState] = useState('draft');
   const skipNextWorkFetchReset = useRef(false);
@@ -73,17 +79,17 @@ export default function EditQuotationPage() {
     try {
       const [qRes, custRes] = await Promise.all([
         getJson<{ quotation: QuotationDetail }>(`/quotations/${id}`, token),
-        getJson<{ customers: Customer[] }>('/customers?limit=5000&page=1', token),
+        getJson<{ customers: CustomerRow[] }>('/customers?limit=5000&page=1', token),
       ]);
       const q = qRes.quotation;
       setQuotationNumber(q.quotation_number);
-      setCustomerId(String(q.customer_id));
+      setCustomerId(q.customer_id);
       setQuotationDate(q.quotation_date.split('T')[0]);
       setValidUntil(q.valid_until.split('T')[0]);
       setCurrency(q.currency);
       setNotes(q.notes ?? '');
       setDescription(q.description ?? '');
-      setWorkAddressSelect(q.quotation_work_address_id ? String(q.quotation_work_address_id) : '');
+      setWorkAddressId(q.quotation_work_address_id ?? null);
       if (q.quotation_work_address_id) {
         setBillingAddress(q.billing_address ?? '');
         setAddressKind('customer');
@@ -116,9 +122,9 @@ export default function EditQuotationPage() {
     }
   }, [id]);
 
-  const fetchWorkAddresses = useCallback(async (cid: string) => {
+  const fetchWorkAddresses = useCallback(async (cid: number) => {
     const token = window.localStorage.getItem('wp_token');
-    if (!token || !cid) {
+    if (!token) {
       setWorkAddressOptions([]);
       return;
     }
@@ -150,7 +156,7 @@ export default function EditQuotationPage() {
   }, [load]);
 
   useEffect(() => {
-    if (!customerId) {
+    if (customerId == null) {
       setWorkAddressOptions([]);
       return;
     }
@@ -159,8 +165,16 @@ export default function EditQuotationPage() {
       skipNextWorkFetchReset.current = false;
       return;
     }
-    setWorkAddressSelect('');
+    setWorkAddressId(null);
   }, [customerId, fetchWorkAddresses]);
+
+  useEffect(() => {
+    if (workAddressId == null) return;
+    if (workAddressOptions.length === 0) return;
+    if (!workAddressOptions.some((w) => w.id === workAddressId)) {
+      setWorkAddressId(null);
+    }
+  }, [workAddressOptions, workAddressId]);
 
   const subtotal = lineItems.reduce((s, li) => s + li.quantity * li.unit_price, 0);
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
@@ -169,8 +183,7 @@ export default function EditQuotationPage() {
   const updateLine = (i: number, field: keyof LineItemForm, value: string | number) => {
     setLineItems((prev) => {
       const next = [...prev];
-      //@ts-ignore
-      next[i] = { ...next[i], [field]: value };
+      next[i] = { ...next[i], [field]: value } as LineItemForm;
       return next;
     });
   };
@@ -190,18 +203,17 @@ export default function EditQuotationPage() {
       setError('At least one line item with a description is required.');
       return;
     }
-    if (!customerId) {
+    if (customerId == null) {
       setError('Customer is required.');
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const waParsed = workAddressSelect.trim() ? parseInt(workAddressSelect, 10) : NaN;
-      const useWorkSite = Number.isFinite(waParsed);
+      const useWorkSite = workAddressId != null;
       const payload: Record<string, unknown> = {
         quotation_number: quotationNumber.trim(),
-        customer_id: parseInt(customerId, 10),
+        customer_id: customerId,
         quotation_date: quotationDate,
         valid_until: validUntil,
         currency: currency.trim(),
@@ -216,7 +228,7 @@ export default function EditQuotationPage() {
         tax_percentage: taxPercentage,
       };
       if (useWorkSite) {
-        payload.quotation_work_address_id = waParsed;
+        payload.quotation_work_address_id = workAddressId;
       } else {
         payload.quotation_work_address_id = null;
         payload.billing_address = addressKind === 'custom' ? billingAddress.trim() || null : null;
@@ -295,30 +307,45 @@ export default function EditQuotationPage() {
                 </select>
               </label>
               <div className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">Customer</span>
+                <span className="font-medium text-slate-700">Customer *</span>
                 <div className="mt-1 flex gap-2">
-                  <select
-                    required
-                    value={customerId}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setCustomerId(next);
-                      setAddressKind('customer');
-                      setBillingAddress('');
-                    }}
-                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  <div className="flex-1 min-w-0">
+                    <ImportCustomerSelect
+                      customers={customers}
+                      value={customerId}
+                      onChange={(nextId) => {
+                        setCustomerId(nextId);
+                        setAddressKind('customer');
+                        setBillingAddress('');
+                      }}
+                      className="w-full"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open('/dashboard/customers/new', '_blank')}
+                    className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors"
+                    title="Add new customer"
                   >
-                    <option value="">Select customer</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
                     <Plus className="size-4" />
                   </button>
                 </div>
+                {customerId != null && (
+                  <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                    {(() => {
+                      const c = customers.find((x) => x.id === customerId);
+                      if (!c) return null;
+                      const addr = formatCustomerAddress(c);
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <p className="font-semibold text-slate-800">{c.full_name}</p>
+                          {c.email != null && String(c.email).trim() !== '' && <p>{c.email}</p>}
+                          {addr ? <p className="mt-1 border-t border-slate-200 pt-1 text-slate-500">{addr}</p> : null}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">Quotation date</span>
@@ -365,23 +392,22 @@ export default function EditQuotationPage() {
                 <p className="text-sm font-medium text-slate-800">Address on quotation</p>
                 <label className="block text-sm">
                   <span className="font-medium text-slate-700">Work / site address (optional)</span>
-                  <select
-                    value={workAddressSelect}
-                    onChange={(e) => setWorkAddressSelect(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                  >
-                    <option value="">None — use customer or custom address below</option>
-                    {workAddressOptions.map((w) => (
-                      <option key={w.id} value={String(w.id)}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="mt-1">
+                    <WorkAddressSelect
+                      options={workAddressOptions}
+                      value={workAddressId}
+                      onChange={setWorkAddressId}
+                      disabled={customerId == null}
+                      emptyButtonLabel="None — use customer or custom address below"
+                      emptyMenuLabel="None — use customer or custom address below"
+                      className="w-full"
+                    />
+                  </div>
                 </label>
-                {workAddressOptions.length === 0 && customerId ? (
+                {workAddressOptions.length === 0 && customerId != null ? (
                   <p className="text-xs text-slate-500">This customer has no active work addresses.</p>
                 ) : null}
-                {workAddressSelect ? (
+                {workAddressId != null ? (
                   <p className="text-xs text-slate-600">
                     Billing and work/site lines on the printed quotation follow this work address. To use only the customer home address or custom text, clear the dropdown above.
                   </p>

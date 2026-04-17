@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
 import ImportCustomerSelect from '../ImportCustomerSelect';
+import WorkAddressSelect from '../WorkAddressSelect';
 
 interface Quotation {
   id: number;
@@ -100,8 +101,7 @@ export default function QuotationsPage() {
     { description: '', quantity: 1, unit_price: 0 },
   ]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
-  /** Empty string = none; otherwise work address id */
-  const [formWorkAddressId, setFormWorkAddressId] = useState('');
+  const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -202,17 +202,24 @@ export default function QuotationsPage() {
 
   useEffect(() => {
     if (!formCustomerId) {
-      setFormWorkAddressId('');
+      setFormWorkAddressId(null);
       setWorkAddressOptions([]);
       return;
     }
-    setFormWorkAddressId('');
+    setFormWorkAddressId(null);
     fetchWorkAddressesForCustomer(formCustomerId);
   }, [formCustomerId, fetchWorkAddressesForCustomer]);
 
+  useEffect(() => {
+    if (formWorkAddressId == null) return;
+    if (!workAddressOptions.some((w) => w.id === formWorkAddressId)) {
+      setFormWorkAddressId(null);
+    }
+  }, [workAddressOptions, formWorkAddressId]);
+
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId(null);
-    setFormWorkAddressId('');
+    setFormWorkAddressId(null);
     setWorkAddressOptions([]);
     const today = new Date().toISOString().slice(0, 10);
     const validDays = settings?.default_valid_days ?? 30;
@@ -268,7 +275,6 @@ export default function QuotationsPage() {
     }
     if (!token) return;
     try {
-      const waId = formWorkAddressId.trim() ? parseInt(formWorkAddressId, 10) : null;
       const res = await postJson<{ quotation: Quotation }>(
         '/quotations',
         {
@@ -278,7 +284,7 @@ export default function QuotationsPage() {
           currency: formCurrency,
           notes: formNotes.trim() || undefined,
           description: formDescription.trim() || undefined,
-          ...(waId !== null && Number.isFinite(waId) ? { quotation_work_address_id: waId } : {}),
+          ...(formWorkAddressId != null ? { quotation_work_address_id: formWorkAddressId } : {}),
           line_items: validItems.map((item) => ({
             description: item.description.trim(),
             quantity: item.quantity,
@@ -503,18 +509,14 @@ export default function QuotationsPage() {
                 {formCustomerId && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-slate-700">Work / site address (optional)</label>
-                    <select
-                      value={formWorkAddressId}
-                      onChange={(e) => setFormWorkAddressId(e.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                    >
-                      <option value="">None — customer address only on quotation</option>
-                      {workAddressOptions.map((w) => (
-                        <option key={w.id} value={String(w.id)}>
-                          {w.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="mt-1">
+                      <WorkAddressSelect
+                        options={workAddressOptions}
+                        value={formWorkAddressId}
+                        onChange={setFormWorkAddressId}
+                        className="w-full"
+                      />
+                    </div>
                     {workAddressOptions.length === 0 && (
                       <p className="mt-1 text-xs text-slate-500">This customer has no active work addresses yet.</p>
                     )}

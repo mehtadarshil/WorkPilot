@@ -785,6 +785,9 @@ export default function SchedulingPage() {
               )}
               <div>
                 <label className="block text-sm font-medium text-slate-700">Schedule date & time</label>
+                <p className="mt-1 text-xs text-slate-500">
+                  Clicking the timeline snaps to 15-minute steps—adjust the exact start time here if you need finer control.
+                </p>
                 <input
                   type="datetime-local"
                   value={formScheduleStart}

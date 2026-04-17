@@ -1539,9 +1539,9 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
        JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN officers o ON o.id = d.officer_id
-       WHERE d.officer_id = $1
-         AND d.start_time >= NOW()
+       WHERE (d.officer_id = $1 OR j.officer_id = $1)
          AND d.start_time < NOW() + INTERVAL '7 days'
+         AND (d.start_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute')) > NOW()
        ORDER BY d.start_time ASC
        LIMIT 50`,
       [oid],
@@ -3792,7 +3792,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     const params: unknown[] = [fromDate, toDate];
     let officerClause = '';
     if (req.user!.role === 'OFFICER' && req.user!.officerId != null) {
-      officerClause = ' AND d.officer_id = $3';
+      officerClause = ' AND (d.officer_id = $3 OR j.officer_id = $3)';
       params.push(req.user!.officerId);
     } else if (typeof req.query.officer_id === 'string') {
       const oid = parseInt(req.query.officer_id, 10);
