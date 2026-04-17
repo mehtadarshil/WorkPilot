@@ -4734,6 +4734,27 @@ async function resolveWorkSiteDisplayForCustomer(
   };
 }
 
+/**
+ * Parses quotation work/site address id from JSON bodies.
+ * Some clients or proxies send numeric ids as strings; strict `typeof === 'number'` then skipped saving.
+ */
+function parseQuotationWorkAddressIdInput(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const n = Math.trunc(value);
+    return n > 0 ? n : undefined;
+  }
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (t === '') return null;
+    const n = parseInt(t, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+    return undefined;
+  }
+  return undefined;
+}
+
 async function resolveInvoiceBillingFromWorkAddress(
   customerId: number,
   workAddressId: number,
@@ -6541,9 +6562,13 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
     let billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
     let quotationWorkAddressId: number | null = null;
-    if (typeof body.quotation_work_address_id === 'number' && Number.isFinite(body.quotation_work_address_id)) {
+    if (body.quotation_work_address_id !== undefined && body.quotation_work_address_id !== null) {
+      const wid = parseQuotationWorkAddressIdInput(body.quotation_work_address_id);
+      if (wid === undefined || wid === null) {
+        return res.status(400).json({ message: 'Invalid quotation_work_address_id' });
+      }
       try {
-        const resolved = await resolveInvoiceBillingFromWorkAddress(customerId, body.quotation_work_address_id);
+        const resolved = await resolveInvoiceBillingFromWorkAddress(customerId, wid);
         billingAddress = resolved.billing_address;
         quotationWorkAddressId = resolved.invoice_work_address_id;
       } catch (e) {
@@ -6645,16 +6670,16 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
 
   let workAddressFieldsHandled = false;
   if (body.quotation_work_address_id !== undefined) {
-    const rawWa = body.quotation_work_address_id;
-    if (rawWa === null) {
+    const parsedWa = parseQuotationWorkAddressIdInput(body.quotation_work_address_id);
+    if (parsedWa === null) {
       updates.push(`quotation_work_address_id = $${idx++}`);
       values.push(null);
       updates.push(`billing_address = $${idx++}`);
       values.push(str('billing_address') !== undefined ? str('billing_address') : null);
       workAddressFieldsHandled = true;
-    } else if (typeof rawWa === 'number' && Number.isFinite(rawWa)) {
+    } else if (parsedWa !== undefined) {
       try {
-        const resolved = await resolveInvoiceBillingFromWorkAddress(effectiveCustomerId, rawWa);
+        const resolved = await resolveInvoiceBillingFromWorkAddress(effectiveCustomerId, parsedWa);
         updates.push(`quotation_work_address_id = $${idx++}`);
         values.push(resolved.invoice_work_address_id);
         updates.push(`billing_address = $${idx++}`);
@@ -6666,6 +6691,8 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
         }
         throw e;
       }
+    } else {
+      return res.status(400).json({ message: 'Invalid quotation_work_address_id' });
     }
   } else if (customerChanged && q.quotation_work_address_id) {
     updates.push(`quotation_work_address_id = $${idx++}`);
