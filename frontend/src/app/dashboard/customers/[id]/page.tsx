@@ -265,34 +265,74 @@ export default function CustomerDetailsPage() {
           <button onClick={() => router.push('/dashboard/customers')} className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 transition-colors">
             <ArrowLeft className="size-5" />
           </button>
-          <div className="flex items-center text-sm font-medium text-slate-600">
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push('/dashboard/customers')}>Customers</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push('/dashboard/customers')}>Customers list</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="text-slate-900 font-semibold">{data.full_name}</span>
-          </div>
-        </div>
-      </header>
-
-      {workAddressId && (
-        <div className="flex items-center justify-between bg-amber-50 border-b border-amber-200 px-4 py-2 md:px-6">
-          <p className="text-sm font-medium text-amber-800">
-            🏠 Viewing data scoped to: <span className="font-bold">{workAddressDetails?.name || `Work address #${workAddressId}`}</span>
-            {workAddressDetails && (
-              <span className="ml-2 opacity-75 hidden sm:inline">
-                ({[workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode].filter(Boolean).join(', ')})
+          <nav
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-600"
+            aria-label="Breadcrumb"
+          >
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer text-left hover:text-slate-900 hover:underline"
+              onClick={() => router.push('/dashboard/customers')}
+            >
+              Customers
+            </button>
+            <span className="shrink-0 text-slate-300" aria-hidden>
+              /
+            </span>
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer text-left hover:text-slate-900 hover:underline"
+              onClick={() => router.push('/dashboard/customers')}
+            >
+              Customers list
+            </button>
+            <span className="shrink-0 text-slate-300" aria-hidden>
+              /
+            </span>
+            {workAddressId ? (
+              <button
+                type="button"
+                className="min-w-0 max-w-[42vw] cursor-pointer truncate text-left hover:text-slate-900 hover:underline md:max-w-[280px]"
+                title={data.full_name}
+                onClick={() => router.push(`/dashboard/customers/${id}`)}
+              >
+                {data.full_name}
+              </button>
+            ) : (
+              <span className="min-w-0 truncate font-semibold text-slate-900" title={data.full_name}>
+                {data.full_name}
               </span>
             )}
-          </p>
-          <button
-            onClick={() => router.push(`/dashboard/customers/${id}`)}
-            className="text-sm font-semibold text-amber-700 hover:underline"
-          >
-            ← Back to full customer view
-          </button>
+            {workAddressId && (
+              <>
+                <span className="shrink-0 text-slate-300" aria-hidden>
+                  /
+                </span>
+                <span
+                  className="min-w-0 max-w-[48vw] truncate font-semibold text-slate-900 md:max-w-[360px]"
+                  title={
+                    workAddressDetails
+                      ? `${workAddressDetails.name} (${[workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode].filter(Boolean).join(', ')})`
+                      : undefined
+                  }
+                >
+                  {workAddressDetails?.name || `Work address #${workAddressId}`}
+                  {workAddressDetails && (
+                    <span className="font-semibold text-slate-700">
+                      {' '}
+                      (
+                      {[workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode]
+                        .filter(Boolean)
+                        .join(', ')}
+                      )
+                    </span>
+                  )}
+                </span>
+              </>
+            )}
+          </nav>
         </div>
-      )}
+      </header>
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col lg:flex-row h-full">

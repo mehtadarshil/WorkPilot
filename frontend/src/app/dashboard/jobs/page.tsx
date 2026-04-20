@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { Search, MoreVertical, Briefcase } from 'lucide-react';
+import { Search, MoreVertical, Briefcase, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
@@ -135,7 +135,7 @@ export default function JobsPage() {
   const fetchCustomersForDropdown = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await getJson<{ customers: Customer[] }>('/customers?limit=100&page=1', token);
+      const data = await getJson<{ customers: Customer[] }>('/customers?limit=5000&page=1', token);
       setCustomers(data.customers ?? []);
     } catch {
       setCustomers([]);
@@ -306,9 +306,23 @@ export default function JobsPage() {
 
       <div className="flex-1 overflow-y-auto p-8">
         <div className="mx-auto max-w-6xl space-y-8">
-          <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Job Management</h1>
-            <p className="mt-1 text-slate-500">Organize, track, and complete work across your organization. Create new jobs from a customer profile.</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-black tracking-tight text-slate-900">Job Management</h1>
+              <p className="mt-1 text-slate-500">
+                Organize, track, and complete work. Create a job with full descriptions, pricing, and options — or add one from a customer profile.
+              </p>
+            </div>
+            <motion.button
+              type="button"
+              onClick={() => router.push('/dashboard/jobs/new')}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
+            >
+              <Plus className="size-5" />
+              Create job
+            </motion.button>
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">

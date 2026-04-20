@@ -595,6 +595,10 @@ async function initDb() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_work_addresses_customer_id ON customer_work_addresses(customer_id)`);
+  await pool.query(
+    `ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_contacts_work_address_id ON customer_contacts(work_address_id) WHERE work_address_id IS NOT NULL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_assets (
@@ -618,6 +622,10 @@ async function initDb() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_assets_customer_id ON customer_assets(customer_id)`);
+  await pool.query(
+    `ALTER TABLE customer_assets ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_assets_work_address_id ON customer_assets(work_address_id) WHERE work_address_id IS NOT NULL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_communications (
@@ -643,6 +651,10 @@ async function initDb() {
   await pool.query(`ALTER TABLE customer_communications ADD COLUMN IF NOT EXISTS bcc_value VARCHAR(255)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_communications_customer_id ON customer_communications(customer_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_communications_created_at ON customer_communications(created_at DESC)`);
+  await pool.query(
+    `ALTER TABLE customer_communications ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_communications_work_address_id ON customer_communications(work_address_id) WHERE work_address_id IS NOT NULL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS officers (
@@ -737,6 +749,10 @@ async function initDb() {
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255)`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS expected_completion TIMESTAMP WITH TIME ZONE`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completed_service_items JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(
+    `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_jobs_work_address_id ON jobs(work_address_id) WHERE work_address_id IS NOT NULL`);
 
   // Per-job pricing items (instantiated from template or manually added)
   await pool.query(`

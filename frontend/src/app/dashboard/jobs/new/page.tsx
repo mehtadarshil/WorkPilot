@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { getJson, postJson, patchJson } from '../../../../../apiClient';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { getJson, postJson } from '../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
-import SearchableSelect, { type SearchableSelectOption } from '../../../../SearchableSelect';
+import ImportCustomerSelect, { type ImportCustomerOption } from '../../ImportCustomerSelect';
+import SearchableSelect, { type SearchableSelectOption } from '../../SearchableSelect';
 
 interface JobDescription {
   id: number;
@@ -59,26 +60,6 @@ interface ServiceChecklistItem {
   is_active: boolean;
 }
 
-interface EditableJob {
-  contact_name?: string | null;
-  job_description_id?: number | null;
-  skills?: string | null;
-  job_notes?: string | null;
-  is_service_job?: boolean;
-  service_reminder_frequency?: number | null;
-  service_reminder_unit?: string | null;
-  expected_completion?: string | null;
-  priority?: string | null;
-  user_group?: string | null;
-  business_unit?: string | null;
-  book_into_diary?: boolean;
-  quoted_amount?: number | null;
-  customer_reference?: string | null;
-  job_pipeline?: string | null;
-  pricing_items?: DescPricingItem[];
-  completed_service_items?: string[] | null;
-}
-
 let keyCounter = 0;
 function nextKey() { return `pi_${++keyCounter}_${Date.now()}`; }
 
@@ -92,19 +73,20 @@ const PIPELINE_OPTIONS: SearchableSelectOption[] = [
 const FALLBACK_USER_GROUPS = ['Field Engineers', 'Senior Technicians', 'Apprentices', 'Subcontractors'];
 const FALLBACK_BUSINESS_UNITS = ['Service & Maintenance', 'Installation', 'Emergency', 'Consultation'];
 
-export default function AddNewJobPage() {
+export default function JobsNewJobPage() {
   const router = useRouter();
-  const params = useParams();
   const searchParams = useSearchParams();
-  const customerId = params?.id as string;
-  const editJobId = searchParams.get('edit');
-  const isEdit = !!editJobId;
+  const [customerId, setCustomerId] = useState(() => {
+    const q = searchParams.get('customer_id');
+    return q && /^\d+$/.test(q) ? q : '';
+  });
+  const [customersList, setCustomersList] = useState<ImportCustomerOption[]>([]);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const [customer, setCustomer] = useState<CustomerInfo | null>(null);
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !!customerId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +120,13 @@ export default function AddNewJobPage() {
   // Config lists
   const [businessUnitsList, setBusinessUnitsList] = useState<{id: number, name: string}[]>([]);
   const [userGroupsList, setUserGroupsList] = useState<{id: number, name: string}[]>([]);
+
+  useEffect(() => {
+    if (!token) return;
+    getJson<{ customers: ImportCustomerOption[] }>('/customers?limit=5000&page=1', token)
+      .then((d) => setCustomersList(d.customers ?? []))
+      .catch(() => setCustomersList([]));
+  }, [token]);
 
   const userGroupOptions = useMemo((): SearchableSelectOption[] => {
     const seen = new Set<string>();
@@ -174,28 +163,12 @@ export default function AddNewJobPage() {
     [jobDescriptions],
   );
 
-  const priorityOptions = useMemo(
-    (): SearchableSelectOption[] => [
-      { value: 'low', label: 'Low' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'high', label: 'High' },
-      { value: 'critical', label: 'Critical' },
-    ],
-    [],
-  );
-
-  const reminderUnitOptions = useMemo(
-    (): SearchableSelectOption[] => [
-      { value: 'days', label: 'Days' },
-      { value: 'weeks', label: 'Weeks' },
-      { value: 'months', label: 'Months' },
-      { value: 'years', label: 'Years' },
-    ],
-    [],
-  );
-
   const fetchData = useCallback(async () => {
-    if (!token || !customerId) return;
+    if (!token) return;
+    if (!customerId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [custData, descsData, buData, ugData, serviceData] = await Promise.all([
@@ -211,53 +184,7 @@ export default function AddNewJobPage() {
       setUserGroupsList(ugData.groups || []);
       setServiceChecklistItems(serviceData.items || []);
 
-      if (isEdit) {
-        const jobData = await getJson<{ job: EditableJob }>(`/jobs/${editJobId}`, token);
-        const j = jobData.job;
-        setContactName(j.contact_name || '');
-        setDescriptionId(j.job_description_id || '');
-        setSkills(j.skills || '');
-        setJobNotes(j.job_notes || '');
-        setIsServiceJob(!!j.is_service_job);
-        setReminderFrequency(j.service_reminder_frequency || '');
-        setReminderUnit(j.service_reminder_unit || 'years');
-        
-        if (j.expected_completion) {
-          const d = new Date(j.expected_completion);
-          setExpectedDate(d.toISOString().slice(0,10));
-          setExpectedTime(d.toTimeString().slice(0,5));
-        }
-        
-        setPriority(j.priority || 'medium');
-        setUserGroup(j.user_group || '');
-        setBusinessUnit(j.business_unit || '');
-        setBookIntoDiary(!!j.book_into_diary);
-        setQuotedAmount(j.quoted_amount ? String(j.quoted_amount) : '');
-        setCustomerReference(j.customer_reference || '');
-        setJobPipeline(j.job_pipeline || 'Service/Reactive Workflow');
-        setCompletedServiceItems(Array.isArray(j.completed_service_items) ? j.completed_service_items : []);
-
-        if (j.pricing_items && Array.isArray(j.pricing_items)) {
-          setPricingItems(j.pricing_items.map((pi: DescPricingItem) => {
-            const unit = Number(pi.unit_price);
-            const qty = Number(pi.quantity);
-            const lineTotal =
-              pi.total != null && String(pi.total) !== ''
-                ? Number(pi.total)
-                : unit * qty;
-            return {
-              key: nextKey(),
-              item_name: pi.item_name,
-              time_included: pi.time_included,
-              unit_price: unit,
-              vat_rate: Number(pi.vat_rate),
-              quantity: qty,
-              total: lineTotal,
-            };
-          }));
-        }
-      } else if (custData) {
-        // Pre-fill contact name for new job only
+      if (custData) {
         const cn = [custData.contact_first_name, custData.contact_surname].filter(Boolean).join(' ');
         setContactName(cn || custData.full_name || '');
       }
@@ -267,7 +194,7 @@ export default function AddNewJobPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, customerId, isEdit, editJobId]);
+  }, [token, customerId]);
 
   useEffect(() => {
     fetchData();
@@ -357,7 +284,7 @@ export default function AddNewJobPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
-    if (!isEdit && (descriptionId === '' || descriptionId === null || descriptionId === undefined)) {
+    if (descriptionId === '' || descriptionId === null || descriptionId === undefined) {
       setError('Please choose a job description.');
       return;
     }
@@ -401,22 +328,90 @@ export default function AddNewJobPage() {
         })),
       };
 
-      if (isEdit) {
-        await patchJson(`/jobs/${editJobId}`, payload, token);
+      const res = await postJson<{ job: { id: number } }>(`/customers/${customerId}/jobs`, payload, token);
+      setSaving(false);
+      const jid = res?.job?.id;
+      if (bookIntoDiary && jid) {
+        router.push(`/dashboard/diary?jobId=${jid}`);
+      } else if (jid) {
+        router.push(`/dashboard/jobs/${jid}`);
       } else {
-        await postJson(`/customers/${customerId}/jobs`, payload, token);
+        router.push('/dashboard/jobs');
       }
-
-      // Navigate back to customer detail
-      router.push(`/dashboard/customers/${customerId}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} job`);
+      setError(err instanceof Error ? err.message : 'Failed to create job');
       setSaving(false);
     }
   };
 
   const inputClass = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20 bg-white";
   const labelClass = "text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 block";
+
+  const priorityOptions = useMemo(
+    (): SearchableSelectOption[] => [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' },
+      { value: 'critical', label: 'Critical' },
+    ],
+    [],
+  );
+
+  const reminderUnitOptions = useMemo(
+    (): SearchableSelectOption[] => [
+      { value: 'days', label: 'Days' },
+      { value: 'weeks', label: 'Weeks' },
+      { value: 'months', label: 'Months' },
+      { value: 'years', label: 'Years' },
+    ],
+    [],
+  );
+
+  if (!customerId) {
+    return (
+      <div className="flex h-full flex-col bg-slate-50">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 md:px-6 shadow-sm">
+          <button type="button" onClick={() => router.push('/dashboard/jobs')} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100">
+            <ArrowLeft className="size-5" />
+          </button>
+          <nav className="text-sm font-medium text-slate-600">
+            <span className="cursor-pointer text-[#14B8A6] hover:underline" onClick={() => router.push('/dashboard/jobs')}>
+              Job Management
+            </span>
+            <span className="mx-2 text-slate-300">/</span>
+            <span className="font-semibold text-slate-900">Create job</span>
+          </nav>
+        </header>
+        <div className="flex flex-1 items-start justify-center p-6 md:p-10">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h1 className="text-xl font-bold text-slate-900">Who is this job for?</h1>
+            <p className="mt-1 text-sm text-slate-500">Choose a customer, then configure the job with descriptions, pricing, and options.</p>
+            <label className="mt-6 block text-sm font-medium text-slate-700">Customer *</label>
+            <div className="mt-1 flex gap-2">
+              <div className="min-w-0 flex-1">
+                <ImportCustomerSelect
+                  customers={customersList}
+                  value={null}
+                  onChange={(id) => {
+                    if (id != null) setCustomerId(String(id));
+                  }}
+                  className="w-full"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => window.open('/dashboard/customers/new', '_blank')}
+                className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
+                title="Add new customer"
+              >
+                <Plus className="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return <div className="flex h-full items-center justify-center text-slate-500 font-medium">Loading...</div>;
 
@@ -431,11 +426,15 @@ export default function AddNewJobPage() {
             <ArrowLeft className="size-5" />
           </button>
           <div className="flex items-center text-sm font-medium text-slate-600">
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push('/dashboard/customers')}>Customers</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push(`/dashboard/customers/${customerId}`)}>{customer?.full_name || 'Customer'}</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="text-slate-900 font-semibold">{isEdit ? 'Edit job' : 'Add new job'}</span>
+            <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push('/dashboard/jobs')}>
+              Job Management
+            </span>
+            <span className="mx-2 text-slate-300">/</span>
+            <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push(`/dashboard/customers/${customerId}`)}>
+              {customer?.full_name || 'Customer'}
+            </span>
+            <span className="mx-2 text-slate-300">/</span>
+            <span className="font-semibold text-slate-900">Create job</span>
           </div>
         </div>
       </header>
@@ -460,7 +459,7 @@ export default function AddNewJobPage() {
           {/* Card: Add new job */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-slate-200 bg-slate-50/80 px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-800">{isEdit ? 'Edit job details' : 'Add new job'}</h2>
+              <h2 className="text-lg font-bold text-slate-800">Add new job</h2>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-5">
@@ -766,7 +765,7 @@ export default function AddNewJobPage() {
               className="flex items-center gap-2 rounded-lg bg-[#14B8A6] px-6 py-2.5 text-sm font-bold text-white hover:bg-[#119f8e] disabled:opacity-50 shadow-sm transition-colors"
             >
               <Save className="size-4" />
-              {saving ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save changes' : 'Add job')}
+              {saving ? 'Creating...' : 'Add job'}
             </button>
           </div>
         </form>
