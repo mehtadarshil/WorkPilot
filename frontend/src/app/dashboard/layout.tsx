@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Users, Package, UserCircle, Briefcase, UserCog, FileText, Settings, Quote, Award, CalendarDays } from 'lucide-react';
+import { Users, Package, UserCircle, Briefcase, UserCog, FileText, Settings, Quote, Award } from 'lucide-react';
 
 interface StoredUser {
   id: number;
@@ -156,17 +156,6 @@ export default function DashboardLayout({
             >
               <Briefcase className="size-4" />
               Jobs
-            </Link>
-            <Link
-              href="/dashboard/scheduling"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname.startsWith('/dashboard/scheduling')
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <CalendarDays className="size-4" />
-              Scheduling & Dispatch
             </Link>
             <Link
               href="/dashboard/invoices"
