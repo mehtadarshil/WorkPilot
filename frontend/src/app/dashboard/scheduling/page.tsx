@@ -1,11 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Calendar, List, ChevronLeft, ChevronRight, Search, MoreVertical, Send, CalendarPlus, Plus } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Calendar,
+  List,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeftRight,
+  Search,
+  MoreVertical,
+  Send,
+  CalendarPlus,
+  Plus,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar';
-import { format, parse, startOfWeek, endOfWeek, isSameMonth, isSameDay, getDay, addMonths, subMonths, startOfMonth, endOfMonth, addDays, startOfDay } from 'date-fns';
+import {
+  format,
+  parse,
+  startOfWeek,
+  endOfWeek,
+  isSameMonth,
+  isSameDay,
+  getDay,
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  addDays,
+  startOfDay,
+  addHours,
+} from 'date-fns';
 import { useSearchParams } from 'next/navigation';
 import { CalendarDays, Map as MapIcon, Users, UserCircle2 } from 'lucide-react';
 import { enUS } from 'date-fns/locale';
@@ -74,6 +100,13 @@ const PRIORITY_OPTIONS = [
   { value: 'critical', label: 'Critical', color: 'bg-rose-100 text-rose-800' },
 ] as const;
 
+/** Full day on the daily diary (scroll horizontally if the viewport is narrow). */
+const DAILY_TIMELINE_START_HOUR = 0;
+const DAILY_TIMELINE_END_HOUR = 24;
+const DAILY_TIMELINE_HOUR_COUNT = DAILY_TIMELINE_END_HOUR - DAILY_TIMELINE_START_HOUR;
+const DAILY_TIMELINE_MINUTES = DAILY_TIMELINE_HOUR_COUNT * 60;
+const DAILY_TIMELINE_MIN_WIDTH_PX = DAILY_TIMELINE_HOUR_COUNT * 52;
+
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -133,7 +166,47 @@ export default function SchedulingPage() {
   const [createDuration, setCreateDuration] = useState('60');
   const [createNotes, setCreateNotes] = useState('');
 
+  const diaryTimelineScrollRef = useRef<HTMLDivElement>(null);
+  const [diaryTimelineScrollHints, setDiaryTimelineScrollHints] = useState({ left: false, right: false });
+  const [diaryTimelineHasOverflow, setDiaryTimelineHasOverflow] = useState(false);
+
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const updateDiaryTimelineScrollHints = useCallback(() => {
+    const el = diaryTimelineScrollRef.current;
+    if (!el) {
+      setDiaryTimelineScrollHints({ left: false, right: false });
+      setDiaryTimelineHasOverflow(false);
+      return;
+    }
+    const { scrollLeft, clientWidth, scrollWidth } = el;
+    const overflow = scrollWidth > clientWidth + 2;
+    setDiaryTimelineHasOverflow(overflow);
+    if (!overflow) {
+      setDiaryTimelineScrollHints({ left: false, right: false });
+      return;
+    }
+    const maxScroll = scrollWidth - clientWidth;
+    const epsilon = 3;
+    setDiaryTimelineScrollHints({
+      left: scrollLeft > epsilon,
+      right: scrollLeft < maxScroll - epsilon,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (viewMode !== 'daily') return;
+    updateDiaryTimelineScrollHints();
+    const el = diaryTimelineScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => updateDiaryTimelineScrollHints());
+    ro.observe(el);
+    window.addEventListener('resize', updateDiaryTimelineScrollHints);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateDiaryTimelineScrollHints);
+    };
+  }, [viewMode, calendarDate, officers.length, jobs.length, updateDiaryTimelineScrollHints]);
 
   useEffect(() => {
     setActiveMonthDate(calendarDate);
@@ -290,14 +363,20 @@ export default function SchedulingPage() {
     const width = rect.width;
     const pct = clickX / width;
     
-    // We are showing 8am to 6pm = 10 hours = 600 mins
-    const dayStartHour = 8;
-    const dayMinutes = 10 * 60;
+    const dayMinutes = DAILY_TIMELINE_MINUTES;
     const clickedMinutes = pct * dayMinutes;
     const roundedMinutes = Math.round(clickedMinutes / 15) * 15;
-    
+    const maxStart = dayMinutes - 15;
+    const clamped = Math.min(Math.max(roundedMinutes, 0), maxStart);
+    const totalMinutesFromMidnight = DAILY_TIMELINE_START_HOUR * 60 + clamped;
+
     const clickedDate = startOfDay(calendarDate);
-    clickedDate.setHours(dayStartHour, roundedMinutes, 0, 0);
+    clickedDate.setHours(
+      Math.floor(totalMinutesFromMidnight / 60),
+      totalMinutesFromMidnight % 60,
+      0,
+      0,
+    );
 
     setSelectedJob(highlightedJob);
     // Use local formatting that works for inputs
@@ -537,68 +616,165 @@ export default function SchedulingPage() {
               animate={{ opacity: 1 }}
               className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col md:flex-row h-[750px] font-sans"
             >
-               {/* Main left area: grid */}
-               <div className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
-                  <div className="flex border-b border-slate-200 items-center shrink-0">
-                     <div className="w-32 lg:w-40 shrink-0 p-3 font-semibold text-slate-700 text-sm border-r border-slate-200 text-center">
-                         <div className="text-slate-500 text-xs font-normal mb-1">Users</div>
-                         {format(calendarDate, 'd MMM yyyy')}
-                     </div>
-                     <div className="flex-1 flex relative">
-                        {Array.from({length: 10}).map((_, i) => (
-                            <div key={i} className="flex-1 p-3 text-center font-bold text-slate-700 text-[13px] border-r border-slate-100 last:border-0 relative">
-                               {format(new Date().setHours(8 + i), 'ha').toLowerCase()}
-                            </div>
-                        ))}
-                     </div>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto relative bg-white pb-10">
-                     <div className="absolute inset-0 flex ml-32 lg:ml-40 pointer-events-none">
-                        {Array.from({length: 10}).map((_, i) => (
-                            <div key={i} className="flex-1 border-r border-slate-100 last:border-0 h-full"></div>
-                        ))}
-                     </div>
-                     
-                     {officers.map(officer => {
-                         const officerEvents = jobs.filter(j => j.officer_id === officer.id && j.schedule_start && isSameDay(new Date(j.schedule_start), calendarDate));
-                         return (
-                           <div key={officer.id} className="flex border-b border-slate-100 min-h-[60px] relative z-10 group hover:bg-slate-50">
-                              <div className="w-32 lg:w-40 shrink-0 p-3 flex items-center font-semibold text-slate-800 text-[13px] border-r border-slate-200 bg-white group-hover:bg-slate-50">
-                                 {officer.full_name}
-                              </div>
-                              <div className={`flex-1 relative cursor-pointer ${highlightedJob ? 'hover:bg-[#14B8A6]/5' : ''}`} onClick={(e) => handleTimelineClick(officer, e)}>
-                                 {officerEvents.map(evt => {
-                                     const s = new Date(evt.schedule_start!);
-                                     const startTotalMinutes = s.getHours() * 60 + s.getMinutes();
-                                     const offsetMinutes = startTotalMinutes - (8 * 60);
-                                     const durMinutes = evt.duration_minutes || 60;
-                                     const totalDayMinutes = 10 * 60;
-                                     
-                                     let leftPct = (offsetMinutes / totalDayMinutes) * 100;
-                                     if (leftPct < 0) leftPct = 0; // handle before 8am
-                                     
-                                     let widthPct = (durMinutes / totalDayMinutes) * 100;
-                                     if (leftPct + widthPct > 100) widthPct = 100 - leftPct; // cap at right edge
-                                     
-                                     if (leftPct > 100) return null; // out of view
-                                     
-                                     return (
-                                        <div key={evt.id} 
-                                           className="absolute top-1 bottom-1 bg-white border border-slate-300 rounded shadow-sm p-1.5 overflow-hidden text-[11px] leading-tight hover:border-[#14B8A6] hover:shadow transition-colors z-20 cursor-pointer flex flex-col justify-center"
-                                           style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                                           onClick={(ce) => { ce.stopPropagation(); openScheduleModal(evt); }}
-                                        >
-                                           <div className="font-bold text-slate-800 truncate">{format(s, 'HH:mm')} - {format(new Date(s.getTime() + durMinutes*60000), 'HH:mm')}</div>
-                                           <div className="text-slate-600 truncate">{evt.title}</div>
-                                        </div>
-                                     );
-                                 })}
-                              </div>
+               {/* Main diary: fixed user column + scrollable 24h timeline */}
+               <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+                  <div className="flex min-h-0 flex-1 overflow-hidden">
+                     <div className="z-30 flex w-32 shrink-0 flex-col border-r border-slate-200 bg-white lg:w-40">
+                        <div className="flex h-[53px] shrink-0 flex-col items-center justify-center border-b border-slate-200 px-2 text-center">
+                           <div className="text-xs font-normal text-slate-500">Users</div>
+                           <div className="text-sm font-semibold text-slate-700">{format(calendarDate, 'd MMM yyyy')}</div>
+                        </div>
+                        {officers.map((officer) => (
+                           <div
+                              key={officer.id}
+                              className="flex min-h-[60px] items-center border-b border-slate-100 px-3 text-[13px] font-semibold text-slate-800"
+                           >
+                              {officer.full_name}
                            </div>
-                         );
-                     })}
+                        ))}
+                     </div>
+                     <div className="relative min-h-0 min-w-0 flex-1">
+                        <div
+                           ref={diaryTimelineScrollRef}
+                           onScroll={updateDiaryTimelineScrollHints}
+                           className="h-full overflow-auto scroll-smooth"
+                        >
+                           <div style={{ minWidth: DAILY_TIMELINE_MIN_WIDTH_PX }}>
+                              <div className="sticky top-0 z-20 flex h-[53px] shrink-0 border-b border-slate-200 bg-white">
+                                 {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, i) => (
+                                    <div
+                                       key={i}
+                                       className="flex-1 border-r border-slate-100 py-3 text-center text-[13px] font-bold text-slate-700 last:border-r-0"
+                                    >
+                                       {format(
+                                          addHours(startOfDay(calendarDate), DAILY_TIMELINE_START_HOUR + i),
+                                          'ha',
+                                       ).toLowerCase()}
+                                    </div>
+                                 ))}
+                              </div>
+                              {officers.map((officer) => {
+                                 const officerEvents = jobs.filter(
+                                    (j) =>
+                                       j.officer_id === officer.id &&
+                                       j.schedule_start &&
+                                       isSameDay(new Date(j.schedule_start), calendarDate),
+                                 );
+                                 return (
+                                    <div
+                                       key={officer.id}
+                                       className="group relative flex min-h-[60px] border-b border-slate-100 hover:bg-slate-50"
+                                    >
+                                       <div
+                                          className={`relative min-h-[60px] w-full cursor-pointer ${highlightedJob ? 'hover:bg-[#14B8A6]/5' : ''}`}
+                                          onClick={(e) => handleTimelineClick(officer, e)}
+                                       >
+                                          <div className="pointer-events-none absolute inset-0 flex">
+                                             {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, i) => (
+                                                <div
+                                                   key={i}
+                                                   className="flex-1 border-r border-slate-100 last:border-r-0"
+                                                />
+                                             ))}
+                                          </div>
+                                          {officerEvents.map((evt) => {
+                                             const s = new Date(evt.schedule_start!);
+                                             const startTotalMinutes = s.getHours() * 60 + s.getMinutes();
+                                             const offsetMinutes =
+                                                startTotalMinutes - DAILY_TIMELINE_START_HOUR * 60;
+                                             const durMinutes = evt.duration_minutes || 60;
+                                             const totalDayMinutes = DAILY_TIMELINE_MINUTES;
+
+                                             let leftPct = (offsetMinutes / totalDayMinutes) * 100;
+                                             if (leftPct < 0) leftPct = 0;
+
+                                             let widthPct = (durMinutes / totalDayMinutes) * 100;
+                                             if (leftPct + widthPct > 100) widthPct = 100 - leftPct;
+
+                                             if (leftPct >= 100) return null;
+
+                                             return (
+                                                <div
+                                                   key={evt.id}
+                                                   className="absolute top-1 bottom-1 z-20 flex cursor-pointer flex-col justify-center overflow-hidden rounded border border-slate-300 bg-white p-1.5 text-[11px] leading-tight shadow-sm transition-colors hover:border-[#14B8A6] hover:shadow"
+                                                   style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                                                   onClick={(ce) => {
+                                                      ce.stopPropagation();
+                                                      openScheduleModal(evt);
+                                                   }}
+                                                >
+                                                   <div className="truncate font-bold text-slate-800">
+                                                      {format(s, 'HH:mm')} -{' '}
+                                                      {format(new Date(s.getTime() + durMinutes * 60000), 'HH:mm')}
+                                                   </div>
+                                                   <div className="truncate text-slate-600">{evt.title}</div>
+                                                </div>
+                                             );
+                                          })}
+                                       </div>
+                                    </div>
+                                 );
+                              })}
+                           </div>
+                        </div>
+                        {diaryTimelineScrollHints.left && (
+                           <div
+                              className="pointer-events-none absolute inset-y-0 left-0 top-0 z-[28] w-10 bg-gradient-to-r from-white from-30% to-transparent"
+                              aria-hidden
+                           />
+                        )}
+                        {diaryTimelineScrollHints.right && (
+                           <div
+                              className="pointer-events-none absolute inset-y-0 right-0 top-0 z-[28] w-14 bg-gradient-to-l from-white from-40% to-transparent"
+                              aria-hidden
+                           />
+                        )}
+                        {diaryTimelineHasOverflow && diaryTimelineScrollHints.left && (
+                           <div className="pointer-events-none absolute bottom-0 left-0 top-[53px] z-[32] flex w-11 items-center justify-center">
+                              <button
+                                 type="button"
+                                 aria-label="Scroll timeline left"
+                                 className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-md backdrop-blur-sm transition hover:border-[#14B8A6] hover:text-[#14B8A6]"
+                                 onClick={() => {
+                                    const el = diaryTimelineScrollRef.current;
+                                    if (!el) return;
+                                    el.scrollBy({
+                                       left: -Math.min(280, el.clientWidth * 0.6),
+                                       behavior: 'smooth',
+                                    });
+                                 }}
+                              >
+                                 <ChevronLeft className="size-5" />
+                              </button>
+                           </div>
+                        )}
+                        {diaryTimelineHasOverflow && diaryTimelineScrollHints.right && (
+                           <div className="pointer-events-none absolute bottom-0 right-0 top-[53px] z-[32] flex w-11 items-center justify-center">
+                              <button
+                                 type="button"
+                                 aria-label="Scroll timeline right for later hours"
+                                 className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-md backdrop-blur-sm transition hover:border-[#14B8A6] hover:text-[#14B8A6]"
+                                 onClick={() => {
+                                    const el = diaryTimelineScrollRef.current;
+                                    if (!el) return;
+                                    el.scrollBy({
+                                       left: Math.min(280, el.clientWidth * 0.6),
+                                       behavior: 'smooth',
+                                    });
+                                 }}
+                              >
+                                 <ChevronRight className="size-5" />
+                              </button>
+                           </div>
+                        )}
+                     </div>
                   </div>
+                  {diaryTimelineHasOverflow && (
+                     <div className="flex shrink-0 items-center justify-center gap-2 border-t border-slate-200 bg-slate-50/90 px-3 py-2 text-center text-xs font-medium text-slate-600">
+                        <ChevronsLeftRight className="size-4 shrink-0 text-[#14B8A6]" aria-hidden />
+                        <span>Scroll sideways or use the side arrows to see the full day (midnight–late evening).</span>
+                     </div>
+                  )}
                </div>
 
                {/* Right sidebar */}
@@ -786,7 +962,8 @@ export default function SchedulingPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Schedule date & time</label>
                 <p className="mt-1 text-xs text-slate-500">
-                  Clicking the timeline snaps to 15-minute steps—adjust the exact start time here if you need finer control.
+                  The diary shows midnight–11:45pm (scroll horizontally on smaller screens). Clicking the timeline snaps to
+                  15-minute steps—adjust the exact start time here if you need finer control.
                 </p>
                 <input
                   type="datetime-local"

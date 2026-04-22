@@ -59,8 +59,20 @@ interface ServiceChecklistItem {
   is_active: boolean;
 }
 
+interface CustomerContactRow {
+  id: number;
+  title: string | null;
+  first_name: string | null;
+  surname: string;
+  email: string | null;
+  mobile: string | null;
+  landline: string | null;
+}
+
 interface EditableJob {
   contact_name?: string | null;
+  job_contact_id?: number | null;
+  job_contact?: CustomerContactRow | null;
   job_description_id?: number | null;
   skills?: string | null;
   job_notes?: string | null;
@@ -92,12 +104,18 @@ const PIPELINE_OPTIONS: SearchableSelectOption[] = [
 const FALLBACK_USER_GROUPS = ['Field Engineers', 'Senior Technicians', 'Apprentices', 'Subcontractors'];
 const FALLBACK_BUSINESS_UNITS = ['Service & Maintenance', 'Installation', 'Emergency', 'Consultation'];
 
+function formatContactOptionLabel(c: CustomerContactRow): string {
+  const name = [c.title, c.first_name, c.surname].filter((x) => x && String(x).trim()).join(' ').trim() || c.surname;
+  return c.email?.trim() ? `${name} (${c.email.trim()})` : name;
+}
+
 export default function AddNewJobPage() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const customerId = params?.id as string;
   const editJobId = searchParams.get('edit');
+  const workAddressIdParam = searchParams.get('work_address_id');
   const isEdit = !!editJobId;
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -110,6 +128,8 @@ export default function AddNewJobPage() {
 
   // Form fields
   const [contactName, setContactName] = useState('');
+  const [jobContactId, setJobContactId] = useState<number | null>(null);
+  const [customerContacts, setCustomerContacts] = useState<CustomerContactRow[]>([]);
   const [descriptionId, setDescriptionId] = useState<number | ''>('');
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
@@ -194,6 +214,13 @@ export default function AddNewJobPage() {
     [],
   );
 
+  const jobContactOptions = useMemo((): SearchableSelectOption[] => {
+    return customerContacts.map((c) => ({
+      value: String(c.id),
+      label: formatContactOptionLabel(c),
+    }));
+  }, [customerContacts]);
+
   const fetchData = useCallback(async () => {
     if (!token || !customerId) return;
     setLoading(true);
@@ -211,9 +238,20 @@ export default function AddNewJobPage() {
       setUserGroupsList(ugData.groups || []);
       setServiceChecklistItems(serviceData.items || []);
 
+      const contactsQuery =
+        workAddressIdParam && /^\d+$/.test(workAddressIdParam)
+          ? `?work_address_id=${encodeURIComponent(workAddressIdParam)}`
+          : '';
+      const contactsRes = await getJson<{ contacts: CustomerContactRow[] }>(
+        `/customers/${customerId}/contacts${contactsQuery}`,
+        token,
+      ).catch(() => ({ contacts: [] as CustomerContactRow[] }));
+      setCustomerContacts(Array.isArray(contactsRes.contacts) ? contactsRes.contacts : []);
+
       if (isEdit) {
         const jobData = await getJson<{ job: EditableJob }>(`/jobs/${editJobId}`, token);
         const j = jobData.job;
+        setJobContactId(typeof j.job_contact_id === 'number' ? j.job_contact_id : null);
         setContactName(j.contact_name || '');
         setDescriptionId(j.job_description_id || '');
         setSkills(j.skills || '');
@@ -257,6 +295,7 @@ export default function AddNewJobPage() {
           }));
         }
       } else if (custData) {
+        setJobContactId(null);
         // Pre-fill contact name for new job only
         const cn = [custData.contact_first_name, custData.contact_surname].filter(Boolean).join(' ');
         setContactName(cn || custData.full_name || '');
@@ -267,7 +306,7 @@ export default function AddNewJobPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, customerId, isEdit, editJobId]);
+  }, [token, customerId, isEdit, editJobId, workAddressIdParam]);
 
   useEffect(() => {
     fetchData();
@@ -378,6 +417,7 @@ export default function AddNewJobPage() {
         title: titleStr,
         job_description_id: descriptionId || null,
         contact_name: contactName,
+        job_contact_id: jobContactId,
         expected_completion: expectedCompletion,
         priority,
         user_group: userGroup || null,
@@ -399,6 +439,7 @@ export default function AddNewJobPage() {
           vat_rate: pi.vat_rate,
           quantity: pi.quantity,
         })),
+        ...(workAddressIdParam && !isEdit ? { work_address_id: Number(workAddressIdParam) } : {}),
       };
 
       if (isEdit) {
@@ -407,8 +448,12 @@ export default function AddNewJobPage() {
         await postJson(`/customers/${customerId}/jobs`, payload, token);
       }
 
-      // Navigate back to customer detail
-      router.push(`/dashboard/customers/${customerId}`);
+      // Navigate back to customer detail (preserve work-site scope when creating from that context)
+      const back =
+        workAddressIdParam && !isEdit
+          ? `/dashboard/customers/${customerId}?work_address_id=${encodeURIComponent(workAddressIdParam)}`
+          : `/dashboard/customers/${customerId}`;
+      router.push(back);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} job`);
       setSaving(false);
@@ -468,9 +513,37 @@ export default function AddNewJobPage() {
                 {/* LEFT COLUMN */}
                 <div className="space-y-5">
                   <div>
-                    <label className={labelClass}>Customer contacts</label>
+                    <label className={labelClass}>Job contact (from contacts list)</label>
+                    <SearchableSelect
+                      options={jobContactOptions}
+                      value={jobContactId != null ? String(jobContactId) : ''}
+                      onChange={(v) => {
+                        if (!v) {
+                          setJobContactId(null);
+                          return;
+                        }
+                        const idNum = Number(v);
+                        const row = customerContacts.find((c) => c.id === idNum);
+                        setJobContactId(idNum);
+                        if (row) {
+                          const nm = [row.title, row.first_name, row.surname].filter((x) => x && String(x).trim()).join(' ').trim();
+                          setContactName(nm || row.surname);
+                        }
+                      }}
+                      allowEmpty
+                      emptyButtonLabel="None — use name below"
+                      emptyMenuLabel="None — use name below"
+                      searchPlaceholder="Search contacts…"
+                      className={inputClass}
+                    />
+                    <p className="text-xs text-slate-400 mt-1">
+                      Optional: pick someone from this customer&apos;s contacts. Site visit and reminders use their details when set.
+                    </p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Contact name</label>
                     <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className={inputClass} />
-                    <p className="text-xs text-slate-400 mt-1">The customer contact responsible for this job. You may send this person updates.</p>
+                    <p className="text-xs text-slate-400 mt-1">Shown on the job and to engineers. Filled automatically when you pick a contact above; you can edit the wording.</p>
                   </div>
 
                   <div>

@@ -165,6 +165,7 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
         prefers_sms: form.prefers_sms,
         prefers_email: form.prefers_email,
         prefers_letter: form.prefers_letter,
+        ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
       };
       if (editing) {
         await patchJson(`/customers/${customerId}/contacts/${editing.id}`, payload, token);

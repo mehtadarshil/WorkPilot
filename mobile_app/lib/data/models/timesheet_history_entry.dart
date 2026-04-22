@@ -5,6 +5,8 @@ class TimesheetHistoryEntry {
     required this.clockInIso,
     this.clockOutIso,
     this.notes,
+    this.segmentType,
+    this.diaryEventId,
     required this.durationSeconds,
   });
 
@@ -15,6 +17,8 @@ class TimesheetHistoryEntry {
       clockInIso: json['clock_in'] as String,
       clockOutIso: json['clock_out'] as String?,
       notes: json['notes'] as String?,
+      segmentType: json['segment_type'] as String?,
+      diaryEventId: (json['diary_event_id'] as num?)?.toInt(),
       durationSeconds: (json['duration_seconds'] as num?)?.toInt() ?? 0,
     );
   }
@@ -24,6 +28,8 @@ class TimesheetHistoryEntry {
   final String clockInIso;
   final String? clockOutIso;
   final String? notes;
+  final String? segmentType;
+  final int? diaryEventId;
   final int durationSeconds;
 
   DateTime? get clockIn => DateTime.tryParse(clockInIso);
@@ -31,4 +37,15 @@ class TimesheetHistoryEntry {
       clockOutIso != null ? DateTime.tryParse(clockOutIso!) : null;
 
   bool get isOpen => clockOutIso == null;
+
+  String get segmentLabel {
+    switch (segmentType) {
+      case 'travelling':
+        return 'Travelling';
+      case 'on_site':
+        return 'On site';
+      default:
+        return 'Time';
+    }
+  }
 }

@@ -1,9 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, subMonths, addMonths, isSameMonth, isSameDay, startOfDay } from 'date-fns';
-import { ChevronLeft, ChevronRight, UserCircle2, CalendarDays, Map as MapIcon, Users, X } from 'lucide-react';
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
+  addDays,
+  subMonths,
+  addMonths,
+  isSameMonth,
+  isSameDay,
+  startOfDay,
+  addHours,
+} from 'date-fns';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeftRight,
+  UserCircle2,
+  CalendarDays,
+  Map as MapIcon,
+  Users,
+  X,
+} from 'lucide-react';
 import { getJson, postJson } from '../../apiClient';
 
 interface DiaryEvent {
@@ -17,6 +39,7 @@ interface DiaryEvent {
   title: string;
   customer_full_name: string;
   customer_address: string;
+  site_contact_name?: string | null;
 }
 
 interface Officer {
@@ -82,6 +105,12 @@ function MiniCalendar({ date, onSelect, activeDate }: { date: Date, onSelect: (d
   );
 }
 
+/** Full day on the daily diary grid (scroll horizontally when the viewport is narrow). */
+const DAILY_TIMELINE_START_HOUR = 0;
+const DAILY_TIMELINE_END_HOUR = 24;
+const DAILY_TIMELINE_HOUR_COUNT = DAILY_TIMELINE_END_HOUR - DAILY_TIMELINE_START_HOUR;
+const DAILY_TIMELINE_MIN_WIDTH_PX = DAILY_TIMELINE_HOUR_COUNT * 48;
+
 export default function DiaryPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -101,7 +130,46 @@ export default function DiaryPage() {
     notes: ''
   });
 
+  const diaryTimelineScrollRef = useRef<HTMLDivElement>(null);
+  const [diaryTimelineScrollHints, setDiaryTimelineScrollHints] = useState({ left: false, right: false });
+  const [diaryTimelineHasOverflow, setDiaryTimelineHasOverflow] = useState(false);
+
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const updateDiaryTimelineScrollHints = useCallback(() => {
+    const el = diaryTimelineScrollRef.current;
+    if (!el) {
+      setDiaryTimelineScrollHints({ left: false, right: false });
+      setDiaryTimelineHasOverflow(false);
+      return;
+    }
+    const { scrollLeft, clientWidth, scrollWidth } = el;
+    const overflow = scrollWidth > clientWidth + 2;
+    setDiaryTimelineHasOverflow(overflow);
+    if (!overflow) {
+      setDiaryTimelineScrollHints({ left: false, right: false });
+      return;
+    }
+    const maxScroll = scrollWidth - clientWidth;
+    const epsilon = 3;
+    setDiaryTimelineScrollHints({
+      left: scrollLeft > epsilon,
+      right: scrollLeft < maxScroll - epsilon,
+    });
+  }, []);
+
+  useEffect(() => {
+    updateDiaryTimelineScrollHints();
+    const el = diaryTimelineScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => updateDiaryTimelineScrollHints());
+    ro.observe(el);
+    window.addEventListener('resize', updateDiaryTimelineScrollHints);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateDiaryTimelineScrollHints);
+    };
+  }, [date, officers.length, events.length, updateDiaryTimelineScrollHints]);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -175,10 +243,6 @@ export default function DiaryPage() {
     }
   };
 
-  const dayStartHour = 8;
-  const dayEndHour = 18; // 8 am to 6 pm
-  const hoursCount = dayEndHour - dayStartHour;
-
   return (
     <div className="flex h-screen flex-col bg-[#F8FAFC]">
       {/* Top Header mimicking the view */}
@@ -205,93 +269,199 @@ export default function DiaryPage() {
         </div>
 
         {/* Main Grid Area */}
-        <div className="flex-1 border border-slate-300 rounded shadow-sm flex overflow-hidden">
-          
-          {/* Left: Timetable */}
-          <div className="flex-1 flex flex-col bg-white overflow-y-auto">
-            {/* Grid Header */}
-            <div className="flex items-center border-b border-slate-300 shrink-0 sticky top-0 bg-white z-20">
-              <div className="w-[180px] shrink-0 p-3 font-bold text-slate-700 text-sm border-r border-slate-300">Users</div>
-              <div className="flex-1 flex">
-                {Array.from({ length: hoursCount }).map((_, i) => (
-                  <div key={i} className="flex-1 p-2 font-bold text-slate-700 text-sm border-r border-slate-200 last:border-0 relative">
-                    {format(new Date().setHours(dayStartHour + i), 'ha').toLowerCase()}
+        <div className="flex min-h-0 flex-1 overflow-hidden rounded border border-slate-300 shadow-sm">
+          {/* Left: Timetable (fixed user column + scrollable full-day timeline) */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div className="z-30 flex w-[180px] shrink-0 flex-col border-r border-slate-300 bg-white">
+                <div className="flex h-[45px] shrink-0 items-center border-b border-slate-300 px-3 text-sm font-bold text-slate-700">
+                  Users
+                </div>
+                {officers.map((officer) => (
+                  <div
+                    key={officer.id}
+                    className="flex min-h-[80px] items-center border-b border-slate-200 px-3 text-[13px] font-bold text-slate-600"
+                  >
+                    {officer.full_name}
                   </div>
                 ))}
               </div>
-            </div>
 
-            {/* Grid Body */}
-            <div className="flex-1 relative pb-10">
-               {/* Background Columns */}
-               <div className="absolute inset-0 left-[180px] flex pointer-events-none z-0">
-                  {Array.from({ length: hoursCount }).map((_, i) => (
-                    <div key={i} className="flex-1 border-r border-slate-200 last:border-0 h-full flex">
-                       {/* Half-hour divider */}
-                       <div className="w-1/2 border-r border-slate-100 h-full"></div>
+              <div className="relative min-h-0 min-w-0 flex-1">
+                <div
+                  ref={diaryTimelineScrollRef}
+                  onScroll={updateDiaryTimelineScrollHints}
+                  className="h-full overflow-auto scroll-smooth"
+                >
+                  <div style={{ minWidth: DAILY_TIMELINE_MIN_WIDTH_PX }}>
+                    <div className="sticky top-0 z-20 flex h-[45px] shrink-0 border-b border-slate-300 bg-white">
+                      {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="flex-1 border-r border-slate-200 p-2 text-center text-sm font-bold text-slate-700 last:border-r-0"
+                        >
+                          {format(
+                            addHours(startOfDay(date), DAILY_TIMELINE_START_HOUR + i),
+                            'ha',
+                          ).toLowerCase()}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-               </div>
 
-               {/* Rows */}
-               {officers.map(officer => {
-                 const officerEvents = events.filter(e => e.officer_id === officer.id && isSameDay(new Date(e.start_time), date));
-                 return (
-                   <div key={officer.id} className="flex border-b border-slate-200 min-h-[80px] relative z-10">
-                     {/* Officer Name Cell */}
-                     <div className="w-[180px] shrink-0 p-3 font-bold text-slate-600 text-[13px] border-r border-slate-300 bg-white flex items-center shadow-[1px_0_0_rgba(0,0,0,0.05)] z-20">
-                       {officer.full_name}
-                     </div>
-                     {/* Time Slots Area */}
-                     <div className="flex-1 flex relative">
-                        {Array.from({ length: hoursCount }).map((_, hourOffset) => (
-                          <div key={hourOffset} className="flex-1 flex">
-                             <div 
-                               className={`flex-1 hover:bg-[#14B8A6]/10 cursor-pointer transition-colors ${highlightedJob ? '' : 'cursor-not-allowed'}`} 
-                               onClick={() => handleSlotClick(officer, dayStartHour + hourOffset, 0)}
-                             />
-                             <div 
-                               className={`flex-1 hover:bg-[#14B8A6]/10 cursor-pointer transition-colors ${highlightedJob ? '' : 'cursor-not-allowed'}`} 
-                               onClick={() => handleSlotClick(officer, dayStartHour + hourOffset, 1)}
-                             />
+                    {officers.map((officer) => {
+                      const officerEvents = events.filter(
+                        (e) => e.officer_id === officer.id && isSameDay(new Date(e.start_time), date),
+                      );
+                      const totalDayMins = DAILY_TIMELINE_HOUR_COUNT * 60;
+                      return (
+                        <div
+                          key={officer.id}
+                          className="relative min-h-[80px] border-b border-slate-200"
+                        >
+                          <div className="pointer-events-none absolute inset-0 z-0 flex">
+                            {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, i) => (
+                              <div
+                                key={i}
+                                className="flex flex-1 border-r border-slate-200 last:border-r-0"
+                              >
+                                <div className="h-full w-1/2 border-r border-slate-100" />
+                                <div className="h-full w-1/2" />
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                        
-                        {/* Render Events */}
-                        {officerEvents.map(evt => {
-                           const s = new Date(evt.start_time);
-                           const startTotalMins = s.getHours() * 60 + s.getMinutes();
-                           const offsetMins = startTotalMins - (dayStartHour * 60);
-                           const totalDayMins = hoursCount * 60;
-                           
-                           let leftPct = (offsetMins / totalDayMins) * 100;
-                           if (leftPct < 0) leftPct = 0;
-                           
-                           let widthPct = (evt.duration_minutes / totalDayMins) * 100;
-                           if (leftPct + widthPct > 100) widthPct = 100 - leftPct;
-                           
-                           if (leftPct > 100) return null;
 
-                           return (
-                             <div 
-                               key={evt.diary_id}
-                               className="absolute top-1 bottom-1 bg-white border-l-4 border-l-slate-400 border border-slate-200 rounded shadow-sm p-1.5 text-[11px] overflow-hidden leading-tight flex flex-col z-30 opacity-90 hover:opacity-100 hover:shadow-md transition-shadow"
-                               style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-                             >
-                               <div className="font-bold text-slate-700 flex justify-between">
-                                  <span>{format(s, 'HH:mm')} - {format(new Date(s.getTime() + evt.duration_minutes*60000), 'HH:mm')}</span>
-                                  <X className="size-3 text-slate-400 cursor-pointer hover:text-red-500" />
-                               </div>
-                               <div className="text-slate-600 truncate mt-0.5">{evt.customer_full_name}</div>
-                               <div className="text-slate-500 truncate">{evt.customer_address || 'Address not listed'}</div>
-                             </div>
-                           )
-                        })}
-                     </div>
-                   </div>
-                 );
-               })}
+                          <div className="absolute inset-0 z-10 flex">
+                            {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, hourOffset) => (
+                              <div key={hourOffset} className="flex flex-1">
+                                <div
+                                  className={`flex-1 transition-colors hover:bg-[#14B8A6]/10 ${highlightedJob ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                                  onClick={() =>
+                                    handleSlotClick(
+                                      officer,
+                                      DAILY_TIMELINE_START_HOUR + hourOffset,
+                                      0,
+                                    )
+                                  }
+                                />
+                                <div
+                                  className={`flex-1 transition-colors hover:bg-[#14B8A6]/10 ${highlightedJob ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                                  onClick={() =>
+                                    handleSlotClick(
+                                      officer,
+                                      DAILY_TIMELINE_START_HOUR + hourOffset,
+                                      1,
+                                    )
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          {officerEvents.map((evt) => {
+                            const s = new Date(evt.start_time);
+                            const startTotalMins = s.getHours() * 60 + s.getMinutes();
+                            const offsetMins = startTotalMins - DAILY_TIMELINE_START_HOUR * 60;
+
+                            let leftPct = (offsetMins / totalDayMins) * 100;
+                            if (leftPct < 0) leftPct = 0;
+
+                            let widthPct = (evt.duration_minutes / totalDayMins) * 100;
+                            if (leftPct + widthPct > 100) widthPct = 100 - leftPct;
+
+                            if (leftPct >= 100) return null;
+
+                            return (
+                              <div
+                                key={evt.diary_id}
+                                className="absolute top-1 bottom-1 z-30 flex flex-col overflow-hidden rounded border border-slate-200 border-l-4 border-l-slate-400 bg-white p-1.5 text-[11px] leading-tight opacity-90 shadow-sm transition-shadow hover:opacity-100 hover:shadow-md"
+                                style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                              >
+                                <div className="flex justify-between font-bold text-slate-700">
+                                  <span>
+                                    {format(s, 'HH:mm')} -{' '}
+                                    {format(
+                                      new Date(s.getTime() + evt.duration_minutes * 60000),
+                                      'HH:mm',
+                                    )}
+                                  </span>
+                                  <X className="size-3 cursor-pointer text-slate-400 hover:text-red-500" />
+                                </div>
+                                <div className="mt-0.5 truncate text-slate-600">
+                                  {evt.site_contact_name?.trim() || evt.customer_full_name}
+                                </div>
+                                <div className="truncate text-slate-500">
+                                  {evt.customer_address || 'Address not listed'}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {diaryTimelineScrollHints.left && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 top-0 z-[28] w-10 bg-gradient-to-r from-white from-30% to-transparent"
+                    aria-hidden
+                  />
+                )}
+                {diaryTimelineScrollHints.right && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 right-0 top-0 z-[28] w-14 bg-gradient-to-l from-white from-40% to-transparent"
+                    aria-hidden
+                  />
+                )}
+                {diaryTimelineHasOverflow && diaryTimelineScrollHints.left && (
+                  <div className="pointer-events-none absolute bottom-0 left-0 top-[45px] z-[32] flex w-11 items-center justify-center">
+                    <button
+                      type="button"
+                      aria-label="Scroll timeline left"
+                      className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-md backdrop-blur-sm transition hover:border-[#14B8A6] hover:text-[#14B8A6]"
+                      onClick={() => {
+                        const el = diaryTimelineScrollRef.current;
+                        if (!el) return;
+                        el.scrollBy({
+                          left: -Math.min(280, el.clientWidth * 0.6),
+                          behavior: 'smooth',
+                        });
+                      }}
+                    >
+                      <ChevronLeft className="size-5" />
+                    </button>
+                  </div>
+                )}
+                {diaryTimelineHasOverflow && diaryTimelineScrollHints.right && (
+                  <div className="pointer-events-none absolute bottom-0 right-0 top-[45px] z-[32] flex w-11 items-center justify-center">
+                    <button
+                      type="button"
+                      aria-label="Scroll timeline right for later hours"
+                      className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-600 shadow-md backdrop-blur-sm transition hover:border-[#14B8A6] hover:text-[#14B8A6]"
+                      onClick={() => {
+                        const el = diaryTimelineScrollRef.current;
+                        if (!el) return;
+                        el.scrollBy({
+                          left: Math.min(280, el.clientWidth * 0.6),
+                          behavior: 'smooth',
+                        });
+                      }}
+                    >
+                      <ChevronRight className="size-5" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {diaryTimelineHasOverflow && (
+              <div className="flex shrink-0 items-center justify-center gap-2 border-t border-slate-200 bg-slate-50/90 px-3 py-2 text-center text-xs font-medium text-slate-600">
+                <ChevronsLeftRight className="size-4 shrink-0 text-[#14B8A6]" aria-hidden />
+                <span>
+                  Scroll sideways or use the arrows to see the full day (midnight–late evening).
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Right Sidebar */}
@@ -362,7 +532,8 @@ export default function DiaryPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Date & Time</label>
                 <p className="mt-1 text-xs text-slate-500">
-                  The diary grid only picks half-hour slots for speed—set the exact start time here (any minute).
+                  The diary shows the full day (scroll the grid horizontally if needed). Half-hour cells set the time
+                  quickly—adjust the exact start here for any minute.
                 </p>
                 <input 
                    type="datetime-local" 

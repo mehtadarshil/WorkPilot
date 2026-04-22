@@ -149,13 +149,30 @@ class _HistoryTile extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      _fmtRange(),
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _fmtRange(),
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (entry.segmentType != null &&
+                            entry.segmentType!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            entry.segmentLabel,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.slate400,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   Text(

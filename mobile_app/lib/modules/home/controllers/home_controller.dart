@@ -34,9 +34,11 @@ class HomeController extends GetxController {
   /// First name for “Hi …”
   final RxString greetingFirstName = 'there'.obs;
 
+  /// True when a status-driven segment is open (travelling or on site).
   final RxBool clockedIn = false.obs;
-  final RxBool onBreak = false.obs;
+  final RxString timesheetPhaseLabel = ''.obs;
   final RxInt elapsedSeconds = 0.obs;
+  final RxnInt updatingDiaryEventId = RxnInt();
 
   Timer? _timesheetTicker;
 
@@ -104,21 +106,21 @@ class HomeController extends GetxController {
     _timesheetTicker = null;
     if (!h.officerFeatures) {
       clockedIn.value = false;
-      onBreak.value = false;
+      timesheetPhaseLabel.value = '';
       elapsedSeconds.value = 0;
       return;
     }
     final active = h.activeTimesheet;
     if (active != null) {
       clockedIn.value = true;
-      onBreak.value = false;
+      timesheetPhaseLabel.value = active.segmentLabel;
       final start = active.clockInUtc;
       final now = DateTime.now().toUtc();
       elapsedSeconds.value = now.difference(start).inSeconds.clamp(0, 1 << 30);
       _startTimesheetTicker();
     } else {
       clockedIn.value = false;
-      onBreak.value = false;
+      timesheetPhaseLabel.value = '';
       elapsedSeconds.value = 0;
     }
   }
@@ -127,7 +129,6 @@ class HomeController extends GetxController {
     _timesheetTicker?.cancel();
     _timesheetTicker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!clockedIn.value) return;
-      if (onBreak.value) return;
       elapsedSeconds.value++;
     });
   }
@@ -192,48 +193,23 @@ class HomeController extends GetxController {
 
   void goToOpenJobs() => Get.toNamed(AppRoutes.openJobs);
 
-  Future<void> clockIn() async {
-    if (!officerFeatures) {
+  /// Diary API canonical statuses: `travelling_to_site`, `arrived_at_site`, `completed`.
+  Future<void> updateDiaryVisitStatus(int diaryEventId, String status) async {
+    if (!officerFeatures) return;
+    updatingDiaryEventId.value = diaryEventId;
+    try {
+      await _mobile.patchDiaryEventStatus(diaryEventId, status);
+      await refreshHome();
+    } on ApiException catch (e) {
       Get.snackbar(
-        'Timesheet',
-        'Timesheet is available for field officer accounts.',
+        'Visit status',
+        e.message,
         snackPosition: SnackPosition.BOTTOM,
         margin: const EdgeInsets.all(16),
         borderRadius: 12,
       );
-      return;
-    }
-    try {
-      await _mobile.clockIn();
-      await refreshHome();
-    } on ApiException catch (e) {
-      Get.snackbar(
-        'Clock in',
-        e.message,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
-      );
-    }
-  }
-
-  void toggleBreak() {
-    if (!clockedIn.value) return;
-    onBreak.value = !onBreak.value;
-  }
-
-  Future<void> clockOut() async {
-    if (!officerFeatures) return;
-    if (!clockedIn.value) return;
-    try {
-      await _mobile.clockOut();
-      await refreshHome();
-    } on ApiException catch (e) {
-      Get.snackbar(
-        'Clock out',
-        e.message,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
-      );
+    } finally {
+      updatingDiaryEventId.value = null;
     }
   }
 

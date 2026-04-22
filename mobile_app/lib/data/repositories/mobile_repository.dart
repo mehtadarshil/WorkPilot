@@ -1,4 +1,6 @@
+import '../models/diary_event_detail.dart';
 import '../models/diary_event_row.dart';
+import '../models/job_report_models.dart';
 import '../models/mobile_home_response.dart';
 import '../models/open_job_summary.dart';
 import '../models/timesheet_history_entry.dart';
@@ -46,26 +48,39 @@ class MobileRepository extends BaseRepository {
         .toList();
   }
 
-  Future<ActiveTimesheetClockIn> clockIn({String? notes}) async {
-    final res = await api.post<Map<String, dynamic>>(
-      '/timesheet/clock-in',
-      data: notes != null && notes.isNotEmpty
-          ? <String, dynamic>{'notes': notes}
-          : <String, dynamic>{},
-    );
+  Future<DiaryEventDetail> fetchDiaryEventDetail(int diaryEventId) async {
+    final res = await api.get<Map<String, dynamic>>('/diary-events/$diaryEventId');
     final data = res.data;
     if (data == null) throw Exception('Empty response');
-    final entry = data['entry'] as Map<String, dynamic>?;
-    if (entry == null) throw Exception('Invalid clock-in response');
-    return ActiveTimesheetClockIn.fromJson(Map<String, dynamic>.from(entry));
+    return DiaryEventDetail.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
-  Future<void> clockOut({String? notes}) async {
+  /// Updates diary visit status; server starts/stops timesheet segments automatically.
+  Future<void> patchDiaryEventStatus(int diaryEventId, String status) async {
+    await api.patch<Map<String, dynamic>>(
+      '/diary-events/$diaryEventId',
+      data: <String, dynamic>{'status': status},
+    );
+  }
+
+  Future<JobReportBundle> fetchDiaryJobReport(int diaryEventId) async {
+    final res = await api.get<Map<String, dynamic>>('/diary-events/$diaryEventId/job-report');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return JobReportBundle.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<void> submitDiaryJobReport(
+    int diaryEventId,
+    List<Map<String, dynamic>> answers, {
+    required String nextJobState,
+  }) async {
     await api.post<Map<String, dynamic>>(
-      '/timesheet/clock-out',
-      data: notes != null && notes.isNotEmpty
-          ? <String, dynamic>{'notes': notes}
-          : <String, dynamic>{},
+      '/diary-events/$diaryEventId/job-report/submit',
+      data: <String, dynamic>{
+        'answers': answers,
+        'next_job_state': nextJobState,
+      },
     );
   }
 
@@ -94,19 +109,4 @@ class MobileRepository extends BaseRepository {
         )
         .toList();
   }
-}
-
-/// Subset of clock-in API response.
-class ActiveTimesheetClockIn {
-  ActiveTimesheetClockIn({required this.id, required this.clockInIso});
-
-  factory ActiveTimesheetClockIn.fromJson(Map<String, dynamic> json) {
-    return ActiveTimesheetClockIn(
-      id: (json['id'] as num).toInt(),
-      clockInIso: json['clock_in'] as String,
-    );
-  }
-
-  final int id;
-  final String clockInIso;
 }

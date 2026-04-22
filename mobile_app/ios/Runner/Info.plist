@@ -50,5 +50,9 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Take photos for job reports (before/after).</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select photos for job reports.</string>
 </dict>
 </plist>

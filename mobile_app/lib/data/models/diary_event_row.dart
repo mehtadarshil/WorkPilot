@@ -11,6 +11,8 @@ class DiaryEventRow {
     this.title,
     this.location,
     this.customerFullName,
+    this.siteContactName,
+    this.jobReportQuestionCount = 0,
   });
 
   factory DiaryEventRow.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,8 @@ class DiaryEventRow {
       title: json['title'] as String?,
       location: json['location'] as String?,
       customerFullName: json['customer_full_name'] as String?,
+      siteContactName: json['site_contact_name'] as String?,
+      jobReportQuestionCount: (json['job_report_question_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -43,6 +47,14 @@ class DiaryEventRow {
   final String? title;
   final String? location;
   final String? customerFullName;
+  final String? siteContactName;
+  final int jobReportQuestionCount;
+
+  String get displayContactName {
+    final s = siteContactName?.trim();
+    if (s != null && s.isNotEmpty) return s;
+    return (customerFullName ?? '').trim();
+  }
 
   DateTime? get startTime {
     try {

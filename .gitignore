@@ -33,3 +33,6 @@ yarn-error.log*
 # Misc
 coverage/
 dist/
+
+# Customer file uploads (local dev; override with CUSTOMER_FILES_DIR in production)
+data/customer-files/

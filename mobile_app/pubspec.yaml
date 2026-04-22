@@ -38,6 +38,9 @@ dependencies:
   pretty_dio_logger: ^1.4.0
   google_fonts: ^6.3.2
   glass_kit: ^4.0.2
+  url_launcher: ^6.3.1
+  signature: ^5.5.0
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:

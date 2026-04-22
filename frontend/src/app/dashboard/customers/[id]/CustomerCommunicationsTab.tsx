@@ -184,6 +184,7 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
           object_id: objectId ? parseInt(objectId, 10) : null,
           attachment_name: attachmentName || null,
           scheduled_for: scheduledFor || null,
+          ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
         },
         token,
       );
@@ -198,6 +199,7 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
             object_type: objectType,
             object_id: objectId ? parseInt(objectId, 10) : null,
             scheduled_for: dayjs().add(1, 'day').hour(9).minute(0).second(0).millisecond(0).toISOString(),
+            ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
           },
           token,
         );

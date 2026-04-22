@@ -23,7 +23,16 @@ interface TimesheetEntry {
   clock_in: string;
   clock_out: string | null;
   notes: string | null;
+  segment_type: string | null;
+  diary_event_id: number | null;
   duration_seconds: number;
+}
+
+function segmentTypeLabel(segment: string | null | undefined): string {
+  if (!segment) return '—';
+  if (segment === 'travelling') return 'Travelling';
+  if (segment === 'on_site') return 'On site';
+  return segment;
 }
 
 function formatDateTime(iso: string) {
@@ -197,7 +206,8 @@ export function UserDetailModal({
           {tab === 'timesheet' && (
             <div>
               <p className="mb-4 text-sm text-slate-600">
-                Clock in/out sessions recorded for this user in the field app.
+                Time segments from diary visit status (travelling, on site, completed), recorded automatically in the
+                field app.
               </p>
               {timesheetLoading && entries.length === 0 && (
                 <p className="py-8 text-center text-sm text-slate-500">Loading…</p>
@@ -225,8 +235,9 @@ export function UserDetailModal({
                   <table className="w-full min-w-[640px] text-left text-sm">
                     <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-3 py-2">Clock in</th>
-                        <th className="px-3 py-2">Clock out</th>
+                        <th className="px-3 py-2">Start</th>
+                        <th className="px-3 py-2">End</th>
+                        <th className="px-3 py-2">Type</th>
                         <th className="px-3 py-2">Duration</th>
                         <th className="px-3 py-2">Notes</th>
                       </tr>
@@ -243,6 +254,9 @@ export function UserDetailModal({
                                 In progress
                               </span>
                             )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                            {segmentTypeLabel(row.segment_type)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2.5 font-mono text-slate-700">
                             {formatDuration(row.duration_seconds)}

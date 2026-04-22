@@ -64,10 +64,42 @@ export function patchJson<TResponse, TBody = unknown>(path: string, body: TBody,
   });
 }
 
+export function putJson<TResponse, TBody = unknown>(path: string, body: TBody, authToken?: string | null) {
+  return request<TResponse>(path, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+    authToken,
+  });
+}
+
 export function deleteRequest(path: string, authToken?: string | null) {
   return request<undefined>(path, {
     method: 'DELETE',
     authToken,
   });
+}
+
+/** Binary GET (e.g. file download); caller should revoke any created object URLs. */
+export async function getBlob(path: string, authToken?: string | null): Promise<Blob> {
+  const url = `${API_BASE_URL}${path}`;
+  const headers: HeadersInit = {};
+  if (authToken) (headers as Record<string, string>).Authorization = `Bearer ${authToken}`;
+  const response = await fetch(url, { method: 'GET', headers });
+  if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_user');
+      window.location.href = '/login';
+    }
+    let message = 'Unexpected error occurred';
+    try {
+      const data = await response.json();
+      if (data && typeof data.message === 'string') message = data.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+  return response.blob();
 }
 

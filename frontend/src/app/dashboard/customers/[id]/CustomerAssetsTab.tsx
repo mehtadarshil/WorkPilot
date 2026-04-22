@@ -140,6 +140,7 @@ export default function CustomerAssetsTab({ customerId, workAddressId }: Props) 
       under_warranty: form.under_warranty,
       is_functioning: form.is_functioning.trim() || null,
       location: form.location.trim() || null,
+      ...(workAddressId && !editing ? { work_address_id: Number(workAddressId) } : {}),
     };
     try {
       if (editing) {

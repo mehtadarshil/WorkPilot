@@ -7,4 +7,6 @@ abstract class AppRoutes {
   static const String timesheetHistory = '/timesheet-history';
   static const String openJobs = '/open-jobs';
   static const String openJobDetail = '/open-job-detail';
+  static const String diaryEventDetail = '/diary-event-detail';
+  static const String diaryJobReport = '/diary-job-report';
 }

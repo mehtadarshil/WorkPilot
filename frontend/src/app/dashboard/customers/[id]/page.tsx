@@ -11,12 +11,14 @@ import CustomerBranchesTab from './CustomerBranchesTab';
 import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
 import CustomerInvoicesTab from './CustomerInvoicesTab';
+import CustomerFilesTab from './CustomerFilesTab';
 
 interface SpecificNote {
   id: number;
   title: string;
   description: string;
   created_at: string;
+  work_address_id?: number | null;
 }
 
 interface CustomerDetails {
@@ -84,6 +86,19 @@ interface WorkAddressDetails {
   postcode: string | null;
 }
 
+/** Central London — used when geocoding fails or no address is stored. */
+const DEFAULT_MAP_CENTER = { lat: 51.5074, lon: -0.1278 };
+
+function buildOsmEmbedUrl(lat: number, lon: number): string {
+  const pad = 0.018;
+  const minLon = lon - pad;
+  const minLat = lat - pad;
+  const maxLon = lon + pad;
+  const maxLat = lat + pad;
+  const bbox = `${minLon},${minLat},${maxLon},${maxLat}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
 export default function CustomerDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -114,6 +129,8 @@ export default function CustomerDetailsPage() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
+  const [mapEmbedSrc, setMapEmbedSrc] = useState<string>(() => buildOsmEmbedUrl(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lon));
+  const [mapGeocoding, setMapGeocoding] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -189,6 +206,60 @@ export default function CustomerDetailsPage() {
     fetchWorkAddressDetails();
   }, [fetchDetails, fetchJobs, fetchInvoices, fetchWorkAddressDetails]);
 
+  useEffect(() => {
+    if (!data || String(data.id) !== id) return;
+    let cancelled = false;
+    setMapGeocoding(true);
+
+    const query = workAddressDetails
+      ? [workAddressDetails.address_line_1, workAddressDetails.town, workAddressDetails.postcode, 'United Kingdom']
+          .filter(Boolean)
+          .join(', ')
+      : [data.address_line_1, data.address_line_2, data.town, data.postcode, data.county, 'United Kingdom']
+          .filter(Boolean)
+          .join(', ')
+          .trim();
+
+    const apply = (lat: number, lon: number) => {
+      if (!cancelled) setMapEmbedSrc(buildOsmEmbedUrl(lat, lon));
+    };
+
+    void (async () => {
+      let lat = DEFAULT_MAP_CENTER.lat;
+      let lon = DEFAULT_MAP_CENTER.lon;
+      if (query.length >= 4) {
+        try {
+          const res = await fetch(`/api/map-geocode?q=${encodeURIComponent(query)}`);
+          const j = (await res.json()) as { lat?: number | null; lon?: number | null };
+          if (!cancelled && j.lat != null && j.lon != null && Number.isFinite(j.lat) && Number.isFinite(j.lon)) {
+            lat = j.lat;
+            lon = j.lon;
+          }
+        } catch {
+          /* keep default */
+        }
+      }
+      apply(lat, lon);
+      if (!cancelled) setMapGeocoding(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    id,
+    data?.id,
+    data?.address_line_1,
+    data?.address_line_2,
+    data?.town,
+    data?.postcode,
+    data?.county,
+    workAddressDetails?.id,
+    workAddressDetails?.address_line_1,
+    workAddressDetails?.town,
+    workAddressDetails?.postcode,
+  ]);
+
   const historyRows = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
 
@@ -229,6 +300,15 @@ export default function CustomerDetailsPage() {
     return text.includes(historySearch.trim().toLowerCase());
   });
 
+  const specificNotes = useMemo(() => {
+    const all = data?.specific_notes ?? [];
+    if (workAddressId) {
+      const wid = Number(workAddressId);
+      return all.filter((n) => n.work_address_id != null && Number(n.work_address_id) === wid);
+    }
+    return all.filter((n) => n.work_address_id == null);
+  }, [data?.specific_notes, workAddressId]);
+
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
   if (!data) return (
     <div className="flex flex-col gap-4 p-8">
@@ -241,8 +321,6 @@ export default function CustomerDetailsPage() {
   const displayAddress = addressString || 'No address provided';
 
   const fullContactName = [data.contact_title, data.contact_first_name, data.contact_surname].filter(Boolean).join(' ');
-
-  const specificNotes = data.specific_notes ?? [];
 
   const allowBranches = data.customer_type_allow_branches !== false;
   const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
@@ -340,16 +418,28 @@ export default function CustomerDetailsPage() {
           {/* LEFT SIDEBAR (Info Panel) */}
           <div className="w-full lg:w-[340px] shrink-0 border-r border-slate-200 bg-white shadow-[1px_0_5px_rgba(0,0,0,0.02)] flex flex-col">
             
-            {/* Map Placeholder */}
-            <div className="h-40 bg-slate-200 relative overflow-hidden flex items-center justify-center">
-              <img src="https://i.imgur.com/gO2kPj7.png" alt="Map background" className="absolute inset-0 w-full h-full object-cover opacity-60" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-rose-500 drop-shadow-md">
-                 <MapPin className="size-8" fill="currentColor" />
-              </div>
-              <div className="absolute bottom-3 left-3 flex gap-2">
-                 <span className={`px-2 py-0.5 rounded text-xs font-bold text-white shadow-sm ${data.status === 'ACTIVE' ? 'bg-[#14B8A6]' : data.status === 'LEAD' ? 'bg-amber-500' : 'bg-slate-500'}`}>
-                   {data.status}
-                 </span>
+            {/* Map: OpenStreetMap embed (no API key); geocode via /api/map-geocode → Nominatim */}
+            <div className="relative h-40 overflow-hidden bg-slate-200">
+              <iframe
+                title="Customer location map"
+                src={mapEmbedSrc}
+                className="absolute inset-0 size-full border-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+              {mapGeocoding && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/20 text-xs font-semibold text-white backdrop-blur-[1px]">
+                  Locating…
+                </div>
+              )}
+              <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
+                <span
+                  className={`rounded px-2 py-0.5 text-xs font-bold text-white shadow-sm ${
+                    data.status === 'ACTIVE' ? 'bg-[#14B8A6]' : data.status === 'LEAD' ? 'bg-amber-500' : 'bg-slate-500'
+                  }`}
+                >
+                  {data.status}
+                </span>
               </div>
             </div>
 
@@ -494,7 +584,15 @@ export default function CustomerDetailsPage() {
                           onClick={async () => {
                             setNoteSaving(true);
                             try {
-                              const res = await postJson<SpecificNote>(`/customers/${id}/specific-notes`, { title: noteTitle, description: noteDescription }, token);
+                              const res = await postJson<SpecificNote>(
+                                `/customers/${id}/specific-notes`,
+                                {
+                                  title: noteTitle,
+                                  description: noteDescription,
+                                  ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
+                                },
+                                token,
+                              );
                               setData(prev => prev ? { ...prev, specific_notes: [...(prev.specific_notes ?? []), res] } : null);
                               setIsAddingNote(false);
                             } catch (err) {
@@ -640,7 +738,18 @@ export default function CustomerDetailsPage() {
                     <div className="bg-white border border-slate-200 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
                        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
                          <h2 className="text-[15px] font-bold text-slate-800">On going works</h2>
-                         <button onClick={() => router.push(`/dashboard/customers/${id}/jobs/new`)} className="bg-[#14B8A6] hover:bg-[#119f8e] text-white text-sm font-bold px-4 py-1.5 rounded-lg shadow-sm transition-colors">Add new job</button>
+                         <button
+                           onClick={() =>
+                             router.push(
+                               workAddressId
+                                 ? `/dashboard/customers/${id}/jobs/new?work_address_id=${encodeURIComponent(workAddressId)}`
+                                 : `/dashboard/customers/${id}/jobs/new`,
+                             )
+                           }
+                           className="bg-[#14B8A6] hover:bg-[#119f8e] text-white text-sm font-bold px-4 py-1.5 rounded-lg shadow-sm transition-colors"
+                         >
+                           Add new job
+                         </button>
                        </div>
                        
                        <div className="overflow-x-auto">
@@ -827,7 +936,11 @@ export default function CustomerDetailsPage() {
                 <CustomerAssetsTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
-              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && (
+              {activeTab === 'Files' && (
+                <CustomerFilesTab customerId={id} workAddressId={workAddressId || undefined} />
+              )}
+
+              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

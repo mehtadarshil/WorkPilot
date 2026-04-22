@@ -60,6 +60,16 @@ interface ServiceChecklistItem {
   is_active: boolean;
 }
 
+interface CustomerContactRow {
+  id: number;
+  title: string | null;
+  first_name: string | null;
+  surname: string;
+  email: string | null;
+  mobile: string | null;
+  landline: string | null;
+}
+
 let keyCounter = 0;
 function nextKey() { return `pi_${++keyCounter}_${Date.now()}`; }
 
@@ -72,6 +82,11 @@ const PIPELINE_OPTIONS: SearchableSelectOption[] = [
 
 const FALLBACK_USER_GROUPS = ['Field Engineers', 'Senior Technicians', 'Apprentices', 'Subcontractors'];
 const FALLBACK_BUSINESS_UNITS = ['Service & Maintenance', 'Installation', 'Emergency', 'Consultation'];
+
+function formatContactOptionLabel(c: CustomerContactRow): string {
+  const name = [c.title, c.first_name, c.surname].filter((x) => x && String(x).trim()).join(' ').trim() || c.surname;
+  return c.email?.trim() ? `${name} (${c.email.trim()})` : name;
+}
 
 export default function JobsNewJobPage() {
   const router = useRouter();
@@ -92,6 +107,8 @@ export default function JobsNewJobPage() {
 
   // Form fields
   const [contactName, setContactName] = useState('');
+  const [jobContactId, setJobContactId] = useState<number | null>(null);
+  const [customerContacts, setCustomerContacts] = useState<CustomerContactRow[]>([]);
   const [descriptionId, setDescriptionId] = useState<number | ''>('');
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
@@ -163,9 +180,18 @@ export default function JobsNewJobPage() {
     [jobDescriptions],
   );
 
+  const jobContactOptions = useMemo((): SearchableSelectOption[] => {
+    return customerContacts.map((c) => ({
+      value: String(c.id),
+      label: formatContactOptionLabel(c),
+    }));
+  }, [customerContacts]);
+
   const fetchData = useCallback(async () => {
     if (!token) return;
     if (!customerId) {
+      setCustomerContacts([]);
+      setJobContactId(null);
       setLoading(false);
       return;
     }
@@ -184,7 +210,14 @@ export default function JobsNewJobPage() {
       setUserGroupsList(ugData.groups || []);
       setServiceChecklistItems(serviceData.items || []);
 
+      const contactsRes = await getJson<{ contacts: CustomerContactRow[] }>(
+        `/customers/${customerId}/contacts`,
+        token,
+      ).catch(() => ({ contacts: [] as CustomerContactRow[] }));
+      setCustomerContacts(Array.isArray(contactsRes.contacts) ? contactsRes.contacts : []);
+
       if (custData) {
+        setJobContactId(null);
         const cn = [custData.contact_first_name, custData.contact_surname].filter(Boolean).join(' ');
         setContactName(cn || custData.full_name || '');
       }
@@ -305,6 +338,7 @@ export default function JobsNewJobPage() {
         title: titleStr,
         job_description_id: descriptionId || null,
         contact_name: contactName,
+        job_contact_id: jobContactId,
         expected_completion: expectedCompletion,
         priority,
         user_group: userGroup || null,
@@ -467,9 +501,37 @@ export default function JobsNewJobPage() {
                 {/* LEFT COLUMN */}
                 <div className="space-y-5">
                   <div>
-                    <label className={labelClass}>Customer contacts</label>
+                    <label className={labelClass}>Job contact (from contacts list)</label>
+                    <SearchableSelect
+                      options={jobContactOptions}
+                      value={jobContactId != null ? String(jobContactId) : ''}
+                      onChange={(v) => {
+                        if (!v) {
+                          setJobContactId(null);
+                          return;
+                        }
+                        const idNum = Number(v);
+                        const row = customerContacts.find((c) => c.id === idNum);
+                        setJobContactId(idNum);
+                        if (row) {
+                          const nm = [row.title, row.first_name, row.surname].filter((x) => x && String(x).trim()).join(' ').trim();
+                          setContactName(nm || row.surname);
+                        }
+                      }}
+                      allowEmpty
+                      emptyButtonLabel="None — use name below"
+                      emptyMenuLabel="None — use name below"
+                      searchPlaceholder="Search contacts…"
+                      className={inputClass}
+                    />
+                    <p className="text-xs text-slate-400 mt-1">
+                      Optional: pick a saved contact for this customer. Visit details and customer emails use their address when set.
+                    </p>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Contact name</label>
                     <input type="text" value={contactName} onChange={e => setContactName(e.target.value)} className={inputClass} />
-                    <p className="text-xs text-slate-400 mt-1">The customer contact responsible for this job. You may send this person updates.</p>
+                    <p className="text-xs text-slate-400 mt-1">Shown on the job; prefilled when you pick a contact above.</p>
                   </div>
 
                   <div>

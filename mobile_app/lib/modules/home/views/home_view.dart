@@ -4,9 +4,11 @@ import 'package:glass_kit/glass_kit.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../app/routes/app_routes.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
+import '../../diary_event/diary_event_detail_controller.dart';
 import '../controllers/home_controller.dart';
 
 class HomeView extends GetView<HomeController> {
@@ -681,11 +683,10 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                       color: AppColors.slate400,
                     ),
                   ),
-                  if (next.customerFullName != null &&
-                      next.customerFullName!.trim().isNotEmpty) ...[
+                  if (next.displayContactName.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(
-                      next.customerFullName!,
+                      next.displayContactName,
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         height: 1.45,
@@ -813,7 +814,35 @@ class _HomeTimesheetCard extends GetView<HomeController> {
               }),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
+          Obx(() {
+            if (!controller.officerFeatures) return const SizedBox.shrink();
+            final phase = controller.timesheetPhaseLabel.value;
+            if (!controller.clockedIn.value || phase.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Time is recorded from your diary: mark a visit as travelling, on site, or completed.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppColors.slate400,
+                  ),
+                ),
+              );
+            }
+            return Text(
+              phase,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            );
+          }),
+          const SizedBox(height: 14),
           Obx(() {
             final display = controller.clockedIn.value
                 ? controller.formattedElapsed
@@ -831,110 +860,7 @@ class _HomeTimesheetCard extends GetView<HomeController> {
               ),
             );
           }),
-          const SizedBox(height: 22),
-          Obx(() {
-            final inSess = controller.clockedIn.value;
-            final onBreak = controller.onBreak.value;
-            return Row(
-              children: [
-                Expanded(
-                  child: _TimesheetAction(
-                    label: 'Clock in',
-                    icon: Icons.play_arrow_rounded,
-                    filled: true,
-                    onPressed: inSess ? null : controller.clockIn,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _TimesheetAction(
-                    label: 'Break',
-                    icon: Icons.pause_rounded,
-                    filled: false,
-                    onPressed: inSess ? controller.toggleBreak : null,
-                    isBreakActive: onBreak,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _TimesheetAction(
-                    label: 'Clock out',
-                    icon: Icons.stop_rounded,
-                    filled: false,
-                    onPressed: inSess ? controller.clockOut : null,
-                  ),
-                ),
-              ],
-            );
-          }),
         ],
-      ),
-    );
-  }
-}
-
-class _TimesheetAction extends StatelessWidget {
-  const _TimesheetAction({
-    required this.label,
-    required this.icon,
-    required this.filled,
-    required this.onPressed,
-    this.isBreakActive = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool filled;
-  final VoidCallback? onPressed;
-  final bool isBreakActive;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onPressed != null;
-    if (filled && enabled) {
-      return FilledButton.icon(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: AppColors.slate500.withValues(alpha: 0.35),
-          disabledForegroundColor: AppColors.slate400,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        icon: Icon(icon, size: 22),
-        label: Text(
-          label,
-          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
-        ),
-      );
-    }
-    final activeBreak = isBreakActive && enabled;
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: enabled
-            ? (activeBreak ? AppColors.primary : Colors.white)
-            : AppColors.slate500,
-        side: BorderSide(
-          color: enabled
-              ? (activeBreak
-                    ? AppColors.primary.withValues(alpha: 0.65)
-                    : AppColors.whiteOverlay(0.22))
-              : AppColors.whiteOverlay(0.08),
-        ),
-        backgroundColor: activeBreak
-            ? AppColors.primary.withValues(alpha: 0.12)
-            : null,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-      icon: Icon(icon, size: 20),
-      label: Text(
-        label,
-        style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
       ),
     );
   }
@@ -942,6 +868,22 @@ class _TimesheetAction extends StatelessWidget {
 
 class _DiaryTab extends GetView<HomeController> {
   const _DiaryTab();
+
+  static String _normVisitStatus(String? s) =>
+      (s ?? '').trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+
+  static bool _visitCompleted(String? s) => _normVisitStatus(s) == 'completed';
+
+  static bool _visitCancelled(String? s) {
+    final t = _normVisitStatus(s);
+    return t == 'cancelled' || t == 'aborted';
+  }
+
+  static String _displayVisitStatus(String? s) {
+    final t = _normVisitStatus(s);
+    if (t.isEmpty || t == 'no_status') return 'No status';
+    return (s ?? '').trim();
+  }
 
   static String _line(DiaryEventRow e) {
     final d = e.startTime;
@@ -1035,56 +977,163 @@ class _DiaryTab extends GetView<HomeController> {
                 final e = controller.diaryEvents[i];
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      color: AppColors.whiteOverlay(0.06),
-                      border: Border.all(color: AppColors.whiteOverlay(0.1)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            e.title ?? 'Job',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _line(e),
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: AppColors.slate400,
-                            ),
-                          ),
-                          if (e.customerFullName != null &&
-                              e.customerFullName!.trim().isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              e.customerFullName!,
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: AppColors.slate300,
+                      onTap: () async {
+                        await Get.toNamed(
+                          AppRoutes.diaryEventDetail,
+                          arguments: <String, dynamic>{
+                            'diaryId': e.diaryId,
+                            'jobReportQuestionCount': e.jobReportQuestionCount,
+                          },
+                        );
+                        await controller.loadDiaryWeek();
+                      },
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: AppColors.whiteOverlay(0.06),
+                          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      e.title ?? 'Job',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: AppColors.slate400,
+                                    size: 22,
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                          if (e.location != null &&
-                              e.location!.trim().isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              e.location!,
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: AppColors.slate500,
+                              const SizedBox(height: 6),
+                              Text(
+                                _line(e),
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: AppColors.slate400,
+                                ),
                               ),
-                            ),
-                          ],
-                        ],
+                              if (e.displayContactName.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  e.displayContactName,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    color: AppColors.slate300,
+                                  ),
+                                ),
+                              ],
+                              if (e.location != null &&
+                                  e.location!.trim().isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  e.location!,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: AppColors.slate500,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              Text(
+                                'Status: ${_displayVisitStatus(e.eventStatus)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.slate400,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Tap card for visit details, site contact, and to mark arrived.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  height: 1.35,
+                                  color: AppColors.slate500,
+                                ),
+                              ),
+                              if (!_visitCompleted(e.eventStatus) &&
+                                  !_visitCancelled(e.eventStatus)) ...[
+                                const SizedBox(height: 10),
+                                Obx(() {
+                                  final busy =
+                                      controller.updatingDiaryEventId.value ==
+                                      e.diaryId;
+                                  final btnStyle = OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: BorderSide(
+                                      color: AppColors.whiteOverlay(0.25),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  );
+                                  if (busy) {
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  final phase = visitPhaseFromStatus(
+                                    e.eventStatus,
+                                  );
+                                  if (phase == DiaryVisitUiPhase.travelling ||
+                                      phase == DiaryVisitUiPhase.onSite ||
+                                      phase == DiaryVisitUiPhase.completed) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: OutlinedButton(
+                                      style: btnStyle,
+                                      onPressed: () => controller
+                                          .updateDiaryVisitStatus(
+                                            e.diaryId,
+                                            'travelling_to_site',
+                                          ),
+                                      child: Text(
+                                        'Travelling to site',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
