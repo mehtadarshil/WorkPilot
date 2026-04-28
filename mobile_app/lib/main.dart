@@ -8,6 +8,7 @@ import 'core/values/app_constants.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
+  await GetStorage.init('wp_offline_queue');
   final box = GetStorage();
   final token = box.read(AppConstants.storageAuthToken) as String?;
   final hasSession = token != null && token.isNotEmpty;

@@ -220,15 +220,33 @@ export default function SchedulingPage() {
     }
   }, [initialJobId, token]);
 
-  const fromDate = startOfMonth(activeMonthDate).toISOString().slice(0, 10);
-  const toDate = endOfMonth(activeMonthDate).toISOString().slice(0, 10);
+  const monthStart = startOfMonth(activeMonthDate);
+  const monthEnd = endOfMonth(activeMonthDate);
+  const diaryRangeStart = new Date(
+    monthStart.getFullYear(),
+    monthStart.getMonth(),
+    monthStart.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).toISOString();
+  const diaryRangeEnd = new Date(
+    monthEnd.getFullYear(),
+    monthEnd.getMonth(),
+    monthEnd.getDate(),
+    23,
+    59,
+    59,
+    999,
+  ).toISOString();
 
   const fetchScheduling = useCallback(async () => {
     if (!token) return;
     try {
       const params = new URLSearchParams();
-      params.set('from', fromDate);
-      params.set('to', toDate);
+      params.set('range_start', diaryRangeStart);
+      params.set('range_end', diaryRangeEnd);
       params.set('include_unscheduled', 'true');
       if (stateFilter) params.set('state', stateFilter);
       if (officerFilter) params.set('officer_id', officerFilter);
@@ -252,7 +270,7 @@ export default function SchedulingPage() {
     } catch {
       setJobs([]);
     }
-  }, [token, fromDate, toDate, stateFilter, officerFilter, activeMonthDate]);
+  }, [token, diaryRangeStart, diaryRangeEnd, stateFilter, officerFilter]);
 
   const fetchOfficers = useCallback(async () => {
     if (!token) return;

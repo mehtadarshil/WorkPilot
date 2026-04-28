@@ -26,6 +26,17 @@ class DioClient extends GetxService {
       ),
     );
 
+    // Lets GET /api/diary-events?from&to (legacy) resolve calendar days in the device’s zone.
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (RequestOptions o, RequestInterceptorHandler h) {
+          o.headers['X-Client-UTC-Offset-Minutes'] =
+              DateTime.now().timeZoneOffset.inMinutes.toString();
+          h.next(o);
+        },
+      ),
+    );
+
     dio.interceptors.add(AuthInterceptor(Get.find<StorageService>()));
 
     if (kDebugMode) {

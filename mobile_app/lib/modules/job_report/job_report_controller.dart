@@ -231,25 +231,49 @@ class JobReportController extends GetxController {
     submitting.value = true;
     try {
       final answers = await _buildAnswersPayload();
-      await _mobile.submitDiaryJobReport(
+      final synced = await _mobile.submitDiaryJobReport(
         diaryId,
         answers,
         nextJobState: selectedNextJobState.value,
       );
-      if (Get.isRegistered<HomeController>()) {
-        await Get.find<HomeController>().refreshHome();
+      if (synced) {
+        if (Get.isRegistered<HomeController>()) {
+          await Get.find<HomeController>().refreshHome();
+        }
+        if (Get.isRegistered<DiaryEventDetailController>()) {
+          await Get.find<DiaryEventDetailController>().load();
+        }
+        Get.back();
+        Get.snackbar(
+          'Visit',
+          'Job report submitted and job stage updated.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16),
+          borderRadius: 12,
+        );
+      } else {
+        if (Get.isRegistered<DiaryEventDetailController>()) {
+          final dc = Get.find<DiaryEventDetailController>();
+          if (dc.diaryId == diaryId) {
+            dc.applyOptimisticCompletedFromQueuedJobReport(
+              nextJobState: selectedNextJobState.value,
+            );
+          }
+        }
+        if (Get.isRegistered<HomeController>()) {
+          final h = Get.find<HomeController>();
+          h.patchDiaryEventInWeekList(diaryId, 'completed');
+          h.applyOptimisticTimesheetFromDiaryStatus('completed');
+        }
+        Get.back();
+        Get.snackbar(
+          'Visit',
+          'Job report saved offline — will sync when you are back online.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16),
+          borderRadius: 12,
+        );
       }
-      if (Get.isRegistered<DiaryEventDetailController>()) {
-        await Get.find<DiaryEventDetailController>().load();
-      }
-      Get.back();
-      Get.snackbar(
-        'Visit',
-        'Job report submitted and job stage updated.',
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
-        borderRadius: 12,
-      );
     } on ApiException catch (e) {
       Get.snackbar(
         'Job report',

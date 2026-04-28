@@ -6,6 +6,8 @@ import '../../modules/login/bindings/login_binding.dart';
 import '../../modules/login/views/login_view.dart';
 import '../../modules/diary_event/diary_event_detail_binding.dart';
 import '../../modules/diary_event/diary_event_detail_view.dart';
+import '../../modules/diary_event/job_report_history_binding.dart';
+import '../../modules/diary_event/job_report_history_view.dart';
 import '../../modules/job_report/job_report_binding.dart';
 import '../../modules/job_report/job_report_view.dart';
 import '../../modules/open_jobs/open_job_detail_view.dart';
@@ -52,6 +54,11 @@ class AppPages {
       name: AppRoutes.diaryJobReport,
       page: () => const JobReportView(),
       binding: JobReportBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.diaryJobReportHistory,
+      page: () => const JobReportHistoryView(),
+      binding: JobReportHistoryBinding(),
     ),
   ];
 }

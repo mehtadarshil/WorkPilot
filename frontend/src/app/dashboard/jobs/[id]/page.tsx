@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { deleteRequest, getJson, patchJson, postJson } from '../../../apiClient';
 import JobOfficeTasksTab from './JobOfficeTasksTab';
@@ -18,6 +18,15 @@ interface JobContact {
   email: string | null;
   mobile: string | null;
   landline: string | null;
+}
+
+interface JobWorkAddress {
+  id: number;
+  name: string;
+  branch_name: string | null;
+  address_line_1: string | null;
+  town: string | null;
+  postcode: string | null;
 }
 
 interface JobDetails {
@@ -47,6 +56,8 @@ interface JobDetails {
   quoted_amount: number | null;
   customer_reference: string | null;
   completed_service_items?: string[] | null;
+  /** Set when the job is scoped to a customer work / site address. */
+  work_address?: JobWorkAddress | null;
 }
 
 interface DiaryEvent {
@@ -58,6 +69,8 @@ interface DiaryEvent {
   duration_minutes: number;
   status: string;
   notes: string | null;
+  /** Set when the visit was aborted (matches Settings → Visit abort reasons). */
+  abort_reason?: string | null;
   created_by_name: string;
   created_at: string;
   customer_confirmation_sent_at?: string | null;
@@ -91,6 +104,8 @@ interface OfficeTask {
   created_by_name: string;
   completed: boolean;
   completed_at: string | null;
+  completed_by_name?: string | null;
+  completion_source?: 'web' | 'mobile' | string | null;
   created_at: string;
 }
 
@@ -99,12 +114,26 @@ interface OfficerOption {
   full_name: string;
 }
 
+function formatJobWorkAddressLine(wa: JobWorkAddress): string {
+  return [wa.address_line_1, wa.town, wa.postcode].filter((p) => typeof p === 'string' && p.trim() !== '').join(', ');
+}
+
+function workSiteBreadcrumbTitle(wa: JobWorkAddress): string {
+  const line = formatJobWorkAddressLine(wa);
+  return line ? `${wa.name} (${line})` : wa.name;
+}
+
 function diaryEventStatusNorm(s: string | null | undefined): string {
   return (s ?? '').trim().toLowerCase().replace(/\s+/g, '_');
 }
 
 function diaryVisitIsCompleted(s: string | null | undefined): boolean {
   return diaryEventStatusNorm(s) === 'completed';
+}
+
+function diaryVisitIsCancelled(s: string | null | undefined): boolean {
+  const t = diaryEventStatusNorm(s);
+  return t === 'cancelled' || t === 'aborted';
 }
 
 function diaryVisitIsPositiveProgress(s: string | null | undefined): boolean {
@@ -230,6 +259,99 @@ function visitFormatDuration(sec: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
+function fileUrlFromApiPath(filePath: string) {
+  const base = DEFAULT_API_BASE.replace(/\/$/, '');
+  return `${base}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+}
+
+/** File routes are authenticated; <img src> cannot send a Bearer token. */
+function AuthenticatedDiaryFilePreview({
+  filePath,
+  contentType,
+  kind,
+  token,
+}: {
+  filePath: string;
+  contentType: string;
+  kind: string;
+  token: string | null;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const lastBlobRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    let cancelled = false;
+    setObjectUrl(null);
+    setFailed(false);
+    if (lastBlobRef.current) {
+      URL.revokeObjectURL(lastBlobRef.current);
+      lastBlobRef.current = null;
+    }
+    void (async () => {
+      try {
+        const r = await fetch(fileUrlFromApiPath(filePath), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) throw new Error('fetch failed');
+        const blob = await r.blob();
+        if (cancelled) return;
+        const u = URL.createObjectURL(blob);
+        lastBlobRef.current = u;
+        setObjectUrl(u);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (lastBlobRef.current) {
+        URL.revokeObjectURL(lastBlobRef.current);
+        lastBlobRef.current = null;
+      }
+    };
+  }, [filePath, token]);
+
+  if (failed) {
+    return <span className="text-xs text-rose-600">Could not load</span>;
+  }
+  if (!objectUrl) {
+    return <span className="text-xs text-slate-400">Loading…</span>;
+  }
+  if (kind === 'video' || (contentType && String(contentType).startsWith('video/'))) {
+    return (
+      <video
+        src={objectUrl}
+        controls
+        className="max-h-64 w-full max-w-md rounded border border-slate-200 bg-black"
+      />
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={objectUrl} alt="" className="max-h-52 rounded-md border border-slate-200 object-contain bg-slate-50" />;
+}
+
+interface DiaryExtraSubmissionMedia {
+  original_filename: string;
+  content_type: string;
+  kind: string;
+  byte_size: number;
+  file_path: string;
+}
+interface DiaryExtraSubmission {
+  id: number;
+  notes: string | null;
+  created_at: string;
+  created_by_name: string | null;
+  /** Visit engineer when set; otherwise the account that uploaded (e.g. mobile). */
+  display_name?: string | null;
+  media: DiaryExtraSubmissionMedia[];
+}
+
 export default function JobDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -263,6 +385,12 @@ export default function JobDetailsPage() {
   const [visitTimesheetLoading, setVisitTimesheetLoading] = useState(false);
   const [visitTimesheetError, setVisitTimesheetError] = useState<string | null>(null);
   const [deletingDiaryEventId, setDeletingDiaryEventId] = useState<number | null>(null);
+  const [diaryExtraSubmissions, setDiaryExtraSubmissions] = useState<DiaryExtraSubmission[]>([]);
+  const [diaryExtraSubmissionsLoading, setDiaryExtraSubmissionsLoading] = useState(false);
+  const [diaryAbortReasonList, setDiaryAbortReasonList] = useState<string[]>([]);
+  const [diaryAbortReasonPick, setDiaryAbortReasonPick] = useState('');
+  const [diaryAbortReasonLoad, setDiaryAbortReasonLoad] = useState(false);
+  const [diaryAbortSubmitting, setDiaryAbortSubmitting] = useState(false);
 
   const visitTimesheetTravelSeconds = useMemo(
     () =>
@@ -381,6 +509,72 @@ export default function JobDetailsPage() {
     };
   }, [viewingEvent?.id, token]);
 
+  useEffect(() => {
+    if (!viewingEvent || !token) {
+      setDiaryExtraSubmissions([]);
+      setDiaryExtraSubmissionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDiaryExtraSubmissionsLoading(true);
+    void (async () => {
+      try {
+        const res = await getJson<{
+          event?: { abort_reason?: string | null };
+          extra_submissions: DiaryExtraSubmission[];
+        }>(`/diary-events/${viewingEvent.id}`, token);
+        if (!cancelled) {
+          setDiaryExtraSubmissions(res.extra_submissions ?? []);
+          const ar =
+            typeof res.event?.abort_reason === 'string' && res.event.abort_reason.trim()
+              ? res.event.abort_reason.trim()
+              : null;
+          setViewingEvent((prev) =>
+            prev && prev.id === viewingEvent.id ? { ...prev, abort_reason: ar } : prev,
+          );
+          setDiaryEvents((prev) =>
+            prev.map((e) => (e.id === viewingEvent.id ? { ...e, abort_reason: ar } : e)),
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setDiaryExtraSubmissions([]);
+        }
+      } finally {
+        if (!cancelled) setDiaryExtraSubmissionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingEvent?.id, token]);
+
+  useEffect(() => {
+    if (!viewingEvent || !token || modalTab !== 'Feedback') return;
+    if (diaryVisitIsCompleted(viewingEvent.status) || diaryVisitIsCancelled(viewingEvent.status)) return;
+    let cancelled = false;
+    setDiaryAbortReasonLoad(true);
+    void (async () => {
+      try {
+        const res = await getJson<{ reasons: { label: string }[] }>('/diary-abort-reasons', token);
+        if (cancelled) return;
+        const labels = (res.reasons || []).map((r) => String(r.label ?? '').trim()).filter((s) => s.length > 0);
+        setDiaryAbortReasonList(labels);
+        setDiaryAbortReasonPick(labels[0] ?? '');
+      } catch {
+        if (!cancelled) {
+          setDiaryAbortReasonList([]);
+          setDiaryAbortReasonPick('');
+        }
+      } finally {
+        if (!cancelled) setDiaryAbortReasonLoad(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingEvent?.id, viewingEvent?.status, token, modalTab]);
+
   const updateStatus = async (newState: string) => {
     if (!token || !job || newState === job.state) return;
     setUpdatingState(true);
@@ -452,7 +646,9 @@ export default function JobDetailsPage() {
   const diaryRecipientEmail = (job.site_contact_email || job.customer_email || '').trim();
   const diaryRecipientPhone = (job.site_contact_phone || job.customer_phone || '').trim();
   const jobContactDisplayName = (job.site_contact_name || job.contact_name || job.customer_full_name || '').trim();
-  const hasJobAddressListed = Boolean(job.customer_address?.trim());
+  const workAddress = job.work_address ?? null;
+  const workSiteAddressLine = workAddress ? formatJobWorkAddressLine(workAddress) : '';
+  const hasJobAddressListed = Boolean(job.customer_address?.trim() || workSiteAddressLine);
   const showDiaryCustomerConfirmationEmail = Boolean(diaryRecipientEmail);
   const showDiaryAddressReminderEmail = !hasJobAddressListed;
   const showDiaryEngineerJobSheetEmail = Boolean(viewingEvent?.officer_full_name?.trim());
@@ -480,13 +676,72 @@ export default function JobDetailsPage() {
           <button onClick={() => router.back()} className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 transition-colors">
             <ArrowLeft className="size-5" />
           </button>
-          <div className="flex items-center text-sm font-medium text-slate-600">
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push('/dashboard/customers')}>Customers</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-slate-900" onClick={() => router.push(`/dashboard/customers/${job.customer_id}`)}>{job.customer_full_name}</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="text-slate-900 font-semibold">Job no. {job.id.toString().padStart(4, '0')} / Details</span>
-          </div>
+          <nav
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-slate-600"
+            aria-label="Breadcrumb"
+          >
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer text-left hover:text-slate-900 hover:underline"
+              onClick={() => router.push('/dashboard/customers')}
+            >
+              Customers
+            </button>
+            <span className="shrink-0 text-slate-300" aria-hidden>
+              /
+            </span>
+            <button
+              type="button"
+              className="shrink-0 cursor-pointer text-left hover:text-slate-900 hover:underline"
+              onClick={() => router.push('/dashboard/customers')}
+            >
+              Customers list
+            </button>
+            <span className="shrink-0 text-slate-300" aria-hidden>
+              /
+            </span>
+            <button
+              type="button"
+              className="min-w-0 max-w-[36vw] cursor-pointer truncate text-left hover:text-slate-900 hover:underline md:max-w-[240px]"
+              title={job.customer_full_name}
+              onClick={() =>
+                router.push(
+                  `/dashboard/customers/${job.customer_id}${job.work_address ? `?work_address_id=${job.work_address.id}` : ''}`,
+                )
+              }
+            >
+              {job.customer_full_name}
+            </button>
+            {workAddress ? (
+              <>
+                <span className="shrink-0 text-slate-300" aria-hidden>
+                  /
+                </span>
+                <button
+                  type="button"
+                  className="min-w-0 max-w-[42vw] cursor-pointer truncate text-left hover:text-slate-900 hover:underline md:max-w-[280px]"
+                  title={workSiteBreadcrumbTitle(workAddress)}
+                  onClick={() =>
+                    router.push(`/dashboard/customers/${job.customer_id}?work_address_id=${workAddress.id}`)
+                  }
+                >
+                  {workAddress.name}
+                  {formatJobWorkAddressLine(workAddress) ? (
+                    <span className="font-semibold text-slate-700">
+                      {' '}
+                      ({formatJobWorkAddressLine(workAddress)})
+                    </span>
+                  ) : null}
+                </button>
+              </>
+            ) : null}
+            <span className="shrink-0 text-slate-300" aria-hidden>
+              /
+            </span>
+            <span className="min-w-0 truncate font-semibold text-slate-900" title={`Job ${job.id}`}>
+              Job no. {job.id.toString().padStart(4, '0')}
+            </span>
+          </nav>
         </div>
       </header>
 
@@ -524,7 +779,28 @@ export default function JobDetailsPage() {
         <span className="text-slate-500">Customer: <strong className="text-slate-800 font-bold ml-1">{job.customer_full_name}</strong></span>
         <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{job.id.toString().padStart(4, '0')}</strong></span>
         <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{job.description_name || job.title}</strong></span>
-        <span className="text-slate-500">Address: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{job.customer_address || 'N/A'}</strong></span>
+        {job.work_address ? (
+          <>
+            <span className="text-slate-500">
+              Work site:{' '}
+              <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">
+                {job.work_address.name}
+                {job.work_address.branch_name ? (
+                  <span className="font-semibold text-slate-600"> — {job.work_address.branch_name}</span>
+                ) : null}
+                {formatJobWorkAddressLine(job.work_address) ? (
+                  <span className="font-medium text-slate-600"> · {formatJobWorkAddressLine(job.work_address)}</span>
+                ) : null}
+              </strong>
+            </span>
+            <span className="text-slate-500">
+              Billing address:{' '}
+              <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{job.customer_address || 'N/A'}</strong>
+            </span>
+          </>
+        ) : (
+          <span className="text-slate-500">Address: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{job.customer_address || 'N/A'}</strong></span>
+        )}
       </div>
 
       {/* Scrollable Content Area */}
@@ -705,8 +981,12 @@ export default function JobDetailsPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
               <h2 className="text-[17px] font-black tracking-tight text-slate-800">Job overview</h2>
-              <button 
-                onClick={() => router.push(`/dashboard/customers/${job.customer_id}/jobs/new?edit=${job.id}`)}
+              <button
+                onClick={() =>
+                  router.push(
+                    `/dashboard/customers/${job.customer_id}/jobs/new?edit=${job.id}${job.work_address ? `&work_address_id=${job.work_address.id}` : ''}`,
+                  )
+                }
                 className="text-sm font-bold text-[#14B8A6] hover:underline"
               >
                 Edit
@@ -726,6 +1006,20 @@ export default function JobDetailsPage() {
                          {job.site_contact_name || job.contact_name || job.customer_full_name}
                        </span>
                     </div>
+                    {job.work_address && (
+                      <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
+                        <span className="text-[13px] font-bold text-slate-500">Work site</span>
+                        <span className="text-[13px] text-slate-800 font-medium col-span-2 leading-relaxed">
+                          <span className="font-semibold text-slate-900">{job.work_address.name}</span>
+                          {job.work_address.branch_name ? (
+                            <span className="text-slate-600"> — {job.work_address.branch_name}</span>
+                          ) : null}
+                          {formatJobWorkAddressLine(job.work_address) ? (
+                            <span className="block text-slate-700 mt-0.5">{formatJobWorkAddressLine(job.work_address)}</span>
+                          ) : null}
+                        </span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
                        <span className="text-[13px] font-bold text-slate-500">Job description</span>
                        <span className="text-[13px] text-slate-800 font-medium col-span-2 leading-relaxed">{job.description_name || job.title}</span>
@@ -860,7 +1154,11 @@ export default function JobDetailsPage() {
                              </td>
                              <td className="px-6 py-5">
                                 <span className={diaryVisitIsPositiveProgress(evt.status) ? "text-emerald-600 font-semibold" : "text-slate-400 italic"}>
-                                  {!evt.status || evt.status === 'No status' ? 'No feedback registered' : evt.status}
+                                  {!evt.status || evt.status === 'No status'
+                                    ? 'No feedback registered'
+                                    : diaryVisitIsCancelled(evt.status) && evt.abort_reason?.trim()
+                                      ? `${evt.status} — ${evt.abort_reason.trim()}`
+                                      : evt.status}
                                 </span>
                              </td>
                              <td className="px-6 py-5 text-right">
@@ -932,6 +1230,15 @@ export default function JobDetailsPage() {
                             <span className="font-bold text-slate-600">Status</span>
                             <span className="col-span-2 text-slate-800">{viewingEvent.status}</span>
 
+                            {diaryVisitIsCancelled(viewingEvent.status) &&
+                              viewingEvent.abort_reason != null &&
+                              viewingEvent.abort_reason.trim() !== '' && (
+                                <>
+                                  <span className="font-bold text-slate-600">Abort reason</span>
+                                  <span className="col-span-2 text-slate-800">{viewingEvent.abort_reason}</span>
+                                </>
+                              )}
+
                             <span className="font-bold text-slate-600">Engineer</span>
                             <span className="col-span-2 text-slate-800 flex items-center gap-2">
                                <div className="w-5 h-5 rounded bg-slate-200 flex items-center justify-center"><User className="size-3 text-slate-500"/></div>
@@ -966,12 +1273,40 @@ export default function JobDetailsPage() {
                             <h4 className="font-bold text-slate-800">Property details</h4>
                          </div>
                          <div className="p-4 grid grid-cols-3 gap-y-3 gap-x-4 text-[13px] relative">
-                            <button className="absolute right-4 top-4 text-[#14B8A6] font-bold text-[13px] hover:underline" onClick={() => router.push(`/dashboard/customers/${job.customer_id}`)}>View customer</button>
+                            <button
+                              className="absolute right-4 top-4 text-[#14B8A6] font-bold text-[13px] hover:underline"
+                              onClick={() =>
+                                router.push(
+                                  `/dashboard/customers/${job.customer_id}${job.work_address ? `?work_address_id=${job.work_address.id}` : ''}`,
+                                )
+                              }
+                            >
+                              View customer
+                            </button>
                             <span className="font-bold text-slate-600">Job contact</span>
                             <span className="col-span-2 text-slate-800">{jobContactDisplayName || '—'}</span>
 
                             <span className="font-bold text-slate-600">Account name</span>
                             <span className="col-span-2 text-slate-800">{job.customer_full_name}</span>
+
+                            {job.work_address && (
+                              <>
+                                <span className="font-bold text-slate-600">Work site</span>
+                                <span className="col-span-2 text-slate-800">
+                                  <span className="font-semibold text-slate-900">{job.work_address.name}</span>
+                                  {job.work_address.branch_name ? (
+                                    <span className="text-slate-600"> — {job.work_address.branch_name}</span>
+                                  ) : null}
+                                  {workSiteAddressLine ? (
+                                    <span className="block mt-1 text-slate-700 whitespace-pre-line leading-relaxed">
+                                      {workSiteAddressLine}
+                                    </span>
+                                  ) : (
+                                    <span className="block mt-1 text-slate-400 italic">No site address lines stored</span>
+                                  )}
+                                </span>
+                              </>
+                            )}
 
                             <span className="font-bold text-slate-600">Contact telephone</span>
                             <span className="col-span-2 text-slate-800">
@@ -983,7 +1318,9 @@ export default function JobDetailsPage() {
                               {diaryRecipientEmail || 'Not listed'}
                             </span>
 
-                            <span className="font-bold text-slate-600 mt-1">Address</span>
+                            <span className="font-bold text-slate-600 mt-1">
+                              {job.work_address ? 'Billing address' : 'Address'}
+                            </span>
                             <span className="col-span-2 text-slate-800 whitespace-pre-line leading-relaxed mt-1">
                                {job.customer_address || 'Address not listed'}
                             </span>
@@ -1160,23 +1497,122 @@ export default function JobDetailsPage() {
                    </div>
                 ) : (
                    <div className="space-y-6">
+                            {!diaryVisitIsCompleted(viewingEvent.status) && !diaryVisitIsCancelled(viewingEvent.status) && (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
+                                <h4 className="font-bold text-slate-800 text-sm">Abort visit</h4>
+                                <p className="text-xs text-slate-500">
+                                  Stops linked timesheet segments and marks the visit as cancelled. Pick the reason
+                                  (configured under Settings → Visit abort reasons).
+                                </p>
+                                {diaryAbortReasonLoad && (
+                                  <p className="text-sm text-slate-500">Loading reasons…</p>
+                                )}
+                                {!diaryAbortReasonLoad && diaryAbortReasonList.length === 0 && (
+                                  <p className="text-sm text-rose-600">
+                                    No abort reasons configured. Add them under Settings → Visit abort reasons.
+                                  </p>
+                                )}
+                                {!diaryAbortReasonLoad && diaryAbortReasonList.length > 0 && (
+                                  <>
+                                    <select
+                                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                      value={diaryAbortReasonPick}
+                                      onChange={(e) => setDiaryAbortReasonPick(e.target.value)}
+                                    >
+                                      {diaryAbortReasonList.map((r) => (
+                                        <option key={r} value={r}>
+                                          {r}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={diaryAbortSubmitting}
+                                      onClick={async () => {
+                                        if (!token) return;
+                                        if (!diaryAbortReasonPick.trim()) return;
+                                        if (
+                                          !window.confirm(
+                                            'Abort this visit? This cannot be undone from the schedule.',
+                                          )
+                                        )
+                                          return;
+                                        setDiaryAbortSubmitting(true);
+                                        try {
+                                          await patchJson(
+                                            `/diary-events/${viewingEvent.id}`,
+                                            {
+                                              status: 'cancelled',
+                                              abort_reason: diaryAbortReasonPick.trim(),
+                                            },
+                                            token,
+                                          );
+                                          await fetchJobDetails();
+                                          setViewingEvent((ev) =>
+                                            ev
+                                              ? {
+                                                  ...ev,
+                                                  status: 'cancelled',
+                                                  abort_reason: diaryAbortReasonPick.trim(),
+                                                }
+                                              : ev,
+                                          );
+                                        } catch (err: unknown) {
+                                          alert(err instanceof Error ? err.message : 'Abort failed');
+                                        } finally {
+                                          setDiaryAbortSubmitting(false);
+                                        }
+                                      }}
+                                      className="rounded-md bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                                    >
+                                      {diaryAbortSubmitting ? 'Aborting…' : 'Abort visit'}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+
                       <div className="border border-slate-200 rounded-lg overflow-hidden">
                          <div className="bg-white border-b border-slate-200 px-4 py-3">
                             <h4 className="font-bold text-slate-800">Engineer status</h4>
                          </div>
                          <div className="p-6 md:p-10 flex flex-col items-center text-center max-h-[70vh] overflow-y-auto">
-                            <div className={`w-16 h-16 rounded-full border-4 ${diaryVisitIsCompleted(viewingEvent.status) ? 'border-[#14B8A6]' : 'border-slate-300'} flex items-center justify-center mb-4 shrink-0`}>
+                            <div
+                              className={`w-16 h-16 rounded-full border-4 ${
+                                diaryVisitIsCompleted(viewingEvent.status)
+                                  ? 'border-[#14B8A6]'
+                                  : diaryVisitIsCancelled(viewingEvent.status)
+                                    ? 'border-rose-300'
+                                    : 'border-slate-300'
+                              } flex items-center justify-center mb-4 shrink-0`}
+                            >
                                {diaryVisitIsCompleted(viewingEvent.status) ? (
                                  <Clipboard className="size-6 text-[#14B8A6] stroke-[3]" />
+                               ) : diaryVisitIsCancelled(viewingEvent.status) ? (
+                                 <Info className="size-6 text-rose-400 stroke-[3]" />
                                ) : (
                                  <Info className="size-6 text-slate-400 stroke-[3]" />
                                )}
                             </div>
-                            <span className={`font-bold uppercase text-[10px] tracking-wider mb-1 ${diaryVisitIsCompleted(viewingEvent.status) ? 'text-[#14B8A6]' : 'text-slate-400'}`}>
+                            <span
+                              className={`font-bold uppercase text-[10px] tracking-wider mb-1 ${
+                                diaryVisitIsCompleted(viewingEvent.status)
+                                  ? 'text-[#14B8A6]'
+                                  : diaryVisitIsCancelled(viewingEvent.status)
+                                    ? 'text-rose-600'
+                                    : 'text-slate-400'
+                              }`}
+                            >
                               {viewingEvent.status || 'No status'}
                             </span>
                             <span className="text-slate-500 font-medium text-[13px] max-w-md">
-                               {diaryVisitIsCompleted(viewingEvent.status) ? 'This visit has been marked as fully completed.' : 'The engineer hasn\'t completed the property visit yet.'}
+                              {diaryVisitIsCompleted(viewingEvent.status)
+                                ? 'This visit has been marked as fully completed.'
+                                : diaryVisitIsCancelled(viewingEvent.status)
+                                  ? viewingEvent.abort_reason?.trim()
+                                    ? `This visit was aborted: ${viewingEvent.abort_reason.trim()}`
+                                    : 'This visit was aborted.'
+                                  : "The engineer hasn't completed the property visit yet."}
                             </span>
 
                             {diaryJobReportLoading && (
@@ -1408,6 +1844,81 @@ export default function JobDetailsPage() {
                             )}
                          </div>
                       </div>
+
+                      {(diaryExtraSubmissionsLoading || diaryExtraSubmissions.length > 0) && (
+                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                          <div className="bg-white border-b border-slate-200 px-4 py-3">
+                            <h4 className="font-bold text-slate-800">Extra visit submissions</h4>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              Additional photos, videos, and notes from the field app (separate from technical notes).
+                            </p>
+                          </div>
+                          <div className="p-4 space-y-6 bg-slate-50/50">
+                            {diaryExtraSubmissionsLoading && (
+                              <p className="text-sm text-slate-500">Loading extra submissions…</p>
+                            )}
+                            {!diaryExtraSubmissionsLoading &&
+                              diaryExtraSubmissions.map((sub) => (
+                                <div
+                                  key={sub.id}
+                                  className="rounded-lg border border-slate-200 bg-white p-4 space-y-3"
+                                >
+                                  <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px] text-slate-600">
+                                    <span>
+                                      {(() => {
+                                        const who =
+                                          sub.display_name?.trim() ||
+                                          viewingEvent.officer_full_name?.trim() ||
+                                          sub.created_by_name?.trim() ||
+                                          '';
+                                        return who.length > 0 ? (
+                                          <span className="font-semibold text-slate-800">{who}</span>
+                                        ) : (
+                                          <span className="text-slate-500">Field officer</span>
+                                        );
+                                      })()}
+                                    </span>
+                                    <span className="text-slate-500">
+                                      {dayjs(sub.created_at).format('D MMM YYYY, h:mm a')}
+                                    </span>
+                                  </div>
+                                  {sub.notes != null && sub.notes.trim() !== '' && (
+                                    <pre className="whitespace-pre-wrap rounded-md border border-slate-100 bg-slate-50/80 px-3 py-2 text-sm text-slate-800">
+                                      {sub.notes}
+                                    </pre>
+                                  )}
+                                  {sub.media && sub.media.length > 0 && (
+                                    <div className="flex flex-col gap-4">
+                                      {sub.media.map((m) => (
+                                        <div
+                                          key={`${sub.id}-${m.file_path}`}
+                                          className="space-y-1.5"
+                                        >
+                                          <p className="text-xs font-medium text-slate-500">
+                                            {m.original_filename}
+                                            {m.kind === 'video' || m.content_type?.startsWith('video/')
+                                              ? ' · video'
+                                              : ' · image'}
+                                          </p>
+                                          <AuthenticatedDiaryFilePreview
+                                            filePath={m.file_path}
+                                            contentType={m.content_type}
+                                            kind={m.kind}
+                                            token={token}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {(!sub.media || sub.media.length === 0) &&
+                                    (sub.notes == null || sub.notes.trim() === '') && (
+                                      <p className="text-sm text-slate-400">Empty submission</p>
+                                    )}
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="border border-slate-200 rounded-lg overflow-hidden">
                          <div className="bg-white border-b border-slate-200 px-4 py-3">

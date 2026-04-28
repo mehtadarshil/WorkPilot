@@ -1,6 +1,6 @@
-# mobile_app
+# WorkPilot (mobile app)
 
-A new Flutter project.
+WorkPilot field officer Flutter app (`package:mobile_app`).
 
 ## Getting Started
 

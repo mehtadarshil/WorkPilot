@@ -1,3 +1,6 @@
+import 'customer_specific_note.dart';
+import 'diary_extra_submission.dart';
+
 /// Payload from GET /api/diary-events/:id
 class DiaryEventDetail {
   DiaryEventDetail({
@@ -28,6 +31,10 @@ class DiaryEventDetail {
     this.siteContactName,
     this.siteContactEmail,
     this.siteContactPhone,
+    this.extraSubmissions = const [],
+    this.technicalNotes = const [],
+    this.customerSpecificNotes = const [],
+    this.abortReason,
   });
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
@@ -36,6 +43,43 @@ class DiaryEventDetail {
       throw const FormatException('Missing event object');
     }
     final m = Map<String, dynamic>.from(e);
+    final extraRaw = json['extra_submissions'];
+    final extraList = <DiaryExtraSubmission>[];
+    if (extraRaw is List) {
+      for (final x in extraRaw) {
+        if (x is Map<String, dynamic>) {
+          extraList.add(DiaryExtraSubmission.fromJson(x));
+        }
+      }
+    }
+    final notesRaw =
+        json['customer_specific_notes'] ?? m['customer_specific_notes'];
+    final technicalRaw = json['technical_notes'];
+    final technicalList = <DiaryExtraSubmission>[];
+    if (technicalRaw is List) {
+      for (final x in technicalRaw) {
+        if (x is Map<String, dynamic>) {
+          technicalList.add(DiaryExtraSubmission.fromJson(x));
+        }
+      }
+    }
+    final specificNotes = <CustomerSpecificNote>[];
+    if (notesRaw is List) {
+      for (final x in notesRaw) {
+        if (x is Map) {
+          try {
+            final n = CustomerSpecificNote.fromJson(
+              Map<String, dynamic>.from(x),
+            );
+            if (n.id > 0 && (n.title.isNotEmpty || n.description.isNotEmpty)) {
+              specificNotes.add(n);
+            }
+          } catch (_) {
+            /* skip malformed row */
+          }
+        }
+      }
+    }
     return DiaryEventDetail(
       diaryId: (m['diary_id'] as num).toInt(),
       jobId: (m['job_id'] as num).toInt(),
@@ -64,10 +108,17 @@ class DiaryEventDetail {
       customerPhone: m['customer_phone'] as String?,
       siteAddress: m['site_address'] as String?,
       officerFullName: m['officer_full_name'] as String?,
-      jobReportQuestionCount: (m['job_report_question_count'] as num?)?.toInt() ?? 0,
+      jobReportQuestionCount:
+          (m['job_report_question_count'] as num?)?.toInt() ?? 0,
       siteContactName: m['site_contact_name'] as String?,
       siteContactEmail: m['site_contact_email'] as String?,
       siteContactPhone: m['site_contact_phone'] as String?,
+      extraSubmissions: extraList,
+      technicalNotes: technicalList,
+      customerSpecificNotes: specificNotes,
+      abortReason: (m['abort_reason'] as String?)?.trim().isNotEmpty == true
+          ? (m['abort_reason'] as String).trim()
+          : null,
     );
   }
 
@@ -98,11 +149,58 @@ class DiaryEventDetail {
   final String? siteContactName;
   final String? siteContactEmail;
   final String? siteContactPhone;
+  final List<DiaryExtraSubmission> extraSubmissions;
+  final List<DiaryExtraSubmission> technicalNotes;
+  final List<CustomerSpecificNote> customerSpecificNotes;
+  final String? abortReason;
 
-  DateTime? get startTime => DateTime.tryParse(startTimeIso);
+  DateTime? get startTime => DateTime.tryParse(startTimeIso)?.toLocal();
   DateTime? get endTime {
     final s = startTime;
     if (s == null) return null;
     return s.add(Duration(minutes: durationMinutes));
+  }
+
+  DiaryEventDetail copyWith({
+    String? eventStatus,
+    String? jobState,
+    String? abortReason,
+    String? updatedAtIso,
+    List<DiaryExtraSubmission>? extraSubmissions,
+    List<DiaryExtraSubmission>? technicalNotes,
+  }) {
+    return DiaryEventDetail(
+      diaryId: diaryId,
+      jobId: jobId,
+      officerId: officerId,
+      startTimeIso: startTimeIso,
+      durationMinutes: durationMinutes,
+      eventStatus: eventStatus ?? this.eventStatus,
+      notes: notes,
+      createdByName: createdByName,
+      createdAtIso: createdAtIso,
+      updatedAtIso: updatedAtIso ?? this.updatedAtIso,
+      title: title,
+      description: description,
+      location: location,
+      jobState: jobState ?? this.jobState,
+      jobNotes: jobNotes,
+      quotedAmount: quotedAmount,
+      customerReference: customerReference,
+      customerId: customerId,
+      customerFullName: customerFullName,
+      customerEmail: customerEmail,
+      customerPhone: customerPhone,
+      siteAddress: siteAddress,
+      officerFullName: officerFullName,
+      jobReportQuestionCount: jobReportQuestionCount,
+      siteContactName: siteContactName,
+      siteContactEmail: siteContactEmail,
+      siteContactPhone: siteContactPhone,
+      extraSubmissions: extraSubmissions ?? this.extraSubmissions,
+      technicalNotes: technicalNotes ?? this.technicalNotes,
+      customerSpecificNotes: customerSpecificNotes,
+      abortReason: abortReason ?? this.abortReason,
+    );
   }
 }

@@ -10,9 +10,13 @@ import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/diary_event_detail.dart';
 import 'diary_event_detail_controller.dart';
+import 'diary_extra_submissions_panel.dart';
+import 'diary_technical_notes_panel.dart';
 
 String _formatVisitDateTime(DateTime? d) {
   if (d == null) return '—';
+  // API times are usually UTC; always show in device time zone.
+  final l = d.toLocal();
   const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const mo = [
     'Jan',
@@ -28,11 +32,11 @@ String _formatVisitDateTime(DateTime? d) {
     'Nov',
     'Dec',
   ];
-  final w = wd[d.weekday - 1];
-  final ampm = d.hour >= 12 ? 'pm' : 'am';
-  final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
-  final mm = d.minute.toString().padLeft(2, '0');
-  return '$w ${d.day} ${mo[d.month - 1]} ${d.year} · $h12:$mm$ampm';
+  final w = wd[l.weekday - 1];
+  final ampm = l.hour >= 12 ? 'pm' : 'am';
+  final h12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
+  final mm = l.minute.toString().padLeft(2, '0');
+  return '$w ${l.day} ${mo[l.month - 1]} ${l.year} · $h12:$mm$ampm';
 }
 
 String _formatJobState(String? raw) {
@@ -47,11 +51,6 @@ String _formatJobState(String? raw) {
       .join(' ');
 }
 
-String _formatMoney(double? v) {
-  if (v == null) return '—';
-  return '£${v.toStringAsFixed(2)}';
-}
-
 String _siteContactName(DiaryEventDetail d) {
   final s = d.siteContactName?.trim();
   if (s != null && s.isNotEmpty) return s;
@@ -62,12 +61,6 @@ String _siteContactPhone(DiaryEventDetail d) {
   final s = d.siteContactPhone?.trim();
   if (s != null && s.isNotEmpty) return s;
   return (d.customerPhone ?? '').trim();
-}
-
-String _siteContactEmail(DiaryEventDetail d) {
-  final s = d.siteContactEmail?.trim();
-  if (s != null && s.isNotEmpty) return s;
-  return (d.customerEmail ?? '').trim();
 }
 
 Future<void> _tryLaunchUri(Uri uri) async {
@@ -142,134 +135,108 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
               if (d == null) {
                 return const SizedBox.shrink();
               }
+              final hideContacts =
+                  controller.phase == DiaryVisitUiPhase.completed ||
+                  controller.phase == DiaryVisitUiPhase.cancelled;
               return Column(
                 children: [
                   Expanded(
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(20, topContentPad, 20, 16),
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _StatusBanner(d: d, phase: controller.phase),
-                          if (controller.phase == DiaryVisitUiPhase.completed) ...[
-                            const SizedBox(height: 12),
-                            _SubmittedJobReportBanner(
-                              onOpen: () async {
-                                await Get.toNamed(
-                                  AppRoutes.diaryJobReport,
-                                  arguments: <String, dynamic>{
-                                    'diaryId': controller.diaryId,
-                                    'readonly': true,
-                                  },
-                                );
-                              },
-                            ),
-                          ],
-                          if (controller.phase == DiaryVisitUiPhase.onSite &&
-                              controller.effectiveJobReportQuestionCount > 0) ...[
-                            const SizedBox(height: 12),
-                            _JobReportBanner(
-                              onOpen: () async {
-                                await Get.toNamed(
-                                  AppRoutes.diaryJobReport,
-                                  arguments: controller.diaryId,
-                                );
-                                await controller.load();
-                              },
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          _DetailGlassPanel(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _sectionTitle('Service'),
-                                const SizedBox(height: 12),
-                                _kv(
-                                  'Appointment notes',
-                                  (d.notes != null && d.notes!.trim().isNotEmpty)
-                                      ? d.notes!
-                                      : '—',
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Appointment details',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.slate400,
+                    child: RefreshIndicator(
+                      color: AppColors.primary,
+                      onRefresh: () => controller.load(silent: true),
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(20, topContentPad, 20, 16),
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Obx(() {
+                              if (!controller.visitDetailFromCache.value) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Material(
+                                  color: AppColors.whiteOverlay(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.wifi_off_rounded,
+                                          size: 20,
+                                          color: Colors.amber.shade200,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            'Offline or limited connection — showing the last saved copy of this visit. Pull down to retry.',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              height: 1.35,
+                                              color: AppColors.slate300,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.person_outline_rounded,
-                                      size: 18,
-                                      color: AppColors.slate400,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        d.officerFullName ?? '—',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          color: AppColors.slate50,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.schedule_rounded,
-                                      size: 18,
-                                      color: AppColors.slate400,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${_formatVisitDateTime(d.startTime)} — ${_formatVisitDateTime(d.endTime)}',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          color: AppColors.slate300,
-                                          height: 1.35,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _DetailGlassPanel(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _accentTitle('Site information'),
-                                const SizedBox(height: 12),
-                                Text(
-                                  d.siteAddress?.trim().isNotEmpty == true
-                                      ? d.siteAddress!.trim()
-                                      : (d.location?.trim().isNotEmpty == true
-                                            ? d.location!.trim()
-                                            : '—'),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    height: 1.45,
-                                    color: AppColors.slate50,
+                              );
+                            }),
+                            _StatusBanner(d: d, phase: controller.phase),
+                            if (controller.phase ==
+                                DiaryVisitUiPhase.completed) ...[
+                              const SizedBox(height: 12),
+                              _SubmittedJobReportBanner(
+                                onOpen: () async {
+                                  await Get.toNamed(
+                                    AppRoutes.diaryJobReport,
+                                    arguments: <String, dynamic>{
+                                      'diaryId': controller.diaryId,
+                                      'readonly': true,
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                            if (controller.phase == DiaryVisitUiPhase.onSite &&
+                                controller.effectiveJobReportQuestionCount >
+                                    0) ...[
+                              const SizedBox(height: 12),
+                              _JobReportBanner(
+                                onOpen: () async {
+                                  await Get.toNamed(
+                                    AppRoutes.diaryJobReport,
+                                    arguments: controller.diaryId,
+                                  );
+                                  await controller.load();
+                                },
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            _DetailGlassPanel(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _sectionTitle('Service'),
+                                  const SizedBox(height: 12),
+                                  _kv(
+                                    'Appointment notes',
+                                    (d.notes != null &&
+                                            d.notes!.trim().isNotEmpty)
+                                        ? d.notes!
+                                        : '—',
                                   ),
-                                ),
-                                if (_siteContactName(d).trim().isNotEmpty) ...[
-                                  const SizedBox(height: 14),
+                                  const SizedBox(height: 12),
                                   Text(
-                                    'Site contact',
+                                    'Appointment details',
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -277,111 +244,287 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.person_outline_rounded,
+                                        size: 18,
+                                        color: AppColors.slate400,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          d.officerFullName ?? '—',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            color: AppColors.slate50,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.schedule_rounded,
+                                        size: 18,
+                                        color: AppColors.slate400,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '${_formatVisitDateTime(d.startTime)} — ${_formatVisitDateTime(d.endTime)}',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            color: AppColors.slate300,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _DetailGlassPanel(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _accentTitle('Site information'),
+                                  const SizedBox(height: 12),
                                   Text(
-                                    _siteContactName(d),
+                                    d.siteAddress?.trim().isNotEmpty == true
+                                        ? d.siteAddress!.trim()
+                                        : (d.location?.trim().isNotEmpty == true
+                                              ? d.location!.trim()
+                                              : '—'),
                                     style: GoogleFonts.inter(
                                       fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                      height: 1.45,
                                       color: AppColors.slate50,
                                     ),
                                   ),
-                                  if (_siteContactPhone(d).trim().isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            _siteContactPhone(d),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              color: AppColors.slate300,
-                                            ),
-                                          ),
-                                        ),
-                                        _GlassIconButton(
-                                          icon: Icons.phone_rounded,
-                                          onPressed: () => _tryLaunchUri(
-                                            Uri(
-                                              scheme: 'tel',
-                                              path: _siteContactPhone(d).replaceAll(
-                                                RegExp(r'\s'),
-                                                '',
+                                  if (!hideContacts &&
+                                      _siteContactName(
+                                        d,
+                                      ).trim().isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    Text(
+                                      'Site contact',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.slate400,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _siteContactName(d),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.slate50,
+                                      ),
+                                    ),
+                                    if (_siteContactPhone(
+                                      d,
+                                    ).trim().isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              _siteContactPhone(d),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14,
+                                                color: AppColors.slate300,
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                  if (_siteContactEmail(d).trim().isNotEmpty) ...[
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            _siteContactEmail(d),
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              color: AppColors.slate300,
+                                          _GlassIconButton(
+                                            icon: Icons.phone_rounded,
+                                            onPressed: () => _tryLaunchUri(
+                                              Uri(
+                                                scheme: 'tel',
+                                                path: _siteContactPhone(
+                                                  d,
+                                                ).replaceAll(RegExp(r'\s'), ''),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        _GlassIconButton(
-                                          icon: Icons.mail_outline_rounded,
-                                          onPressed: () => _tryLaunchUri(
-                                            Uri(
-                                              scheme: 'mailto',
-                                              path: _siteContactEmail(d),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          _DetailGlassPanel(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _accentTitle('Customer information'),
-                                const SizedBox(height: 12),
-                                _kv(
-                                  'Account',
-                                  d.customerId != null ? '${d.customerId}' : '—',
+                            const SizedBox(height: 12),
+                            _DetailGlassPanel(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _accentTitle('Customer information'),
+                                  const SizedBox(height: 12),
+                                  _kv(
+                                    'Customer name',
+                                    (d.customerFullName ?? '').trim().isNotEmpty
+                                        ? d.customerFullName!.trim()
+                                        : '—',
+                                  ),
+                                  if (!hideContacts) ...[_customerPhoneRow(d)],
+                                  if (!hideContacts)
+                                    _kv(
+                                      'Address',
+                                      (d.siteAddress ?? '').trim().isNotEmpty
+                                          ? d.siteAddress!.trim()
+                                          : '—',
+                                    ),
+                                  _kv(
+                                    'Account',
+                                    d.customerId != null
+                                        ? '${d.customerId}'
+                                        : '—',
+                                  ),
+                                  if (d.customerReference != null &&
+                                      d.customerReference!.trim().isNotEmpty)
+                                    _kv(
+                                      'Customer reference',
+                                      d.customerReference!,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (d.customerSpecificNotes.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              _DetailGlassPanel(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _accentTitle('Technical notes'),
+                                    const SizedBox(height: 12),
+                                    for (final (i, n)
+                                        in d.customerSpecificNotes.indexed) ...[
+                                      if (i > 0) const SizedBox(height: 14),
+                                      Text(
+                                        n.title.isNotEmpty ? n.title : 'Note',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.slate50,
+                                        ),
+                                      ),
+                                      if (n.description.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          n.description,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            height: 1.45,
+                                            color: AppColors.slate300,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ],
                                 ),
-                                if (d.customerReference != null &&
-                                    d.customerReference!.trim().isNotEmpty)
-                                  _kv('Customer reference', d.customerReference!),
-                              ],
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _DetailGlassPanel(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _accentTitle('Job details'),
+                                  const SizedBox(height: 12),
+                                  _kv('Job description', d.title ?? '—'),
+                                  if (d.description != null &&
+                                      d.description!.trim().isNotEmpty)
+                                    _kv('Notes', d.description!),
+                                  if (d.jobNotes != null &&
+                                      d.jobNotes!.trim().isNotEmpty)
+                                    _kv('Job notes', d.jobNotes!),
+                                  _kv(
+                                    'Job contact',
+                                    (d.siteContactName ?? '').trim().isNotEmpty
+                                        ? d.siteContactName!.trim()
+                                        : '—',
+                                  ),
+                                  if (!hideContacts) ...[
+                                    _jobContactPhoneRow(d),
+                                  ],
+                                  _kv(
+                                    'Current stage',
+                                    _formatJobState(d.jobState),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          _DetailGlassPanel(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _accentTitle('Job details'),
-                                const SizedBox(height: 12),
-                                _kv('Job description', d.title ?? '—'),
-                                if (d.description != null &&
-                                    d.description!.trim().isNotEmpty)
-                                  _kv('Notes', d.description!),
-                                if (d.jobNotes != null && d.jobNotes!.trim().isNotEmpty)
-                                  _kv('Job notes', d.jobNotes!),
-                                _kv('Quoted amount', _formatMoney(d.quotedAmount)),
-                                _kv('Current stage', _formatJobState(d.jobState)),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
+                            const SizedBox(height: 12),
+                            DiaryTechnicalNotesPanel(controller: controller),
+                            const SizedBox(height: 12),
+                            DiaryExtraSubmissionsPanel(controller: controller),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+                  Obx(() {
+                    final p = controller.phase;
+                    final loaded = controller.jobReportHistoryLoaded.value;
+                    final err = controller.jobReportHistoryError.value;
+                    final count = controller.jobReportHistory.length;
+                    if ((p != DiaryVisitUiPhase.onSite &&
+                            p != DiaryVisitUiPhase.completed) ||
+                        !loaded ||
+                        err.isNotEmpty ||
+                        count == 0) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            await Get.toNamed(
+                              AppRoutes.diaryJobReportHistory,
+                              arguments: <String, dynamic>{
+                                'diaryId': controller.diaryId,
+                              },
+                            );
+                          },
+                          icon: const Icon(Icons.history_rounded, size: 22),
+                          label: Text(
+                            'View job history',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            elevation: 8,
+                            shadowColor: Colors.black.withValues(alpha: 0.35),
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 16,
+                              horizontal: 18,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                   _BottomActions(controller: controller),
                 ],
               );
@@ -485,10 +628,7 @@ class _DetailGlassPanel extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.45),
-            AppColors.whiteOverlay(0.06),
-          ],
+          colors: [AppColors.whiteOverlay(0.45), AppColors.whiteOverlay(0.06)],
         ),
         boxShadow: [
           BoxShadow(
@@ -588,10 +728,7 @@ class _StatusBanner extends StatelessWidget {
 
     switch (phase) {
       case DiaryVisitUiPhase.completed:
-        wash = [
-          const Color(0x9915803D),
-          const Color(0x660f172a),
-        ];
+        wash = [const Color(0x9915803D), const Color(0x660f172a)];
         icon = Icons.check_circle_outline_rounded;
         title = 'Visit completed';
         subtitle =
@@ -604,7 +741,10 @@ class _StatusBanner extends StatelessWidget {
         ];
         icon = Icons.block_rounded;
         title = 'Visit cancelled';
-        subtitle = 'This diary visit was aborted.';
+        final ar = d.abortReason?.trim();
+        subtitle = ar != null && ar.isNotEmpty
+            ? 'Reason: $ar'
+            : 'This diary visit was aborted.';
         break;
       case DiaryVisitUiPhase.onSite:
         wash = [
@@ -616,10 +756,7 @@ class _StatusBanner extends StatelessWidget {
         subtitle = 'Site working time is being recorded.';
         break;
       case DiaryVisitUiPhase.travelling:
-        wash = [
-          const Color(0x990284C7),
-          const Color(0x660f172a),
-        ];
+        wash = [const Color(0x990284C7), const Color(0x660f172a)];
         icon = Icons.directions_car_outlined;
         title = 'Travelling to site';
         subtitle = 'Travel time is being recorded.';
@@ -642,10 +779,7 @@ class _StatusBanner extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.4),
-            AppColors.whiteOverlay(0.06),
-          ],
+          colors: [AppColors.whiteOverlay(0.4), AppColors.whiteOverlay(0.06)],
         ),
         boxShadow: [
           BoxShadow(
@@ -675,7 +809,10 @@ class _StatusBanner extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -730,10 +867,7 @@ class _SubmittedJobReportBanner extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.35),
-            AppColors.whiteOverlay(0.05),
-          ],
+          colors: [AppColors.whiteOverlay(0.35), AppColors.whiteOverlay(0.05)],
         ),
         boxShadow: [
           BoxShadow(
@@ -754,15 +888,15 @@ class _SubmittedJobReportBanner extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
-                  colors: [
-                    const Color(0xCC0F766E),
-                    const Color(0x990f172a),
-                  ],
+                  colors: [const Color(0xCC0F766E), const Color(0x990f172a)],
                 ),
                 border: Border.all(color: AppColors.whiteOverlay(0.18)),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     const Icon(
@@ -815,10 +949,7 @@ class _JobReportBanner extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.35),
-            AppColors.whiteOverlay(0.05),
-          ],
+          colors: [AppColors.whiteOverlay(0.35), AppColors.whiteOverlay(0.05)],
         ),
         boxShadow: [
           BoxShadow(
@@ -839,15 +970,15 @@ class _JobReportBanner extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
-                  colors: [
-                    const Color(0xCC0369A1),
-                    const Color(0x990f172a),
-                  ],
+                  colors: [const Color(0xCC0369A1), const Color(0x990f172a)],
                 ),
                 border: Border.all(color: AppColors.whiteOverlay(0.18)),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     const Icon(
@@ -894,6 +1025,92 @@ Widget _sectionTitle(String t) {
       fontSize: 15,
       fontWeight: FontWeight.w800,
       color: Colors.white,
+    ),
+  );
+}
+
+Widget _customerPhoneRow(DiaryEventDetail d) {
+  final phone = (d.customerPhone ?? '').trim();
+  if (phone.isEmpty) return _kv('Mobile number', '—');
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Mobile number',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.slate400,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                phone,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.slate50,
+                ),
+              ),
+            ),
+            _GlassIconButton(
+              icon: Icons.phone_rounded,
+              onPressed: () => _tryLaunchUri(
+                Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'\s'), '')),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _jobContactPhoneRow(DiaryEventDetail d) {
+  final phone = (d.siteContactPhone ?? '').trim();
+  if (phone.isEmpty) return _kv('Job contact phone', '—');
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Job contact phone',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.slate400,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                phone,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.slate50,
+                ),
+              ),
+            ),
+            _GlassIconButton(
+              icon: Icons.phone_rounded,
+              onPressed: () => _tryLaunchUri(
+                Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'\s'), '')),
+              ),
+            ),
+          ],
+        ),
+      ],
     ),
   );
 }
@@ -1061,7 +1278,10 @@ class _BottomActions extends StatelessWidget {
             ),
             child: Text(
               'Job report',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
             ),
           );
         } else {
@@ -1079,7 +1299,10 @@ class _BottomActions extends StatelessWidget {
             ),
             child: Text(
               'Complete visit',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
             ),
           );
         }
@@ -1146,10 +1369,7 @@ class _BottomGlassDock extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                AppColors.whiteOverlay(0.14),
-                const Color(0xCC0F172A),
-              ],
+              colors: [AppColors.whiteOverlay(0.14), const Color(0xCC0F172A)],
             ),
             border: Border(
               top: BorderSide(color: AppColors.whiteOverlay(0.12)),
@@ -1176,8 +1396,60 @@ class _BottomGlassDock extends StatelessWidget {
 }
 
 Future<void> _confirmAbort(DiaryEventDetailController c) async {
-  final ok = await Get.dialog<bool>(
-    AlertDialog(
+  List<String> reasons;
+  try {
+    reasons = await c.loadAbortReasonLabels();
+  } catch (e) {
+    Get.snackbar(
+      'Abort',
+      e is Exception ? e.toString() : 'Could not load abort reasons.',
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(16),
+      borderRadius: 12,
+    );
+    return;
+  }
+  if (reasons.isEmpty) {
+    Get.snackbar(
+      'Abort',
+      'No abort reasons are configured. Ask an admin to add them under Settings → Visit abort reasons.',
+      snackPosition: SnackPosition.BOTTOM,
+      margin: const EdgeInsets.all(16),
+      borderRadius: 12,
+    );
+    return;
+  }
+
+  final picked = await Get.dialog<String>(
+    _AbortVisitDialog(reasons: reasons),
+    barrierDismissible: false,
+  );
+  if (picked != null && picked.trim().isNotEmpty) {
+    await c.applyStatus('cancelled', abortReason: picked.trim());
+  }
+}
+
+class _AbortVisitDialog extends StatefulWidget {
+  const _AbortVisitDialog({required this.reasons});
+
+  final List<String> reasons;
+
+  @override
+  State<_AbortVisitDialog> createState() => _AbortVisitDialogState();
+}
+
+class _AbortVisitDialogState extends State<_AbortVisitDialog> {
+  late String _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.reasons.first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
       backgroundColor: const Color(0xF21E293B),
       surfaceTintColor: Colors.transparent,
       title: Text(
@@ -1187,20 +1459,59 @@ Future<void> _confirmAbort(DiaryEventDetailController c) async {
           color: Colors.white,
         ),
       ),
-      content: Text(
-        'This stops any active timesheet segment for this visit and marks the diary entry as cancelled.',
-        style: GoogleFonts.inter(color: AppColors.slate300, height: 1.4),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'This stops any active timesheet segment for this visit and marks the diary entry as cancelled. Choose a reason:',
+              style: GoogleFonts.inter(color: AppColors.slate300, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.whiteOverlay(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.whiteOverlay(0.15)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selected,
+                  dropdownColor: const Color(0xFF1e293b),
+                  style: GoogleFonts.inter(
+                    color: AppColors.slate50,
+                    fontSize: 14,
+                  ),
+                  isExpanded: true,
+                  items: widget.reasons
+                      .map(
+                        (r) => DropdownMenuItem<String>(
+                          value: r,
+                          child: Text(r, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _selected = v);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Get.back(result: false),
+          onPressed: () => Get.back(),
           child: Text(
-            'No',
+            'Cancel',
             style: GoogleFonts.inter(color: AppColors.slate300),
           ),
         ),
         ElevatedButton(
-          onPressed: () => Get.back(result: true),
+          onPressed: () => Get.back(result: _selected),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
@@ -1208,9 +1519,8 @@ Future<void> _confirmAbort(DiaryEventDetailController c) async {
           child: const Text('Abort'),
         ),
       ],
-    ),
-  );
-  if (ok == true) await c.applyStatus('cancelled');
+    );
+  }
 }
 
 Future<void> _confirmComplete(DiaryEventDetailController c) async {

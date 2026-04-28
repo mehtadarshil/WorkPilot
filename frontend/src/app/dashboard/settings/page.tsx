@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail } from 'lucide-react';
+import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getJson, patchJson } from '../../apiClient';
 import CustomerTypesSettings from './CustomerTypesSettings';
@@ -12,7 +12,9 @@ import UserGroupsSettings from './UserGroupsSettings';
 import UsersSettings from './UsersSettings';
 import EmailSettings from './EmailSettings';
 import ImportSettings from './ImportSettings';
-import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog } from 'lucide-react';
+import JobReportTab from '../jobs/[id]/JobReportTab';
+import AbortReasonsSettings from './AbortReasonsSettings';
+import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
 interface InvoiceSettings {
   default_currency: string;
@@ -69,7 +71,19 @@ const THEME_PRESETS = [
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<
-    'company' | 'invoice' | 'quotation' | 'email' | 'customer-types' | 'price-books' | 'job-descriptions' | 'business-units' | 'user-groups' | 'users' | 'import'
+    | 'company'
+    | 'invoice'
+    | 'quotation'
+    | 'email'
+    | 'customer-types'
+    | 'price-books'
+    | 'job-descriptions'
+    | 'job-report-template'
+    | 'diary-abort-reasons'
+    | 'business-units'
+    | 'user-groups'
+    | 'users'
+    | 'import'
   >('company');
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [quotationSettings, setQuotationSettings] = useState<QuotationSettings | null>(null);
@@ -398,6 +412,22 @@ export default function SettingsPage() {
             >
               <Wrench className="size-4" />
               Job Descriptions
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('job-report-template')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'job-report-template' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <ListChecks className="size-4" />
+              Job report template
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('diary-abort-reasons')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'diary-abort-reasons' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Ban className="size-4" />
+              Visit abort reasons
             </button>
             <button
               type="button"
@@ -1273,6 +1303,34 @@ export default function SettingsPage() {
             className="rounded-b-xl border border-transparent"
           >
             <PriceBooksSettings />
+          </motion.div>
+        )}
+
+        {activeTab === 'job-report-template' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-slate-200 bg-white overflow-hidden"
+          >
+            {token ? (
+              <JobReportTab token={token} templateTarget="default" />
+            ) : (
+              <p className="p-6 text-slate-500">Sign in to edit the default job report template.</p>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === 'diary-abort-reasons' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-slate-200 bg-white p-6 overflow-hidden"
+          >
+            {token ? (
+              <AbortReasonsSettings token={token} />
+            ) : (
+              <p className="text-slate-500">Sign in to edit visit abort reasons.</p>
+            )}
           </motion.div>
         )}
 

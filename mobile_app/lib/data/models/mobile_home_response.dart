@@ -1,5 +1,6 @@
 import 'active_timesheet.dart';
 import 'diary_event_row.dart';
+import 'my_office_task_row.dart';
 import 'officer_profile.dart';
 
 class HomeStats {
@@ -29,6 +30,8 @@ class MobileHomeResponse {
     required this.upcomingDiary,
     this.nextDiaryEvent,
     this.activeTimesheet,
+    this.myOfficeTasksOpen = const [],
+    this.myOfficeTasksCompleted = const [],
   });
 
   factory MobileHomeResponse.fromJson(Map<String, dynamic> json) {
@@ -60,6 +63,25 @@ class MobileHomeResponse {
       active = ActiveTimesheet.fromJson(rawActive);
     }
 
+    final openRaw = json['my_office_tasks_open'];
+    final openList = <MyOfficeTaskRow>[];
+    if (openRaw is List) {
+      for (final e in openRaw) {
+        if (e is Map<String, dynamic>) {
+          openList.add(MyOfficeTaskRow.fromJson(e));
+        }
+      }
+    }
+    final doneRaw = json['my_office_tasks_completed'];
+    final doneList = <MyOfficeTaskRow>[];
+    if (doneRaw is List) {
+      for (final e in doneRaw) {
+        if (e is Map<String, dynamic>) {
+          doneList.add(MyOfficeTaskRow.fromJson(e));
+        }
+      }
+    }
+
     return MobileHomeResponse(
       officerFeatures: json['officer_features'] as bool? ?? false,
       role: json['role'] as String? ?? '',
@@ -69,6 +91,8 @@ class MobileHomeResponse {
       upcomingDiary: list,
       nextDiaryEvent: next ?? (list.isNotEmpty ? list.first : null),
       activeTimesheet: active,
+      myOfficeTasksOpen: openList,
+      myOfficeTasksCompleted: doneList,
     );
   }
 
@@ -80,4 +104,24 @@ class MobileHomeResponse {
   final List<DiaryEventRow> upcomingDiary;
   final DiaryEventRow? nextDiaryEvent;
   final ActiveTimesheet? activeTimesheet;
+  final List<MyOfficeTaskRow> myOfficeTasksOpen;
+  final List<MyOfficeTaskRow> myOfficeTasksCompleted;
+
+  MobileHomeResponse copyWith({
+    List<MyOfficeTaskRow>? myOfficeTasksOpen,
+    List<MyOfficeTaskRow>? myOfficeTasksCompleted,
+  }) {
+    return MobileHomeResponse(
+      officerFeatures: officerFeatures,
+      role: role,
+      email: email,
+      profile: profile,
+      stats: stats,
+      upcomingDiary: upcomingDiary,
+      nextDiaryEvent: nextDiaryEvent,
+      activeTimesheet: activeTimesheet,
+      myOfficeTasksOpen: myOfficeTasksOpen ?? this.myOfficeTasksOpen,
+      myOfficeTasksCompleted: myOfficeTasksCompleted ?? this.myOfficeTasksCompleted,
+    );
+  }
 }

@@ -112,19 +112,35 @@ const DAILY_TIMELINE_MIN_WIDTH_PX = DAILY_TIMELINE_HOUR_COUNT * 48;
 
 const WEEK_OPTIONS = { weekStartsOn: 0 as const };
 
+function localDayStart(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+}
+function localDayEnd(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+/** Inclusive UTC instants for the user’s local calendar range (any time zone on Earth). */
 function diaryQueryRange(viewMode: 'daily' | 'weekly' | 'monthly', anchor: Date) {
   if (viewMode === 'daily') {
-    const d = format(anchor, 'yyyy-MM-dd');
-    return { from: d, to: d };
+    return {
+      rangeStart: localDayStart(anchor).toISOString(),
+      rangeEnd: localDayEnd(anchor).toISOString(),
+    };
   }
   if (viewMode === 'weekly') {
     const ws = startOfWeek(anchor, WEEK_OPTIONS);
     const we = endOfWeek(anchor, WEEK_OPTIONS);
-    return { from: format(ws, 'yyyy-MM-dd'), to: format(we, 'yyyy-MM-dd') };
+    return {
+      rangeStart: localDayStart(ws).toISOString(),
+      rangeEnd: localDayEnd(we).toISOString(),
+    };
   }
   const ms = startOfMonth(anchor);
   const me = endOfMonth(anchor);
-  return { from: format(ms, 'yyyy-MM-dd'), to: format(me, 'yyyy-MM-dd') };
+  return {
+    rangeStart: localDayStart(ms).toISOString(),
+    rangeEnd: localDayEnd(me).toISOString(),
+  };
 }
 
 export default function DiaryPage() {
@@ -190,11 +206,14 @@ export default function DiaryPage() {
 
   const fetchData = useCallback(async () => {
     if (!token) return;
-    const { from, to } = diaryQueryRange(viewMode, date);
+    const { rangeStart, rangeEnd } = diaryQueryRange(viewMode, date);
+    const diaryParams = new URLSearchParams();
+    diaryParams.set('range_start', rangeStart);
+    diaryParams.set('range_end', rangeEnd);
     try {
       const [officerRes, eventsRes] = await Promise.all([
         getJson<{ officers: Officer[] }>('/officers/list', token),
-        getJson<{ events: DiaryEvent[] }>(`/diary-events?from=${from}&to=${to}`, token),
+        getJson<{ events: DiaryEvent[] }>(`/diary-events?${diaryParams.toString()}`, token),
       ]);
       setOfficers(officerRes.officers || []);
       setEvents(eventsRes.events || []);

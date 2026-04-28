@@ -32,25 +32,31 @@ const QUESTION_TYPES: { value: JobReportQuestionType; label: string }[] = [
 ];
 
 interface Props {
-  jobId: string;
+  /** Required when [templateTarget] is `"job"` (per-job checklist on job detail). */
+  jobId?: string;
   token: string;
+  /**
+   * `"default"` — global template in Settings; copied to new jobs.
+   * `"job"` — this job only (overrides for that job after copy).
+   */
+  templateTarget?: 'job' | 'default';
 }
 
-export default function JobReportTab({ jobId, token }: Props) {
+export default function JobReportTab({ jobId, token, templateTarget = 'job' }: Props) {
   const [questions, setQuestions] = useState<JobReportQuestionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
+  const apiPath =
+    templateTarget === 'default' ? '/settings/job-report-template' : `/jobs/${jobId}/job-report-questions`;
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getJson<{ questions: JobReportQuestionRow[] }>(
-        `/jobs/${jobId}/job-report-questions`,
-        token,
-      );
+      const res = await getJson<{ questions: JobReportQuestionRow[] }>(apiPath, token);
       const list = res.questions || [];
       setQuestions(
         list.map((q, i) => ({
@@ -65,11 +71,16 @@ export default function JobReportTab({ jobId, token }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [jobId, token]);
+  }, [apiPath, token]);
 
   useEffect(() => {
+    if (templateTarget === 'job' && !jobId) {
+      setError('Missing job id');
+      setLoading(false);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [load, templateTarget, jobId]);
 
   const move = (index: number, dir: -1 | 1) => {
     const j = index + dir;
@@ -103,11 +114,7 @@ export default function JobReportTab({ jobId, token }: Props) {
     setError(null);
     setSavedAt(null);
     try {
-      await putJson<{ questions: JobReportQuestionRow[] }>(
-        `/jobs/${jobId}/job-report-questions`,
-        { questions },
-        token,
-      );
+      await putJson<{ questions: JobReportQuestionRow[] }>(apiPath, { questions }, token);
       setSavedAt(new Date().toLocaleTimeString());
       await load();
     } catch (e: unknown) {
@@ -117,6 +124,10 @@ export default function JobReportTab({ jobId, token }: Props) {
     }
   };
 
+  if (templateTarget === 'job' && !jobId) {
+    return <div className="p-8 text-slate-500 text-sm font-medium">Missing job id.</div>;
+  }
+
   if (loading) {
     return <div className="p-8 text-slate-500 text-sm font-medium">Loading job report template…</div>;
   }
@@ -124,10 +135,24 @@ export default function JobReportTab({ jobId, token }: Props) {
   return (
     <div className="max-w-3xl space-y-6 p-6">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Job report template</h2>
+        <h2 className="text-lg font-bold text-slate-900">
+          {templateTarget === 'default' ? 'Default job report template' : 'Job report template'}
+        </h2>
         <p className="mt-1 text-sm text-slate-600">
-          Field officers must submit this report before a visit can be marked complete on jobs that include at least one
-          question. Required fields must be answered on the officer app (or here for office completion).
+          {templateTarget === 'default' ? (
+            <>
+              This checklist is <strong>copied to every new job</strong> when the job is created. Existing jobs are not
+              changed. To customise a single job after creation, open that job and use the <strong>Job report</strong>{' '}
+              tab there.
+            </>
+          ) : (
+            <>
+              For <strong>this job only</strong> — it overrides the default for visits on this job. To edit the
+              company-wide default for <strong>new</strong> jobs, go to{' '}
+              <span className="font-semibold text-slate-800">Settings → Job report template</span>. Field officers must
+              submit this report before a visit can be marked complete on jobs that include at least one question.
+            </>
+          )}
         </p>
       </div>
 

@@ -3,8 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:glass_kit/glass_kit.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/routes/app_routes.dart';
+import '../../../core/offline/connectivity_service.dart';
+import '../../../core/offline/offline_queue_service.dart';
+import '../../../core/services/storage_service.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
@@ -359,6 +363,8 @@ class _HomeTab extends GetView<HomeController> {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const _HomeHeader(),
+                  const SizedBox(height: 10),
+                  const _OfflineSyncBanner(),
                   const SizedBox(height: 16),
                   const _HomeStatsRow(),
                   if (controller.homeError.value.isNotEmpty) ...[
@@ -375,10 +381,158 @@ class _HomeTab extends GetView<HomeController> {
                   const _HomeCurrentEventCard(),
                   const SizedBox(height: 16),
                   const _HomeTimesheetCard(),
+                  const SizedBox(height: 16),
+                  const _HomeMyOfficeTasksOpenCard(),
+                  const SizedBox(height: 16),
+                  const _HomeMyOfficeTasksCompletedCard(),
                 ]),
               ),
             ),
           ],
+        ),
+      );
+    });
+  }
+}
+
+class _OfflineSyncBanner extends StatelessWidget {
+  const _OfflineSyncBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    if (!Get.isRegistered<ConnectivityService>() ||
+        !Get.isRegistered<OfflineQueueService>()) {
+      return const SizedBox.shrink();
+    }
+    final conn = Get.find<ConnectivityService>();
+    final q = Get.find<OfflineQueueService>();
+    return Obx(() {
+      final offline = !conn.isOnline.value;
+      final n = q.pendingCount.value;
+      final syncing = q.isProcessingQueue.value;
+      final err = q.queueErrorMessage.value;
+      final blocking = q.queueErrorBlocksProgress.value;
+      final show =
+          offline || n > 0 || syncing || (err != null && err.isNotEmpty);
+      if (!show) return const SizedBox.shrink();
+
+      String headline;
+      if (offline) {
+        headline = n > 0
+            ? 'Offline — $n pending change${n == 1 ? '' : 's'} will sync when you are back online.'
+            : 'Offline — job actions will queue until you are back online.';
+      } else if (err != null && err.isNotEmpty && n == 0 && !syncing) {
+        headline = 'Could not complete the last sync.';
+      } else if (syncing && n > 0) {
+        headline = 'Sending $n pending change${n == 1 ? '' : 's'}…';
+      } else if (n > 0) {
+        headline =
+            '$n change${n == 1 ? '' : 's'} waiting to sync. Tap Sync now if this stays stuck.';
+      } else {
+        headline = 'Connection restored.';
+      }
+
+      final errColor = blocking ? Colors.red.shade300 : AppColors.slate400;
+
+      return Material(
+        color: blocking
+            ? AppColors.whiteOverlay(0.12)
+            : AppColors.whiteOverlay(0.08),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    offline
+                        ? Icons.cloud_off_rounded
+                        : (blocking
+                              ? Icons.error_outline_rounded
+                              : Icons.cloud_sync_rounded),
+                    color: offline
+                        ? Colors.amber.shade200
+                        : (blocking ? Colors.red.shade200 : AppColors.primary),
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          headline,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.slate300,
+                            height: 1.35,
+                          ),
+                        ),
+                        if (syncing && !offline) ...[
+                          const SizedBox(height: 8),
+                          const SizedBox(
+                            height: 3,
+                            child: LinearProgressIndicator(
+                              backgroundColor: Colors.white12,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                        if (err != null && err.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            err,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: errColor,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (!offline && (n > 0 || err != null)) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    if (n > 0 && !syncing)
+                      TextButton(
+                        onPressed: () {
+                          q.retrySync();
+                        },
+                        child: Text(
+                          blocking ? 'Retry sync' : 'Sync now',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    if (err != null && err.isNotEmpty && !blocking)
+                      TextButton(
+                        onPressed: q.dismissQueueError,
+                        child: Text(
+                          'Dismiss',
+                          style: GoogleFonts.inter(
+                            color: AppColors.slate400,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
       );
     });
@@ -832,14 +986,45 @@ class _HomeTimesheetCard extends GetView<HomeController> {
                 ),
               );
             }
-            return Text(
-              phase,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
+            final activeDiaryId =
+                controller.home.value?.activeTimesheet?.diaryEventId;
+            final where = activeDiaryId != null
+                ? controller.diaryById(activeDiaryId)
+                : null;
+            final title = (where?.title ?? '').trim();
+            final loc = (where?.location ?? '').trim();
+            final whereLine = title.isNotEmpty && loc.isNotEmpty
+                ? '$title · $loc'
+                : (title.isNotEmpty ? title : (loc.isNotEmpty ? loc : ''));
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  phase,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+                if (whereLine.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    whereLine,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: AppColors.slate300,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
             );
           }),
           const SizedBox(height: 14),
@@ -863,6 +1048,348 @@ class _HomeTimesheetCard extends GetView<HomeController> {
         ],
       ),
     );
+  }
+}
+
+String _formatOfficeTaskDate(String? iso) {
+  if (iso == null || iso.isEmpty) return '';
+  try {
+    final d = DateTime.parse(iso).toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} · '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  } catch (_) {
+    return '';
+  }
+}
+
+class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
+  const _HomeMyOfficeTasksOpenCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (!controller.officerFeatures) {
+        return const SizedBox.shrink();
+      }
+      final tasks = controller.home.value?.myOfficeTasksOpen ?? const [];
+      return _HomeGlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.task_alt_rounded,
+                  size: 20,
+                  color: AppColors.primary.withValues(alpha: 0.95),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'My office tasks',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: controller.goToOpenJobs,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.slate300,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    'Open jobs',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.slate400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Tasks assigned to you with @ in Office tasks (web).',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.35,
+                color: AppColors.slate500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (tasks.isEmpty)
+              Text(
+                'No open office tasks for you right now.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: AppColors.slate300,
+                ),
+              )
+            else
+              ...tasks.map((t) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        t.jobTitle,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        t.description,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          height: 1.4,
+                          color: AppColors.slate300,
+                        ),
+                      ),
+                      if (_formatOfficeTaskDate(t.createdAt).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatOfficeTaskDate(t.createdAt),
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.slate500,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'From ${t.createdByName}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.slate500,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: () => controller.openJobFromTask(t),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.slate300,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              'View job',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.slate400,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Obx(() {
+                            final busy =
+                                controller.updatingOfficeTaskId.value == t.id;
+                            if (busy) {
+                              return const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.primary,
+                                ),
+                              );
+                            }
+                            return TextButton(
+                              onPressed: () =>
+                                  controller.completeMyOfficeTask(t),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                'Complete',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                      if (t != tasks.last)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Divider(
+                            height: 1,
+                            color: AppColors.whiteOverlay(0.08),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
+  const _HomeMyOfficeTasksCompletedCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (!controller.officerFeatures) {
+        return const SizedBox.shrink();
+      }
+      final tasks = controller.home.value?.myOfficeTasksCompleted ?? const [];
+      return _HomeGlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 20,
+                  color: AppColors.primary.withValues(alpha: 0.95),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Completed office tasks',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Recently finished tasks that were assigned to you.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.35,
+                color: AppColors.slate500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (tasks.isEmpty)
+              Text(
+                'No completed office tasks yet.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: AppColors.slate300,
+                ),
+              )
+            else
+              ...tasks.map((t) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        t.jobTitle,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        t.description,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          height: 1.4,
+                          color: AppColors.slate300,
+                        ),
+                      ),
+                      if (t.completedAt != null &&
+                          _formatOfficeTaskDate(t.completedAt).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Completed · ${_formatOfficeTaskDate(t.completedAt)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.slate500,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => controller.openJobFromTask(t),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.slate300,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            'View job',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                              decorationColor: AppColors.slate400,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (t != tasks.last)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Divider(
+                            height: 1,
+                            color: AppColors.whiteOverlay(0.08),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      );
+    });
   }
 }
 
@@ -915,12 +1442,14 @@ class _DiaryTab extends GetView<HomeController> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Next 7 days',
+                'Ongoing and upcoming',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: AppColors.slate400,
                 ),
               ),
+              const SizedBox(height: 10),
+              const _OfflineSyncBanner(),
             ],
           ),
         ),
@@ -995,7 +1524,9 @@ class _DiaryTab extends GetView<HomeController> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(16),
                           color: AppColors.whiteOverlay(0.06),
-                          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                          border: Border.all(
+                            color: AppColors.whiteOverlay(0.1),
+                          ),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -1060,6 +1591,19 @@ class _DiaryTab extends GetView<HomeController> {
                                   color: AppColors.slate400,
                                 ),
                               ),
+                              if (_visitCancelled(e.eventStatus) &&
+                                  e.abortReason != null &&
+                                  e.abortReason!.trim().isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Reason: ${e.abortReason!.trim()}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    height: 1.35,
+                                    color: AppColors.slate500,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               Text(
                                 'Tap card for visit details, site contact, and to mark arrived.',
@@ -1086,11 +1630,14 @@ class _DiaryTab extends GetView<HomeController> {
                                       vertical: 8,
                                     ),
                                     minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                   );
                                   if (busy) {
                                     return const Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 8),
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
                                       child: Center(
                                         child: SizedBox(
                                           width: 22,
@@ -1115,8 +1662,8 @@ class _DiaryTab extends GetView<HomeController> {
                                     alignment: Alignment.centerLeft,
                                     child: OutlinedButton(
                                       style: btnStyle,
-                                      onPressed: () => controller
-                                          .updateDiaryVisitStatus(
+                                      onPressed: () =>
+                                          controller.updateDiaryVisitStatus(
                                             e.diaryId,
                                             'travelling_to_site',
                                           ),
@@ -1150,6 +1697,71 @@ class _DiaryTab extends GetView<HomeController> {
 class _ProfileTab extends GetView<HomeController> {
   const _ProfileTab();
 
+  Future<void> _openExternal(String url) async {
+    final u = url.trim();
+    if (u.isEmpty) {
+      Get.snackbar(
+        'Link',
+        'This link is not configured for this build.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+      return;
+    }
+    final uri = Uri.tryParse(u);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await Get.dialog<bool>(
+      AlertDialog(
+        backgroundColor: const Color(0xFF0f172a),
+        title: Text(
+          'Log out?',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+        content: Text(
+          'Any pending offline changes will be cleared on logout.',
+          style: GoogleFonts.inter(
+            color: AppColors.slate300,
+            height: 1.35,
+            fontSize: 13,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(result: false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.slate300),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Get.back(result: true),
+            child: Text(
+              'Log out',
+              style: GoogleFonts.inter(
+                color: Colors.red.shade300,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await Get.find<StorageService>().clearSession();
+      Get.offAllNamed(AppRoutes.login);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -1160,6 +1772,15 @@ class _ProfileTab extends GetView<HomeController> {
         final p = h?.profile;
         final name = p?.fullName ?? controller.greetingFirstName.value;
         final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+        final statusRaw = (p?.state ?? '').trim();
+        final status = statusRaw.isEmpty ? '—' : statusRaw;
+
+        final online =
+            Get.isRegistered<ConnectivityService>() &&
+            Get.find<ConnectivityService>().isOnline.value;
+        final q = Get.isRegistered<OfflineQueueService>()
+            ? Get.find<OfflineQueueService>()
+            : null;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1177,60 +1798,340 @@ class _ProfileTab extends GetView<HomeController> {
               'Account',
               style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate400),
             ),
-            const SizedBox(height: 32),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 40,
-                  backgroundColor: AppColors.whiteOverlay(0.12),
-                  child: Text(
-                    initial,
-                    style: GoogleFonts.inter(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+            const SizedBox(height: 18),
+            _HomeGlassCard(
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 34,
+                    backgroundColor: AppColors.whiteOverlay(0.12),
+                    child: Text(
+                      initial,
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p?.fullName ?? name,
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p?.fullName ?? name,
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          (h?.email ?? p?.email ?? '').trim(),
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.slate400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.badge_outlined,
+                        size: 20,
+                        color: AppColors.primary.withValues(alpha: 0.95),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(width: 8),
                       Text(
-                        h?.email ?? p?.email ?? '',
+                        'Account',
                         style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: AppColors.slate400,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  if (p != null) ...[
+                    _ProfileLine(label: 'Account status', value: status),
+                    const SizedBox(height: 12),
+                    _ProfileLine(label: 'Officer ID', value: '${p.id}'),
+                    if (p.rolePosition != null &&
+                        p.rolePosition!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _ProfileLine(label: 'Role', value: p.rolePosition!),
+                    ],
+                    if (p.department != null &&
+                        p.department!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _ProfileLine(label: 'Department', value: p.department!),
+                    ],
+                    if (p.phone != null && p.phone!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _ProfileLine(label: 'Phone', value: p.phone!),
+                    ],
+                  ] else ...[
+                    Text(
+                      'Profile details will appear after the next sync.',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        height: 1.35,
+                        color: AppColors.slate400,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            if (p != null) ...[
-              const SizedBox(height: 24),
-              if (p.rolePosition != null && p.rolePosition!.trim().isNotEmpty)
-                _ProfileLine(label: 'Role', value: p.rolePosition!),
-              if (p.department != null && p.department!.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _ProfileLine(label: 'Department', value: p.department!),
-              ],
-              if (p.phone != null && p.phone!.trim().isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _ProfileLine(label: 'Phone', value: p.phone!),
-              ],
-            ],
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Obx(() {
+                final pending = q?.pendingCount.value ?? 0;
+                final syncing = q?.isProcessingQueue.value ?? false;
+                final err = q?.queueErrorMessage.value;
+                final label = online ? 'Online' : 'Offline';
+                final icon = online
+                    ? Icons.wifi_rounded
+                    : Icons.wifi_off_rounded;
+                final iconColor = online
+                    ? AppColors.primary
+                    : Colors.amber.shade200;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(icon, size: 20, color: iconColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Offline & sync',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    _ProfileLine(label: 'Connection', value: label),
+                    const SizedBox(height: 12),
+                    _ProfileLine(label: 'Pending changes', value: '$pending'),
+                    if (err != null && err.trim().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        err,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: Colors.red.shade300,
+                        ),
+                      ),
+                    ],
+                    if (q != null) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: (!online || syncing || pending == 0)
+                              ? null
+                              : () {
+                                  q.retrySync();
+                                },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            disabledBackgroundColor: AppColors.whiteOverlay(
+                              0.06,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                          ),
+                          icon: syncing
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.sync_rounded, size: 18),
+                          label: Text(
+                            syncing ? 'Syncing…' : 'Sync now',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              }),
+            ),
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 20,
+                        color: AppColors.primary.withValues(alpha: 0.95),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'App',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Obx(() {
+                    final v = controller.appVersionLabel.value.trim();
+                    return _ProfileLine(
+                      label: 'Version',
+                      value: v.isEmpty ? '—' : v,
+                    );
+                  }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.policy_outlined,
+                        size: 20,
+                        color: AppColors.primary.withValues(alpha: 0.95),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Legal & privacy',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: const Icon(
+                      Icons.privacy_tip_outlined,
+                      color: AppColors.slate300,
+                      size: 20,
+                    ),
+                    title: Text(
+                      'Privacy policy',
+                      style: GoogleFonts.inter(
+                        color: AppColors.slate300,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 18,
+                      color: AppColors.slate500,
+                    ),
+                    onTap: () => _openExternal(AppConstants.privacyPolicyUrl),
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: const Icon(
+                      Icons.description_outlined,
+                      color: AppColors.slate300,
+                      size: 20,
+                    ),
+                    title: Text(
+                      'Terms of service',
+                      style: GoogleFonts.inter(
+                        color: AppColors.slate300,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.open_in_new_rounded,
+                      size: 18,
+                      color: AppColors.slate500,
+                    ),
+                    onTap: () => _openExternal(AppConstants.termsOfServiceUrl),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Your offline submissions (notes/photos/videos) are stored on this device until they sync.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: AppColors.slate500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Logout',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    onPressed: _confirmLogout,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade700.withValues(
+                        alpha: 0.85,
+                      ),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      'Log out',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (h != null && !h.officerFeatures) ...[
               const SizedBox(height: 24),
               Text(

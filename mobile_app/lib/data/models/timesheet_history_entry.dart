@@ -32,9 +32,9 @@ class TimesheetHistoryEntry {
   final int? diaryEventId;
   final int durationSeconds;
 
-  DateTime? get clockIn => DateTime.tryParse(clockInIso);
+  DateTime? get clockIn => DateTime.tryParse(clockInIso)?.toLocal();
   DateTime? get clockOut =>
-      clockOutIso != null ? DateTime.tryParse(clockOutIso!) : null;
+      clockOutIso != null ? DateTime.tryParse(clockOutIso!)?.toLocal() : null;
 
   bool get isOpen => clockOutIso == null;
 

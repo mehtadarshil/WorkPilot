@@ -536,10 +536,10 @@ export default function CustomerDetailsPage() {
                </div>
             </div>
 
-            {/* Notes Section (Replacement for Technical references) */}
+            {/* Technical Notes section */}
             <div className="p-5 pb-10">
                <div className="flex justify-between items-center mb-4">
-                 <h3 className="font-bold text-slate-800 text-[15px]">Notes</h3>
+                 <h3 className="font-bold text-slate-800 text-[15px]">Technical notes</h3>
                  <button 
                   onClick={() => {
                     setIsAddingNote(true);

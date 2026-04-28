@@ -14,7 +14,18 @@ interface OfficeTask {
   created_by_name: string;
   completed: boolean;
   completed_at: string | null;
+  completed_by_name?: string | null;
+  /** Set when the task is marked complete: dashboard admin vs field officer mobile app. */
+  completion_source?: 'web' | 'mobile' | string | null;
   created_at: string;
+}
+
+function formatOfficeTaskCompletedBy(task: OfficeTask): string {
+  const name = task.completed_by_name?.trim();
+  if (!name) return '—';
+  if (task.completion_source === 'mobile') return `${name} (Mobile app)`;
+  if (task.completion_source === 'web') return `${name} (Dashboard)`;
+  return name;
 }
 
 interface OfficerOption {
@@ -204,10 +215,11 @@ export default function JobOfficeTasksTab({ jobId, tasks, officers, onRefresh }:
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase">Completed at</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold uppercase">Completed by</th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase">Description</th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase">Created by</th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase">Assignee</th>
@@ -217,6 +229,7 @@ export default function JobOfficeTasksTab({ jobId, tasks, officers, onRefresh }:
                 {completedTasks.map((task) => (
                   <tr key={task.id}>
                     <td className="px-4 py-3 text-slate-600">{task.completed_at ? dayjs(task.completed_at).format('ddd D MMM YYYY [at] h:mm a') : '-'}</td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatOfficeTaskCompletedBy(task)}</td>
                     <td className="px-4 py-3 text-slate-800">{task.description}</td>
                     <td className="px-4 py-3 text-slate-700">{task.created_by_name}</td>
                     <td className="px-4 py-3 text-slate-700">{task.assignee_name || '-'}</td>

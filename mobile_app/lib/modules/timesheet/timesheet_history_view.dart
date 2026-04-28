@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/values/app_colors.dart';
 import '../../data/models/timesheet_history_entry.dart';
+import '../home/controllers/home_controller.dart';
 import 'timesheet_history_controller.dart';
 
 class TimesheetHistoryView extends GetView<TimesheetHistoryController> {
@@ -48,7 +49,8 @@ class TimesheetHistoryView extends GetView<TimesheetHistoryController> {
                 child: CircularProgressIndicator(color: AppColors.primary),
               );
             }
-            if (controller.error.value.isNotEmpty && controller.entries.isEmpty) {
+            if (controller.error.value.isNotEmpty &&
+                controller.entries.isEmpty) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -110,6 +112,20 @@ class _HistoryTile extends StatelessWidget {
 
   final TimesheetHistoryEntry entry;
 
+  String? _whereLine() {
+    final id = entry.diaryEventId;
+    if (id == null || id <= 0) return null;
+    if (!Get.isRegistered<HomeController>()) return 'Visit #$id';
+    final d = Get.find<HomeController>().diaryById(id);
+    if (d == null) return 'Visit #$id';
+    final title = (d.title ?? '').trim();
+    final loc = (d.location ?? '').trim();
+    if (title.isNotEmpty && loc.isNotEmpty) return '$title · $loc';
+    if (title.isNotEmpty) return title;
+    if (loc.isNotEmpty) return loc;
+    return 'Visit #$id';
+  }
+
   String _fmtDuration(int seconds) {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
@@ -121,7 +137,8 @@ class _HistoryTile extends StatelessWidget {
     final a = entry.clockIn;
     final b = entry.clockOut;
     if (a == null) return '—';
-    final ds = '${a.day.toString().padLeft(2, '0')}/${a.month.toString().padLeft(2, '0')}/${a.year}';
+    final ds =
+        '${a.day.toString().padLeft(2, '0')}/${a.month.toString().padLeft(2, '0')}/${a.year}';
     if (b == null) return '$ds · In progress';
     final t0 =
         '${a.hour.toString().padLeft(2, '0')}:${a.minute.toString().padLeft(2, '0')}';
@@ -132,6 +149,7 @@ class _HistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final where = _whereLine();
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: DecoratedBox(
@@ -169,6 +187,19 @@ class _HistoryTile extends StatelessWidget {
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: AppColors.slate400,
+                            ),
+                          ),
+                        ],
+                        if (where != null && where.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            where,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: AppColors.slate300,
                             ),
                           ),
                         ],

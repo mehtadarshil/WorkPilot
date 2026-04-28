@@ -156,6 +156,17 @@ function formatCurrency(amount: number, currency: string): string {
   }
 }
 
+/** Parse amount field to integer cents; min 0.01 (1 cent). Accepts "0,01" style input. */
+function parsePaymentInputToCents(raw: string): number | null {
+  const t = raw.trim().replace(/\s/g, '').replace(',', '.');
+  if (t === '' || t === '.') return null;
+  const n = parseFloat(t);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const cents = Math.round(n * 100);
+  if (cents < 1) return null;
+  return cents;
+}
+
 export default function InvoiceDetailsView() {
   const router = useRouter();
   const params = useParams();
@@ -208,17 +219,22 @@ export default function InvoiceDetailsView() {
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
-    const amount = parseFloat(paymentAmount);
-    if (!amount || amount <= 0) {
-      setPaymentError('Valid payment amount is required.');
-      return;
-    }
     const token = window.localStorage.getItem('wp_token');
     if (!token || !invoice) return;
-    if (amount > invoice.total_amount - invoice.total_paid) {
+    const remainingCents = Math.max(
+      0,
+      Math.round((invoice.total_amount - invoice.total_paid) * 100),
+    );
+    const cents = parsePaymentInputToCents(paymentAmount);
+    if (cents === null) {
+      setPaymentError('Enter an amount of at least 0.01 (one cent).');
+      return;
+    }
+    if (cents > remainingCents) {
       setPaymentError('Amount exceeds remaining balance.');
       return;
     }
+    const amount = cents / 100;
     try {
       await postJson(`/invoices/${invoiceId}/payments`, {
         amount,
@@ -270,7 +286,11 @@ export default function InvoiceDetailsView() {
 
   const isOverdue = dayjs().isAfter(dayjs(invoice.due_date), 'day') && invoice.state !== 'paid';
   const overDueDays = dayjs().diff(dayjs(invoice.due_date), 'day');
-  const balanceDue = invoice.total_amount - invoice.total_paid;
+  const remainingCents = Math.max(
+    0,
+    Math.round((invoice.total_amount - invoice.total_paid) * 100),
+  );
+  const balanceDue = remainingCents / 100;
   const settings = invoice.settings;
   const companyName = settings?.company_name || 'WorkPilot';
   const taxLabel = settings?.tax_label || 'Tax';
@@ -784,7 +804,7 @@ export default function InvoiceDetailsView() {
                 <div className="no-print overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
                   <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-3">
                     <h3 className="text-sm font-semibold text-slate-900">Payment & allocation history</h3>
-                    {balanceDue > 0 && (
+                    {remainingCents > 0 && (
                       <button
                         type="button"
                         onClick={() => setPaymentModalOpen(true)}
@@ -824,7 +844,7 @@ export default function InvoiceDetailsView() {
                         <Info className="size-6 stroke-[3px] text-[#14B8A6]/50" />
                       </div>
                       <p className="text-[13px] font-medium tracking-tight text-slate-500">There are no payments for this invoice</p>
-                      {balanceDue > 0 && (
+                      {remainingCents > 0 && (
                         <p className="mt-2 text-xs text-slate-400">Use <span className="font-semibold text-[#14B8A6]">Add new payment</span> above when there is a balance due.</p>
                       )}
                     </div>
@@ -848,7 +868,19 @@ export default function InvoiceDetailsView() {
               <form onSubmit={handleAddPayment} className="mt-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Amount *</label>
-                  <input type="number" step="0.01" min={0} max={balanceDue} required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="0.00" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    max={Number(balanceDue.toFixed(2))}
+                    inputMode="decimal"
+                    required
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="0.01"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">Minimum 0.01; supports partial payments down to a single cent.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Payment method</label>
