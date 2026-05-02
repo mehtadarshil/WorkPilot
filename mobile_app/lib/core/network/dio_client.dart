@@ -22,6 +22,7 @@ class DioClient extends GetxService {
         headers: <String, dynamic>{
           Headers.acceptHeader: Headers.jsonContentType,
           Headers.contentTypeHeader: Headers.jsonContentType,
+          'X-WorkPilot-Client': 'mobile',
         },
       ),
     );

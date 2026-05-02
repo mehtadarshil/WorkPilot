@@ -15,6 +15,8 @@ import '../../modules/open_jobs/open_jobs_binding.dart';
 import '../../modules/open_jobs/open_jobs_view.dart';
 import '../../modules/timesheet/timesheet_history_binding.dart';
 import '../../modules/timesheet/timesheet_history_view.dart';
+import '../../modules/crm/crm_list_binding.dart';
+import '../../modules/crm/crm_list_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -59,6 +61,11 @@ class AppPages {
       name: AppRoutes.diaryJobReportHistory,
       page: () => const JobReportHistoryView(),
       binding: JobReportHistoryBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.crmList,
+      page: () => const CrmListView(),
+      binding: CrmListBinding(),
     ),
   ];
 }

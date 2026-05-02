@@ -4,12 +4,33 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Users, Package, UserCircle, Briefcase, UserCog, FileText, Settings, Quote, Award } from 'lucide-react';
+import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award } from 'lucide-react';
+import { getJson } from '../apiClient';
+import type { TenantPermissionKey } from '../../lib/tenantPermissions';
 
 interface StoredUser {
   id: number;
   email: string;
-  role: 'SUPER_ADMIN' | 'ADMIN';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
+  permissions?: Partial<Record<TenantPermissionKey, boolean>> | null;
+  is_tenant_owner?: boolean;
+}
+
+function hasNavPermission(user: StoredUser, key: TenantPermissionKey): boolean {
+  if (user.role === 'OFFICER') return true;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (user.role === 'ADMIN') return true;
+  if (user.role === 'STAFF') return user.permissions?.[key] === true;
+  return false;
+}
+
+function showSettingsNav(user: StoredUser): boolean {
+  if (user.role === 'SUPER_ADMIN' || user.role === 'OFFICER') return true;
+  return (
+    hasNavPermission(user, 'settings_company') ||
+    hasNavPermission(user, 'settings_master_data') ||
+    hasNavPermission(user, 'field_users')
+  );
 }
 
 export default function DashboardLayout({
@@ -30,7 +51,32 @@ export default function DashboardLayout({
       return;
     }
     try {
-      setUser(JSON.parse(userJson) as StoredUser);
+      const parsed = JSON.parse(userJson) as StoredUser;
+      if (parsed.role === 'OFFICER') {
+        window.localStorage.removeItem('wp_token');
+        window.localStorage.removeItem('wp_user');
+        router.replace('/login?reason=field');
+        return;
+      }
+      setUser(parsed);
+      if (parsed.role === 'ADMIN' || parsed.role === 'STAFF') {
+        getJson<{ user: Record<string, unknown> }>('/auth/me', token)
+          .then((d) => {
+            const u = d.user as StoredUser & Record<string, unknown>;
+            const merged: StoredUser = {
+              ...parsed,
+              ...u,
+              id: (u.id as number) ?? parsed.id,
+              email: (u.email as string) ?? parsed.email,
+              role: (u.role as StoredUser['role']) ?? parsed.role,
+              permissions: (u.permissions as StoredUser['permissions']) ?? parsed.permissions,
+              is_tenant_owner: (u.is_tenant_owner as boolean | undefined) ?? parsed.is_tenant_owner,
+            };
+            window.localStorage.setItem('wp_user', JSON.stringify(merged));
+            setUser(merged);
+          })
+          .catch(() => {});
+      }
     } catch {
       router.replace('/login');
     }
@@ -67,7 +113,13 @@ export default function DashboardLayout({
                 WorkPilot CRM
               </h1>
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                {user.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
+                {user.role === 'SUPER_ADMIN'
+                  ? 'Super Admin'
+                  : user.role === 'STAFF'
+                    ? 'Staff'
+                    : user.role === 'OFFICER'
+                      ? 'Field officer'
+                      : 'Admin'}
               </p>
             </div>
           </div>
@@ -124,72 +176,84 @@ export default function DashboardLayout({
                 Service Plans
               </Link>
             )}
-            <Link
-              href="/dashboard/customers"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname === '/dashboard/customers'
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <UserCircle className="size-4" />
-              Customers
-            </Link>
-            <Link
-              href="/dashboard/certifications"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname.startsWith('/dashboard/certifications')
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Award className="size-4" />
-              Certifications
-            </Link>
-            <Link
-              href="/dashboard/jobs"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname === '/dashboard/jobs'
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Briefcase className="size-4" />
-              Jobs
-            </Link>
-            <Link
-              href="/dashboard/invoices"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname.startsWith('/dashboard/invoices')
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <FileText className="size-4" />
-              Invoices
-            </Link>
-            <Link
-              href="/dashboard/quotations"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname.startsWith('/dashboard/quotations')
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Quote className="size-4" />
-              Quotations
-            </Link>
-            <Link
-              href="/dashboard/settings"
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                pathname === '/dashboard/settings'
-                  ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Settings className="size-4" />
-              Settings
-            </Link>
+            {hasNavPermission(user, 'customers') && (
+              <Link
+                href="/dashboard/customers"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname === '/dashboard/customers'
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <UserCircle className="size-4" />
+                Customers
+              </Link>
+            )}
+            {hasNavPermission(user, 'certifications') && (
+              <Link
+                href="/dashboard/certifications"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/certifications')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Award className="size-4" />
+                Certifications
+              </Link>
+            )}
+            {hasNavPermission(user, 'jobs') && (
+              <Link
+                href="/dashboard/jobs"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname === '/dashboard/jobs'
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Briefcase className="size-4" />
+                Jobs
+              </Link>
+            )}
+            {hasNavPermission(user, 'invoices') && (
+              <Link
+                href="/dashboard/invoices"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/invoices')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <FileText className="size-4" />
+                Invoices
+              </Link>
+            )}
+            {hasNavPermission(user, 'quotations') && (
+              <Link
+                href="/dashboard/quotations"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/quotations')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Quote className="size-4" />
+                Quotations
+              </Link>
+            )}
+            {showSettingsNav(user) && (
+              <Link
+                href="/dashboard/settings"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname === '/dashboard/settings'
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Settings className="size-4" />
+                Settings
+              </Link>
+            )}
           </nav>
         </div>
       </header>

@@ -30,6 +30,8 @@ import { getJson, postJson, deleteRequest } from '../../../apiClient';
 import QuotationNotesPanel from './QuotationNotesPanel';
 import QuotationEmailComposer from './QuotationEmailComposer';
 import QuotationPrintTemplate from './QuotationPrintTemplate';
+import QuotationInternalNotesCard from './QuotationInternalNotesCard';
+import type { QuotationInternalNote } from './QuotationInternalNotesCard';
 
 interface LineItem {
   id: number;
@@ -92,6 +94,7 @@ interface Quotation {
   public_token?: string | null;
   line_items: LineItem[];
   activities: Activity[];
+  internal_notes?: QuotationInternalNote[];
   settings?: QuotationSettings;
 }
 
@@ -602,6 +605,35 @@ export default function QuotationDetailPage() {
                       </div>
                     </div>
                   </motion.div>
+
+                  {token ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.08 }}
+                    >
+                      <QuotationInternalNotesCard
+                        quotationId={id}
+                        authToken={token}
+                        notes={quotation.internal_notes ?? []}
+                        onAppendNote={(note) =>
+                          setQuotation((q) =>
+                            q ? { ...q, internal_notes: [note, ...(q.internal_notes ?? [])] } : null,
+                          )
+                        }
+                        onRemoveNote={(noteId) =>
+                          setQuotation((q) =>
+                            q
+                              ? {
+                                  ...q,
+                                  internal_notes: (q.internal_notes ?? []).filter((n) => n.id !== noteId),
+                                }
+                              : null,
+                          )
+                        }
+                      />
+                    </motion.div>
+                  ) : null}
 
                   {/* Activity Preview */}
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">

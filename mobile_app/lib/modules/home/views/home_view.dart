@@ -14,6 +14,7 @@ import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
 import '../../diary_event/diary_event_detail_controller.dart';
 import '../controllers/home_controller.dart';
+import '../widgets/work_hub_tab.dart';
 
 class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
@@ -39,12 +40,20 @@ class HomeView extends GetView<HomeController> {
               bottom: false,
               child: Padding(
                 padding: EdgeInsets.only(bottom: 80 + bottomInset),
-                child: Obx(
-                  () => IndexedStack(
-                    index: controller.navIndex.value,
-                    children: const [_HomeTab(), _DiaryTab(), _ProfileTab()],
-                  ),
-                ),
+                child: Obx(() {
+                  final hub = controller.showWorkHubTab;
+                  final maxIdx = controller.profileTabIndex;
+                  final idx = controller.navIndex.value.clamp(0, maxIdx);
+                  return IndexedStack(
+                    index: idx,
+                    children: [
+                      const _HomeTab(),
+                      const _DiaryTab(),
+                      if (hub) WorkHubTab(controller: controller),
+                      const _ProfileTab(),
+                    ],
+                  );
+                }),
               ),
             ),
             Positioned(
@@ -146,12 +155,13 @@ class _GlassTabBar extends StatelessWidget {
 
   final HomeController controller;
 
-  static const int _tabCount = 3;
-
   @override
   Widget build(BuildContext context) {
     return Obx(() {
       final idx = controller.navIndex.value;
+      final hub = controller.showWorkHubTab;
+      final tabCount = controller.tabCount;
+      final profileI = controller.profileTabIndex;
       return LayoutBuilder(
         builder: (context, constraints) {
           return GlassContainer.frostedGlass(
@@ -194,7 +204,8 @@ class _GlassTabBar extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, c) {
                 final w = c.maxWidth;
-                final segment = w / _tabCount;
+                final segment = w / tabCount;
+                final slideIdx = idx.clamp(0, tabCount - 1);
                 return Stack(
                   clipBehavior: Clip.hardEdge,
                   alignment: Alignment.center,
@@ -202,7 +213,7 @@ class _GlassTabBar extends StatelessWidget {
                     AnimatedPositioned(
                       duration: const Duration(milliseconds: 260),
                       curve: Curves.easeOutCubic,
-                      left: idx * segment,
+                      left: slideIdx * segment,
                       width: segment,
                       top: 0,
                       bottom: 0,
@@ -227,12 +238,20 @@ class _GlassTabBar extends StatelessWidget {
                           label: 'Diary',
                           onTap: () => controller.navIndex.value = 1,
                         ),
+                        if (hub)
+                          _NavItem(
+                            selected: idx == 2,
+                            icon: Icons.grid_view_rounded,
+                            iconMuted: Icons.grid_view_outlined,
+                            label: 'Work',
+                            onTap: () => controller.navIndex.value = 2,
+                          ),
                         _NavItem(
-                          selected: idx == 2,
+                          selected: idx == profileI,
                           icon: Icons.person_rounded,
                           iconMuted: Icons.person_outline_rounded,
                           label: 'Profile',
-                          onTap: () => controller.navIndex.value = 2,
+                          onTap: () => controller.navIndex.value = profileI,
                         ),
                       ],
                     ),

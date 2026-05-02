@@ -415,4 +415,99 @@ class MobileRepository extends BaseRepository {
         )
         .toList();
   }
+
+  /// Same list endpoints as the web CRM (`/customers`, `/jobs`, …). Server enforces permissions.
+  Future<({List<Map<String, dynamic>> items, int page, int? totalPages})> fetchCrmListPage({
+    required String module,
+    int page = 1,
+    String? search,
+  }) async {
+    List<Map<String, dynamic>> parseList(dynamic raw) {
+      if (raw is! List) return [];
+      return raw
+          .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+          .toList();
+    }
+
+    final trimmed = search?.trim();
+    final q = <String, dynamic>{'page': page};
+    if (trimmed != null && trimmed.isNotEmpty) {
+      q['search'] = trimmed;
+    }
+
+    switch (module) {
+      case 'customers':
+        q['limit'] = 30;
+        final res = await api.get<Map<String, dynamic>>(
+          '/customers',
+          queryParameters: q,
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['customers']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
+        );
+      case 'jobs':
+        q['limit'] = 25;
+        final res = await api.get<Map<String, dynamic>>(
+          '/jobs',
+          queryParameters: q,
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['jobs']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
+        );
+      case 'quotations':
+        q['limit'] = 25;
+        final res = await api.get<Map<String, dynamic>>(
+          '/quotations',
+          queryParameters: q,
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['quotations']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
+        );
+      case 'invoices':
+        q['limit'] = 25;
+        final res = await api.get<Map<String, dynamic>>(
+          '/invoices',
+          queryParameters: q,
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['invoices']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
+        );
+      case 'parts_catalog':
+        final res = await api.get<Map<String, dynamic>>(
+          '/part-catalog',
+          queryParameters: <String, dynamic>{
+            if (trimmed != null && trimmed.isNotEmpty) 'search': trimmed,
+            'limit': 100,
+          },
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['parts']),
+          page: 1,
+          totalPages: 1,
+        );
+      case 'certifications':
+        final res = await api.get<Map<String, dynamic>>('/certifications');
+        final data = res.data;
+        return (
+          items: parseList(data?['certifications']),
+          page: 1,
+          totalPages: 1,
+        );
+      default:
+        throw ApiException('Unknown CRM module: $module');
+    }
+  }
 }

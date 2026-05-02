@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Clients</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config = {darkMode: "class", theme: {extend: {colors: {"surface-dim": "#d8dae2", "primary-fixed-dim": "#a5c8ff", "on-secondary-fixed": "#001c3a", "inverse-on-surface": "#eef0f8", error: "#ba1a1a", "alert-red": "#ef4444", "surface-bright": "#f8f9ff", "on-surface": "#181c21", "surface-variant": "#e0e2ea", "secondary-fixed": "#d4e3ff", "surface-container-high": "#e6e8f0", "on-error-container": "#93000a", "surface-container": "#eceef6", "tertiary-container": "#b65c00", "on-surface-variant": "#414752", "surface-container-lowest": "#ffffff", secondary: "#465f84", "secondary-fixed-dim": "#aec8f2", "surface-container-highest": "#e0e2ea", "on-secondary-fixed-variant": "#2e486b", "primary-gold": "#856826", "inverse-surface": "#2d3137", "on-error": "#ffffff", surface: "#f8f9ff", "on-tertiary-container": "#fffbff", "error-container": "#ffdad6", primary: "#005fad", "secondary-container": "#b9d3fd", outline: "#717783", "surface-container-low": "#f1f3fb", "on-tertiary": "#ffffff", "on-secondary-container": "#425b7f", "alert-pink": "#b4136d", "primary-container": "#1378d5", "on-primary": "#ffffff", "support-indigo": "#4b4fd2", "on-tertiary-fixed": "#301400", "on-primary-fixed-variant": "#004785", "tertiary-fixed-dim": "#ffb784", "primary-fixed": "#d4e3ff", "on-secondary": "#ffffff", "tertiary-fixed": "#ffdcc6", "on-primary-container": "#000511", "on-background": "#181c21", background: "#f8f9ff", "outline-variant": "#c1c7d4", "on-tertiary-fixed-variant": "#713700", "inverse-primary": "#a5c8ff", "surface-tint": "#005fae", "on-primary-fixed": "#001c3a", tertiary: "#914800"}, borderRadius: {DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px"}, spacing: {xl: "32px", sm: "8px", lg: "24px", gutter: "16px", unit: "4px", md: "16px", "container-margin": "24px", xs: "4px", "card-padding": "20px"}, fontFamily: {"body-lg": ["Inter"], "headline-sm": ["Inter"], "label-md": ["Inter"], "body-md": ["Inter"], "badge-sm": ["Inter"], "headline-md": ["Inter"], "display-lg": ["Inter"]}, fontSize: {"body-lg": ["16px", {lineHeight: "1.5", fontWeight: "500"}], "headline-sm": ["20px", {lineHeight: "1.25", fontWeight: "600"}], "label-md": ["12px", {lineHeight: "1.2", letterSpacing: "0.01em", fontWeight: "600"}], "body-md": ["14px", {lineHeight: "1.45", fontWeight: "500"}], "badge-sm": ["10px", {lineHeight: "1.0", fontWeight: "600"}], "headline-md": ["24px", {lineHeight: "1.2", fontWeight: "700"}], "display-lg": ["30px", {lineHeight: "1.15", fontWeight: "700"}]}}}};</script>
+<style>
+        .clay-card {
+            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.05), -4px -4px 10px rgba(255, 255, 255, 0.8);
+        }
+        .clay-inset {
+            box-shadow: inset 4px 4px 8px rgba(0, 0, 0, 0.06), inset -4px -4px 8px rgba(255, 255, 255, 0.9);
+        }
+        .clay-button {
+            box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.1), -3px -3px 8px rgba(255, 255, 255, 0.9);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-surface-dim min-h-screen text-on-surface antialiased selection:bg-primary-fixed selection:text-on-primary-fixed">
+<main class="max-w-md mx-auto px-container-margin py-lg pb-xl space-y-lg">
+<!-- Header -->
+<header class="space-y-sm pt-sm">
+<h1 class="font-display-lg text-display-lg text-on-background tracking-tight">Clients</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Manage your registry</p>
+</header>
+<!-- Search Bar (Inset Clay) -->
+<div class="relative clay-inset bg-surface-container rounded-xl overflow-hidden flex items-center px-md py-sm">
+<span class="material-symbols-outlined text-outline mr-sm">search</span>
+<input class="w-full bg-transparent border-none focus:ring-0 text-on-surface font-body-md placeholder-outline-variant p-0" placeholder="Search clients..." type="text"/>
+<button class="text-primary-gold bg-primary-fixed/20 p-xs rounded-lg hover:bg-primary-fixed/40 transition-colors ml-sm">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">tune</span>
+</button>
+</div>
+<!-- Filter Chips -->
+<div class="flex gap-sm overflow-x-auto pb-sm scrollbar-hide -mx-container-margin px-container-margin">
+<button class="clay-button bg-primary-gold text-on-primary rounded-full px-md py-xs font-label-md text-label-md flex-shrink-0 transition-transform active:scale-95">All Active</button>
+<button class="clay-button bg-surface-container-lowest text-on-surface-variant rounded-full px-md py-xs font-label-md text-label-md flex-shrink-0 transition-transform active:scale-95">Priority</button>
+<button class="clay-button bg-surface-container-lowest text-on-surface-variant rounded-full px-md py-xs font-label-md text-label-md flex-shrink-0 transition-transform active:scale-95">Pending</button>
+<button class="clay-button bg-surface-container-lowest text-on-surface-variant rounded-full px-md py-xs font-label-md text-label-md flex-shrink-0 transition-transform active:scale-95">Archived</button>
+</div>
+<!-- Client List -->
+<div class="space-y-md">
+<!-- Client Card 1 -->
+<div class="clay-card bg-surface-container-lowest rounded-xl p-card-padding flex items-center justify-between group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-[48px] h-[48px] rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-headline-sm text-headline-sm clay-button flex-shrink-0">
+                        A
+                    </div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Acme Corp</h2>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>Jane Doe • Director</span>
+</div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full clay-button bg-surface flex items-center justify-center text-outline group-hover:text-primary-gold transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+<!-- Client Card 2 -->
+<div class="clay-card bg-surface-container-lowest rounded-xl p-card-padding flex items-center justify-between group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-[48px] h-[48px] rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-headline-sm text-headline-sm clay-button flex-shrink-0">
+                        G
+                    </div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Globex Inc</h2>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>John Smith • Manager</span>
+</div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full clay-button bg-surface flex items-center justify-center text-outline group-hover:text-primary-gold transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+<!-- Client Card 3 -->
+<div class="clay-card bg-surface-container-lowest rounded-xl p-card-padding flex items-center justify-between group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-[48px] h-[48px] rounded-full bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-headline-sm text-headline-sm clay-button flex-shrink-0">
+                        S
+                    </div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Stark Ind</h2>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>Tony Stark • CEO</span>
+</div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full clay-button bg-surface flex items-center justify-center text-outline group-hover:text-primary-gold transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+<!-- Client Card 4 -->
+<div class="clay-card bg-surface-container-lowest rounded-xl p-card-padding flex items-center justify-between group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-[48px] h-[48px] rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-headline-sm text-headline-sm clay-button flex-shrink-0 border border-outline-variant/30">
+                        W
+                    </div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Wayne Ent</h2>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>Bruce Wayne • Owner</span>
+</div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full clay-button bg-surface flex items-center justify-center text-outline group-hover:text-primary-gold transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+<!-- Client Card 5 -->
+<div class="clay-card bg-surface-container-lowest rounded-xl p-card-padding flex items-center justify-between group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center gap-md">
+<div class="w-[48px] h-[48px] rounded-full bg-error-container text-on-error-container flex items-center justify-center font-headline-sm text-headline-sm clay-button flex-shrink-0">
+                        O
+                    </div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Oscorp</h2>
+<div class="flex items-center gap-xs mt-xs text-on-surface-variant font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>Norman Osborn • Exec</span>
+</div>
+</div>
+</div>
+<div class="w-10 h-10 rounded-full clay-button bg-surface flex items-center justify-center text-outline group-hover:text-primary-gold transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- FAB Add Client (Contextual) -->
+<button class="fixed bottom-lg right-lg w-14 h-14 bg-primary text-on-primary rounded-2xl flex items-center justify-center shadow-[4px_4px_12px_rgba(19,120,213,0.4),-4px_-4px_12px_rgba(255,255,255,0.9)] active:scale-90 transition-transform z-50">
+<span class="material-symbols-outlined text-[28px]">add</span>
+</button>
+</main>
+</body></html>

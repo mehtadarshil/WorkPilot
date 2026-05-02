@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   X,
   Paperclip,
@@ -22,6 +22,8 @@ import {
   makePresetAttachmentKey,
 } from '../../_components/emailComposerManifest';
 
+export type JobEmailPresetAttachment = ComposerPresetAttachment;
+
 type ComposeDraft = {
   subject: string;
   body_html: string;
@@ -29,9 +31,6 @@ type ComposeDraft = {
   from_display: string;
   reply_to: string | null;
   smtp_ready: boolean;
-  can_send: boolean;
-  invoice_state: string;
-  job_id?: number | null;
   default_to: string;
   customer_name: string;
   to_email_options?: { email: string; label: string }[];
@@ -40,8 +39,10 @@ type ComposeDraft = {
 type Props = {
   open: boolean;
   onClose: () => void;
-  invoiceId: string;
+  jobId: string;
   onSent: () => void;
+  /** Files chosen on the job Files tab (already base64). */
+  initialAttachments?: JobEmailPresetAttachment[];
 };
 
 function fileToBase64(file: File): Promise<string> {
@@ -74,7 +75,7 @@ function isBodyEmpty(html: string): boolean {
   return !(d.textContent && d.textContent.replace(/\u00a0/g, ' ').trim());
 }
 
-export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent }: Props) {
+export default function JobEmailComposer({ open, onClose, jobId, onSent, initialAttachments }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const loadGenerationRef = useRef(0);
@@ -96,28 +97,24 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
   const [showBcc, setShowBcc] = useState(false);
   const [includeSignature, setIncludeSignature] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
-  const [scheduleAfterSend, setScheduleAfterSend] = useState(false);
   const [presetAttachments, setPresetAttachments] = useState<
-    (ComposerPresetAttachment & { key: string })[]
+    (JobEmailPresetAttachment & { key: string })[]
   >([]);
   const [filePickerError, setFilePickerError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [toPickerOpen, setToPickerOpen] = useState(false);
 
-  const presetBytesApprox = useMemo(
-    () => presetAttachments.reduce((s, p) => s + approxBytesFromBase64(p.content_base64), 0),
-    [presetAttachments],
-  );
+  const presetBytesApprox = presetAttachments.reduce((s, p) => s + approxBytesFromBase64(p.content_base64), 0);
   const manualFilesBytesApprox = files.reduce((s, f) => s + f.size, 0);
   const existingAttachmentBytesApprox = presetBytesApprox + manualFilesBytesApprox;
 
   const loadDraft = useCallback(async () => {
-    if (!token || !invoiceId) return;
+    if (!token || !jobId) return;
     const gen = ++loadGenerationRef.current;
     setLoading(true);
     setError(null);
     try {
-      const res = await getJson<ComposeDraft>(`/invoices/${invoiceId}/email-compose`, token);
+      const res = await getJson<ComposeDraft>(`/jobs/${jobId}/email-compose`, token);
       if (gen !== loadGenerationRef.current) return;
       setDraft(res);
       setTo(res.default_to || '');
@@ -127,7 +124,6 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
       setCc('');
       setBcc('');
       setIncludeSignature(true);
-      setScheduleAfterSend(false);
       setComposeSession((s) => s + 1);
       setToPickerOpen(false);
     } catch (e) {
@@ -139,15 +135,21 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
         setLoading(false);
       }
     }
-  }, [token, invoiceId]);
+  }, [token, jobId]);
 
   useEffect(() => {
     if (!open) return;
     setFiles([]);
-    setPresetAttachments([]);
     setFilePickerError(null);
+    const init = initialAttachments ?? [];
+    setPresetAttachments(
+      init.map((a, i) => ({
+        ...a,
+        key: `preset-${i}-${a.filename}`,
+      })),
+    );
     loadDraft();
-  }, [open, loadDraft]);
+  }, [open, loadDraft, initialAttachments]);
 
   useEffect(() => {
     if (!open || !draft || loading) return;
@@ -190,7 +192,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
     setPresetAttachments((prev) => {
       const next = [...prev];
       for (const it of items) {
-        next.push({ ...it, key: makePresetAttachmentKey('inv', it.filename) });
+        next.push({ ...it, key: makePresetAttachmentKey('job', it.filename) });
       }
       return next;
     });
@@ -224,10 +226,6 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
 
   const handleSend = async () => {
     if (!token || !draft) return;
-    if (!draft.can_send) {
-      setError('Issue the invoice before sending email.');
-      return;
-    }
     if (!draft.smtp_ready) {
       setError('Configure Email Settings before sending.');
       return;
@@ -249,14 +247,12 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
     setSending(true);
     setError(null);
     try {
-      const attachments: { filename: string; content_base64: string; content_type: string }[] = [];
-      for (const p of presetAttachments) {
-        attachments.push({
-          filename: p.filename,
-          content_base64: p.content_base64,
-          content_type: p.content_type,
-        });
-      }
+      const attachments: { filename: string; content_base64: string; content_type: string }[] =
+        presetAttachments.map(({ filename, content_base64, content_type }) => ({
+          filename,
+          content_base64,
+          content_type,
+        }));
       for (const f of files) {
         const b64 = await fileToBase64(f);
         attachments.push({
@@ -267,7 +263,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
       }
 
       await postJson(
-        `/invoices/${invoiceId}/send-email`,
+        `/jobs/${jobId}/send-email`,
         {
           to: to.trim(),
           cc: cc.trim() || undefined,
@@ -279,21 +275,6 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
         },
         token,
       );
-
-      if (scheduleAfterSend) {
-        try {
-          await postJson(
-            `/invoices/${invoiceId}/communications`,
-            {
-              type: 'note',
-              text: `Follow-up suggested after emailing invoice. Subject: ${subject.trim()}`,
-            },
-            token,
-          );
-        } catch {
-          /* non-fatal */
-        }
-      }
 
       onSent();
       onClose();
@@ -312,12 +293,11 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
         className="absolute bottom-0 right-0 top-0 flex w-full max-w-[720px] flex-col overflow-hidden border-l border-slate-200 bg-[#f6f8fc] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Compose email"
+        aria-label="Compose job email"
       >
-        {/* Gmail-style chrome */}
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200/80 bg-white px-3 py-2 shadow-sm">
           <div className="min-w-0 text-sm font-medium text-slate-800">
-            New message
+            Email from job
             {draft?.from_display ? (
               <span className="ml-2 font-normal text-slate-500">· {draft.from_display}</span>
             ) : null}
@@ -340,17 +320,11 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
 
             {!draft?.smtp_ready && (
               <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-                Email connection is not configured or incomplete. Open <strong>Settings → Email</strong> to connect your mailbox.
+                Email connection is not configured or incomplete. Open <strong>Settings → Email</strong> to connect your
+                mailbox.
               </div>
             )}
 
-            {!draft?.can_send && (
-              <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
-                This invoice is <strong>{draft?.invoice_state?.replace(/_/g, ' ') ?? 'not issued'}</strong>. Issue it before you can send email.
-              </div>
-            )}
-
-            {/* Recipients — Gmail-like stacked rows */}
             <div className="shrink-0 divide-y divide-slate-100 border-b border-slate-100 px-3">
               <div ref={toFieldRef} className="relative py-1">
                 <div className="flex min-h-[44px] items-center gap-2">
@@ -451,7 +425,6 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               </div>
             </div>
 
-            {/* Formatting toolbar */}
             <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-slate-100 bg-slate-50/90 px-2 py-1">
               {(
                 [
@@ -515,7 +488,6 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               </button>
             </div>
 
-            {/* Message body */}
             <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
               <div
                 ref={bodyRef}
@@ -561,7 +533,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
               onDrop={handleDrop}
             >
               <EmailComposerJobFilesPanel
-                jobId={draft?.job_id != null ? String(draft.job_id) : null}
+                jobId={jobId}
                 token={token}
                 active={open}
                 existingPresetBytesApprox={existingAttachmentBytesApprox}
@@ -572,8 +544,8 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
                 <p className="mb-2 text-[11px] text-rose-700">{filePickerError}</p>
               ) : null}
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                Pick files from the linked job above, or drag files here / use the paperclip (optional). The invoice PDF
-                is not attached automatically from here.
+                Files from the tab or picker appear below (remove any before sending). Drag files here or use the
+                paperclip for additional attachments.
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -603,9 +575,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
                         <span className="min-w-0 truncate font-medium" title={p.filename}>
                           {p.filename}
                         </span>
-                        <span className="shrink-0 text-slate-500">
-                          {formatFileSize(approxBytesFromBase64(p.content_base64))}
-                        </span>
+                        <span className="shrink-0 text-slate-500">{formatFileSize(approxBytesFromBase64(p.content_base64))}</span>
                         <button
                           type="button"
                           className="shrink-0 rounded p-0.5 text-rose-600 hover:bg-rose-50"
@@ -642,16 +612,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
                   </ul>
                 )}
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/80 pt-2">
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={scheduleAfterSend}
-                    onChange={(e) => setScheduleAfterSend(e.target.checked)}
-                    className="rounded border-slate-300 text-[#1a73e8] focus:ring-[#1a73e8]"
-                  />
-                  Log follow-up note after send
-                </label>
+              <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/80 pt-2">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -664,7 +625,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
                   <button
                     type="button"
                     onClick={handleSend}
-                    disabled={sending || !draft?.smtp_ready || !draft?.can_send}
+                    disabled={sending || !draft?.smtp_ready}
                     className="inline-flex items-center gap-2 rounded-full bg-[#1a73e8] px-5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#1557b0] disabled:opacity-50"
                   >
                     <Send className="size-4" />

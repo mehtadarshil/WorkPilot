@@ -52,6 +52,8 @@ export default function JobReportTab({ jobId, token, templateTarget = 'job' }: P
   const apiPath =
     templateTarget === 'default' ? '/settings/job-report-template' : `/jobs/${jobId}/job-report-questions`;
 
+  const questionTypeOptions = QUESTION_TYPES;
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -184,7 +186,7 @@ export default function JobReportTab({ jobId, token, templateTarget = 'job' }: P
                   setQuestions(questions.map((row, i) => (i === index ? { ...row, question_type: v } : row)));
                 }}
               >
-                {QUESTION_TYPES.map((t) => (
+                {questionTypeOptions.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>

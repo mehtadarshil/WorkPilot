@@ -23,7 +23,7 @@ class HomeController extends GetxController {
   final StorageService _storage;
   final MobileRepository _mobile;
 
-  /// Bottom nav: 0 Home, 1 Diary, 2 Profile
+  /// Bottom nav: 0 Home, 1 Diary, [2 Work when enabled], last Profile
   final RxInt navIndex = 0.obs;
 
   /// Cached `/api/mobile/home` payload.
@@ -51,6 +51,17 @@ class HomeController extends GetxController {
   Timer? _timesheetTicker;
 
   bool get officerFeatures => home.value?.officerFeatures ?? false;
+
+  bool get showWorkHubTab => home.value?.showWorkHubTab ?? false;
+
+  int get tabCount => showWorkHubTab ? 4 : 3;
+
+  int get profileTabIndex => tabCount - 1;
+
+  void clampNavToValidRange() {
+    final maxIdx = profileTabIndex;
+    if (navIndex.value > maxIdx) navIndex.value = maxIdx;
+  }
 
   @override
   void onInit() {
@@ -83,6 +94,7 @@ class HomeController extends GetxController {
     try {
       final r = await _mobile.fetchHome();
       home.value = r.data;
+      clampNavToValidRange();
       if (r.fromCache) {
         homeError.value = 'Offline — showing last synced home data.';
       } else {

@@ -2,7 +2,7 @@
 
 import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson } from '../../../apiClient';
 import { ArrowLeft, ChevronDown, Search, X, Check, Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -135,6 +135,24 @@ function AddInvoiceInner() {
     };
     run();
   }, [jobId, customerIdParam, workAddressIdParam]);
+
+  const copyFromEngineerFeedback = useCallback(async () => {
+    const jid = target?.job_id;
+    if (!jid) return;
+    const token = window.localStorage.getItem('wp_token');
+    if (!token) return;
+    try {
+      const res = await getJson<{ feedback: string | null }>(
+        `/jobs/${jid}/last-engineer-report-feedback`,
+        token,
+      );
+      const fb = (res.feedback ?? '').trim();
+      if (!fb) return;
+      setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${fb}` : fb));
+    } catch {
+      /* No completed report, no text, or inaccessible — do nothing */
+    }
+  }, [target?.job_id]);
 
   if (loading) return <div className="p-8 font-medium text-slate-500">Loading form...</div>;
   if (!target) return <div className="p-8 text-rose-500">{error || 'Target not found'}</div>;
@@ -279,7 +297,15 @@ function AddInvoiceInner() {
                            <label className="text-right font-bold text-slate-600 pt-2">Invoice notes</label>
                            <div className="col-span-1 md:col-span-2 space-y-2">
                               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6] resize-y" />
-                              <button type="button" className="text-[#14B8A6] font-bold hover:underline">Copy from engineer feedback</button>
+                              {target.job_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void copyFromEngineerFeedback()}
+                                  className="text-[#14B8A6] font-bold hover:underline"
+                                >
+                                  Copy from engineer feedback
+                                </button>
+                              ) : null}
                            </div>
                         </div>
 

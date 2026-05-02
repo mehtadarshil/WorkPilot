@@ -6,6 +6,8 @@ import { deleteRequest, getJson, patchJson, postJson } from '../../../apiClient'
 import JobOfficeTasksTab from './JobOfficeTasksTab';
 import JobPartsTab from './JobPartsTab';
 import JobReportTab from './JobReportTab';
+import JobClientPanelTab from './JobClientPanelTab';
+import JobFilesTab from './JobFilesTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
 import { ArrowLeft, Edit, Calendar, Clock, User, Clipboard, FileText, Info, Wrench, Package, ScrollText, Bell, Paperclip, Receipt, PoundSterling, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -656,6 +658,7 @@ export default function JobDetailsPage() {
   const tabs = [
     'Details',
     'Job report',
+    'Client panel',
     'Office Task',
     'Parts',
     'Certificates',
@@ -965,6 +968,12 @@ export default function JobDetailsPage() {
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to edit the job report template.</div>
             )
+          ) : activeTab === 'Client panel' ? (
+            token ? (
+              <JobClientPanelTab jobId={id} token={token} onJobRefresh={fetchJobDetails} />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to manage the client panel.</div>
+            )
           ) : activeTab === 'Office Task' ? (
             <JobOfficeTasksTab
               jobId={id}
@@ -974,6 +983,12 @@ export default function JobDetailsPage() {
             />
           ) : activeTab === 'Parts' ? (
             <JobPartsTab jobId={id} />
+          ) : activeTab === 'Files' ? (
+            token ? (
+              <JobFilesTab jobId={id} token={token} />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to view job files.</div>
+            )
           ) : (
             <>
 

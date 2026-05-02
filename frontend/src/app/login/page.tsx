@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Eye, EyeOff, Mail, Lock, TrendingUp } from 'lucide-react';
@@ -13,7 +13,11 @@ interface LoginResponse {
   user: {
     id: number;
     email: string;
-    role: 'SUPER_ADMIN' | 'ADMIN';
+    role: 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
+    is_tenant_owner?: boolean;
+    permissions?: Record<string, boolean> | null;
+    tenant_scope_user_id?: number;
+    full_name?: string | null;
   };
 }
 
@@ -22,8 +26,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldWebNotice, setFieldWebNotice] = useState(false);
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('reason') === 'field') setFieldWebNotice(true);
+  }, []);
 
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
@@ -51,6 +62,19 @@ export default function LoginPage() {
 
     try {
       const data = await postJson<LoginResponse>('/auth/login', { email, password });
+
+      if (data.user.role === 'OFFICER') {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('wp_token', data.token);
+          window.localStorage.setItem('wp_user', JSON.stringify(data.user));
+        }
+        setError('Field accounts use the WorkPilot mobile app. Download the app and sign in with the same email and password.');
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('wp_token');
+          window.localStorage.removeItem('wp_user');
+        }
+        return;
+      }
 
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('wp_token', data.token);
@@ -100,6 +124,12 @@ export default function LoginPage() {
             <p className="mt-3 text-sm text-slate-400">
               Log in to your CRM command center and keep your pipeline moving.
             </p>
+            {fieldWebNotice && (
+              <p className="mt-4 rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95">
+                The web dashboard is for company admins and desk staff. Field technicians should sign in using the{' '}
+                <strong className="font-semibold">WorkPilot mobile app</strong> with their field account.
+              </p>
+            )}
           </motion.div>
 
           {/* Form */}

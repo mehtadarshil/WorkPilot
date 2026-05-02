@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Paperclip,
@@ -15,6 +15,12 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { getJson, postJson } from '../../../apiClient';
+import EmailComposerJobFilesPanel from '../../_components/EmailComposerJobFilesPanel';
+import {
+  type ComposerPresetAttachment,
+  approxBytesFromBase64,
+  makePresetAttachmentKey,
+} from '../../_components/emailComposerManifest';
 
 type ComposeDraft = {
   subject: string;
@@ -25,6 +31,7 @@ type ComposeDraft = {
   smtp_ready: boolean;
   can_send: boolean;
   invoice_state: string; // backend returns q.state as invoice_state for compatibility
+  job_id?: number | null;
   default_to: string;
   customer_name: string;
   to_email_options?: { email: string; label: string }[];
@@ -90,8 +97,19 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
   const [includeSignature, setIncludeSignature] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
   const [scheduleAfterSend, setScheduleAfterSend] = useState(false);
+  const [presetAttachments, setPresetAttachments] = useState<
+    (ComposerPresetAttachment & { key: string })[]
+  >([]);
+  const [filePickerError, setFilePickerError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [toPickerOpen, setToPickerOpen] = useState(false);
+
+  const presetBytesApprox = useMemo(
+    () => presetAttachments.reduce((s, p) => s + approxBytesFromBase64(p.content_base64), 0),
+    [presetAttachments],
+  );
+  const manualFilesBytesApprox = files.reduce((s, f) => s + f.size, 0);
+  const existingAttachmentBytesApprox = presetBytesApprox + manualFilesBytesApprox;
 
   const loadDraft = useCallback(async () => {
     if (!token || !quotationId) return;
@@ -126,6 +144,8 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
   useEffect(() => {
     if (!open) return;
     setFiles([]);
+    setPresetAttachments([]);
+    setFilePickerError(null);
     loadDraft();
   }, [open, loadDraft]);
 
@@ -161,6 +181,20 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
   const removeFile = (idx: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   };
+
+  const removePreset = (key: string) => {
+    setPresetAttachments((prev) => prev.filter((p) => p.key !== key));
+  };
+
+  const mergeJobFilePresets = useCallback((items: ComposerPresetAttachment[]) => {
+    setPresetAttachments((prev) => {
+      const next = [...prev];
+      for (const it of items) {
+        next.push({ ...it, key: makePresetAttachmentKey('quo', it.filename) });
+      }
+      return next;
+    });
+  }, []);
 
   const runFormat = (command: string, value?: string) => {
     bodyRef.current?.focus();
@@ -216,6 +250,13 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
     setError(null);
     try {
       const attachments: { filename: string; content_base64: string; content_type: string }[] = [];
+      for (const p of presetAttachments) {
+        attachments.push({
+          filename: p.filename,
+          content_base64: p.content_base64,
+          content_type: p.content_type,
+        });
+      }
       for (const f of files) {
         const b64 = await fileToBase64(f);
         attachments.push({
@@ -516,8 +557,20 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
               }}
               onDrop={handleDrop}
             >
+              <EmailComposerJobFilesPanel
+                jobId={draft?.job_id != null ? String(draft.job_id) : null}
+                token={token}
+                active={open}
+                existingPresetBytesApprox={existingAttachmentBytesApprox}
+                onAddAttachments={mergeJobFilePresets}
+                onPrepareError={setFilePickerError}
+              />
+              {filePickerError ? (
+                <p className="mb-2 text-[11px] text-rose-700">{filePickerError}</p>
+              ) : null}
               <p className="mb-2 text-[11px] leading-snug text-slate-600">
-                Drag files here or use the paperclip to attach files (optional). Nothing is attached automatically.
+                Pick files from the linked job above, or drag files here / use the paperclip (optional). The quotation
+                PDF is not attached automatically from here.
               </p>
               <div className="mb-2 flex flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -537,6 +590,31 @@ export default function QuotationEmailComposer({ open, onClose, quotationId, onS
                     Attach files
                   </button>
                 </div>
+                {presetAttachments.length > 0 && (
+                  <ul className="flex w-full flex-col gap-1.5 text-xs text-slate-700">
+                    {presetAttachments.map((p) => (
+                      <li
+                        key={p.key}
+                        className="flex max-w-full items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1.5 shadow-sm"
+                      >
+                        <span className="min-w-0 truncate font-medium" title={p.filename}>
+                          {p.filename}
+                        </span>
+                        <span className="shrink-0 text-slate-500">
+                          {formatFileSize(approxBytesFromBase64(p.content_base64))}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-0.5 text-rose-600 hover:bg-rose-50"
+                          aria-label={`Remove ${p.filename}`}
+                          onClick={() => removePreset(p.key)}
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {files.length > 0 && (
                   <ul className="flex w-full flex-col gap-1.5 text-xs text-slate-700">
                     {files.map((f, i) => (

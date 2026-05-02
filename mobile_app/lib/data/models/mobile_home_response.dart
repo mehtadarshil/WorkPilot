@@ -32,6 +32,7 @@ class MobileHomeResponse {
     this.activeTimesheet,
     this.myOfficeTasksOpen = const [],
     this.myOfficeTasksCompleted = const [],
+    this.mobilePermissions = const {},
   });
 
   factory MobileHomeResponse.fromJson(Map<String, dynamic> json) {
@@ -82,6 +83,14 @@ class MobileHomeResponse {
       }
     }
 
+    final permRaw = json['mobile_permissions'];
+    final mobilePermissions = <String, bool>{};
+    if (permRaw is Map) {
+      permRaw.forEach((k, v) {
+        if (k is String && v == true) mobilePermissions[k] = true;
+      });
+    }
+
     return MobileHomeResponse(
       officerFeatures: json['officer_features'] as bool? ?? false,
       role: json['role'] as String? ?? '',
@@ -93,6 +102,7 @@ class MobileHomeResponse {
       activeTimesheet: active,
       myOfficeTasksOpen: openList,
       myOfficeTasksCompleted: doneList,
+      mobilePermissions: mobilePermissions,
     );
   }
 
@@ -106,10 +116,30 @@ class MobileHomeResponse {
   final ActiveTimesheet? activeTimesheet;
   final List<MyOfficeTaskRow> myOfficeTasksOpen;
   final List<MyOfficeTaskRow> myOfficeTasksCompleted;
+  final Map<String, bool> mobilePermissions;
+
+  bool _perm(String key) => mobilePermissions[key] == true;
+
+  /// Extra CRM modules (same flags as the web tenant). Pure field officers keep the classic 3-tab shell unless the tenant grants pipeline/catalog access.
+  bool get showWorkHubTab {
+    if (!officerFeatures) return false;
+    final roleUp = role.toUpperCase();
+    if (_perm('customers') ||
+        _perm('quotations') ||
+        _perm('invoices') ||
+        _perm('parts_catalog')) {
+      return true;
+    }
+    if (roleUp != 'OFFICER' && (_perm('jobs') || _perm('certifications'))) {
+      return true;
+    }
+    return false;
+  }
 
   MobileHomeResponse copyWith({
     List<MyOfficeTaskRow>? myOfficeTasksOpen,
     List<MyOfficeTaskRow>? myOfficeTasksCompleted,
+    Map<String, bool>? mobilePermissions,
   }) {
     return MobileHomeResponse(
       officerFeatures: officerFeatures,
@@ -122,6 +152,7 @@ class MobileHomeResponse {
       activeTimesheet: activeTimesheet,
       myOfficeTasksOpen: myOfficeTasksOpen ?? this.myOfficeTasksOpen,
       myOfficeTasksCompleted: myOfficeTasksCompleted ?? this.myOfficeTasksCompleted,
+      mobilePermissions: mobilePermissions ?? this.mobilePermissions,
     );
   }
 }

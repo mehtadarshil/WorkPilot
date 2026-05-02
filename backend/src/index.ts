@@ -27,6 +27,30 @@ import {
 import crypto from 'crypto';
 import { createReadStream } from 'fs';
 import fs from 'fs/promises';
+import { mountJobClientPanelRoutes } from './jobClientPanelRoutes';
+import { mountJobFilesRoutes } from './jobFilesRoutes';
+import { mountJobEmailRoutes } from './jobEmailRoutes';
+import {
+  getTenantScopeUserId,
+  requirePermission,
+  requireTenantCrmAccess,
+  permissionsFromDb,
+  assertStaffPermissionAny,
+  parsePermissionsBody,
+} from './tenantAccess';
+import { mountTenantStaffRoutes } from './tenantStaffRoutes';
+import { mountTenantTeamRoutes } from './tenantTeamRoutes';
+import { presetFieldOfficerPermissions } from './tenantPermissions';
+import {
+  diaryActsAsFieldOfficer,
+  fieldEffectivePerms,
+  fieldMobileFeaturesEnabled,
+  fieldMobileHasJobs,
+  fieldMobileHasScheduling,
+  fieldMobileSessionOk,
+} from './mobileFieldAccess';
+import { generateInvoicePdfBuffer } from './invoicePrintHtml';
+import { generateQuotationPdfBuffer } from './quotationPdf';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -267,7 +291,7 @@ pool.query(`ALTER TABLE customer_specific_notes ADD COLUMN IF NOT EXISTS created
   .then(() => console.log('Checked customer_specific_notes created_by column'))
   .catch(err => console.error('Migration error (customer_specific_notes created_by):', err));
 
-type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'OFFICER';
+type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
 interface DbServicePlan {
@@ -424,14 +448,22 @@ interface DbUser {
   status?: string | null;
   address?: string | null;
   notes?: string | null;
+  tenant_admin_id?: number | null;
+  permissions?: unknown | null;
 }
 
 interface JwtPayload {
   userId: number;
   email: string;
   role: UserRole;
-  /** Present when role is OFFICER (same as userId for officers). */
+  /** Present when role is OFFICER (same as userId for officers), or STAFF/ADMIN linked to an officer row for mobile field features. */
   officerId?: number;
+  /** CRM rows `created_by` / tenant scope (owner id for STAFF). */
+  tenantScopeUserId?: number;
+  /** DB `tenant_admin_id` for STAFF; null/omitted for owner ADMIN. */
+  tenantAdminId?: number | null;
+  /** STAFF / OFFICER permission flags; null/omitted for full-access ADMIN. */
+  permissions?: Record<string, boolean> | null;
 }
 
 interface AuthenticatedRequest extends Request {
@@ -466,6 +498,17 @@ async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'ACTIVE';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS notes TEXT;
+  `);
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_tenant_admin_id ON users(tenant_admin_id)`);
+  await pool.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+  await pool.query(`
+    ALTER TABLE users ADD CONSTRAINT users_role_check
+    CHECK (role IN ('SUPER_ADMIN', 'ADMIN', 'STAFF'))
   `);
 
   await pool.query(`
@@ -832,6 +875,15 @@ async function initDb() {
   await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);`);
   await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(128);`);
   await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMPTZ;`);
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS permissions JSONB`);
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS linked_user_id INTEGER`);
+  await pool.query(`ALTER TABLE officers DROP CONSTRAINT IF EXISTS officers_linked_user_id_fkey`);
+  await pool.query(
+    `ALTER TABLE officers ADD CONSTRAINT officers_linked_user_id_fkey FOREIGN KEY (linked_user_id) REFERENCES users(id) ON DELETE CASCADE`,
+  );
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_officers_linked_user_unique ON officers(linked_user_id) WHERE linked_user_id IS NOT NULL`,
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS jobs (
@@ -1317,6 +1369,75 @@ async function initDb() {
     );
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_internal_notes (
+      id SERIAL PRIMARY KEY,
+      quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_quotation_internal_notes_quotation_id ON quotation_internal_notes(quotation_id)`,
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_client_report_default_questions (
+      id SERIAL PRIMARY KEY,
+      sort_order INT NOT NULL DEFAULT 0,
+      question_type VARCHAR(40) NOT NULL,
+      prompt TEXT NOT NULL,
+      helper_text TEXT,
+      required BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_client_report_questions (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      sort_order INT NOT NULL DEFAULT 0,
+      question_type VARCHAR(40) NOT NULL,
+      prompt TEXT NOT NULL,
+      helper_text TEXT,
+      required BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_job_client_report_questions_job ON job_client_report_questions(job_id)`,
+  );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_client_template_settings (
+      created_by INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      email_subject_template TEXT NOT NULL,
+      email_body_html TEXT NOT NULL,
+      print_document_html TEXT NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_client_submissions (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      submitter_name VARCHAR(200),
+      submitter_email VARCHAR(255),
+      notes TEXT,
+      answers JSONB NOT NULL DEFAULT '[]',
+      media JSONB NOT NULL DEFAULT '[]',
+      include_flags JSONB NOT NULL DEFAULT '{}',
+      pdf_public_token VARCHAR(100) UNIQUE NOT NULL,
+      rendered_html TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_job_client_submissions_job ON job_client_submissions(job_id)`,
+  );
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS client_portal_token VARCHAR(100) UNIQUE`);
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS client_panel_section_config JSONB DEFAULT NULL`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_settings (
       id SERIAL PRIMARY KEY,
       created_by INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -1516,7 +1637,8 @@ function requireSuperAdmin(req: AuthenticatedRequest, res: Response, next: NextF
 }
 
 function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'SUPER_ADMIN')) {
+  const r = req.user?.role;
+  if (!req.user || (r !== 'ADMIN' && r !== 'SUPER_ADMIN' && r !== 'STAFF')) {
     return res.status(403).json({ message: 'Forbidden: Admin access required' });
   }
   next();
@@ -1525,6 +1647,38 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
 function requireOfficer(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== 'OFFICER' || req.user.officerId == null) {
     return res.status(403).json({ message: 'Officer access required' });
+  }
+  next();
+}
+
+function requireFieldMobileSession(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!fieldMobileSessionOk(req.user)) {
+    res.status(403).json({ message: 'Field mobile access required' });
+    return;
+  }
+  next();
+}
+
+function requireFieldMobileJobs(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!fieldMobileSessionOk(req.user)) {
+    res.status(403).json({ message: 'Field mobile access required' });
+    return;
+  }
+  if (req.user!.role !== 'ADMIN' && !fieldMobileHasJobs(req.user!)) {
+    res.status(403).json({ message: 'Jobs permission required' });
+    return;
+  }
+  next();
+}
+
+function requireFieldMobileDiary(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!fieldMobileSessionOk(req.user)) {
+    res.status(403).json({ message: 'Field mobile access required' });
+    return;
+  }
+  if (req.user!.role !== 'ADMIN' && !fieldMobileHasScheduling(req.user!)) {
+    res.status(403).json({ message: 'Scheduling permission required' });
+    return;
   }
   next();
 }
@@ -1727,7 +1881,9 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
   try {
     const result = await pool.query<DbUser>(
-      'SELECT id, email, password_hash, role, full_name, company_name, phone, service_plan, status, address, notes FROM users WHERE LOWER(TRIM(email)) = $1',
+      `SELECT id, email, password_hash, role, full_name, company_name, phone, service_plan, status, address, notes,
+              tenant_admin_id, permissions
+       FROM users WHERE LOWER(TRIM(email)) = $1`,
       [emailNorm],
     );
 
@@ -1739,10 +1895,44 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
+      if (user.role === 'STAFF') {
+        if (user.tenant_admin_id == null) {
+          return res.status(403).json({ message: 'This staff account is misconfigured. Contact support.' });
+        }
+        const ownerChk = await pool.query<{ id: number; role: string; tenant_admin_id: number | null }>(
+          `SELECT id, role, tenant_admin_id FROM users WHERE id = $1`,
+          [user.tenant_admin_id],
+        );
+        const ow = ownerChk.rows[0];
+        if ((ownerChk.rowCount ?? 0) === 0 || ow.role !== 'ADMIN' || ow.tenant_admin_id != null) {
+          return res.status(403).json({ message: 'This staff account is invalid. Contact your administrator.' });
+        }
+        if (user.status === 'SUSPENDED') {
+          return res.status(403).json({ message: 'This account is suspended.' });
+        }
+      }
+
+      const tenantScopeUserId =
+        user.role === 'STAFF' && user.tenant_admin_id != null ? user.tenant_admin_id : user.id;
+      const permObj = user.role === 'STAFF' ? permissionsFromDb(user.permissions) : null;
+
+      let linkedOfficerId: number | undefined;
+      if (user.role === 'ADMIN' || user.role === 'STAFF') {
+        const lo = await pool.query<{ id: number }>(
+          `SELECT id FROM officers WHERE linked_user_id = $1 LIMIT 1`,
+          [user.id],
+        );
+        if ((lo.rowCount ?? 0) > 0) linkedOfficerId = lo.rows[0].id;
+      }
+
       const payload: JwtPayload = {
         userId: user.id,
         email: user.email,
         role: user.role,
+        tenantScopeUserId,
+        tenantAdminId: user.role === 'STAFF' ? (user.tenant_admin_id ?? null) : null,
+        permissions: permObj,
+        ...(linkedOfficerId != null ? { officerId: linkedOfficerId } : {}),
       };
 
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
@@ -1751,8 +1941,11 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        tenant_scope_user_id: tenantScopeUserId,
+        is_tenant_owner: user.role === 'ADMIN',
+        permissions: permObj,
       };
-      if (user.role === 'ADMIN') {
+      if (user.role === 'ADMIN' || user.role === 'STAFF') {
         responseUser.full_name = user.full_name ?? null;
         responseUser.company_name = user.company_name ?? null;
         responseUser.phone = user.phone ?? null;
@@ -1771,8 +1964,11 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       full_name: string;
       password_hash: string;
       state: string;
+      permissions: unknown;
+      linked_user_id: number | null;
+      created_by: number | null;
     }>(
-      `SELECT id, email, full_name, password_hash, state FROM officers
+      `SELECT id, email, full_name, password_hash, state, permissions, linked_user_id, created_by FROM officers
        WHERE LOWER(TRIM(email)) = $1 AND password_hash IS NOT NULL`,
       [emailNorm],
     );
@@ -1782,6 +1978,12 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     }
 
     const officer = officerResult.rows[0];
+    if (officer.linked_user_id != null) {
+      return res.status(403).json({
+        message:
+          'This field profile is linked to a dashboard login. Use the same email and password as WorkPilot on the web to sign in on the app.',
+      });
+    }
     if (officer.state !== 'active') {
       return res.status(403).json({ message: 'This account is not active. Contact your administrator.' });
     }
@@ -1791,11 +1993,17 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
+    const offPerm = permissionsFromDb(officer.permissions);
+    const tenantScopeUserId =
+      officer.created_by != null && Number.isFinite(officer.created_by) ? officer.created_by : undefined;
+
     const payload: JwtPayload = {
       userId: officer.id,
       email: officer.email,
       role: 'OFFICER',
       officerId: officer.id,
+      permissions: offPerm,
+      ...(tenantScopeUserId != null ? { tenantScopeUserId } : {}),
     };
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
@@ -1808,6 +2016,8 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
         role: 'OFFICER',
         full_name: officer.full_name,
         officer_id: officer.id,
+        permissions: offPerm,
+        ...(tenantScopeUserId != null ? { tenant_scope_user_id: tenantScopeUserId } : {}),
       },
     });
   } catch (error) {
@@ -2048,13 +2258,75 @@ app.get('/api/clients', authenticate, requireSuperAdmin, async (req: Authenticat
 });
 
 app.get('/api/auth/me', authenticate, async (req: AuthenticatedRequest, res: Response) => {
-  return res.json({ user: req.user });
+  const u = req.user!;
+  if (u.role === 'OFFICER') {
+    try {
+      const orow = await pool.query<{ permissions: unknown; created_by: number | null }>(
+        `SELECT permissions, created_by FROM officers WHERE id = $1`,
+        [u.officerId ?? u.userId],
+      );
+      const perm =
+        (orow.rowCount ?? 0) > 0 ? permissionsFromDb(orow.rows[0].permissions) : permissionsFromDb(null);
+      const ts =
+        u.tenantScopeUserId ??
+        ((orow.rowCount ?? 0) > 0 && orow.rows[0].created_by != null ? orow.rows[0].created_by : undefined);
+      return res.json({
+        user: {
+          ...u,
+          permissions: perm,
+          ...(ts != null && Number.isFinite(ts) ? { tenant_scope_user_id: ts } : {}),
+        },
+      });
+    } catch {
+      return res.json({ user: u });
+    }
+  }
+  try {
+    const row = await pool.query<DbUser>(
+      `SELECT id, email, role, full_name, company_name, phone, service_plan, status, address, notes,
+              tenant_admin_id, permissions
+       FROM users WHERE id = $1`,
+      [u.userId],
+    );
+    if ((row.rowCount ?? 0) === 0) {
+      return res.json({ user: u });
+    }
+    const db = row.rows[0];
+    const tenantScopeUserId =
+      db.role === 'STAFF' && db.tenant_admin_id != null ? db.tenant_admin_id : db.id;
+    const permObj = db.role === 'STAFF' ? permissionsFromDb(db.permissions) : null;
+    return res.json({
+      user: {
+        id: db.id,
+        userId: db.id,
+        email: db.email,
+        role: db.role,
+        tenantScopeUserId,
+        tenantAdminId: db.tenant_admin_id ?? null,
+        permissions: permObj,
+        officer_id: u.officerId ?? null,
+        full_name: db.full_name ?? null,
+        company_name: db.company_name ?? null,
+        phone: db.phone ?? null,
+        service_plan: db.service_plan ?? 'Standard',
+        status: db.status ?? 'ACTIVE',
+        address: db.address ?? null,
+        notes: db.notes ?? null,
+        is_tenant_owner: db.role === 'ADMIN',
+        tenant_scope_user_id: tenantScopeUserId,
+      },
+    });
+  } catch (e) {
+    console.error('auth/me', e);
+    return res.json({ user: u });
+  }
 });
 
 // ---------- Mobile app: home summary + timesheet (field officers) ----------
 app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const u = req.user!;
-  if (u.role !== 'OFFICER' || u.officerId == null) {
+  const mobilePerm = fieldEffectivePerms(u);
+  if (!fieldMobileFeaturesEnabled(u) || u.officerId == null) {
     return res.json({
       officer_features: false,
       role: u.role,
@@ -2066,10 +2338,13 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       active_timesheet: null,
       my_office_tasks_open: [],
       my_office_tasks_completed: [],
+      mobile_permissions: mobilePerm,
     });
   }
 
   const oid = u.officerId;
+  const hasJobs = fieldMobileHasJobs(u);
+  const hasSched = fieldMobileHasScheduling(u);
 
   try {
     const profileRes = await pool.query<{
@@ -2085,7 +2360,19 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       [oid],
     );
     if ((profileRes.rowCount ?? 0) === 0) {
-      return res.status(404).json({ message: 'Officer profile not found' });
+      return res.json({
+        officer_features: false,
+        role: u.role,
+        email: u.email,
+        profile: null,
+        stats: { assigned_jobs_open: 0, diary_upcoming_week: 0 },
+        upcoming_diary: [],
+        next_diary_event: null,
+        active_timesheet: null,
+        my_office_tasks_open: [],
+        my_office_tasks_completed: [],
+        mobile_permissions: mobilePerm,
+      });
     }
     const profile = profileRes.rows[0];
 
@@ -2094,10 +2381,12 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
        WHERE officer_id = $1 AND state NOT IN ('completed', 'closed')`,
       [oid],
     );
-    const assignedJobsOpen = parseInt(jobsOpen.rows[0]?.c || '0', 10);
+    let assignedJobsOpen = parseInt(jobsOpen.rows[0]?.c || '0', 10);
+    if (!hasJobs) assignedJobsOpen = 0;
 
-    const upcoming = await pool.query(
-      `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
+    const upcoming = hasSched
+      ? await pool.query(
+          `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
               j.title, j.description, j.location, j.customer_id,
               c.full_name AS customer_full_name, c.email AS customer_email,
@@ -2118,15 +2407,17 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
          AND (d.start_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute')) > NOW()
        ORDER BY d.start_time ASC
        LIMIT 50`,
-      [oid],
-    );
+          [oid],
+        )
+      : { rows: [] as Record<string, unknown>[] };
 
     const diaryUpcomingWeek = upcoming.rows.length;
 
     const mentionTag = `@${profile.full_name}`.trim();
 
-    const myOpenOffice = await pool.query(
-      `SELECT ot.id, ot.job_id, ot.description, ot.created_at,
+    const myOpenOffice = hasJobs
+      ? await pool.query(
+          `SELECT ot.id, ot.job_id, ot.description, ot.created_at,
               COALESCE(usr.full_name, usr.email, 'System') AS created_by_name,
               j.title AS job_title, j.state AS job_state, j.updated_at AS job_updated_at
        FROM office_tasks ot
@@ -2143,10 +2434,12 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
          AND ot.completed = false
        ORDER BY ot.created_at DESC
        LIMIT 50`,
-      [oid, mentionTag],
-    );
-    const myDoneOffice = await pool.query(
-      `SELECT ot.id, ot.job_id, ot.description, ot.completed_at, ot.created_at,
+          [oid, mentionTag],
+        )
+      : { rows: [] as Record<string, unknown>[] };
+    const myDoneOffice = hasJobs
+      ? await pool.query(
+          `SELECT ot.id, ot.job_id, ot.description, ot.completed_at, ot.created_at,
               COALESCE(usr.full_name, usr.email, 'System') AS created_by_name,
               j.title AS job_title, j.state AS job_state, j.updated_at AS job_updated_at
        FROM office_tasks ot
@@ -2163,24 +2456,27 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
          AND ot.completed = true
        ORDER BY ot.completed_at DESC NULLS LAST, ot.updated_at DESC
        LIMIT 40`,
-      [oid, mentionTag],
-    );
+          [oid, mentionTag],
+        )
+      : { rows: [] as Record<string, unknown>[] };
 
-    const openTs = await pool.query<{
-      id: number;
-      clock_in: Date;
-      notes: string | null;
-      segment_type: string | null;
-      diary_event_id: number | null;
-    }>(
-      `SELECT id, clock_in, notes, segment_type, diary_event_id FROM timesheet_entries
+    const openTs = hasSched
+      ? await pool.query<{
+          id: number;
+          clock_in: Date;
+          notes: string | null;
+          segment_type: string | null;
+          diary_event_id: number | null;
+        }>(
+          `SELECT id, clock_in, notes, segment_type, diary_event_id FROM timesheet_entries
        WHERE officer_id = $1 AND clock_out IS NULL
        ORDER BY clock_in DESC
        LIMIT 1`,
-      [oid],
-    );
+          [oid],
+        )
+      : { rowCount: 0, rows: [] as { id: number; clock_in: Date; notes: string | null; segment_type: string | null; diary_event_id: number | null }[] };
     const activeTimesheet =
-      (openTs.rowCount ?? 0) > 0
+      hasSched && (openTs.rowCount ?? 0) > 0
         ? {
             id: openTs.rows[0].id,
             clock_in: (openTs.rows[0].clock_in as Date).toISOString(),
@@ -2196,6 +2492,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       officer_features: true,
       role: u.role,
       email: u.email,
+      mobile_permissions: mobilePerm,
       profile: {
         id: profile.id,
         full_name: profile.full_name,
@@ -2241,7 +2538,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
 });
 
 /** Field officer: jobs assigned to me that are not completed/closed (matches home stats). */
-app.get('/api/mobile/open-jobs', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (req: AuthenticatedRequest, res: Response) => {
   const oid = req.user!.officerId!;
   try {
     const listResult = await pool.query<
@@ -2285,7 +2582,7 @@ app.get('/api/mobile/open-jobs', authenticate, requireOfficer, async (req: Authe
 app.patch(
   '/api/mobile/jobs/:jobId/office-tasks/:taskId',
   authenticate,
-  requireOfficer,
+  requireFieldMobileJobs,
   async (req: AuthenticatedRequest, res: Response) => {
     const oid = req.user!.officerId!;
     const jobId = parseInt(String(req.params.jobId), 10);
@@ -2321,21 +2618,21 @@ app.patch(
   },
 );
 
-app.post('/api/timesheet/clock-in', authenticate, requireOfficer, async (_req: AuthenticatedRequest, res: Response) => {
+app.post('/api/timesheet/clock-in', authenticate, requireFieldMobileSession, async (_req: AuthenticatedRequest, res: Response) => {
   return res.status(403).json({
     message:
       'Manual clock-in is disabled. Start time is recorded when you set a diary visit to “Travelling to site”.',
   });
 });
 
-app.post('/api/timesheet/clock-out', authenticate, requireOfficer, async (_req: AuthenticatedRequest, res: Response) => {
+app.post('/api/timesheet/clock-out', authenticate, requireFieldMobileSession, async (_req: AuthenticatedRequest, res: Response) => {
   return res.status(403).json({
     message:
       'Manual clock-out is disabled. Time is recorded from diary status: travelling, on site, and completed.',
   });
 });
 
-app.get('/api/timesheet/history', authenticate, requireOfficer, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/timesheet/history', authenticate, requireFieldMobileSession, async (req: AuthenticatedRequest, res: Response) => {
   const oid = req.user!.officerId!;
   const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
@@ -2388,12 +2685,12 @@ app.get('/api/timesheet/history', authenticate, requireOfficer, async (req: Auth
 });
 
 /** Admin: timesheet history for a field officer (same payload shape as GET /api/timesheet/history). */
-app.get('/api/officers/:id/timesheet-history', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officers/:id/timesheet-history', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const officerId = parseInt(String(idParam), 10);
   if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -2549,7 +2846,7 @@ app.delete('/api/service-plans/:id', authenticate, requireSuperAdmin, async (req
 // ---------- Customers (Admin only) ----------
 const CUSTOMER_STATUSES = ['ACTIVE', 'LEAD', 'INACTIVE'] as const;
 
-app.get('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(5000, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
@@ -2558,7 +2855,7 @@ app.get('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedR
       ? req.query.status
       : '';
     const offset = (page - 1) * limit;
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -2714,11 +3011,11 @@ app.get('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedR
   }
 });
 
-app.get('/api/customers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownerClause = isSuperAdmin ? '' : 'AND c.created_by = $2';
   const params = isSuperAdmin ? [id] : [id, userId];
@@ -2757,7 +3054,7 @@ app.get('/api/customers/:id', authenticate, requireAdmin, async (req: Authentica
   }
 });
 
-app.post('/api/customers/:id/specific-notes', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:id/specific-notes', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const idRaw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const customerId = parseInt(String(idRaw), 10);
   const body = req.body as { title: string; description: string; work_address_id?: unknown };
@@ -2777,7 +3074,7 @@ app.post('/api/customers/:id/specific-notes', authenticate, requireAdmin, async 
   }
 });
 
-app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
   const noteId = parseInt(String(noteIdRaw), 10);
   const { title, description } = req.body as { title?: string; description?: string };
@@ -2805,7 +3102,7 @@ app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmi
   }
 });
 
-app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
   const noteId = parseInt(String(noteIdRaw), 10);
   try {
@@ -2818,7 +3115,7 @@ app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireAdm
   }
 });
 
-app.post('/api/customers', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     full_name?: string;
     email?: string;
@@ -2876,7 +3173,7 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   const powerSupply = str(b.power_supply);
   const technicalNotes = str(b.technical_notes);
 
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
 
   try {
     const result = await pool.query<any>(
@@ -2954,12 +3251,12 @@ app.post('/api/customers', authenticate, requireAdmin, async (req: Authenticated
   }
 });
 
-app.patch('/api/customers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid customer id' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownershipCheck = isSuperAdmin ? '' : ' AND created_by = $1';
 
@@ -3081,11 +3378,11 @@ app.patch('/api/customers/:id', authenticate, requireAdmin, async (req: Authenti
   }
 });
 
-app.delete('/api/customers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid customer id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query(
@@ -3104,7 +3401,7 @@ app.delete('/api/customers/:id', authenticate, requireAdmin, async (req: Authent
 const OFFICER_STATES = ['active', 'inactive', 'on_leave', 'suspended', 'archived'] as const;
 const ACCESS_LEVELS = ['basic', 'standard', 'manager', 'admin', 'full'] as const;
 
-app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
@@ -3113,7 +3410,7 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
       ? req.query.state
       : '';
     const offset = (page - 1) * limit;
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -3145,9 +3442,10 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean }>(
+    const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean; permissions: unknown; linked_user_id: number | null }>(
       `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by,
-              (password_hash IS NOT NULL) AS has_mobile_login
+              permissions, linked_user_id,
+              (password_hash IS NOT NULL OR linked_user_id IS NOT NULL) AS has_mobile_login
        FROM officers ${whereClause}
        ORDER BY full_name ASC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -3183,6 +3481,8 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
       updated_at: (r.updated_at as Date).toISOString(),
       created_by: r.created_by,
       has_mobile_login: !!r.has_mobile_login,
+      permissions: permissionsFromDb(r.permissions),
+      linked_user_id: r.linked_user_id ?? null,
     }));
 
     return res.json({
@@ -3199,9 +3499,9 @@ app.get('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRe
   }
 });
 
-app.get('/api/officers/list', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officers/list', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
     const result = await pool.query<DbOfficer>(
       `SELECT id, full_name, role_position, department, state
@@ -3224,7 +3524,7 @@ app.get('/api/officers/list', authenticate, requireAdmin, async (req: Authentica
   }
 });
 
-app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     full_name?: string;
     role_position?: string;
@@ -3237,6 +3537,8 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
     state?: string;
     /** Sets mobile app login (hashed); requires email. Min 8 characters. */
     initial_password?: string;
+    permissions?: unknown;
+    preset?: string;
   };
   const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : '';
   if (!fullName) return res.status(400).json({ message: 'Officer name is required' });
@@ -3253,7 +3555,7 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
     : 'standard';
   const certifications = typeof body.certifications === 'string' ? body.certifications.trim() || null : null;
   const assignedResponsibilities = typeof body.assigned_responsibilities === 'string' ? body.assigned_responsibilities.trim() || null : null;
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
 
   const initialPassword = typeof body.initial_password === 'string' ? body.initial_password.trim() : '';
   if (!email) {
@@ -3268,14 +3570,39 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
     if ((dup.rowCount ?? 0) > 0) {
       return res.status(409).json({ message: 'Another user already has this email' });
     }
+    const dupUser = await pool.query(`SELECT id FROM users WHERE LOWER(TRIM(email)) = $1`, [email]);
+    if ((dupUser.rowCount ?? 0) > 0) {
+      return res.status(409).json({ message: 'This email is already used for a dashboard login' });
+    }
+
+    let offPerms = parsePermissionsBody(body.permissions ?? null);
+    if (offPerms == null) {
+      offPerms = presetFieldOfficerPermissions();
+    }
+    if (!Object.values(offPerms).some(Boolean)) {
+      return res.status(400).json({ message: 'Select at least one permission for this field account' });
+    }
 
     const passwordHash = await bcrypt.hash(initialPassword, 10);
 
     const result = await pool.query<DbOfficer>(
-      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by, password_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by, password_hash, permissions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
        RETURNING id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by`,
-      [fullName, rolePosition, department, phone, email, systemAccessLevel, certifications, assignedResponsibilities, state, createdBy, passwordHash],
+      [
+        fullName,
+        rolePosition,
+        department,
+        phone,
+        email,
+        systemAccessLevel,
+        certifications,
+        assignedResponsibilities,
+        state,
+        createdBy,
+        passwordHash,
+        JSON.stringify(offPerms),
+      ],
     );
     const r = result.rows[0];
     return res.status(201).json({
@@ -3294,6 +3621,7 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
         has_mobile_login: !!(initialPassword && email),
+        permissions: offPerms,
       },
     });
   } catch (error) {
@@ -3302,12 +3630,12 @@ app.post('/api/officers', authenticate, requireAdmin, async (req: AuthenticatedR
   }
 });
 
-app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid officer id' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownershipCheck = isSuperAdmin ? '' : ' AND created_by = $1';
 
@@ -3359,6 +3687,14 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
     updates.push(`state = $${idx++}`);
     values.push(body.state);
   }
+  if (body.permissions != null) {
+    const parsed = parsePermissionsBody(body.permissions);
+    if (parsed == null || !Object.values(parsed).some(Boolean)) {
+      return res.status(400).json({ message: 'Invalid permissions' });
+    }
+    updates.push(`permissions = $${idx++}::jsonb`);
+    values.push(JSON.stringify(parsed));
+  }
 
   if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
   updates.push('updated_at = NOW()');
@@ -3402,7 +3738,9 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
         created_at: (r.created_at as Date).toISOString(),
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
-        has_mobile_login: !!r.password_hash,
+        has_mobile_login: !!r.password_hash || !!(r as { linked_user_id?: number | null }).linked_user_id,
+        permissions: permissionsFromDb((r as { permissions?: unknown }).permissions),
+        linked_user_id: (r as { linked_user_id?: number | null }).linked_user_id ?? null,
       },
     });
   } catch (error) {
@@ -3411,11 +3749,11 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, async (req: Authentic
   }
 });
 
-app.delete('/api/officers/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/officers/:id', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid officer id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query(
@@ -3431,7 +3769,7 @@ app.delete('/api/officers/:id', authenticate, requireAdmin, async (req: Authenti
 });
 
 // ---------- Certifications (Admin only) ----------
-app.get('/api/certifications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/certifications', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT id, name, description, validity_months, reminder_days_before, created_at, updated_at
@@ -3454,14 +3792,14 @@ app.get('/api/certifications', authenticate, requireAdmin, async (req: Authentic
   }
 });
 
-app.post('/api/certifications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/certifications', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as { name?: string; description?: string; validity_months?: number; reminder_days_before?: number };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Certification name is required' });
   const validityMonths = typeof body.validity_months === 'number' && body.validity_months > 0 ? body.validity_months : 12;
   const reminderDays = typeof body.reminder_days_before === 'number' && body.reminder_days_before >= 0 ? body.reminder_days_before : 30;
   const description = typeof body.description === 'string' ? body.description.trim() || null : null;
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
   try {
     const r = await pool.query(
       `INSERT INTO certifications (name, description, validity_months, reminder_days_before, created_by)
@@ -3487,7 +3825,7 @@ app.post('/api/certifications', authenticate, requireAdmin, async (req: Authenti
   }
 });
 
-app.patch('/api/certifications/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid certification id' });
@@ -3538,7 +3876,7 @@ app.patch('/api/certifications/:id', authenticate, requireAdmin, async (req: Aut
   }
 });
 
-app.delete('/api/certifications/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid certification id' });
@@ -3552,10 +3890,10 @@ app.delete('/api/certifications/:id', authenticate, requireAdmin, async (req: Au
   }
 });
 
-app.get('/api/officers/:id/certifications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officers/:id/certifications', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const officerId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const officerCheck = await pool.query(
@@ -3605,13 +3943,13 @@ app.get('/api/officers/:id/certifications', authenticate, requireAdmin, async (r
   }
 });
 
-app.post('/api/officers/:id/certifications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/officers/:id/certifications', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const officerId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
   const body = req.body as { certification_id: number; issued_date?: string; expiry_date?: string; certificate_number?: string; issued_by?: string; notes?: string };
   const certId = typeof body.certification_id === 'number' && Number.isFinite(body.certification_id) ? body.certification_id : null;
   if (!certId) return res.status(400).json({ message: 'certification_id is required' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const officerCheck = await pool.query(
@@ -3671,7 +4009,7 @@ app.post('/api/officers/:id/certifications', authenticate, requireAdmin, async (
   }
 });
 
-app.patch('/api/officer-certifications/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid assignment id' });
@@ -3742,7 +4080,7 @@ app.patch('/api/officer-certifications/:id', authenticate, requireAdmin, async (
   }
 });
 
-app.delete('/api/officer-certifications/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(404).json({ message: 'Invalid id' });
@@ -3756,11 +4094,11 @@ app.delete('/api/officer-certifications/:id', authenticate, requireAdmin, async 
   }
 });
 
-app.get('/api/officer-certifications/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query(
@@ -3807,9 +4145,9 @@ app.get('/api/officer-certifications/:id', authenticate, requireAdmin, async (re
   }
 });
 
-app.get('/api/certifications/compliance', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/certifications/compliance', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
     const today = new Date().toISOString().slice(0, 10);
     const result = await pool.query(
@@ -3867,7 +4205,7 @@ app.get('/api/certifications/compliance', authenticate, requireAdmin, async (req
 const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed'] as const;
 const JOB_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 
-app.get('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
@@ -3880,7 +4218,7 @@ app.get('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedReques
       ? req.query.priority
       : '';
     const offset = (page - 1) * limit;
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -3991,11 +4329,11 @@ app.get('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedReques
   }
 });
 
-app.get('/api/jobs/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query<
@@ -4129,7 +4467,7 @@ app.get('/api/jobs/:id', authenticate, requireAdmin, async (req: AuthenticatedRe
   }
 });
 
-app.post('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     title?: string;
     description?: string;
@@ -4169,9 +4507,9 @@ app.post('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedReque
       .map((v) => v.trim())
       .filter(Boolean)
     : [];
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   if (customerId && !isSuperAdmin) {
     const custCheck = await pool.query('SELECT id FROM customers WHERE id = $1 AND created_by = $2', [customerId, userId]);
@@ -4222,12 +4560,12 @@ app.post('/api/jobs', authenticate, requireAdmin, async (req: AuthenticatedReque
   }
 });
 
-app.patch('/api/jobs/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownershipCheck = isSuperAdmin ? '' : ' AND created_by = $1';
 
@@ -4388,10 +4726,10 @@ app.patch('/api/jobs/:id', authenticate, requireAdmin, async (req: Authenticated
   }
 });
 
-app.get('/api/jobs/:jobId/office-tasks', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -4437,10 +4775,10 @@ app.get('/api/jobs/:jobId/office-tasks', authenticate, requireAdmin, async (req:
   }
 });
 
-app.post('/api/jobs/:jobId/office-tasks', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as { description?: string; assignee_officer_id?: number | null };
   const description = typeof body.description === 'string' ? body.description.trim() : '';
@@ -4472,11 +4810,11 @@ app.post('/api/jobs/:jobId/office-tasks', authenticate, requireAdmin, async (req
   }
 });
 
-app.patch('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   const taskId = parseInt(String(req.params.taskId), 10);
   if (!Number.isFinite(jobId) || !Number.isFinite(taskId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as { description?: string; assignee_officer_id?: number | null; completed?: boolean };
 
@@ -4520,11 +4858,11 @@ app.patch('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireAdmin, a
   }
 });
 
-app.delete('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   const taskId = parseInt(String(req.params.taskId), 10);
   if (!Number.isFinite(jobId) || !Number.isFinite(taskId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -4542,8 +4880,8 @@ app.delete('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireAdmin, 
 });
 
 // ---------- Part catalog, kits & job parts ----------
-app.get('/api/part-catalog', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/part-catalog', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '80'), 10) || 80));
@@ -4580,8 +4918,8 @@ app.get('/api/part-catalog', authenticate, requireAdmin, async (req: Authenticat
   }
 });
 
-app.post('/api/part-catalog', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/part-catalog', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Part name is required' });
@@ -4603,8 +4941,8 @@ app.post('/api/part-catalog', authenticate, requireAdmin, async (req: Authentica
   }
 });
 
-app.get('/api/part-kits', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/part-kits', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query(
@@ -4630,10 +4968,10 @@ app.get('/api/part-kits', authenticate, requireAdmin, async (req: AuthenticatedR
   }
 });
 
-app.get('/api/part-kits/:kitId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/part-kits/:kitId', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const kitId = parseInt(String(req.params.kitId), 10);
   if (!Number.isFinite(kitId)) return res.status(400).json({ message: 'Invalid kit id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const kit = await pool.query(
@@ -4668,8 +5006,8 @@ app.get('/api/part-kits/:kitId', authenticate, requireAdmin, async (req: Authent
   }
 });
 
-app.post('/api/part-kits', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/part-kits', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as { name?: string; items?: unknown[] };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Kit name is required' });
@@ -4714,10 +5052,10 @@ app.post('/api/part-kits', authenticate, requireAdmin, async (req: Authenticated
   }
 });
 
-app.get('/api/jobs/:jobId/parts', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
@@ -4785,10 +5123,10 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireAdmin, async (req: Authen
   }
 });
 
-app.post('/api/jobs/:jobId/parts', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -4850,10 +5188,10 @@ app.post('/api/jobs/:jobId/parts', authenticate, requireAdmin, async (req: Authe
   }
 });
 
-app.post('/api/jobs/:jobId/parts/from-kit', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/jobs/:jobId/parts/from-kit', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const kitId = typeof (req.body as { kit_id?: unknown }).kit_id === 'number' ? (req.body as { kit_id: number }).kit_id : parseInt(String((req.body as { kit_id?: unknown }).kit_id), 10);
   if (!Number.isFinite(kitId)) return res.status(400).json({ message: 'kit_id is required' });
@@ -4900,11 +5238,11 @@ app.post('/api/jobs/:jobId/parts/from-kit', authenticate, requireAdmin, async (r
   }
 });
 
-app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   const partId = parseInt(String(req.params.partId), 10);
   if (!Number.isFinite(jobId) || !Number.isFinite(partId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -4981,11 +5319,11 @@ app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireAdmin, async (r
   }
 });
 
-app.delete('/api/jobs/:jobId/parts/:partId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess('parts_catalog'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.jobId), 10);
   const partId = parseInt(String(req.params.partId), 10);
   if (!Number.isFinite(jobId) || !Number.isFinite(partId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -5002,11 +5340,11 @@ app.delete('/api/jobs/:jobId/parts/:partId', authenticate, requireAdmin, async (
   }
 });
 
-app.delete('/api/jobs/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query(
@@ -5024,6 +5362,10 @@ app.delete('/api/jobs/:id', authenticate, requireAdmin, async (req: Authenticate
 
 // ---------- Diary Events ----------
 app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const du = req.user!;
+  if (du.role === 'STAFF' && !assertStaffPermissionAny(du, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
   try {
     const rangeStartRaw = typeof req.query.range_start === 'string' ? req.query.range_start.trim() : '';
     const rangeEndRaw = typeof req.query.range_end === 'string' ? req.query.range_end.trim() : '';
@@ -5081,15 +5423,22 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
 
     let nextParam = params.length + 1;
     let officerClause = '';
-    if (req.user!.role === 'OFFICER' && req.user!.officerId != null) {
+    const tokenOid = req.user!.officerId ?? null;
+    if (tokenOid != null && diaryActsAsFieldOfficer(req, { role: req.user!.role, officerId: tokenOid, permissions: req.user!.permissions ?? null })) {
       officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam})`;
-      params.push(req.user!.officerId);
+      params.push(tokenOid);
+      nextParam += 1;
     } else if (typeof req.query.officer_id === 'string') {
       const oid = parseInt(req.query.officer_id, 10);
       if (Number.isFinite(oid)) {
         officerClause = ` AND d.officer_id = $${nextParam}`;
         params.push(oid);
+        nextParam += 1;
       }
+    } else if (req.user!.role !== 'SUPER_ADMIN') {
+      officerClause = ` AND j.created_by = $${nextParam}`;
+      params.push(getTenantScopeUserId(req.user!));
+      nextParam += 1;
     }
 
     // We fetch diary events joined with jobs and customers
@@ -5133,11 +5482,17 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid event id' });
 
+  const du0 = req.user!;
+  if (du0.role === 'STAFF' && !assertStaffPermissionAny(du0, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
+
   try {
     const result = await pool.query(
       `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at,
               j.title, j.description, j.location, j.state AS job_state, j.job_notes, j.customer_id,
+              j.created_by AS job_created_by,
               j.work_address_id AS job_work_address_id,
               j.officer_id AS job_officer_id,
               j.quoted_amount, j.customer_reference,
@@ -5176,10 +5531,15 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
     const officerId = row.officer_id as number | null;
     const jobOfficerId = row.job_officer_id as number | null;
 
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned = officerId === tokenOfficerId || jobOfficerId === tokenOfficerId;
       if (!assigned) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+      }
+    } else if (role !== 'SUPER_ADMIN') {
+      const jcb = row.job_created_by as number | null;
+      if (jcb == null || jcb !== getTenantScopeUserId(req.user!)) {
+        return res.status(404).json({ message: 'Event not found' });
       }
     }
 
@@ -5366,7 +5726,7 @@ app.post(
     if (!Number.isFinite(diaryEventId)) {
       return res.status(400).json({ message: 'Invalid event id' });
     }
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const access = await pool.query<{
       job_id: number;
       officer_id: number | null;
@@ -5386,7 +5746,7 @@ app.post(
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const ok =
         acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
       if (!ok) {
@@ -5520,7 +5880,7 @@ app.post(
     if (!Number.isFinite(diaryEventId)) {
       return res.status(400).json({ message: 'Invalid event id' });
     }
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const access = await pool.query<{
       job_id: number;
       officer_id: number | null;
@@ -5540,7 +5900,7 @@ app.post(
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
       if (!ok) {
         return res.status(403).json({ message: 'You can only add technical notes for visits assigned to you' });
@@ -5700,14 +6060,14 @@ app.get(
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
       if (!ok) {
         return res.status(403).json({ message: 'Forbidden' });
       }
     } else if (role === 'OFFICER') {
       return res.status(403).json({ message: 'Forbidden' });
-    } else if (!isSuperAdmin && acc.job_created_by !== req.user!.userId) {
+    } else if (!isSuperAdmin && acc.job_created_by !== getTenantScopeUserId(req.user!)) {
       return res.status(404).json({ message: 'Not found' });
     }
 
@@ -5822,12 +6182,12 @@ app.get(
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
       if (!ok) return res.status(403).json({ message: 'Forbidden' });
     } else if (role === 'OFFICER') {
       return res.status(403).json({ message: 'Forbidden' });
-    } else if (!isSuperAdmin && acc.job_created_by !== req.user!.userId) {
+    } else if (!isSuperAdmin && acc.job_created_by !== getTenantScopeUserId(req.user!)) {
       return res.status(404).json({ message: 'Not found' });
     }
 
@@ -5861,7 +6221,7 @@ app.get(
   },
 );
 
-app.get('/api/jobs/:id/job-report-questions', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/jobs/:id/job-report-questions', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(jobId)) {
     return res.status(400).json({ message: 'Invalid job id' });
@@ -5879,7 +6239,110 @@ app.get('/api/jobs/:id/job-report-questions', authenticate, requireAdmin, async 
   }
 });
 
-app.put('/api/jobs/:id/job-report-questions', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+/** Plain-text summary from the most recent completed visit that has a job report (for invoice notes, etc.). */
+app.get(
+  '/api/jobs/:id/last-engineer-report-feedback',
+  authenticate,
+  requireTenantCrmAccess('jobs'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const jobId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ message: 'Invalid job id' });
+    }
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    try {
+      const jobChk = await pool.query<{ id: number }>(
+        `SELECT id FROM jobs WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+        isSuperAdmin ? [jobId] : [jobId, userId],
+      );
+      if ((jobChk.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+
+      const latest = await pool.query<{
+        id: number;
+        start_time: Date;
+        notes: string | null;
+        officer_full_name: string | null;
+      }>(
+        `SELECT d.id, d.start_time, d.notes, o.full_name AS officer_full_name
+         FROM diary_events d
+         INNER JOIN job_report_answers jra ON jra.diary_event_id = d.id
+         LEFT JOIN officers o ON o.id = d.officer_id
+         WHERE d.job_id = $1 AND LOWER(TRIM(d.status)) = 'completed'
+         GROUP BY d.id, d.start_time, d.notes, o.full_name
+         ORDER BY d.start_time DESC
+         LIMIT 1`,
+        [jobId],
+      );
+      if ((latest.rowCount ?? 0) === 0) {
+        return res.json({ feedback: null as string | null });
+      }
+      const row = latest.rows[0];
+      const diaryId = row.id;
+      const visitStart = row.start_time as Date;
+      const visitNotes = row.notes;
+      const officerName = row.officer_full_name;
+      const visitHeading = officerName?.trim()
+        ? `${visitStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} — ${officerName.trim()}`
+        : visitStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+      const answers = await pool.query<{
+        value: string;
+        prompt: string;
+        question_type: string;
+        sort_order: number;
+      }>(
+        `SELECT jra.value,
+                COALESCE(NULLIF(TRIM(jra.prompt_snapshot), ''), NULLIF(TRIM(q.prompt), ''), 'Question') AS prompt,
+                LOWER(TRIM(COALESCE(jra.question_type_snapshot, q.question_type, ''))) AS question_type,
+                COALESCE(q.sort_order, 1000000)::int AS sort_order
+         FROM job_report_answers jra
+         LEFT JOIN job_report_questions q ON q.id = jra.question_id AND q.job_id = $2
+         WHERE jra.diary_event_id = $1
+         ORDER BY sort_order ASC, jra.question_id ASC`,
+        [diaryId, jobId],
+      );
+
+      const extras = await pool.query<{ notes: string | null }>(
+        `SELECT notes FROM diary_event_extra_submissions
+         WHERE diary_event_id = $1 AND notes IS NOT NULL AND TRIM(notes) <> ''
+         ORDER BY created_at ASC`,
+        [diaryId],
+      );
+
+      const skipTypes = new Set(['customer_signature', 'officer_signature', 'before_photo', 'after_photo']);
+      const parts: string[] = [];
+      if (visitNotes != null && String(visitNotes).trim()) {
+        parts.push(`Visit notes:\n${String(visitNotes).trim()}`);
+      }
+      for (const ex of extras.rows) {
+        const n = ex.notes != null ? String(ex.notes).trim() : '';
+        if (n) parts.push(`Engineer submission:\n${n}`);
+      }
+      for (const a of answers.rows) {
+        if (skipTypes.has(a.question_type)) continue;
+        const v = String(a.value || '').trim();
+        if (!v || v.startsWith('data:')) continue;
+        if (v.length > 12000) continue;
+        parts.push(`${a.prompt}:\n${v}`);
+      }
+
+      if (parts.length === 0) {
+        return res.json({ feedback: null as string | null });
+      }
+      const header = `Last job report — ${visitHeading}`;
+      const feedback = `${header}\n\n${parts.join('\n\n')}`;
+      return res.json({ feedback });
+    } catch (error) {
+      console.error('last engineer report feedback:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.put('/api/jobs/:id/job-report-questions', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(jobId)) {
     return res.status(400).json({ message: 'Invalid job id' });
@@ -5968,6 +6431,7 @@ app.get(
   '/api/settings/job-report-template',
   authenticate,
   requireAdmin,
+  requirePermission('settings_master_data'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -5986,6 +6450,7 @@ app.put(
   '/api/settings/job-report-template',
   authenticate,
   requireAdmin,
+  requirePermission('settings_master_data'),
   async (req: AuthenticatedRequest, res: Response) => {
     const raw = req.body as { questions?: unknown };
     if (!Array.isArray(raw.questions)) {
@@ -6065,6 +6530,7 @@ app.put(
   '/api/settings/diary-abort-reasons',
   authenticate,
   requireAdmin,
+  requirePermission('settings_master_data'),
   async (req: AuthenticatedRequest, res: Response) => {
     const raw = req.body as { reasons?: unknown };
     if (!Array.isArray(raw.reasons)) {
@@ -6151,7 +6617,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
     const row = base.rows[0];
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
         row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
       if (!assigned) {
@@ -6274,7 +6740,7 @@ app.get(
       const row = base.rows[0];
       const role = req.user!.role;
       const tokenOfficerId = req.user!.officerId ?? null;
-      if (role === 'OFFICER' && tokenOfficerId != null) {
+      if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         const assigned =
           row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
         if (!assigned) {
@@ -6451,14 +6917,14 @@ app.get(
 );
 
 /** Admin: timesheet segments tied to a diary visit (field app clock segments with diary_event_id). */
-app.get('/api/diary-events/:id/timesheet', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/diary-events/:id/timesheet', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const diaryEventId = parseInt(String(idParam), 10);
   if (!Number.isFinite(diaryEventId)) {
     return res.status(400).json({ message: 'Invalid event id' });
   }
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -6510,7 +6976,7 @@ app.get('/api/diary-events/:id/timesheet', authenticate, requireAdmin, async (re
 app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const diaryEventId = parseInt(String(idParam), 10);
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const role = req.user!.role;
   const tokenOfficerId = req.user!.officerId ?? null;
 
@@ -6553,7 +7019,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
     }
     const ev = eventRes.rows[0];
 
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
         ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId;
       if (!assigned) {
@@ -6570,7 +7036,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'This visit is already closed' });
     }
-    const isFieldOfficer = role === 'OFFICER' && tokenOfficerId != null;
+    const isFieldOfficer = diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null });
     if (isFieldOfficer && statusNorm !== 'arrived_at_site') {
       await client.query('ROLLBACK');
       return res.status(400).json({
@@ -6700,8 +7166,18 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
 });
 
 app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const du1 = req.user!;
+  if (du1.role === 'STAFF' && !assertStaffPermissionAny(du1, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
   try {
     const jobId = parseInt(String(req.params.id), 10);
+    if (du1.role !== 'SUPER_ADMIN' && du1.role !== 'OFFICER') {
+      const own = await pool.query<{ created_by: number | null }>('SELECT created_by FROM jobs WHERE id = $1', [jobId]);
+      if ((own.rowCount ?? 0) === 0 || own.rows[0].created_by !== getTenantScopeUserId(du1)) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+    }
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
               COALESCE(
@@ -6739,7 +7215,7 @@ function escapeHtmlForEmail(text: string): string {
 }
 
 /** Send customer / engineer diary reminder emails and record sent_at on the visit. */
-app.post('/api/diary-events/:id/send-reminder', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/diary-events/:id/send-reminder', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const diaryId = parseInt(String(idParam), 10);
   if (!Number.isFinite(diaryId)) return res.status(400).json({ message: 'Invalid event id' });
@@ -6755,7 +7231,7 @@ app.post('/api/diary-events/:id/send-reminder', authenticate, requireAdmin, asyn
     });
   }
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const colMap: Record<string, string> = {
     customer_confirmation: 'customer_confirmation_sent_at',
     address_reminder: 'address_reminder_sent_at',
@@ -6915,9 +7391,20 @@ app.post('/api/diary-events/:id/send-reminder', authenticate, requireAdmin, asyn
 });
 
 app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const du2 = req.user!;
+  if (du2.role === 'STAFF' && !assertStaffPermissionAny(du2, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
   try {
     const jobId = parseInt(String(req.params.id), 10);
     const { officer_id, start_time, duration_minutes, notes } = req.body;
+
+    if (du2.role !== 'SUPER_ADMIN' && du2.role !== 'OFFICER') {
+      const own = await pool.query<{ created_by: number | null }>('SELECT created_by FROM jobs WHERE id = $1', [jobId]);
+      if ((own.rowCount ?? 0) === 0 || own.rows[0].created_by !== getTenantScopeUserId(du2)) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+    }
 
     const ures = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user!.userId]);
     const creatorName = ures.rows[0]?.full_name || 'System User';
@@ -6947,7 +7434,11 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     feedback_notes?: unknown;
     abort_reason?: unknown;
   };
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
+  const duPatch = req.user!;
+  if (duPatch.role === 'STAFF' && !assertStaffPermissionAny(duPatch, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
 
   if (!Number.isFinite(id)) {
     return res.status(400).json({ message: 'Invalid event id' });
@@ -6979,7 +7470,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
 
-    if (role === 'OFFICER' && tokenOfficerId != null) {
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
         row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
       if (!assigned) {
@@ -7054,12 +7545,12 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
   }
 });
 
-app.delete('/api/diary-events/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid event id' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -7092,7 +7583,7 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, async (req: Auth
 // ----------------------------------------
 
 // ---------- Scheduling & Dispatch ----------
-app.get('/api/scheduling', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const now = new Date();
     const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
@@ -7101,7 +7592,7 @@ app.get('/api/scheduling', authenticate, requireAdmin, async (req: Authenticated
     const toDate = typeof req.query.to === 'string' ? req.query.to.slice(0, 10) : defaultTo;
     const officerId = typeof req.query.officer_id === 'string' ? parseInt(req.query.officer_id, 10) : null;
     const stateFilter = typeof req.query.state === 'string' && JOB_STATES.includes(req.query.state as typeof JOB_STATES[number]) ? req.query.state : '';
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -7174,7 +7665,7 @@ app.get('/api/scheduling', authenticate, requireAdmin, async (req: Authenticated
   }
 });
 
-app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
@@ -7184,7 +7675,7 @@ app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, async (req: Auth
   const officerId = body.officer_id !== undefined ? (typeof body.officer_id === 'number' && Number.isFinite(body.officer_id) ? body.officer_id : null) : undefined;
   const schedulingNotes = body.scheduling_notes !== undefined ? (typeof body.scheduling_notes === 'string' ? body.scheduling_notes.trim() || null : null) : undefined;
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const check = await pool.query(
@@ -7243,11 +7734,11 @@ app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, async (req: Auth
   }
 });
 
-app.patch('/api/jobs/:id/dispatch', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/jobs/:id/dispatch', authenticate, requireAdmin, requirePermission('scheduling'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     const result = await pool.query<DbJob>(
@@ -8067,7 +8558,7 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
   return invoiceId;
 }
 
-app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
@@ -8079,7 +8570,7 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
     const jobIdForList = typeof req.query.job_id === 'string' ? parseInt(req.query.job_id, 10) : NaN;
     const listScopedToJob = Number.isFinite(jobIdForList) && jobIdForList > 0;
     const offset = (page - 1) * limit;
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -8204,11 +8695,11 @@ app.get('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRe
   }
 });
 
-app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -8382,7 +8873,39 @@ app.get('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenticat
   }
 });
 
-app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/invoices/:id/pdf', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const invResult = await pool.query<DbInvoice & { job_created_by: number | null }>(
+      `SELECT i.*, j.created_by AS job_created_by
+       FROM invoices i
+       LEFT JOIN jobs j ON j.id = i.job_id
+       WHERE i.id = $1`,
+      [id],
+    );
+    if ((invResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
+    const inv = invResult.rows[0];
+    if (!canAccessInvoice(inv, userId, isSuperAdmin, inv.job_created_by ?? null)) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    const pdf = await generateInvoicePdfBuffer(pool, id);
+    const safeTail = String(inv.invoice_number || `invoice-${id}`).replace(/[^\w.-]+/g, '_').slice(0, 80);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTail}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error) {
+    console.error('Invoice PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     customer_id?: number;
     job_id?: number;
@@ -8402,7 +8925,7 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const custCheck = await pool.query(
@@ -8531,11 +9054,11 @@ app.post('/api/invoices', authenticate, requireAdmin, async (req: AuthenticatedR
   }
 });
 
-app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
@@ -8724,11 +9247,11 @@ app.patch('/api/invoices/:id', authenticate, requireAdmin, async (req: Authentic
   }
 });
 
-app.post('/api/invoices/:id/payments', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/payments', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
@@ -8792,11 +9315,11 @@ app.post('/api/invoices/:id/payments', authenticate, requireAdmin, async (req: A
   }
 });
 
-app.post('/api/invoices/:id/issue', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
@@ -8823,11 +9346,11 @@ app.post('/api/invoices/:id/issue', authenticate, requireAdmin, async (req: Auth
   }
 });
 
-app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/send', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const body = req.body as { channel?: string };
@@ -8946,11 +9469,11 @@ app.post('/api/invoices/:id/send', authenticate, requireAdmin, async (req: Authe
   }
 });
 
-app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/invoices/:id/email-compose', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<
@@ -9028,6 +9551,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
       smtp_ready: !!((emailCfg.smtp_enabled && transport) || emailCfg.oauth_provider) && !!emailCfg.from_email?.trim(),
       can_send: inv.state === 'issued',
       invoice_state: inv.state,
+      job_id: inv.job_id ?? null,
       default_to: inv.customer_email ?? '',
       customer_name: inv.customer_full_name ?? '',
       to_email_options: toEmailOptions,
@@ -9038,11 +9562,11 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireAdmin, async (re
   }
 });
 
-app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const body = req.body as {
@@ -9178,11 +9702,11 @@ app.post('/api/invoices/:id/send-email', authenticate, requireAdmin, async (req:
   }
 });
 
-app.post('/api/invoices/:id/communications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/communications', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
@@ -9286,11 +9810,11 @@ app.post('/api/invoices/:id/communications', authenticate, requireAdmin, async (
   }
 });
 
-app.delete('/api/invoices/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
@@ -9315,12 +9839,12 @@ app.delete('/api/invoices/:id', authenticate, requireAdmin, async (req: Authenti
   }
 });
 
-app.post('/api/invoices/delete-all', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/delete-all', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as { confirmation?: string };
   if (body.confirmation !== 'DELETE ALL INVOICES') {
     return res.status(400).json({ message: 'Confirmation must be exactly: DELETE ALL INVOICES' });
   }
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
     if (isSuperAdmin) {
@@ -9428,7 +9952,7 @@ function canAccessQuotation(quotation: DbQuotation, userId: number, isSuperAdmin
   return quotation.created_by === userId;
 }
 
-app.get('/api/quotations', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
@@ -9436,7 +9960,7 @@ app.get('/api/quotations', authenticate, requireAdmin, async (req: Authenticated
     const stateFilter = typeof req.query.state === 'string' && QUOTATION_STATES.includes(req.query.state as typeof QUOTATION_STATES[number]) ? req.query.state : '';
     const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
     const offset = (page - 1) * limit;
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const conditions: string[] = [];
@@ -9523,11 +10047,11 @@ app.get('/api/quotations', authenticate, requireAdmin, async (req: Authenticated
   }
 });
 
-app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -9566,6 +10090,21 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
     );
     const activitiesResult = await pool.query(
       'SELECT id, action, details, created_at, created_by FROM quotation_activities WHERE quotation_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [id],
+    );
+    const internalNotesResult = await pool.query<{
+      id: number;
+      body: string;
+      created_at: Date;
+      created_by: number | null;
+      created_by_label: string | null;
+    }>(
+      `SELECT n.id, n.body, n.created_at, n.created_by,
+              COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS created_by_label
+       FROM quotation_internal_notes n
+       LEFT JOIN users u ON u.id = n.created_by
+       WHERE n.quotation_id = $1
+       ORDER BY n.created_at DESC`,
       [id],
     );
     const settings = await getQuotationSettings(q.created_by ?? userId);
@@ -9621,6 +10160,13 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
         created_at: (row.created_at as Date).toISOString(),
         created_by: row.created_by,
       })),
+      internal_notes: internalNotesResult.rows.map((row) => ({
+        id: row.id,
+        body: row.body,
+        created_at: (row.created_at as Date).toISOString(),
+        created_by: row.created_by,
+        created_by_label: row.created_by_label ?? null,
+      })),
       settings,
     };
 
@@ -9631,11 +10177,115 @@ app.get('/api/quotations/:id', authenticate, requireAdmin, async (req: Authentic
   }
 });
 
-app.get('/api/quotations/:id/email-compose', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/quotations/:id/pdf', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const qResult = await pool.query<DbQuotation>(
+      `SELECT q.* FROM quotations q WHERE q.id = $1`,
+      [id],
+    );
+    if ((qResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    const q = qResult.rows[0];
+    if (!canAccessQuotation(q, userId, isSuperAdmin)) {
+      return res.status(404).json({ message: 'Quotation not found' });
+    }
+    const pdf = await generateQuotationPdfBuffer(pool, id);
+    const safeTail = String(q.quotation_number || `quotation-${id}`).replace(/[^\w.-]+/g, '_').slice(0, 80);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTail}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error) {
+    console.error('Quotation PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/quotations/:id/internal-notes', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const bodyRaw = (req.body as { body?: string })?.body;
+  const text = typeof bodyRaw === 'string' ? bodyRaw.trim() : '';
+  if (!text) return res.status(400).json({ message: 'Note text is required' });
+  if (text.length > 20000) return res.status(400).json({ message: 'Note is too long' });
+
+  try {
+    const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    const qRow = qCheck.rows[0];
+    if (!canAccessQuotation(qRow, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+    const ins = await pool.query<{
+      id: number;
+      body: string;
+      created_at: Date;
+      created_by: number | null;
+      created_by_label: string | null;
+    }>(
+      `WITH ins AS (
+         INSERT INTO quotation_internal_notes (quotation_id, body, created_by)
+         VALUES ($1, $2, $3)
+         RETURNING id, body, created_at, created_by
+       )
+       SELECT ins.id, ins.body, ins.created_at, ins.created_by,
+              COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS created_by_label
+       FROM ins
+       LEFT JOIN users u ON u.id = ins.created_by`,
+      [quotationId, text, userId],
+    );
+    const row = ins.rows[0];
+    return res.status(201).json({
+      note: {
+        id: row.id,
+        body: row.body,
+        created_at: (row.created_at as Date).toISOString(),
+        created_by: row.created_by,
+        created_by_label: row.created_by_label ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('Create quotation internal note error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/quotations/:id/internal-notes/:noteId', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  const noteId = parseInt(String(req.params.noteId), 10);
+  if (!Number.isFinite(quotationId) || !Number.isFinite(noteId)) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    if (!canAccessQuotation(qCheck.rows[0], userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+    const del = await pool.query('DELETE FROM quotation_internal_notes WHERE id = $1 AND quotation_id = $2', [noteId, quotationId]);
+    if ((del.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete quotation internal note error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/quotations/:id/email-compose', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<
@@ -9710,6 +10360,7 @@ app.get('/api/quotations/:id/email-compose', authenticate, requireAdmin, async (
       smtp_ready: !!((emailCfg.smtp_enabled && transport) || emailCfg.oauth_provider) && !!emailCfg.from_email?.trim(),
       can_send: canSend,
       invoice_state: qRow.state,
+      job_id: qRow.job_id ?? null,
       default_to: qRow.customer_email ?? '',
       customer_name: qRow.customer_full_name ?? '',
       to_email_options: toEmailOptions,
@@ -9720,11 +10371,11 @@ app.get('/api/quotations/:id/email-compose', authenticate, requireAdmin, async (
   }
 });
 
-app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const body = req.body as {
@@ -9855,7 +10506,7 @@ app.post('/api/quotations/:id/send-email', authenticate, requireAdmin, async (re
   }
 });
 
-app.post('/api/quotations', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     customer_id?: number;
     job_id?: number;
@@ -9871,7 +10522,7 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const custCheck = await pool.query(
@@ -9972,11 +10623,11 @@ app.post('/api/quotations', authenticate, requireAdmin, async (req: Authenticate
   }
 });
 
-app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
@@ -10121,11 +10772,11 @@ app.patch('/api/quotations/:id', authenticate, requireAdmin, async (req: Authent
   }
 });
 
-app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations/:id/send', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<
@@ -10208,11 +10859,11 @@ app.post('/api/quotations/:id/send', authenticate, requireAdmin, async (req: Aut
   }
 });
 
-app.post('/api/quotations/:id/accept', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations/:id/accept', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
@@ -10231,11 +10882,11 @@ app.post('/api/quotations/:id/accept', authenticate, requireAdmin, async (req: A
   }
 });
 
-app.post('/api/quotations/:id/reject', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations/:id/reject', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
@@ -10254,11 +10905,11 @@ app.post('/api/quotations/:id/reject', authenticate, requireAdmin, async (req: A
   }
 });
 
-app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const quotationId = parseInt(String(idParam), 10);
   if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
@@ -10324,11 +10975,11 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireAdmin, 
   }
 });
 
-app.delete('/api/quotations/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
@@ -10347,8 +10998,8 @@ app.delete('/api/quotations/:id', authenticate, requireAdmin, async (req: Authen
 });
 
 // ---------- Quotation Settings (Admin only) ----------
-app.get('/api/settings/quotation', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/quotation', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     const settings = await getQuotationSettings(userId);
     return res.json({ settings });
@@ -10358,8 +11009,8 @@ app.get('/api/settings/quotation', authenticate, requireAdmin, async (req: Authe
   }
 });
 
-app.patch('/api/settings/quotation', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.patch('/api/settings/quotation', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
   const defaultCurrency = typeof body.default_currency === 'string' ? body.default_currency.trim() || 'USD' : undefined;
   const quotationPrefix = typeof body.quotation_prefix === 'string' ? body.quotation_prefix.trim().replace(/[^A-Za-z0-9_-]/g, '') || 'QUOT' : undefined;
@@ -10473,8 +11124,8 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, async (req: Aut
 });
 
 // ---------- Invoice Settings (Admin only) ----------
-app.get('/api/settings/invoice', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/invoice', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     const settings = await getInvoiceSettings(userId);
     return res.json({ settings });
@@ -10484,8 +11135,8 @@ app.get('/api/settings/invoice', authenticate, requireAdmin, async (req: Authent
   }
 });
 
-app.patch('/api/settings/invoice', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.patch('/api/settings/invoice', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
   const defaultCurrency = typeof body.default_currency === 'string' ? body.default_currency.trim() || 'USD' : undefined;
   const invoicePrefix = typeof body.invoice_prefix === 'string' ? body.invoice_prefix.trim().replace(/[^A-Za-z0-9_-]/g, '') || 'INV' : undefined;
@@ -10581,8 +11232,8 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, async (req: Authe
 });
 
 // ---------- Email / SMTP settings & templates ----------
-app.get('/api/settings/email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/email', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     const s = await loadEmailSettingsPayload(userId);
     const { smtp_password: _pw, oauth_access_token, oauth_refresh_token, oauth_expiry, ...rest } = s;
@@ -10600,8 +11251,8 @@ app.get('/api/settings/email', authenticate, requireAdmin, async (req: Authentic
   }
 });
 
-app.patch('/api/settings/email', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.patch('/api/settings/email', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
   try {
     const cur = await loadEmailSettingsPayload(userId);
@@ -10676,8 +11327,8 @@ app.patch('/api/settings/email', authenticate, requireAdmin, async (req: Authent
   }
 });
 
-app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/settings/email/test', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as { to?: string };
   const to = typeof body.to === 'string' ? body.to.trim() : '';
   if (!to) return res.status(400).json({ message: 'Recipient email (to) is required' });
@@ -10712,7 +11363,7 @@ app.post('/api/settings/email/test', authenticate, requireAdmin, async (req: Aut
 
 // ---------- OAuth Email Auth flow ----------
 
-app.get('/api/auth/google/url', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/auth/google/url', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const url = await getGoogleAuthUrl();
     res.json({ url });
@@ -10721,7 +11372,7 @@ app.get('/api/auth/google/url', authenticate, requireAdmin, async (req: Authenti
   }
 });
 
-app.get('/api/auth/microsoft/url', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/auth/microsoft/url', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const url = await getMicrosoftAuthUrl();
     res.json({ url });
@@ -10743,9 +11394,9 @@ app.get('/api/auth/microsoft/callback', async (req: Request, res: Response) => {
   res.send(`<html><body><script>window.opener.postMessage({ type: 'MS_AUTH_CODE', code: '${code}' }, '*'); window.close();</script></body></html>`);
 });
 
-app.post('/api/settings/email/oauth/exchange', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/email/oauth/exchange', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
   const { code, provider } = req.body as { code: string; provider: 'google' | 'microsoft' };
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   if (!code || !provider) return res.status(400).json({ message: 'Code and provider required' });
 
   try {
@@ -10770,8 +11421,8 @@ app.post('/api/settings/email/oauth/exchange', authenticate, requireAdmin, async
   }
 });
 
-app.post('/api/settings/email/oauth/disconnect', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/settings/email/oauth/disconnect', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     await pool.query(
       `UPDATE email_settings SET oauth_provider = NULL, oauth_access_token = NULL, oauth_refresh_token = NULL, oauth_expiry = NULL, updated_at = NOW() WHERE created_by = $1`,
@@ -10784,8 +11435,8 @@ app.post('/api/settings/email/oauth/disconnect', authenticate, requireAdmin, asy
 });
 
 
-app.get('/api/settings/email-templates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/email-templates', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     await ensureDefaultEmailTemplates(userId);
     const r = await pool.query(
@@ -10799,8 +11450,8 @@ app.get('/api/settings/email-templates', authenticate, requireAdmin, async (req:
   }
 });
 
-app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const keyParam = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
   const templateKey = typeof keyParam === 'string' ? keyParam.trim() : '';
   if (!/^[a-z0-9_-]{1,64}$/i.test(templateKey)) {
@@ -10847,8 +11498,8 @@ app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, asyn
 
 const SYSTEM_EMAIL_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general']);
 
-app.post('/api/settings/email-templates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/settings/email-templates', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as { template_key?: string; name?: string; subject?: string; body_html?: string };
   const key = typeof body.template_key === 'string' ? body.template_key.trim() : '';
   if (!/^[a-z0-9_-]{1,64}$/i.test(key)) {
@@ -10876,8 +11527,8 @@ app.post('/api/settings/email-templates', authenticate, requireAdmin, async (req
   }
 });
 
-app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const keyParam = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
   const templateKey = typeof keyParam === 'string' ? keyParam.trim() : '';
   if (!/^[a-z0-9_-]{1,64}$/i.test(templateKey)) {
@@ -10900,7 +11551,7 @@ app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, asy
 });
 
 // ---------- Price Books ----------
-app.get('/api/settings/price-books', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/price-books', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query('SELECT * FROM price_books ORDER BY id ASC');
     return res.json(result.rows);
@@ -10910,7 +11561,7 @@ app.get('/api/settings/price-books', authenticate, async (req: AuthenticatedRequ
   }
 });
 
-app.post('/api/settings/price-books', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/price-books', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const { name, description } = req.body;
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ message: 'Name is required' });
@@ -10920,7 +11571,7 @@ app.post('/api/settings/price-books', authenticate, requireAdmin, async (req: Au
     const result = await pool.query(
       `INSERT INTO price_books (name, description, created_by)
        VALUES ($1, $2, $3) RETURNING *`,
-      [name.trim(), description?.trim() || null, req.user!.userId],
+      [name.trim(), description?.trim() || null, getTenantScopeUserId(req.user!)],
     );
     return res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -10929,7 +11580,7 @@ app.post('/api/settings/price-books', authenticate, requireAdmin, async (req: Au
   }
 });
 
-app.put('/api/settings/price-books/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/settings/price-books/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
 
@@ -10951,7 +11602,7 @@ app.put('/api/settings/price-books/:id', authenticate, requireAdmin, async (req:
   }
 });
 
-app.delete('/api/settings/price-books/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/price-books/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
 
@@ -10969,7 +11620,7 @@ app.delete('/api/settings/price-books/:id', authenticate, requireAdmin, async (r
   }
 });
 
-app.get('/api/settings/price-books/:id/details', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/price-books/:id/details', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
   try {
@@ -10988,7 +11639,7 @@ app.get('/api/settings/price-books/:id/details', authenticate, async (req: Authe
   }
 });
 
-app.post('/api/settings/price-books/:id/items', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/price-books/:id/items', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const { item_name, unit_price, price } = req.body;
   if (!item_name) return res.status(400).json({ message: 'Item name is required' });
@@ -11004,7 +11655,7 @@ app.post('/api/settings/price-books/:id/items', authenticate, requireAdmin, asyn
   }
 });
 
-app.put('/api/settings/price-books/:id/items/:itemId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/settings/price-books/:id/items/:itemId', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const itemId = parseInt(String(req.params.itemId), 10);
   const { item_name, unit_price, price } = req.body;
@@ -11021,7 +11672,7 @@ app.put('/api/settings/price-books/:id/items/:itemId', authenticate, requireAdmi
   }
 });
 
-app.delete('/api/settings/price-books/:id/items/:itemId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/price-books/:id/items/:itemId', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const itemId = parseInt(String(req.params.itemId), 10);
   try {
@@ -11034,7 +11685,7 @@ app.delete('/api/settings/price-books/:id/items/:itemId', authenticate, requireA
   }
 });
 
-app.post('/api/settings/price-books/:id/labour-rates', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/price-books/:id/labour-rates', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const { name, description, basic_rate_per_hr, nominal_code, rounding_rule } = req.body;
   if (!name) return res.status(400).json({ message: 'Name is required' });
@@ -11050,7 +11701,7 @@ app.post('/api/settings/price-books/:id/labour-rates', authenticate, requireAdmi
   }
 });
 
-app.put('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const rateId = parseInt(String(req.params.rateId), 10);
   const { name, description, basic_rate_per_hr, nominal_code, rounding_rule } = req.body;
@@ -11067,7 +11718,7 @@ app.put('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requ
   }
 });
 
-app.delete('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const rateId = parseInt(String(req.params.rateId), 10);
   try {
@@ -11081,8 +11732,8 @@ app.delete('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, r
 });
 
 // ---------- Customer Types ----------
-app.get('/api/settings/customer-types', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/customer-types', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownerClause = isSuperAdmin ? '' : 'WHERE created_by = $1';
   const params = isSuperAdmin ? [] : [userId];
@@ -11100,7 +11751,7 @@ app.get('/api/settings/customer-types', authenticate, requireAdmin, async (req: 
   }
 });
 
-app.post('/api/settings/customer-types', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/customer-types', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as { name?: string; description?: string; company_name_required?: boolean; allow_branches?: boolean; work_address_name?: string };
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return res.status(400).json({ message: 'Name is required' });
@@ -11109,7 +11760,7 @@ app.post('/api/settings/customer-types', authenticate, requireAdmin, async (req:
   const companyReq = !!body.company_name_required;
   const branches = !!body.allow_branches;
   const workAddrName = typeof body.work_address_name === 'string' && body.work_address_name.trim() !== '' ? body.work_address_name.trim() : 'Work Address';
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
 
   try {
     const result = await pool.query(
@@ -11124,11 +11775,11 @@ app.post('/api/settings/customer-types', authenticate, requireAdmin, async (req:
   }
 });
 
-app.put('/api/settings/customer-types/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/settings/customer-types/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (isNaN(id)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const body = req.body as any;
@@ -11163,11 +11814,11 @@ app.put('/api/settings/customer-types/:id', authenticate, requireAdmin, async (r
 });
 
 // CustomerTypesSettings.tsx uses PATCH for edits; support PATCH as an alias of PUT.
-app.patch('/api/settings/customer-types/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/settings/customer-types/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (isNaN(id)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const body = req.body as any;
@@ -11199,11 +11850,11 @@ app.patch('/api/settings/customer-types/:id', authenticate, requireAdmin, async 
   }
 });
 
-app.delete('/api/settings/customer-types/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/customer-types/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (isNaN(id)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   const ownerClause = isSuperAdmin ? '' : ' AND created_by = $2';
@@ -11222,7 +11873,7 @@ app.delete('/api/settings/customer-types/:id', authenticate, requireAdmin, async
 // ───────────────────────────────── JOB DESCRIPTIONS (Settings Templates) ─────────────────────────────────
 
 // List all job descriptions
-app.get('/api/settings/job-descriptions', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = await pool.query('SELECT * FROM job_descriptions ORDER BY name ASC');
     return res.json(result.rows);
@@ -11233,7 +11884,7 @@ app.get('/api/settings/job-descriptions', authenticate, async (req: Authenticate
 });
 
 // Get single job description with its default pricing items
-app.get('/api/settings/job-descriptions/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
   try {
@@ -11253,14 +11904,14 @@ app.get('/api/settings/job-descriptions/:id', authenticate, async (req: Authenti
 });
 
 // Create job description
-app.post('/api/settings/job-descriptions', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/job-descriptions', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const { name, default_skills, default_job_notes, default_priority, default_business_unit, is_service_job } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ message: 'Name is required' });
   try {
     const result = await pool.query(
       `INSERT INTO job_descriptions (name, default_skills, default_job_notes, default_priority, default_business_unit, is_service_job, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name.trim(), default_skills || null, default_job_notes || null, default_priority || 'medium', default_business_unit || null, !!is_service_job, req.user!.userId]
+      [name.trim(), default_skills || null, default_job_notes || null, default_priority || 'medium', default_business_unit || null, !!is_service_job, getTenantScopeUserId(req.user!)]
     );
     return res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -11270,7 +11921,7 @@ app.post('/api/settings/job-descriptions', authenticate, requireAdmin, async (re
 });
 
 // Update job description
-app.patch('/api/settings/job-descriptions/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/settings/job-descriptions/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
   const { name, default_skills, default_job_notes, default_priority, default_business_unit, is_service_job } = req.body;
@@ -11289,7 +11940,7 @@ app.patch('/api/settings/job-descriptions/:id', authenticate, requireAdmin, asyn
 });
 
 // Delete job description
-app.delete('/api/settings/job-descriptions/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/job-descriptions/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
   try {
@@ -11304,7 +11955,7 @@ app.delete('/api/settings/job-descriptions/:id', authenticate, requireAdmin, asy
 
 // ── Pricing items for a job description template ──
 
-app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
   try {
@@ -11315,7 +11966,7 @@ app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, async 
   }
 });
 
-app.post('/api/settings/job-descriptions/:id/pricing-items', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/job-descriptions/:id/pricing-items', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const descId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(descId)) return res.status(400).json({ message: 'Invalid ID' });
   const { item_name, time_included, unit_price, vat_rate, quantity } = req.body;
@@ -11334,7 +11985,7 @@ app.post('/api/settings/job-descriptions/:id/pricing-items', authenticate, requi
   }
 });
 
-app.delete('/api/settings/job-descriptions/:descId/pricing-items/:itemId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/job-descriptions/:descId/pricing-items/:itemId', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const itemId = parseInt(String(req.params.itemId), 10);
   if (!Number.isFinite(itemId)) return res.status(400).json({ message: 'Invalid ID' });
   try {
@@ -11346,7 +11997,7 @@ app.delete('/api/settings/job-descriptions/:descId/pricing-items/:itemId', authe
 });
 
 // Settings: Business Units
-app.get('/api/settings/business-units', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/business-units', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const r = await pool.query('SELECT * FROM business_units ORDER BY name ASC');
     res.json({ units: r.rows });
@@ -11355,13 +12006,13 @@ app.get('/api/settings/business-units', authenticate, async (req: AuthenticatedR
   }
 });
 
-app.post('/api/settings/business-units', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/business-units', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ message: 'Invalid name' });
   try {
     const r = await pool.query(
       'INSERT INTO business_units (name, created_by) VALUES ($1, $2) RETURNING *',
-      [name.trim(), req.user!.userId]
+      [name.trim(), getTenantScopeUserId(req.user!)]
     );
     res.json({ unit: r.rows[0] });
   } catch (error: any) {
@@ -11370,7 +12021,7 @@ app.post('/api/settings/business-units', authenticate, requireAdmin, async (req:
   }
 });
 
-app.delete('/api/settings/business-units/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/business-units/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     await pool.query('DELETE FROM business_units WHERE id = $1', [parseInt(String(req.params.id), 10)]);
     res.json({ message: 'Business unit deleted' });
@@ -11380,7 +12031,7 @@ app.delete('/api/settings/business-units/:id', authenticate, requireAdmin, async
 });
 
 // Settings: User Groups
-app.get('/api/settings/user-groups', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/user-groups', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const r = await pool.query('SELECT * FROM user_groups ORDER BY name ASC');
     res.json({ groups: r.rows });
@@ -11389,13 +12040,13 @@ app.get('/api/settings/user-groups', authenticate, async (req: AuthenticatedRequ
   }
 });
 
-app.post('/api/settings/user-groups', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/settings/user-groups', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ message: 'Invalid name' });
   try {
     const r = await pool.query(
       'INSERT INTO user_groups (name, created_by) VALUES ($1, $2) RETURNING *',
-      [name.trim(), req.user!.userId]
+      [name.trim(), getTenantScopeUserId(req.user!)]
     );
     res.json({ group: r.rows[0] });
   } catch (error: any) {
@@ -11404,7 +12055,7 @@ app.post('/api/settings/user-groups', authenticate, requireAdmin, async (req: Au
   }
 });
 
-app.delete('/api/settings/user-groups/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/user-groups/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     await pool.query('DELETE FROM user_groups WHERE id = $1', [parseInt(String(req.params.id), 10)]);
     res.json({ message: 'User group deleted' });
@@ -11413,8 +12064,8 @@ app.delete('/api/settings/user-groups/:id', authenticate, requireAdmin, async (r
   }
 });
 
-app.get('/api/settings/service-checklist', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.get('/api/settings/service-checklist', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   try {
     const result = await pool.query(
       `SELECT id, name, sort_order, is_active, created_at, updated_at
@@ -11430,8 +12081,8 @@ app.get('/api/settings/service-checklist', authenticate, requireAdmin, async (re
   }
 });
 
-app.post('/api/settings/service-checklist', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/settings/service-checklist', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
   const sortOrder = Number.isFinite(req.body?.sort_order) ? Number(req.body.sort_order) : 0;
   const isActive = req.body?.is_active === undefined ? true : !!req.body.is_active;
@@ -11453,9 +12104,9 @@ app.post('/api/settings/service-checklist', authenticate, requireAdmin, async (r
   }
 });
 
-app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid item id' });
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
   const sortOrder = req.body?.sort_order !== undefined ? Number(req.body.sort_order) : undefined;
@@ -11487,9 +12138,9 @@ app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, asy
   }
 });
 
-app.delete('/api/settings/service-checklist/:id', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/settings/service-checklist/:id', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid item id' });
   try {
     const result = await pool.query('DELETE FROM service_checklist_items WHERE id = $1 AND created_by = $2', [id, userId]);
@@ -11503,7 +12154,7 @@ app.delete('/api/settings/service-checklist/:id', authenticate, requireAdmin, as
 
 // ───────────────────────────────── ENHANCED JOB CREATION (with pricing items) ─────────────────────────────────
 
-app.post('/api/customers/:customerId/jobs', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
 
@@ -11514,7 +12165,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireAdmin, async (r
   } = req.body;
 
   const title = req.body.title?.trim() || 'Untitled Job';
-  const createdBy = req.user!.userId;
+  const createdBy = getTenantScopeUserId(req.user!);
 
   const completedServiceItems = Array.isArray(completed_service_items)
     ? completed_service_items
@@ -11567,7 +12218,6 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireAdmin, async (r
     } catch (e) {
       console.error('Copy default job report template to new job:', e);
     }
-
     // Insert pricing items if provided
     if (Array.isArray(pricing_items) && pricing_items.length > 0) {
       for (let i = 0; i < pricing_items.length; i++) {
@@ -11618,10 +12268,10 @@ app.get('/api/customers/:customerId/jobs', authenticate, async (req: Authenticat
   }
 });
 
-app.get('/api/customers/:customerId/contacts', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/contacts', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
@@ -11684,10 +12334,10 @@ app.get('/api/customers/:customerId/contacts', authenticate, requireAdmin, async
   }
 });
 
-app.post('/api/customers/:customerId/contacts', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/contacts', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -11745,11 +12395,11 @@ app.post('/api/customers/:customerId/contacts', authenticate, requireAdmin, asyn
   }
 });
 
-app.patch('/api/customers/:customerId/contacts/:contactId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:customerId/contacts/:contactId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const contactId = parseInt(String(req.params.contactId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(contactId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -11821,10 +12471,10 @@ app.patch('/api/customers/:customerId/contacts/:contactId', authenticate, requir
   }
 });
 
-app.get('/api/customers/:customerId/branches', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/branches', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
@@ -11866,10 +12516,10 @@ app.get('/api/customers/:customerId/branches', authenticate, requireAdmin, async
   }
 });
 
-app.post('/api/customers/:customerId/branches', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/branches', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -11895,11 +12545,11 @@ app.post('/api/customers/:customerId/branches', authenticate, requireAdmin, asyn
   }
 });
 
-app.patch('/api/customers/:customerId/branches/:branchId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:customerId/branches/:branchId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const branchId = parseInt(String(req.params.branchId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(branchId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -11935,11 +12585,11 @@ app.patch('/api/customers/:customerId/branches/:branchId', authenticate, require
   }
 });
 
-app.delete('/api/customers/:customerId/branches/:branchId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:customerId/branches/:branchId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const branchId = parseInt(String(req.params.branchId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(branchId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -11956,10 +12606,10 @@ app.delete('/api/customers/:customerId/branches/:branchId', authenticate, requir
   }
 });
 
-app.get('/api/customers/:customerId/work-addresses', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/work-addresses', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const status = typeof req.query.status === 'string' ? req.query.status.trim() : 'active';
@@ -11993,11 +12643,11 @@ app.get('/api/customers/:customerId/work-addresses', authenticate, requireAdmin,
   }
 });
 
-app.get('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const workAddressId = parseInt(String(req.params.workAddressId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(workAddressId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12021,14 +12671,14 @@ app.get('/api/customers/:customerId/work-addresses/:workAddressId', authenticate
 app.post(
   '/api/customers/:customerId/work-addresses/:workAddressId/invoices',
   authenticate,
-  requireAdmin,
+  requireTenantCrmAccess('invoices'),
   async (req: AuthenticatedRequest, res: Response) => {
     const customerId = parseInt(String(req.params.customerId), 10);
     const workAddressId = parseInt(String(req.params.workAddressId), 10);
     if (!Number.isFinite(customerId) || !Number.isFinite(workAddressId)) {
       return res.status(400).json({ message: 'Invalid id' });
     }
-    const userId = req.user!.userId;
+    const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
     const custCheck = await pool.query(
@@ -12178,10 +12828,10 @@ app.post(
   },
 );
 
-app.post('/api/customers/:customerId/work-addresses', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/work-addresses', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -12213,11 +12863,11 @@ app.post('/api/customers/:customerId/work-addresses', authenticate, requireAdmin
   }
 });
 
-app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const workAddressId = parseInt(String(req.params.workAddressId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(workAddressId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -12256,11 +12906,11 @@ app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authentica
   }
 });
 
-app.delete('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:customerId/work-addresses/:workAddressId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const workAddressId = parseInt(String(req.params.workAddressId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(workAddressId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12277,10 +12927,10 @@ app.delete('/api/customers/:customerId/work-addresses/:workAddressId', authentic
   }
 });
 
-app.get('/api/customers/:customerId/assets', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/assets', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const groupBy = typeof req.query.group_by === 'string' ? req.query.group_by.trim() : '';
@@ -12316,11 +12966,11 @@ app.get('/api/customers/:customerId/assets', authenticate, requireAdmin, async (
   }
 });
 
-app.get('/api/customers/:customerId/assets/:assetId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/assets/:assetId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const assetId = parseInt(String(req.params.assetId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(assetId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12337,10 +12987,10 @@ app.get('/api/customers/:customerId/assets/:assetId', authenticate, requireAdmin
   }
 });
 
-app.post('/api/customers/:customerId/assets', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/assets', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -12369,11 +13019,11 @@ app.post('/api/customers/:customerId/assets', authenticate, requireAdmin, async 
   }
 });
 
-app.patch('/api/customers/:customerId/assets/:assetId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/customers/:customerId/assets/:assetId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const assetId = parseInt(String(req.params.assetId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(assetId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
 
@@ -12409,11 +13059,11 @@ app.patch('/api/customers/:customerId/assets/:assetId', authenticate, requireAdm
   }
 });
 
-app.delete('/api/customers/:customerId/assets/:assetId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:customerId/assets/:assetId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const assetId = parseInt(String(req.params.assetId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(assetId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12430,10 +13080,10 @@ app.delete('/api/customers/:customerId/assets/:assetId', authenticate, requireAd
   }
 });
 
-app.get('/api/customers/:customerId/files', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12480,10 +13130,10 @@ app.get('/api/customers/:customerId/files', authenticate, requireAdmin, async (r
   }
 });
 
-app.post('/api/customers/:customerId/files', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
   const filenameRaw = typeof body.filename === 'string' ? body.filename : '';
@@ -12544,11 +13194,11 @@ app.post('/api/customers/:customerId/files', authenticate, requireAdmin, async (
   }
 });
 
-app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const fileId = parseInt(String(req.params.fileId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(fileId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12583,11 +13233,11 @@ app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requir
   }
 });
 
-app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const fileId = parseInt(String(req.params.fileId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(fileId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
@@ -12610,8 +13260,8 @@ app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireAdmi
   }
 });
 
-app.post('/api/import/customers-sites', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.user!.userId;
+app.post('/api/import/customers-sites', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
   const customers = Array.isArray(body.customers) ? (body.customers as Record<string, unknown>[]) : [];
   const sites = Array.isArray(body.sites) ? (body.sites as Record<string, unknown>[]) : [];
@@ -12762,11 +13412,11 @@ app.post('/api/import/customers-sites', authenticate, requireAdmin, async (req: 
   }
 });
 
-app.get('/api/customers/:customerId/communications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/communications', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
 
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
@@ -12870,10 +13520,10 @@ app.get('/api/customers/:customerId/communications', authenticate, requireAdmin,
   }
 });
 
-app.post('/api/customers/:customerId/communications', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/communications', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
-  const userId = req.user!.userId;
+  const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const body = req.body as Record<string, unknown>;
   const recordType = typeof body.record_type === 'string' ? body.record_type.trim() : '';
@@ -13116,4 +13766,19 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
     const msg = error instanceof Error ? error.message : 'Internal server error';
     res.status(500).json({ message: 'Internal server error', details: msg });
   }
+});
+
+mountTenantStaffRoutes(app, { pool, authenticate });
+mountTenantTeamRoutes(app, { pool, authenticate });
+mountJobEmailRoutes(app, { pool, authenticate, loadEmailSettingsPayload, sendUserEmail });
+mountJobFilesRoutes(app, { pool, authenticate });
+
+mountJobClientPanelRoutes(app, {
+  pool,
+  authenticate,
+  getQuotationSettings,
+  formatCustomerAddressSingleLine,
+  loadEmailSettingsPayload,
+  sendUserEmail,
+  getPublicAppBaseUrl,
 });

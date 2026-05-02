@@ -10,4 +10,5 @@ abstract class AppRoutes {
   static const String diaryEventDetail = '/diary-event-detail';
   static const String diaryJobReport = '/diary-job-report';
   static const String diaryJobReportHistory = '/diary-job-report-history';
+  static const String crmList = '/crm-list';
 }

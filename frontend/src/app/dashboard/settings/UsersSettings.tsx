@@ -8,8 +8,9 @@ import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
 import { UserDetailModal } from './UserDetailModal';
+import UnifiedTeamSettings from './UnifiedTeamSettings';
 
-interface User {
+export interface User {
   id: number;
   full_name: string;
   role_position: string | null;
@@ -81,8 +82,24 @@ export default function UsersSettings() {
   const [formInitialPassword, setFormInitialPassword] = useState('');
   const [formNewPassword, setFormNewPassword] = useState('');
   const [formClearMobilePassword, setFormClearMobilePassword] = useState(false);
+  const [showDashboardTeamSection, setShowDashboardTeamSection] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('wp_user');
+      if (!raw) {
+        setShowDashboardTeamSection(false);
+        return;
+      }
+      const u = JSON.parse(raw) as { role?: string; is_tenant_owner?: boolean };
+      setShowDashboardTeamSection(u.role === 'ADMIN' && u.is_tenant_owner !== false);
+    } catch {
+      setShowDashboardTeamSection(false);
+    }
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     if (!token) return;
@@ -283,10 +300,27 @@ export default function UsersSettings() {
 
   return (
     <div className="mt-8 space-y-8">
+      {showDashboardTeamSection && (
+        <UnifiedTeamSettings
+          onOfficerProfile={(u) => setDetailUser(u)}
+          onTeamChanged={() => {
+            void fetchUsers();
+          }}
+        />
+      )}
+
+      {showDashboardTeamSection && (
+        <p className="text-sm text-slate-500">
+          Tip: use the profile icon on a field row for certifications and full job details. Field-only accounts cannot open the web CRM.
+        </p>
+      )}
+
+      {!showDashboardTeamSection && (
+        <>
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">User Management</h2>
-          <p className="mt-1 text-sm text-slate-500">Manage people responsible for overseeing, coordinating, or executing work.</p>
+          <h2 className="text-2xl font-bold text-slate-900">Field officers</h2>
+          <p className="mt-1 text-sm text-slate-500">People who go on site and can use the mobile app.</p>
         </div>
         <motion.button
           type="button"
@@ -472,6 +506,8 @@ export default function UsersSettings() {
           itemName="users"
         />
       </motion.div>
+        </>
+      )}
 
       {addModalOpen && (
         <UserModal
