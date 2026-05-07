@@ -67,7 +67,7 @@ import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
 import { parseSiteReportTemplateDefinition } from './siteReportTemplates/validateDefinition';
 import { ensureFireRiskAssessmentTemplate, fetchTemplateDefinition } from './siteReportTemplates/seedAndFetch';
 import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefinition';
-import { generateCustomerSiteReportPdfBuffer, getCustomerSiteReportPrintHtml } from './siteReportPrintHtml';
+import { generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -15661,40 +15661,6 @@ app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', a
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer site report image error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.get('/api/customers/:customerId/site-report/:reportId/print.html', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
-  const customerId = parseInt(String(req.params.customerId), 10);
-  const reportId = parseInt(String(req.params.reportId), 10);
-  if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = getTenantScopeUserId(req.user!);
-  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-
-  try {
-    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
-    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
-    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
-
-    const ownerUserId = Number(customer.rows[0].created_by);
-    if (!Number.isFinite(ownerUserId)) return res.status(500).json({ message: 'Invalid customer owner' });
-
-    const { html } = await getCustomerSiteReportPrintHtml(pool, {
-      customerId,
-      reportId,
-      ownerUserId,
-    });
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.send(html);
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : '';
-    if (msg === 'REPORT_NOT_FOUND') return res.status(404).json({ message: 'Report not found' });
-    if (msg === 'INVALID_DOCUMENT' || msg === 'TEMPLATE_NOT_FOUND' || msg === 'INVALID_TEMPLATE') {
-      return res.status(400).json({ message: 'Report data is incomplete. Save the report in the app and try again.' });
-    }
-    console.error('Customer site report print HTML error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

@@ -11,7 +11,7 @@ import type {
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
 } from '@/lib/siteReportTemplateTypes';
-import { IMAGE_MAX_BYTES, collectImageIds, newId, readFileAsBase64 } from './customerSiteReportShared';
+import { IMAGE_MAX_BYTES, collectImageIds, newId, pdfFilenameFromTitle, readFileAsBase64 } from './customerSiteReportShared';
 import {
   SiteReportFieldImageList,
   SiteReportSignatureBlock,
@@ -53,6 +53,7 @@ export default function CustomerSiteReportTab({
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [signatureBusyFieldId, setSignatureBusyFieldId] = useState<string | null>(null);
   const imageUrlsRef = useRef<Map<number, string>>(new Map());
 
@@ -385,6 +386,54 @@ export default function CustomerSiteReportTab({
     }
   };
 
+  const fetchReportPdfBlob = useCallback(async () => {
+    if (!token || !report) throw new Error('Not signed in or report not loaded');
+    return getBlob(`/customers/${encodeURIComponent(customerId)}/site-report/${report.id}/pdf`, token);
+  }, [token, report, customerId]);
+
+  const handleDownloadPdf = async () => {
+    if (!report) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const blob = await fetchReportPdfBlob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = pdfFilenameFromTitle(printHeader.title);
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'PDF download failed');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const handleOpenPdfForPrint = async () => {
+    if (!report) return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const blob = await fetchReportPdfBlob();
+      const objectUrl = URL.createObjectURL(blob);
+      const w = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      if (!w) {
+        URL.revokeObjectURL(objectUrl);
+        setError('Pop-up blocked. Use Download PDF or allow pop-ups for this site.');
+        return;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open PDF');
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const printHeader = useMemo(
     () => ({
       client: clientDisplayName,
@@ -393,36 +442,6 @@ export default function CustomerSiteReportTab({
     }),
     [clientDisplayName, siteAddressLabel, reportTitle, template?.definition.report_title_default],
   );
-
-  /** Same pattern as client panel public report: full print page with iframe + browser print / optional client PDF. */
-  const openSiteReportPrintPage = useCallback(
-    (opts: { mode: 'preview' | 'download'; autoprint?: boolean }) => {
-      if (!report) return;
-      const params = new URLSearchParams({
-        customer_id: String(customerId),
-        report_id: String(report.id),
-        mode: opts.mode,
-        title: printHeader.title,
-      });
-      if (opts.autoprint) params.set('autoprint', '1');
-      const url = `/dashboard/site-report-print?${params.toString()}`;
-      const w = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!w) {
-        setError('Pop-up blocked. Allow pop-ups for this site, then try again.');
-      }
-    },
-    [customerId, report, printHeader.title],
-  );
-
-  const handleDownloadPdf = () => {
-    setError(null);
-    openSiteReportPrintPage({ mode: 'download' });
-  };
-
-  const handleOpenPdfForPrint = () => {
-    setError(null);
-    openSiteReportPrintPage({ mode: 'preview', autoprint: true });
-  };
 
   const renderSection = (sec: SiteReportTemplateSection) => (
     <section
@@ -561,22 +580,21 @@ export default function CustomerSiteReportTab({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={!report}
-            onClick={handleDownloadPdf}
-            title="Opens a print layout page and builds a PDF file in your browser (same idea as the client panel viewer)."
+            disabled={pdfBusy || !report}
+            onClick={() => void handleDownloadPdf()}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
-            <Download className="size-4" />
+            {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
             Download PDF
           </button>
           <button
             type="button"
-            disabled={!report}
-            onClick={handleOpenPdfForPrint}
-            title="Opens the print layout in a new tab and your print dialog. Choose Save as PDF for a file."
+            disabled={pdfBusy || !report}
+            onClick={() => void handleOpenPdfForPrint()}
+            title="Opens a print-ready PDF in a new tab. Use the browser PDF viewer to print."
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
-            <Printer className="size-4" />
+            {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}
             Print preview
           </button>
           <button
