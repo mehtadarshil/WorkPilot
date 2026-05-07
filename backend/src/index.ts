@@ -4775,6 +4775,121 @@ app.get('/api/certifications/compliance', authenticate, requireTenantCrmAccess('
   }
 });
 
+function officerCertStatusForCompliance(
+  expiryYmd: string,
+  reminderDaysBefore: number,
+  todayYmd: string,
+): 'valid' | 'expiring_soon' | 'expired' {
+  if (expiryYmd < todayYmd) return 'expired';
+  const expDate = new Date(expiryYmd);
+  const reminderDate = new Date(expDate);
+  reminderDate.setDate(reminderDate.getDate() - reminderDaysBefore);
+  if (reminderDate.toISOString().slice(0, 10) <= todayYmd) return 'expiring_soon';
+  return 'valid';
+}
+
+app.get('/api/certifications/compliance-hub', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const today = new Date().toISOString().slice(0, 10);
+
+    const scopedAssignmentsSql = isSuperAdmin
+      ? `SELECT oc.id, oc.certification_id, oc.officer_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at
+         FROM officer_certifications oc
+         INNER JOIN officers o ON o.id = oc.officer_id`
+      : `SELECT oc.id, oc.certification_id, oc.officer_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at
+         FROM officer_certifications oc
+         INNER JOIN officers o ON o.id = oc.officer_id AND o.created_by = $1`;
+
+    const scopeParams = isSuperAdmin ? [] : [userId];
+
+    const reportsResult = await pool.query(
+      `SELECT c.id AS certification_id, c.name, c.description, c.validity_months, c.reminder_days_before,
+        COUNT(sc.id)::int AS submission_count,
+        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date < CURRENT_DATE THEN 1 ELSE 0 END), 0)::int AS expired_count,
+        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date >= CURRENT_DATE
+          AND (sc.expiry_date::date - c.reminder_days_before * INTERVAL '1 day')::date <= CURRENT_DATE THEN 1 ELSE 0 END), 0)::int AS expiring_soon_count,
+        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date >= CURRENT_DATE
+          AND NOT ((sc.expiry_date::date - c.reminder_days_before * INTERVAL '1 day')::date <= CURRENT_DATE) THEN 1 ELSE 0 END), 0)::int AS valid_count
+       FROM certifications c
+       LEFT JOIN (${scopedAssignmentsSql}) sc ON sc.certification_id = c.id
+       GROUP BY c.id, c.name, c.description, c.validity_months, c.reminder_days_before
+       ORDER BY c.name ASC`,
+      scopeParams,
+    );
+
+    const submissionsResult = await pool.query(
+      `SELECT oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at,
+        o.full_name AS officer_name, o.email AS officer_email,
+        c.name AS certification_name, c.reminder_days_before
+       FROM officer_certifications oc
+       INNER JOIN officers o ON o.id = oc.officer_id${isSuperAdmin ? '' : ' AND o.created_by = $1'}
+       INNER JOIN certifications c ON c.id = oc.certification_id
+       ORDER BY oc.created_at DESC, oc.id DESC`,
+      scopeParams,
+    );
+
+    const reports = (reportsResult.rows as {
+      certification_id: number;
+      name: string;
+      description: string | null;
+      validity_months: number;
+      reminder_days_before: number;
+      submission_count: number;
+      expired_count: number;
+      expiring_soon_count: number;
+      valid_count: number;
+    }[]).map((r) => ({
+      certification_id: r.certification_id,
+      name: r.name,
+      description: r.description ?? null,
+      validity_months: r.validity_months,
+      reminder_days_before: r.reminder_days_before,
+      submission_count: Number(r.submission_count) || 0,
+      expired_count: Number(r.expired_count) || 0,
+      expiring_soon_count: Number(r.expiring_soon_count) || 0,
+      valid_count: Number(r.valid_count) || 0,
+    }));
+
+    const submissions = (submissionsResult.rows as {
+      id: number;
+      officer_id: number;
+      certification_id: number;
+      issued_date: Date;
+      expiry_date: Date;
+      certificate_number: string | null;
+      created_at: Date;
+      officer_name: string;
+      officer_email: string | null;
+      certification_name: string;
+      reminder_days_before: number;
+    }[]).map((row) => {
+      const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
+      const issued = (row.issued_date as Date).toISOString().slice(0, 10);
+      const status = officerCertStatusForCompliance(expiry, row.reminder_days_before, today);
+      return {
+        id: row.id,
+        officer_id: row.officer_id,
+        officer_name: row.officer_name,
+        officer_email: row.officer_email ?? null,
+        certification_id: row.certification_id,
+        certification_name: row.certification_name,
+        issued_date: issued,
+        expiry_date: expiry,
+        certificate_number: row.certificate_number ?? null,
+        status,
+        created_at: (row.created_at as Date).toISOString(),
+      };
+    });
+
+    return res.json({ reports, submissions });
+  } catch (error) {
+    console.error('Compliance hub error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // ---------- Jobs (Admin only) ----------
 const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed'] as const;
 const JOB_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;

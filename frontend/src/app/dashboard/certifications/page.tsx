@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Award, Plus, Pencil, Trash2, AlertTriangle, CheckCircle, Clock, FileBarChart, Printer, FileCheck } from 'lucide-react';
+import { Award, Plus, Pencil, Trash2, FileBarChart, FileCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { CertificationsComplianceSection } from './CertificationsComplianceSection';
 
 interface Certification {
   id: number;
@@ -25,34 +25,12 @@ interface Officer {
   state: string;
 }
 
-interface ComplianceItem {
-  id: number;
-  officer_name: string;
-  officer_email?: string | null;
-  certification_name: string;
-  expiry_date: string;
-  days_remaining?: number;
-  days_overdue?: number;
-}
-
-interface ComplianceReport {
-  expiring_soon: ComplianceItem[];
-  expired: ComplianceItem[];
-  valid: ComplianceItem[];
-  summary: { expiring_soon_count: number; expired_count: number; valid_count: number };
-}
-
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
 
 export default function CertificationsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'certifications' | 'compliance'>('certifications');
   const [certifications, setCertifications] = useState<Certification[]>([]);
-  const [compliance, setCompliance] = useState<ComplianceReport | null>(null);
   const [officers, setOfficers] = useState<Officer[]>([]);
   const [modalOpen, setModalOpen] = useState<'add' | 'edit' | 'assign' | 'create' | null>(null);
   const [editingCert, setEditingCert] = useState<Certification | null>(null);
@@ -84,16 +62,6 @@ export default function CertificationsPage() {
     }
   }, [token]);
 
-  const fetchCompliance = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<ComplianceReport>('/certifications/compliance', token);
-      setCompliance(data);
-    } catch {
-      setCompliance(null);
-    }
-  }, [token]);
-
   const fetchOfficers = useCallback(async () => {
     if (!token) return;
     try {
@@ -108,10 +76,6 @@ export default function CertificationsPage() {
     fetchCertifications();
     fetchOfficers();
   }, [fetchCertifications, fetchOfficers]);
-
-  useEffect(() => {
-    if (activeTab === 'compliance') fetchCompliance();
-  }, [activeTab, fetchCompliance]);
 
   const openAdd = () => {
     setError(null);
@@ -228,7 +192,6 @@ export default function CertificationsPage() {
       );
       closeModal();
       fetchCertifications();
-      fetchCompliance();
       if (modalOpen === 'create' && res?.assignment?.id) {
         router.push(`/dashboard/certifications/certificate/${res.assignment.id}`);
       }
@@ -374,154 +337,7 @@ export default function CertificationsPage() {
             </motion.div>
           )}
 
-          {activeTab === 'compliance' && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-b-xl border border-t-0 border-slate-200 bg-white p-6 shadow-sm"
-            >
-              {!compliance ? (
-                <div className="py-12 text-center text-slate-500">Loading compliance report…</div>
-              ) : (
-                <div className="space-y-8">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
-                      <div className="flex items-center gap-2 text-rose-700">
-                        <AlertTriangle className="size-5" />
-                        <span className="font-bold">Expired</span>
-                      </div>
-                      <p className="mt-1 text-2xl font-black text-rose-800">{compliance.summary.expired_count}</p>
-                      <p className="text-xs text-rose-600">Requires renewal</p>
-                    </div>
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                      <div className="flex items-center gap-2 text-amber-700">
-                        <Clock className="size-5" />
-                        <span className="font-bold">Expiring soon</span>
-                      </div>
-                      <p className="mt-1 text-2xl font-black text-amber-800">{compliance.summary.expiring_soon_count}</p>
-                      <p className="text-xs text-amber-600">Within reminder window</p>
-                    </div>
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
-                      <div className="flex items-center gap-2 text-emerald-700">
-                        <CheckCircle className="size-5" />
-                        <span className="font-bold">Valid</span>
-                      </div>
-                      <p className="mt-1 text-2xl font-black text-emerald-800">{compliance.summary.valid_count}</p>
-                      <p className="text-xs text-emerald-600">Up to date</p>
-                    </div>
-                  </div>
-
-                  {compliance.expired.length > 0 && (
-                    <div>
-                      <h3 className="mb-3 font-semibold text-rose-800">Expired certifications</h3>
-                      <div className="overflow-hidden rounded-lg border border-rose-100">
-                        <table className="w-full text-sm">
-                          <thead className="bg-rose-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-rose-800">User</th>
-                              <th className="px-4 py-2 text-left font-semibold text-rose-800">Certification</th>
-                              <th className="px-4 py-2 text-left font-semibold text-rose-800">Expired</th>
-                              <th className="px-4 py-2 text-right font-semibold text-rose-800">Days overdue</th>
-                              <th className="px-4 py-2 text-right font-semibold text-rose-800"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-rose-100">
-                            {compliance.expired.map((item) => (
-                              <tr key={item.id} className="bg-white">
-                                <td className="px-4 py-2">{item.officer_name}</td>
-                                <td className="px-4 py-2">{item.certification_name}</td>
-                                <td className="px-4 py-2">{formatDate(item.expiry_date)}</td>
-                                <td className="px-4 py-2 text-right font-medium text-rose-700">
-                                  {(item as { days_overdue?: number }).days_overdue ?? 0} days
-                                </td>
-                                <td className="px-4 py-2 text-right">
-                                  <Link href={`/dashboard/certifications/certificate/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-[#14B8A6]">
-                                    <Printer className="size-3" /> Print
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {compliance.expiring_soon.length > 0 && (
-                    <div>
-                      <h3 className="mb-3 font-semibold text-amber-800">Expiring soon (renewal reminders)</h3>
-                      <div className="overflow-hidden rounded-lg border border-amber-100">
-                        <table className="w-full text-sm">
-                          <thead className="bg-amber-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-amber-800">User</th>
-                              <th className="px-4 py-2 text-left font-semibold text-amber-800">Certification</th>
-                              <th className="px-4 py-2 text-left font-semibold text-amber-800">Expires</th>
-                              <th className="px-4 py-2 text-right font-semibold text-amber-800">Days left</th>
-                              <th className="px-4 py-2 text-right font-semibold text-amber-800"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-amber-100">
-                            {compliance.expiring_soon.map((item) => (
-                              <tr key={item.id} className="bg-white">
-                                <td className="px-4 py-2">{item.officer_name}</td>
-                                <td className="px-4 py-2">{item.certification_name}</td>
-                                <td className="px-4 py-2">{formatDate(item.expiry_date)}</td>
-                                <td className="px-4 py-2 text-right font-medium text-amber-700">
-                                  {(item as { days_remaining?: number }).days_remaining ?? 0} days
-                                </td>
-                                <td className="px-4 py-2 text-right">
-                                  <Link href={`/dashboard/certifications/certificate/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-[#14B8A6]">
-                                    <Printer className="size-3" /> Print
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {compliance.valid.length > 0 && (
-                    <div>
-                      <h3 className="mb-3 font-semibold text-emerald-800">Valid certifications</h3>
-                      <div className="overflow-hidden rounded-lg border border-emerald-100">
-                        <table className="w-full text-sm">
-                          <thead className="bg-emerald-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left font-semibold text-emerald-800">User</th>
-                              <th className="px-4 py-2 text-left font-semibold text-emerald-800">Certification</th>
-                              <th className="px-4 py-2 text-left font-semibold text-emerald-800">Expires</th>
-                              <th className="px-4 py-2 text-right font-semibold text-emerald-800"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-emerald-100">
-                            {compliance.valid.map((item) => (
-                              <tr key={item.id} className="bg-white">
-                                <td className="px-4 py-2">{item.officer_name}</td>
-                                <td className="px-4 py-2">{item.certification_name}</td>
-                                <td className="px-4 py-2">{formatDate(item.expiry_date)}</td>
-                                <td className="px-4 py-2 text-right">
-                                  <Link href={`/dashboard/certifications/certificate/${item.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-[#14B8A6]">
-                                    <Printer className="size-3" /> Print
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {compliance.expired.length === 0 && compliance.expiring_soon.length === 0 && compliance.valid.length === 0 && (
-                    <p className="text-center text-slate-500">No certifications assigned yet. Assign certifications to users to see them here.</p>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
+          {activeTab === 'compliance' && <CertificationsComplianceSection token={token} />}
         </div>
       </div>
 
