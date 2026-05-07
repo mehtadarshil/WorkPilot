@@ -13,7 +13,6 @@ import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
 import CustomerInvoicesTab from './CustomerInvoicesTab';
 import CustomerFilesTab from './CustomerFilesTab';
-import CustomerSiteReportTab from './CustomerSiteReportTab';
 
 interface SpecificNote {
   id: number;
@@ -155,7 +154,7 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site report'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
     let initial = tab && allowed.includes(tab) ? tab : 'All works';
     if (workAddressId && initial === 'Work address') initial = 'All works';
     return initial;
@@ -187,7 +186,7 @@ export default function CustomerDetailsPage() {
   // any in-app tab click to be overwritten whenever `?tab=` was present in the URL (e.g. Files → All works).
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site report'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
         setActiveTab('All works');
@@ -386,30 +385,6 @@ export default function CustomerDetailsPage() {
     return all.filter((n) => n.work_address_id == null);
   }, [data?.specific_notes, workAddressId]);
 
-  const siteReportClientDisplay = useMemo(() => {
-    if (!data) return '';
-    const co = data.company?.trim();
-    return co ? `${data.full_name} (${co})` : data.full_name;
-  }, [data]);
-
-  const siteReportAddressLabel = useMemo(() => {
-    if (!data) return '';
-    if (workAddressId) {
-      if (!workAddressDetails) return 'Loading site address…';
-      const wa = workAddressDetails;
-      const headline = wa.name?.trim() || 'Site';
-      const addr = [wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode]
-        .filter((x) => x != null && String(x).trim() !== '')
-        .join(', ');
-      return [headline, addr].filter(Boolean).join('\n');
-    }
-    return (
-      [data.address_line_1, data.address_line_2, data.address_line_3, data.town, data.county, data.postcode]
-        .filter((x) => x != null && String(x).trim() !== '')
-        .join(', ') || 'No address on file'
-    );
-  }, [data, workAddressId, workAddressDetails]);
-
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
   if (!data) return (
     <div className="flex flex-col gap-4 p-8">
@@ -434,7 +409,6 @@ export default function CustomerDetailsPage() {
     ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
     { key: 'Assets', label: 'Assets' },
     { key: 'Files', label: 'Files' },
-    { key: 'Site report', label: 'Site report' },
   ];
 
   return (
@@ -1281,16 +1255,7 @@ export default function CustomerDetailsPage() {
                 <CustomerFilesTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
-              {activeTab === 'Site report' && (
-                <CustomerSiteReportTab
-                  customerId={id}
-                  workAddressId={workAddressId || undefined}
-                  clientDisplayName={siteReportClientDisplay}
-                  siteAddressLabel={siteReportAddressLabel}
-                />
-              )}
-
-              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && activeTab !== 'Site report' && (
+              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

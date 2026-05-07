@@ -167,7 +167,7 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
       <div>
         <h2 className="text-lg font-bold text-slate-900">Site report templates</h2>
         <p className="mt-1 text-sm text-slate-600 max-w-3xl">
-          Design the forms your team fills on the customer <strong className="text-slate-800">Site report</strong> tab. The
+          Design the forms your team fills on the job <strong className="text-slate-800">Site report</strong> tab (job detail page). The
           default <strong className="text-slate-800">Fire Risk Assessment</strong> matches a typical UK-style layout: sections,
           yes/no/N/A questions, note areas, and a certificate block. Use the editor below to add or change sections and fields
           without touching raw code.

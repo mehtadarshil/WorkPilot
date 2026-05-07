@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getJson, postJson, putJson, deleteRequest, getBlob } from '../../../apiClient';
+import { getJson, postJson, putJson, deleteRequest, getBlob, getText } from '../../../apiClient';
 import { Plus, Save, Printer, Download, ImagePlus, Loader2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import type {
@@ -11,7 +11,7 @@ import type {
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
 } from '@/lib/siteReportTemplateTypes';
-import { API_BASE, IMAGE_MAX_BYTES, collectImageIds, newId, pdfFilenameFromTitle, readFileAsBase64 } from './customerSiteReportShared';
+import { IMAGE_MAX_BYTES, collectImageIds, newId, pdfFilenameFromTitle, readFileAsBase64 } from './customerSiteReportShared';
 import {
   SiteReportFieldImageList,
   SiteReportSignatureBlock,
@@ -386,41 +386,51 @@ export default function CustomerSiteReportTab({
     }
   };
 
-  const fetchReportPdfBlob = useCallback(async () => {
+  /** Server-built print HTML (no headless Chrome on the server). PDF is generated in the browser. */
+  const fetchReportPrintHtml = useCallback(async () => {
     if (!token || !report) throw new Error('Not signed in or report not loaded');
-    const url = `${API_BASE.replace(/\/$/, '')}/customers/${encodeURIComponent(customerId)}/site-report/${report.id}/pdf`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      let message = 'Could not generate PDF';
-      try {
-        const j = (await res.json()) as { message?: string };
-        if (j?.message) message = j.message;
-      } catch {
-        /* ignore */
-      }
-      throw new Error(message);
-    }
-    return res.blob();
+    return getText(`/customers/${encodeURIComponent(customerId)}/site-report/${report.id}/print.html`, token);
   }, [token, report, customerId]);
 
   const handleDownloadPdf = async () => {
     if (!report) return;
     setPdfBusy(true);
     setError(null);
+    let iframe: HTMLIFrameElement | null = null;
     try {
-      const blob = await fetchReportPdfBlob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = pdfFilenameFromTitle(printHeader.title);
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      const html = await fetchReportPrintHtml();
+      iframe = document.createElement('iframe');
+      iframe.setAttribute('title', 'Site report PDF');
+      iframe.setAttribute(
+        'style',
+        'position:fixed;left:-12000px;top:0;width:210mm;min-height:297mm;border:0;visibility:hidden',
+      );
+      iframe.srcdoc = html;
+      document.body.appendChild(iframe);
+      const win = iframe.contentWindow;
+      const doc = iframe.contentDocument;
+      if (!win || !doc?.body) throw new Error('Could not prepare PDF layout');
+
+      await new Promise<void>((resolve) => {
+        iframe!.addEventListener('load', () => resolve(), { once: true });
+        window.setTimeout(() => resolve(), 2000);
+      });
+
+      const html2pdf = (await import('html2pdf.js')).default;
+      await html2pdf()
+        .set({
+          margin: [8, 8, 8, 8],
+          filename: pdfFilenameFromTitle(printHeader.title),
+          image: { type: 'jpeg', quality: 0.92 },
+          html2canvas: { scale: 2, useCORS: true, logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        })
+        .from(doc.body)
+        .save();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'PDF download failed');
     } finally {
+      if (iframe?.parentNode) iframe.parentNode.removeChild(iframe);
       setPdfBusy(false);
     }
   };
@@ -430,17 +440,25 @@ export default function CustomerSiteReportTab({
     setPdfBusy(true);
     setError(null);
     try {
-      const blob = await fetchReportPdfBlob();
-      const objectUrl = URL.createObjectURL(blob);
-      const w = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      const html = await fetchReportPrintHtml();
+      const w = window.open('', '_blank', 'noopener,noreferrer');
       if (!w) {
-        URL.revokeObjectURL(objectUrl);
-        setError('Pop-up blocked. Use Download PDF or allow pop-ups for this site.');
+        setError('Pop-up blocked. Allow pop-ups for this site, or use Download PDF.');
         return;
       }
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      window.setTimeout(() => {
+        try {
+          w.focus();
+          w.print();
+        } catch {
+          /* ignore */
+        }
+      }, 300);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not open PDF');
+      setError(e instanceof Error ? e.message : 'Could not open print preview');
     } finally {
       setPdfBusy(false);
     }
@@ -603,7 +621,7 @@ export default function CustomerSiteReportTab({
             type="button"
             disabled={pdfBusy || !report}
             onClick={() => void handleOpenPdfForPrint()}
-            title="Opens a print-ready PDF in a new tab (same as client report). Use the browser PDF viewer to print."
+            title="Opens the print layout in a new tab. Use your browser Print dialog (Save as PDF if you prefer)."
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
             {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}

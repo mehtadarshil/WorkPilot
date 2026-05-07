@@ -8,6 +8,7 @@ import JobPartsTab from './JobPartsTab';
 import JobReportTab from './JobReportTab';
 import JobClientPanelTab from './JobClientPanelTab';
 import JobFilesTab from './JobFilesTab';
+import CustomerSiteReportTab from '../../customers/[id]/CustomerSiteReportTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
 import { ArrowLeft, Edit, Calendar, Clock, User, Clipboard, FileText, Info, Wrench, Package, ScrollText, Bell, Paperclip, Receipt, PoundSterling, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -397,6 +398,27 @@ export default function JobDetailsPage() {
   const [diaryAbortReasonLoad, setDiaryAbortReasonLoad] = useState(false);
   const [diaryAbortSubmitting, setDiaryAbortSubmitting] = useState(false);
 
+  const jobSiteReportClientDisplay = useMemo(() => {
+    if (!job) return '';
+    return (job.customer_full_name || '').trim();
+  }, [job]);
+
+  /** Property/site line for site report: work site when job is scoped to one; otherwise customer address. */
+  const jobSiteReportSiteAddress = useMemo(() => {
+    if (!job) return '';
+    if (job.work_address) {
+      const wa = job.work_address;
+      const headline = wa.name?.trim() || 'Site';
+      const addr = [wa.address_line_1, wa.town, wa.postcode]
+        .filter((x) => x != null && String(x).trim() !== '')
+        .join(', ');
+      const branch = wa.branch_name?.trim();
+      const firstLine = branch ? `${headline} — ${branch}` : headline;
+      return [firstLine, addr].filter(Boolean).join('\n');
+    }
+    return (job.customer_address || '').trim() || 'No address on file';
+  }, [job]);
+
   const visitTimesheetTravelSeconds = useMemo(
     () =>
       visitTimesheetEntries
@@ -671,6 +693,7 @@ export default function JobDetailsPage() {
   const tabs = [
     'Details',
     'Job report',
+    'Site report',
     'Client panel',
     'Reminders',
     'Parts',
@@ -978,6 +1001,17 @@ export default function JobDetailsPage() {
               <JobReportTab jobId={id} token={token} />
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to edit the job report template.</div>
+            )
+          ) : activeTab === 'Site report' ? (
+            token ? (
+              <CustomerSiteReportTab
+                customerId={String(job.customer_id)}
+                workAddressId={job.work_address ? String(job.work_address.id) : undefined}
+                clientDisplayName={jobSiteReportClientDisplay}
+                siteAddressLabel={jobSiteReportSiteAddress}
+              />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to view the site report.</div>
             )
           ) : activeTab === 'Client panel' ? (
             token ? (

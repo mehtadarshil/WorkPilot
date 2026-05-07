@@ -260,14 +260,15 @@ export function buildSiteReportPrintHtml(input: {
 </html>`;
 }
 
-export async function generateCustomerSiteReportPdfBuffer(
+/** Build the same HTML used for PDFs, without running headless Chrome (for browser print / client-side PDF). */
+export async function getCustomerSiteReportPrintHtml(
   pool: Pool,
   input: {
     customerId: number;
     reportId: number;
     ownerUserId: number;
   },
-): Promise<{ pdf: Buffer; filenameBase: string }> {
+): Promise<{ html: string; filenameBase: string }> {
   const { customerId, reportId, ownerUserId } = input;
 
   const rep = await pool.query<{
@@ -293,6 +294,8 @@ export async function generateCustomerSiteReportPdfBuffer(
   if ((tpl.rowCount ?? 0) === 0) throw new Error('TEMPLATE_NOT_FOUND');
   const definition = tpl.rows[0].definition as SiteReportTemplateDefinition;
   if (!definition || definition.version !== 1) throw new Error('INVALID_TEMPLATE');
+  if (!Array.isArray(definition.sections)) throw new Error('INVALID_TEMPLATE');
+  if (definition.footer != null && !Array.isArray(definition.footer.fields)) throw new Error('INVALID_TEMPLATE');
 
   const inv = await pool.query<{
     company_name: string | null;
@@ -382,7 +385,19 @@ export async function generateCustomerSiteReportPdfBuffer(
     headerOverrides,
   });
 
-  const pdf = await renderHtmlReportToPdf(html);
   const safe = reportTitle.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 80) || 'site-report';
-  return { pdf, filenameBase: safe };
+  return { html, filenameBase: safe };
+}
+
+export async function generateCustomerSiteReportPdfBuffer(
+  pool: Pool,
+  input: {
+    customerId: number;
+    reportId: number;
+    ownerUserId: number;
+  },
+): Promise<{ pdf: Buffer; filenameBase: string }> {
+  const { html, filenameBase } = await getCustomerSiteReportPrintHtml(pool, input);
+  const pdf = await renderHtmlReportToPdf(html);
+  return { pdf, filenameBase };
 }

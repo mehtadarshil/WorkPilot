@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import { createReadStream } from 'fs';
 import { applyTemplateVars, wrapEmailHtml, formatFromHeader, type EmailSettingsPayload } from './emailHelpers';
-import { renderHtmlReportToPdf } from './jobClientReportPdf';
+import { PdfRenderUnavailableError, renderHtmlReportToPdf } from './jobClientReportPdf';
 import { getTenantScopeUserId, requireTenantCrmAccess } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
 
@@ -902,10 +902,11 @@ export function mountJobClientPanelRoutes(app: Application, deps: JobClientPanel
           pdf = await renderHtmlReportToPdf(html);
         } catch (e) {
           console.error('public job client report pdf', e);
-          return res
-            .status(503)
-            .type('text/plain')
-            .send('PDF generation is temporarily unavailable. Please use Print / Save as PDF instead.');
+          const hint =
+            e instanceof PdfRenderUnavailableError
+              ? e.message
+              : 'PDF generation is temporarily unavailable. Please use Print / Save as PDF instead.';
+          return res.status(503).type('text/plain').send(hint);
         }
         const safeTail = token.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
         const filename = `workpilot-client-report${safeTail ? `-${safeTail}` : ''}.pdf`;

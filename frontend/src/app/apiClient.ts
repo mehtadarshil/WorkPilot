@@ -103,3 +103,32 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
   return response.blob();
 }
 
+/** Plain-text or HTML GET (e.g. site report print layout). */
+export async function getText(path: string, authToken?: string | null): Promise<string> {
+  const url = `${API_BASE_URL}${path}`;
+  const headers: HeadersInit = {};
+  if (authToken) (headers as Record<string, string>).Authorization = `Bearer ${authToken}`;
+  const response = await fetch(url, { method: 'GET', headers });
+  if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_user');
+      window.location.href = '/login';
+    }
+    let message = 'Unexpected error occurred';
+    try {
+      const data = await response.json();
+      if (data && typeof data.message === 'string') message = data.message;
+    } catch {
+      try {
+        const t = await response.text();
+        if (t && t.length < 500) message = t;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(message);
+  }
+  return response.text();
+}
+
