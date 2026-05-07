@@ -138,6 +138,8 @@ function getActivityLabel(action: string, details?: Record<string, unknown>): st
     issued: 'Invoice was issued',
     updated: 'Invoice was updated',
     payment_added: 'Payment was added',
+    payment_recorded: 'Payment was recorded',
+    payment_updated: 'Payment was updated',
     comm_email: 'Invoice was sent by email',
     comm_sms: 'Invoice was sent by SMS',
     comm_phone: 'Phone call was logged',
@@ -185,6 +187,8 @@ export default function InvoiceDetailsView() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  /** When set, payment modal is in edit mode for this row. */
+  const [editingPayment, setEditingPayment] = useState<InvoicePayment | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'notes'>('details');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -216,7 +220,7 @@ export default function InvoiceDetailsView() {
     fetchInvoice();
   }, [fetchInvoice]);
 
-  const handleAddPayment = async (e: React.FormEvent) => {
+  const handlePaymentModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPaymentError(null);
     const token = window.localStorage.getItem('wp_token');
@@ -230,25 +234,42 @@ export default function InvoiceDetailsView() {
       setPaymentError('Enter an amount of at least 0.01 (one cent).');
       return;
     }
-    if (cents > remainingCents) {
+    const maxAllowedCents = editingPayment
+      ? remainingCents + Math.round(Number(editingPayment.amount) * 100)
+      : remainingCents;
+    if (cents > maxAllowedCents) {
       setPaymentError('Amount exceeds remaining balance.');
       return;
     }
     const amount = cents / 100;
     try {
-      await postJson(`/invoices/${invoiceId}/payments`, {
-        amount,
-        payment_method: paymentMethod,
-        payment_date: paymentDate,
-        reference_number: paymentRef.trim() || undefined,
-      }, token);
+      if (editingPayment) {
+        await patchJson(
+          `/invoices/${invoiceId}/payments/${editingPayment.id}`,
+          {
+            amount,
+            payment_method: paymentMethod,
+            payment_date: paymentDate,
+            reference_number: paymentRef.trim() || undefined,
+          },
+          token,
+        );
+      } else {
+        await postJson(`/invoices/${invoiceId}/payments`, {
+          amount,
+          payment_method: paymentMethod,
+          payment_date: paymentDate,
+          reference_number: paymentRef.trim() || undefined,
+        }, token);
+      }
       setPaymentModalOpen(false);
+      setEditingPayment(null);
       setPaymentAmount('');
       setPaymentRef('');
       setPaymentDate(new Date().toISOString().slice(0, 10));
       fetchInvoice();
     } catch (err) {
-      setPaymentError(err instanceof Error ? err.message : 'Failed to record payment.');
+      setPaymentError(err instanceof Error ? err.message : 'Failed to save payment.');
     }
   };
 
@@ -807,7 +828,15 @@ export default function InvoiceDetailsView() {
                     {remainingCents > 0 && (
                       <button
                         type="button"
-                        onClick={() => setPaymentModalOpen(true)}
+                        onClick={() => {
+                          setEditingPayment(null);
+                          setPaymentError(null);
+                          setPaymentAmount('');
+                          setPaymentRef('');
+                          setPaymentMethod('bank_transfer');
+                          setPaymentDate(new Date().toISOString().slice(0, 10));
+                          setPaymentModalOpen(true);
+                        }}
                         className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#13a89a] focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/40"
                       >
                         Add new payment
@@ -824,6 +853,9 @@ export default function InvoiceDetailsView() {
                             <th className="px-6 py-3 font-semibold text-slate-700">Method</th>
                             <th className="px-6 py-3 font-semibold text-slate-700">Ref</th>
                             <th className="px-6 py-3 font-semibold text-slate-700 text-right">Amount</th>
+                            {invoice.state !== 'cancelled' && (
+                              <th className="px-6 py-3 w-24 font-semibold text-slate-700 text-right">Actions</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-600">
@@ -833,6 +865,30 @@ export default function InvoiceDetailsView() {
                               <td className="px-6 py-3.5">{PAYMENT_METHODS.find(m => m.value === p.payment_method)?.label || p.payment_method}</td>
                               <td className="px-6 py-3.5">{p.reference_number || '-'}</td>
                               <td className="px-6 py-3.5 text-right font-medium text-slate-800">{formatCurrency(Number(p.amount), invoice.currency)}</td>
+                              {invoice.state !== 'cancelled' && (
+                                <td className="px-6 py-3.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPaymentError(null);
+                                      setEditingPayment(p);
+                                      setPaymentAmount(Number(p.amount).toFixed(2));
+                                      setPaymentMethod(
+                                        p.payment_method && PAYMENT_METHODS.some((m) => m.value === p.payment_method)
+                                          ? p.payment_method
+                                          : 'other',
+                                      );
+                                      setPaymentDate(dayjs(p.payment_date).format('YYYY-MM-DD'));
+                                      setPaymentRef(p.reference_number || '');
+                                      setPaymentModalOpen(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                                  >
+                                    <Pencil className="size-3" />
+                                    Edit
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -856,23 +912,38 @@ export default function InvoiceDetailsView() {
         </div>
 
         {paymentModalOpen && (
-          <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setPaymentModalOpen(false)}>
+          <div
+            className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+            onClick={() => {
+              setPaymentModalOpen(false);
+              setEditingPayment(null);
+            }}
+          >
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-bold text-slate-900">Record Payment</h3>
-              <p className="mt-1 text-sm text-slate-500">Balance due: {formatCurrency(balanceDue, invoice.currency)}</p>
-              <form onSubmit={handleAddPayment} className="mt-6 space-y-4">
+              <h3 className="text-lg font-bold text-slate-900">{editingPayment ? 'Edit payment' : 'Record Payment'}</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {editingPayment
+                  ? `Balance due: ${formatCurrency(balanceDue, invoice.currency)} · this line can be up to ${formatCurrency(
+                      balanceDue + Number(editingPayment.amount),
+                      invoice.currency,
+                    )} total`
+                  : `Balance due: ${formatCurrency(balanceDue, invoice.currency)}`}
+              </p>
+              <form onSubmit={handlePaymentModalSubmit} className="mt-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700">Amount *</label>
                   <input
                     type="number"
                     step="0.01"
                     min={0.01}
-                    max={Number(balanceDue.toFixed(2))}
+                    max={Number(
+                      (editingPayment ? balanceDue + Number(editingPayment.amount) : balanceDue).toFixed(2),
+                    )}
                     inputMode="decimal"
                     required
                     value={paymentAmount}
@@ -900,8 +971,19 @@ export default function InvoiceDetailsView() {
                 </div>
                 {paymentError && <p className="text-sm text-red-600">{paymentError}</p>}
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => setPaymentModalOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors">Cancel</button>
-                  <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] transition-colors">Record Payment</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentModalOpen(false);
+                      setEditingPayment(null);
+                    }}
+                    className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a] transition-colors">
+                    {editingPayment ? 'Save changes' : 'Record Payment'}
+                  </button>
                 </div>
               </form>
             </motion.div>

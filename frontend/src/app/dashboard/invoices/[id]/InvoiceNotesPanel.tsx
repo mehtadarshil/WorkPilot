@@ -127,6 +127,21 @@ function normalizeActivities(activities: InvoiceActivity[], invoiceNumber: strin
               : 'Payment recorded',
         };
       }
+      case 'payment_updated': {
+        const amt = d.amount;
+        const method = str('payment_method');
+        return {
+          id: a.id,
+          kind: 'system',
+          action: a.action,
+          created_at: a.created_at,
+          title: 'Payment updated',
+          body:
+            typeof amt === 'number'
+              ? `£${Number(amt).toFixed(2)}${method ? ` · ${method.replace(/_/g, ' ')}` : ''}`
+              : 'Payment line was updated',
+        };
+      }
       case 'created':
         return {
           id: a.id,

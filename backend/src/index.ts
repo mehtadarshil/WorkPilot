@@ -193,6 +193,29 @@ function parseInvoicePaymentAmountCents(raw: unknown): number | null {
   return cents;
 }
 
+/** Derive invoice workflow state from paid balance after a payment line add or edit. */
+function computeInvoiceStateAfterPaymentBalance(opts: {
+  totalPaidCents: number;
+  totalAmountCents: number;
+  previousState: string;
+  dueDate: Date;
+}): string {
+  const { totalPaidCents, totalAmountCents, previousState, dueDate } = opts;
+  if (totalAmountCents <= 0) {
+    return previousState === 'cancelled' ? 'cancelled' : previousState;
+  }
+  if (totalPaidCents >= totalAmountCents) return 'paid';
+  if (totalPaidCents > 0) return 'partially_paid';
+  if (previousState === 'draft') return 'draft';
+  if (previousState === 'issued') return 'issued';
+  const dueOk = dueDate instanceof Date && !Number.isNaN(dueDate.getTime());
+  const due = dueOk ? dueDate : new Date();
+  const dueDay = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const now = new Date();
+  const nowDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return nowDay > dueDay ? 'overdue' : 'pending_payment';
+}
+
 /** Validates work_address id belongs to customer; returns null if absent or invalid. */
 async function resolveWorkAddressIdForCustomer(pool: Pool, customerId: number, raw: unknown): Promise<number | null> {
   if (raw === undefined || raw === null || raw === '') return null;
@@ -10608,7 +10631,13 @@ app.post('/api/invoices/:id/payments', authenticate, requireTenantCrmAccess('inv
 
   const newTotalPaidCents = Math.round(totalPaidNum * 100) + amountCentsInput;
   const newTotalAmountCents = Math.round(totalAmountNum * 100);
-  const newState = newTotalPaidCents >= newTotalAmountCents ? 'paid' : 'partially_paid';
+  const dueDateObj = inv.due_date instanceof Date ? inv.due_date : new Date(String(inv.due_date));
+  const newState = computeInvoiceStateAfterPaymentBalance({
+    totalPaidCents: newTotalPaidCents,
+    totalAmountCents: newTotalAmountCents,
+    previousState: inv.state,
+    dueDate: dueDateObj,
+  });
 
   try {
     await pool.query(
@@ -10636,6 +10665,165 @@ app.post('/api/invoices/:id/payments', authenticate, requireTenantCrmAccess('inv
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.patch(
+  '/api/invoices/:id/payments/:paymentId',
+  authenticate,
+  requireTenantCrmAccess('invoices'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(String(idParam), 10);
+    const pidParam = Array.isArray(req.params.paymentId) ? req.params.paymentId[0] : req.params.paymentId;
+    const paymentId = parseInt(String(pidParam), 10);
+    if (!Number.isFinite(id) || !Number.isFinite(paymentId)) {
+      return res.status(400).json({ message: 'Invalid invoice or payment id' });
+    }
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+    const invCheck = await pool.query<DbInvoice & { job_created_by?: number | null }>(
+      `SELECT i.*, j.created_by AS job_created_by
+       FROM invoices i
+       LEFT JOIN jobs j ON j.id = i.job_id
+       WHERE i.id = $1`,
+      [id],
+    );
+    if ((invCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Invoice not found' });
+    const inv = invCheck.rows[0];
+    if (!canAccessInvoice(inv, userId, isSuperAdmin, inv.job_created_by ?? null)) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    if (inv.state === 'cancelled') return res.status(400).json({ message: 'Cannot edit payments on a cancelled invoice' });
+
+    const body = req.body as { amount?: number; payment_method?: string; payment_date?: string; reference_number?: string };
+    const hasAmount = body.amount !== undefined;
+    const hasMethod = body.payment_method !== undefined;
+    const hasDate = body.payment_date !== undefined;
+    const hasRef = body.reference_number !== undefined;
+    if (!hasAmount && !hasMethod && !hasDate && !hasRef) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    const payRow = await pool.query<{
+      amount: string;
+      payment_method: string | null;
+      payment_date: Date;
+      reference_number: string | null;
+    }>('SELECT amount, payment_method, payment_date, reference_number FROM invoice_payments WHERE id = $1 AND invoice_id = $2', [
+      paymentId,
+      id,
+    ]);
+    if ((payRow.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Payment not found' });
+    const prev = payRow.rows[0];
+
+    const oldAmountCents = Math.round(parseFloat(String(prev.amount)) * 100);
+    let newAmountCents = oldAmountCents;
+    if (hasAmount) {
+      const parsed = parseInvoicePaymentAmountCents(body.amount);
+      if (parsed === null) return res.status(400).json({ message: 'Payment amount must be at least 0.01' });
+      newAmountCents = parsed;
+    }
+    const newAmount = newAmountCents / 100;
+
+    const paymentMethod = hasMethod
+      ? body.payment_method && PAYMENT_METHODS.includes(body.payment_method as (typeof PAYMENT_METHODS)[number])
+        ? body.payment_method
+        : 'other'
+      : prev.payment_method;
+
+    let paymentDate: Date;
+    if (hasDate) {
+      paymentDate = new Date(body.payment_date as string);
+      if (Number.isNaN(paymentDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid payment date' });
+      }
+    } else {
+      paymentDate = prev.payment_date instanceof Date ? prev.payment_date : new Date(String(prev.payment_date));
+    }
+
+    const referenceNumber = hasRef
+      ? typeof body.reference_number === 'string'
+        ? body.reference_number.trim() || null
+        : null
+      : prev.reference_number;
+
+    const totalAmountNum = parseFloat(String(inv.total_amount));
+    const totalPaidNum = parseFloat(String(inv.total_paid));
+    const totalAmountCents = Math.round(totalAmountNum * 100);
+    const currentTotalPaidCents = Math.round(totalPaidNum * 100);
+    const newTotalPaidCents = currentTotalPaidCents - oldAmountCents + newAmountCents;
+    if (newTotalPaidCents < 0) {
+      return res.status(400).json({ message: 'Invalid adjustment' });
+    }
+    if (newTotalPaidCents > totalAmountCents) {
+      return res.status(400).json({ message: 'Amount exceeds remaining balance' });
+    }
+
+    const dueDateObj = inv.due_date instanceof Date ? inv.due_date : new Date(String(inv.due_date));
+    const newState = computeInvoiceStateAfterPaymentBalance({
+      totalPaidCents: newTotalPaidCents,
+      totalAmountCents,
+      previousState: inv.state,
+      dueDate: dueDateObj,
+    });
+    const newTotalPaid = newTotalPaidCents / 100;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE invoice_payments SET amount = $1, payment_method = $2, payment_date = $3::date, reference_number = $4 WHERE id = $5 AND invoice_id = $6`,
+        [newAmount, paymentMethod, paymentDate, referenceNumber, paymentId, id],
+      );
+      await client.query('UPDATE invoices SET total_paid = $1, state = $2, updated_at = NOW() WHERE id = $3', [
+        newTotalPaid,
+        newState,
+        id,
+      ]);
+      await client.query(
+        'INSERT INTO invoice_activities (invoice_id, action, details, created_by) VALUES ($1, $2, $3, $4)',
+        [
+          id,
+          'payment_updated',
+          JSON.stringify({
+            amount: newAmount,
+            payment_method: paymentMethod,
+            reference_number: referenceNumber,
+          }),
+          userId,
+        ],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      console.error('Update payment error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+
+    const updated = await pool.query<DbInvoice>('SELECT * FROM invoices WHERE id = $1', [id]);
+    const r = updated.rows[0];
+    return res.json({
+      payment: {
+        id: paymentId,
+        amount: newAmount,
+        payment_method: paymentMethod,
+        payment_date: paymentDate.toISOString().slice(0, 10),
+        reference_number: referenceNumber,
+      },
+      invoice: {
+        id: r.id,
+        total_paid: parseFloat(r.total_paid),
+        state: r.state,
+      },
+    });
+  },
+);
 
 app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
