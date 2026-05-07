@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:glass_kit/glass_kit.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../../app/routes/app_routes.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_queue_service.dart';
@@ -13,6 +11,7 @@ import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
 import '../../diary_event/diary_event_detail_controller.dart';
+import '../../legal/legal_document_view.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/work_hub_tab.dart';
 
@@ -1105,7 +1104,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'My office tasks',
+                    'My job reminders',
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -1139,7 +1138,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Tasks assigned to you with @ in Office tasks (web).',
+              'Reminders assigned to you or mentioning you (@) from the job Reminders tab (web).',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 height: 1.35,
@@ -1149,7 +1148,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
             const SizedBox(height: 12),
             if (tasks.isEmpty)
               Text(
-                'No open office tasks for you right now.',
+                'No open reminders for you right now.',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.45,
@@ -1180,10 +1179,23 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                           color: AppColors.slate300,
                         ),
                       ),
+                      if (t.reminderAt != null &&
+                          t.reminderAt!.trim().isNotEmpty &&
+                          _formatOfficeTaskDate(t.reminderAt).isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Reminder · ${_formatOfficeTaskDate(t.reminderAt)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
                       if (_formatOfficeTaskDate(t.createdAt).isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          _formatOfficeTaskDate(t.createdAt),
+                          'Added ${_formatOfficeTaskDate(t.createdAt)}',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: AppColors.slate500,
@@ -1716,25 +1728,6 @@ class _DiaryTab extends GetView<HomeController> {
 class _ProfileTab extends GetView<HomeController> {
   const _ProfileTab();
 
-  Future<void> _openExternal(String url) async {
-    final u = url.trim();
-    if (u.isEmpty) {
-      Get.snackbar(
-        'Link',
-        'This link is not configured for this build.',
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
-        borderRadius: 12,
-      );
-      return;
-    }
-    final uri = Uri.tryParse(u);
-    if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
   Future<void> _confirmLogout() async {
     final ok = await Get.dialog<bool>(
       AlertDialog(
@@ -2076,12 +2069,13 @@ class _ProfileTab extends GetView<HomeController> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    trailing: const Icon(
-                      Icons.open_in_new_rounded,
-                      size: 18,
-                      color: AppColors.slate500,
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    onTap: () => Get.to<void>(
+                      () => const LegalDocumentView(
+                        title: 'Privacy policy',
+                        body: AppConstants.privacyPolicyInAppText,
+                      ),
                     ),
-                    onTap: () => _openExternal(AppConstants.privacyPolicyUrl),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -2098,12 +2092,13 @@ class _ProfileTab extends GetView<HomeController> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    trailing: const Icon(
-                      Icons.open_in_new_rounded,
-                      size: 18,
-                      color: AppColors.slate500,
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    onTap: () => Get.to<void>(
+                      () => const LegalDocumentView(
+                        title: 'Terms of service',
+                        body: AppConstants.termsOfServiceInAppText,
+                      ),
                     ),
-                    onTap: () => _openExternal(AppConstants.termsOfServiceUrl),
                   ),
                   const SizedBox(height: 6),
                   Text(

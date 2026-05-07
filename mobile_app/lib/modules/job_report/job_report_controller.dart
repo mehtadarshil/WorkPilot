@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -31,9 +32,29 @@ class JobReportController extends GetxController {
   final RxMap<int, String> imageByQuestionId = <int, String>{}.obs;
   final Map<int, SignatureController> signatureControllers = {};
   final Map<int, TextEditingController> textControllers = {};
+  Timer? _draftSaveTimer;
+
+  void _scheduleDraftSave() {
+    if (readonlyMode.value || diaryId <= 0) return;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(seconds: 2), () {
+      unawaited(_flushDraftSave());
+    });
+  }
+
+  Future<void> _flushDraftSave() async {
+    if (readonlyMode.value || diaryId <= 0) return;
+    try {
+      final answers = await _buildAnswersPayload();
+      await _mobile.saveDiaryJobReportDraftIfOnline(diaryId, answers);
+    } catch (_) {
+      /* drafts are best-effort */
+    }
+  }
 
   @override
   void onClose() {
+    _draftSaveTimer?.cancel();
     for (final c in textControllers.values) {
       c.dispose();
     }
@@ -111,6 +132,7 @@ class JobReportController extends GetxController {
           final c = TextEditingController(text: textByQuestionId[q.id] ?? '');
           c.addListener(() {
             textByQuestionId[q.id] = c.text;
+            _scheduleDraftSave();
           });
           textControllers[q.id] = c;
         }
@@ -138,6 +160,7 @@ class JobReportController extends GetxController {
     final mime = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
     imageByQuestionId[questionId] = 'data:$mime;base64,${base64Encode(bytes)}';
     imageByQuestionId.refresh();
+    _scheduleDraftSave();
   }
 
   bool _answerValuePresent(String questionType, int questionId, String value) {
@@ -230,6 +253,7 @@ class JobReportController extends GetxController {
     }
     submitting.value = true;
     try {
+      await _flushDraftSave();
       final answers = await _buildAnswersPayload();
       final synced = await _mobile.submitDiaryJobReport(
         diaryId,

@@ -509,13 +509,28 @@ export default function QuotationsPage() {
                 {formCustomerId && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-slate-700">Work / site address (optional)</label>
-                    <div className="mt-1">
-                      <WorkAddressSelect
-                        options={workAddressOptions}
-                        value={formWorkAddressId}
-                        onChange={setFormWorkAddressId}
-                        className="w-full"
-                      />
+                    <div className="mt-1 flex gap-2">
+                      <div className="min-w-0 flex-1">
+                        <WorkAddressSelect
+                          options={workAddressOptions}
+                          value={formWorkAddressId}
+                          onChange={setFormWorkAddressId}
+                          className="w-full"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.open(
+                            `/dashboard/customers/${formCustomerId}?tab=${encodeURIComponent('Work address')}`,
+                            '_blank',
+                          )
+                        }
+                        className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
+                        title="Add work / site address"
+                      >
+                        <Plus className="size-4" />
+                      </button>
                     </div>
                     {workAddressOptions.length === 0 && (
                       <p className="mt-1 text-xs text-slate-500">This customer has no active work addresses yet.</p>

@@ -34,15 +34,23 @@ const QUESTION_TYPES: { value: JobReportQuestionType; label: string }[] = [
 interface Props {
   /** Required when [templateTarget] is `"job"` (per-job checklist on job detail). */
   jobId?: string;
+  /** Required when [templateTarget] is `"job-description"` (extra fields merged after global default for new jobs). */
+  jobDescriptionId?: string;
   token: string;
   /**
    * `"default"` — global template in Settings; copied to new jobs.
    * `"job"` — this job only (overrides for that job after copy).
+   * `"job-description"` — extra questions for a job type (merged after global when a job is created with that description).
    */
-  templateTarget?: 'job' | 'default';
+  templateTarget?: 'job' | 'default' | 'job-description';
 }
 
-export default function JobReportTab({ jobId, token, templateTarget = 'job' }: Props) {
+export default function JobReportTab({
+  jobId,
+  jobDescriptionId,
+  token,
+  templateTarget = 'job',
+}: Props) {
   const [questions, setQuestions] = useState<JobReportQuestionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,7 +58,11 @@ export default function JobReportTab({ jobId, token, templateTarget = 'job' }: P
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const apiPath =
-    templateTarget === 'default' ? '/settings/job-report-template' : `/jobs/${jobId}/job-report-questions`;
+    templateTarget === 'default'
+      ? '/settings/job-report-template'
+      : templateTarget === 'job-description'
+        ? `/settings/job-descriptions/${jobDescriptionId}/job-report-questions`
+        : `/jobs/${jobId}/job-report-questions`;
 
   const questionTypeOptions = QUESTION_TYPES;
 
@@ -81,8 +93,13 @@ export default function JobReportTab({ jobId, token, templateTarget = 'job' }: P
       setLoading(false);
       return;
     }
+    if (templateTarget === 'job-description' && !jobDescriptionId) {
+      setError('Missing job description id');
+      setLoading(false);
+      return;
+    }
     void load();
-  }, [load, templateTarget, jobId]);
+  }, [load, templateTarget, jobId, jobDescriptionId]);
 
   const move = (index: number, dir: -1 | 1) => {
     const j = index + dir;
@@ -138,14 +155,26 @@ export default function JobReportTab({ jobId, token, templateTarget = 'job' }: P
     <div className="max-w-3xl space-y-6 p-6">
       <div>
         <h2 className="text-lg font-bold text-slate-900">
-          {templateTarget === 'default' ? 'Default job report template' : 'Job report template'}
+          {templateTarget === 'default'
+            ? 'Default job report template'
+            : templateTarget === 'job-description'
+              ? 'Job report — extra fields for this job type'
+              : 'Job report template'}
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           {templateTarget === 'default' ? (
             <>
-              This checklist is <strong>copied to every new job</strong> when the job is created. Existing jobs are not
-              changed. To customise a single job after creation, open that job and use the <strong>Job report</strong>{' '}
-              tab there.
+              This checklist is <strong>copied first</strong> onto every new job when the job is created. If the job
+              uses a job description that has its own extra report fields, those are <strong>appended after</strong>{' '}
+              this default (see <span className="font-semibold text-slate-800">Job report template</span> below for
+              per-type extras). Existing jobs are not changed.
+            </>
+          ) : templateTarget === 'job-description' ? (
+            <>
+              These questions are <strong>merged after</strong> the global default when someone creates a job with this
+              job description (e.g. electrical-specific fields plus the general form). They are not copied to jobs
+              that use another description or no description. Edit job types under{' '}
+              <span className="font-semibold text-slate-800">Settings → Job descriptions</span>.
             </>
           ) : (
             <>

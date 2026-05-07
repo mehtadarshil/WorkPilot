@@ -330,6 +330,25 @@ class MobileRepository extends BaseRepository {
     );
   }
 
+  /// Best-effort partial save while filling the job report (online only; skipped when offline).
+  Future<void> saveDiaryJobReportDraftIfOnline(
+    int diaryEventId,
+    List<Map<String, dynamic>> answers,
+  ) async {
+    if (_connectivitySaysOffline()) return;
+    try {
+      await api.post<Map<String, dynamic>>(
+        '/diary-events/$diaryEventId/job-report/draft',
+        data: <String, dynamic>{'answers': answers},
+      );
+    } on ApiException catch (e) {
+      if (apiExceptionLooksLikeNoConnection(e)) return;
+      rethrow;
+    } catch (_) {
+      /* ignore transient errors for background draft */
+    }
+  }
+
   /// Extra visit submissions (compressed photos/videos + optional notes), separate from the main job report.
   Future<bool> postDiaryExtraSubmission(
     int diaryEventId, {

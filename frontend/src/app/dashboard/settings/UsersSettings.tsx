@@ -321,6 +321,14 @@ export default function UsersSettings() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Field officers</h2>
           <p className="mt-1 text-sm text-slate-500">People who go on site and can use the mobile app.</p>
+          <p className="mt-2 max-w-3xl rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <strong className="text-slate-800">Staff reminders</strong> (due date + notify date, emailed to tenant admin users — about the selected officer, not to them): open a user from this list, then use the{' '}
+            <strong>Reminders</strong> tab in the profile dialog. Customer service renewal emails are separate — see{' '}
+            <a href="/dashboard/settings?tab=service-reminders" className="font-semibold text-[#14B8A6] hover:underline">
+              Service renewal reminders
+            </a>
+            .
+          </p>
         </div>
         <motion.button
           type="button"

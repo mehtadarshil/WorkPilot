@@ -35,6 +35,8 @@ type ComposeDraft = {
   default_to: string;
   customer_name: string;
   to_email_options?: { email: string; label: string }[];
+  /** When false, automated invoice/payment reminder flows should skip this customer. */
+  customer_invoice_reminders_enabled?: boolean;
 };
 
 type Props = {
@@ -347,6 +349,12 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
             {!draft?.can_send && (
               <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
                 This invoice is <strong>{draft?.invoice_state?.replace(/_/g, ' ') ?? 'not issued'}</strong>. Issue it before you can send email.
+              </div>
+            )}
+
+            {draft?.customer_invoice_reminders_enabled === false && (
+              <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">
+                This customer has opted out of automated invoice reminders. You can still send this message manually.
               </div>
             )}
 

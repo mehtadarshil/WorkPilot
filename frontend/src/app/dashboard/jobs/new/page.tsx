@@ -6,6 +6,10 @@ import { getJson, postJson } from '../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import ImportCustomerSelect, { type ImportCustomerOption } from '../../ImportCustomerSelect';
 import SearchableSelect, { type SearchableSelectOption } from '../../SearchableSelect';
+import {
+  buildCompletedServiceItemsPayload,
+  formatChecklistReminderSummary,
+} from '../serviceJobCompletedItems';
 
 interface JobDescription {
   id: number;
@@ -15,8 +19,6 @@ interface JobDescription {
   default_priority: string;
   default_business_unit: string | null;
   is_service_job: boolean;
-  service_reminder_frequency?: number | null;
-  service_reminder_unit?: string | null;
   pricing_items: DescPricingItem[];
 }
 
@@ -58,6 +60,10 @@ interface ServiceChecklistItem {
   name: string;
   sort_order: number;
   is_active: boolean;
+  reminder_interval_n?: number | null;
+  reminder_interval_unit?: string | null;
+  reminder_early_n?: number | null;
+  reminder_early_unit?: string | null;
 }
 
 interface CustomerContactRow {
@@ -113,8 +119,6 @@ export default function JobsNewJobPage() {
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
   const [isServiceJob, setIsServiceJob] = useState(false);
-  const [reminderFrequency, setReminderFrequency] = useState<number | ''>('');
-  const [reminderUnit, setReminderUnit] = useState<string>('years');
 
   // Right side
   const [expectedDate, setExpectedDate] = useState('');
@@ -132,7 +136,8 @@ export default function JobsNewJobPage() {
   // Pricing items
   const [pricingItems, setPricingItems] = useState<PricingItemRow[]>([]);
   const [serviceChecklistItems, setServiceChecklistItems] = useState<ServiceChecklistItem[]>([]);
-  const [completedServiceItems, setCompletedServiceItems] = useState<string[]>([]);
+  const [completedServiceNames, setCompletedServiceNames] = useState<string[]>([]);
+  const [remindEmailByService, setRemindEmailByService] = useState<Record<string, boolean>>({});
 
   // Config lists
   const [businessUnitsList, setBusinessUnitsList] = useState<{id: number, name: string}[]>([]);
@@ -241,12 +246,11 @@ export default function JobsNewJobPage() {
       setSkills('');
       setJobNotes('');
       setIsServiceJob(false);
-      setReminderFrequency('');
-      setReminderUnit('years');
+      setCompletedServiceNames([]);
+      setRemindEmailByService({});
       setPriority('medium');
       setBusinessUnit('');
       setPricingItems([]);
-        setCompletedServiceItems([]);
       return;
     }
 
@@ -255,13 +259,9 @@ export default function JobsNewJobPage() {
       setSkills(desc.default_skills || '');
       setJobNotes(desc.default_job_notes || '');
       setIsServiceJob(desc.is_service_job);
-      if (desc.is_service_job) {
-        setReminderFrequency(desc.service_reminder_frequency || '');
-        setReminderUnit(desc.service_reminder_unit || 'years');
-      } else {
-        setCompletedServiceItems([]);
-        setReminderFrequency('');
-        setReminderUnit('years');
+      if (!desc.is_service_job) {
+        setCompletedServiceNames([]);
+        setRemindEmailByService({});
       }
       setPriority(desc.default_priority || 'medium');
       setBusinessUnit(desc.default_business_unit || '');
@@ -346,9 +346,11 @@ export default function JobsNewJobPage() {
         skills,
         job_notes: jobNotes,
         is_service_job: isServiceJob,
-        service_reminder_frequency: isServiceJob && reminderFrequency ? reminderFrequency : null,
-        service_reminder_unit: isServiceJob ? reminderUnit : null,
-        completed_service_items: isServiceJob ? completedServiceItems : [],
+        completed_service_items: buildCompletedServiceItemsPayload(
+          isServiceJob,
+          completedServiceNames,
+          remindEmailByService,
+        ),
         quoted_amount: quotedAmount ? Number(quotedAmount) : null,
         customer_reference: customerReference || null,
         job_pipeline: jobPipeline || null,
@@ -387,16 +389,6 @@ export default function JobsNewJobPage() {
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },
       { value: 'critical', label: 'Critical' },
-    ],
-    [],
-  );
-
-  const reminderUnitOptions = useMemo(
-    (): SearchableSelectOption[] => [
-      { value: 'days', label: 'Days' },
-      { value: 'weeks', label: 'Weeks' },
-      { value: 'months', label: 'Months' },
-      { value: 'years', label: 'Years' },
     ],
     [],
   );
@@ -579,69 +571,90 @@ export default function JobsNewJobPage() {
                       <input
                         type="checkbox"
                         checked={isServiceJob}
-                        onChange={e => {
+                        onChange={(e) => {
                           setIsServiceJob(e.target.checked);
-                          if (!e.target.checked) setCompletedServiceItems([]);
+                          if (!e.target.checked) {
+                            setCompletedServiceNames([]);
+                            setRemindEmailByService({});
+                          }
                         }}
                         className="size-4 mt-0.5 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
                       />
                       <div>
                         <span className="text-sm font-medium text-slate-900">Service job</span>
-                        <p className="text-xs text-slate-500">Enable automatic service reminder scheduling for this job type.</p>
+                        <p className="text-xs text-slate-500">
+                          Per-service reminder timing is set in Settings → Job descriptions (service checklist). Here you choose which services were completed and which to include in reminder emails.
+                        </p>
                       </div>
                     </label>
                   </div>
-
-                  {isServiceJob && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-                      <label className="block text-sm font-medium text-slate-700">Service reminder frequency</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={reminderFrequency}
-                          onChange={e => setReminderFrequency(e.target.value ? Number(e.target.value) : '')}
-                          className={inputClass}
-                          placeholder="e.g. 1"
-                        />
-                        <SearchableSelect
-                          options={reminderUnitOptions}
-                          value={reminderUnit}
-                          onChange={setReminderUnit}
-                          allowEmpty={false}
-                          emptyButtonLabel="Unit"
-                          emptyMenuLabel=""
-                          searchPlaceholder="Search unit…"
-                          className={inputClass}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500">How often should a reminder be triggered for this service job?</p>
-                    </div>
-                  )}
 
                   {isServiceJob && (
                     <div>
                       <label className={labelClass}>Completed services in this job</label>
                       <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
                         {activeServiceChecklistItems.length === 0 ? (
-                          <p className="text-sm text-slate-500">No service checklist options configured yet. Add them in Settings → Job Descriptions.</p>
+                          <p className="text-sm text-slate-500">
+                            No service checklist options configured yet. Add them under Settings → Job descriptions (service checklist).
+                          </p>
                         ) : (
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            {activeServiceChecklistItems.map((item) => (
-                              <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={completedServiceItems.includes(item.name)}
-                                  onChange={(e) => {
-                                    setCompletedServiceItems((prev) =>
-                                      e.target.checked ? [...prev, item.name] : prev.filter((name) => name !== item.name),
-                                    );
-                                  }}
-                                  className="size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
-                                />
-                                {item.name}
-                              </label>
-                            ))}
+                          <div className="space-y-3">
+                            {activeServiceChecklistItems.map((item) => {
+                              const done = completedServiceNames.includes(item.name);
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                                >
+                                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                                    <input
+                                      type="checkbox"
+                                      checked={done}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCompletedServiceNames((prev) =>
+                                            prev.includes(item.name) ? prev : [...prev, item.name],
+                                          );
+                                          setRemindEmailByService((prev) => ({
+                                            ...prev,
+                                            [item.name]: prev[item.name] !== false,
+                                          }));
+                                        } else {
+                                          setCompletedServiceNames((prev) => prev.filter((n) => n !== item.name));
+                                          setRemindEmailByService((prev) => {
+                                            const next = { ...prev };
+                                            delete next[item.name];
+                                            return next;
+                                          });
+                                        }
+                                      }}
+                                      className="size-4 shrink-0 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
+                                    />
+                                    <span className="min-w-0">{item.name}</span>
+                                  </label>
+                                  <label
+                                    className={`flex cursor-pointer items-center gap-2 text-xs sm:text-sm ${done ? 'text-slate-700' : 'cursor-not-allowed text-slate-400'}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      disabled={!done}
+                                      checked={done && remindEmailByService[item.name] !== false}
+                                      onChange={(e) => {
+                                        setRemindEmailByService((prev) => ({
+                                          ...prev,
+                                          [item.name]: e.target.checked,
+                                        }));
+                                      }}
+                                      className="size-4 shrink-0 rounded text-[#14B8A6] focus:ring-[#14B8A6] disabled:opacity-40"
+                                    />
+                                    Include in reminder emails
+                                  </label>
+                                  <p className="w-full text-[11px] leading-snug text-slate-500 sm:order-3 sm:basis-full">
+                                    {formatChecklistReminderSummary(item)}
+                                  </p>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

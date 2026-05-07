@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../../apiClient';
 import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, FileText, Trash2, X, Check } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -12,6 +13,7 @@ import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
 import CustomerInvoicesTab from './CustomerInvoicesTab';
 import CustomerFilesTab from './CustomerFilesTab';
+import CustomerSiteReportTab from './CustomerSiteReportTab';
 
 interface SpecificNote {
   id: number;
@@ -55,7 +57,42 @@ interface CustomerDetails {
   contact_landline: string | null;
   /** May be absent on older API responses; always normalize to [] when setting state */
   specific_notes?: SpecificNote[];
+  /** Default true when absent (older tenants). */
+  invoice_reminders_enabled?: boolean;
+  /** Default true when absent (older tenants). */
+  service_reminders_enabled?: boolean;
+  service_reminder_custom_email?: string | null;
+  service_reminder_recipient_mode?: string | null;
 }
+
+type ServiceReminderScheduleLine = {
+  job_id: number;
+  job_title: string | null;
+  job_state: string;
+  service_name: string;
+  remind_email: boolean;
+  checklist_matched: boolean;
+  next_renewal_due_date: string | null;
+  early_window_starts: string | null;
+  active_phase: 'none' | 'early' | 'due';
+  early_reminder_sent: boolean;
+  due_reminder_sent: boolean;
+  would_send_today: boolean;
+  recipient_preview: string | null;
+  block_reason: string | null;
+};
+
+type ServiceReminderScheduleResponse = {
+  customer_id: number;
+  customer_reminders_enabled: boolean;
+  tenant_automated_enabled: boolean;
+  tenant_recipient_mode: string;
+  customer_recipient_mode: string | null;
+  customer_custom_reminder_email: string | null;
+  lines: ServiceReminderScheduleLine[];
+  open_service_jobs: { id: number; title: string | null; state: string }[];
+  hints: string[];
+};
 
 interface Job {
   id: number;
@@ -82,7 +119,10 @@ interface WorkAddressDetails {
   id: number;
   name: string;
   address_line_1: string;
+  address_line_2?: string | null;
+  address_line_3?: string | null;
   town: string | null;
+  county?: string | null;
   postcode: string | null;
 }
 
@@ -115,7 +155,7 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site report'];
     let initial = tab && allowed.includes(tab) ? tab : 'All works';
     if (workAddressId && initial === 'Work address') initial = 'All works';
     return initial;
@@ -131,22 +171,33 @@ export default function CustomerDetailsPage() {
   const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
   const [mapEmbedSrc, setMapEmbedSrc] = useState<string>(() => buildOsmEmbedUrl(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lon));
   const [mapGeocoding, setMapGeocoding] = useState(false);
+  const [invoiceReminderPrefSaving, setInvoiceReminderPrefSaving] = useState(false);
+  const [serviceReminderPrefSaving, setServiceReminderPrefSaving] = useState(false);
+  const [svcSchedule, setSvcSchedule] = useState<ServiceReminderScheduleResponse | null>(null);
+  const [svcScheduleLoading, setSvcScheduleLoading] = useState(false);
+  const [svcScheduleError, setSvcScheduleError] = useState<string | null>(null);
+  const [svcScheduleOpen, setSvcScheduleOpen] = useState(false);
+  const [svcRecipientMode, setSvcRecipientMode] = useState<string>('');
+  const [svcCustomEmail, setSvcCustomEmail] = useState('');
+  const [svcDeliverySaving, setSvcDeliverySaving] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
+  // Sync tab from URL when the query changes. Do not depend on [activeTab]: including it caused
+  // any in-app tab click to be overwritten whenever `?tab=` was present in the URL (e.g. Files → All works).
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files'];
+    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site report'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
         setActiveTab('All works');
       } else {
         setActiveTab(tab);
       }
-    } else if (workAddressId && activeTab === 'Work address') {
-      setActiveTab('All works');
+    } else if (workAddressId) {
+      setActiveTab((prev) => (prev === 'Work address' ? 'All works' : prev));
     }
-  }, [searchParams, workAddressId, activeTab]);
+  }, [searchParams, workAddressId]);
 
   const fetchDetails = useCallback(async () => {
     if (!token || !id) return;
@@ -185,6 +236,21 @@ export default function CustomerDetailsPage() {
     }
   }, [id, token, workAddressId]);
 
+  const fetchServiceReminderSchedule = useCallback(async () => {
+    if (!token || !id) return;
+    setSvcScheduleLoading(true);
+    setSvcScheduleError(null);
+    try {
+      const res = await getJson<ServiceReminderScheduleResponse>(`/customers/${id}/service-reminder-schedule`, token);
+      setSvcSchedule(res);
+    } catch (e: unknown) {
+      setSvcSchedule(null);
+      setSvcScheduleError(e instanceof Error ? e.message : 'Could not load service reminder schedule');
+    } finally {
+      setSvcScheduleLoading(false);
+    }
+  }, [id, token, workAddressId]);
+
   const fetchWorkAddressDetails = useCallback(async () => {
     if (!token || !id || !workAddressId) {
       setWorkAddressDetails(null);
@@ -205,6 +271,17 @@ export default function CustomerDetailsPage() {
     fetchInvoices();
     fetchWorkAddressDetails();
   }, [fetchDetails, fetchJobs, fetchInvoices, fetchWorkAddressDetails]);
+
+  useEffect(() => {
+    if (!data) return;
+    setSvcRecipientMode(data.service_reminder_recipient_mode || '');
+    setSvcCustomEmail((data.service_reminder_custom_email || '').trim());
+  }, [data?.id, data?.service_reminder_recipient_mode, data?.service_reminder_custom_email]);
+
+  useEffect(() => {
+    if (!id || !token || workAddressId) return;
+    void fetchServiceReminderSchedule();
+  }, [id, token, fetchServiceReminderSchedule]);
 
   useEffect(() => {
     if (!data || String(data.id) !== id) return;
@@ -309,6 +386,30 @@ export default function CustomerDetailsPage() {
     return all.filter((n) => n.work_address_id == null);
   }, [data?.specific_notes, workAddressId]);
 
+  const siteReportClientDisplay = useMemo(() => {
+    if (!data) return '';
+    const co = data.company?.trim();
+    return co ? `${data.full_name} (${co})` : data.full_name;
+  }, [data]);
+
+  const siteReportAddressLabel = useMemo(() => {
+    if (!data) return '';
+    if (workAddressId) {
+      if (!workAddressDetails) return 'Loading site address…';
+      const wa = workAddressDetails;
+      const headline = wa.name?.trim() || 'Site';
+      const addr = [wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode]
+        .filter((x) => x != null && String(x).trim() !== '')
+        .join(', ');
+      return [headline, addr].filter(Boolean).join('\n');
+    }
+    return (
+      [data.address_line_1, data.address_line_2, data.address_line_3, data.town, data.county, data.postcode]
+        .filter((x) => x != null && String(x).trim() !== '')
+        .join(', ') || 'No address on file'
+    );
+  }, [data, workAddressId, workAddressDetails]);
+
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
   if (!data) return (
     <div className="flex flex-col gap-4 p-8">
@@ -333,6 +434,7 @@ export default function CustomerDetailsPage() {
     ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
     { key: 'Assets', label: 'Assets' },
     { key: 'Files', label: 'Files' },
+    { key: 'Site report', label: 'Site report' },
   ];
 
   return (
@@ -467,6 +569,70 @@ export default function CustomerDetailsPage() {
               </div>
             </div>
 
+            {!workAddressId && (
+              <div className="border-b border-slate-100 p-5">
+                <h3 className="mb-2 text-[15px] font-bold text-slate-800">Invoices</h3>
+                <label className="flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                    checked={data.invoice_reminders_enabled !== false}
+                    disabled={invoiceReminderPrefSaving || !token}
+                    onChange={async (e) => {
+                      if (!token) return;
+                      const next = e.target.checked;
+                      setInvoiceReminderPrefSaving(true);
+                      try {
+                        await patchJson(`/customers/${id}`, { invoice_reminders_enabled: next }, token);
+                        setData((prev) => (prev ? { ...prev, invoice_reminders_enabled: next } : null));
+                      } catch (err) {
+                        console.error('Failed to update invoice reminder preference', err);
+                      } finally {
+                        setInvoiceReminderPrefSaving(false);
+                      }
+                    }}
+                  />
+                  <span className="text-sm leading-snug text-slate-700">
+                    <span className="font-semibold text-slate-800">Invoice reminders</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      Allow automated payment-chase emails for overdue invoices (when your organisation runs them).
+                    </span>
+                  </span>
+                </label>
+                <label className="mt-4 flex cursor-pointer items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                    checked={data.service_reminders_enabled !== false}
+                    disabled={serviceReminderPrefSaving || !token}
+                    onChange={async (e) => {
+                      if (!token) return;
+                      const next = e.target.checked;
+                      setServiceReminderPrefSaving(true);
+                      try {
+                        await patchJson(`/customers/${id}`, { service_reminders_enabled: next }, token);
+                        setData((prev) => (prev ? { ...prev, service_reminders_enabled: next } : null));
+                      } catch (err) {
+                        console.error('Failed to update service reminder preference', err);
+                      } finally {
+                        setServiceReminderPrefSaving(false);
+                      }
+                    }}
+                  />
+                  <span className="text-sm leading-snug text-slate-700">
+                    <span className="font-semibold text-slate-800">Service renewal reminders</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">
+                      Allow automated renewal emails for completed service jobs. Organisation-wide send rules:{' '}
+                      <Link href="/dashboard/settings?tab=service-reminders" className="font-semibold text-[#14B8A6] hover:underline">
+                        Service renewal reminders
+                      </Link>
+                      . Per-service timing: Settings → Job descriptions. You can override recipient and custom email below.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
             {workAddressDetails && (
               <div className="p-5 border-b border-amber-100 bg-amber-50/30">
                 <p className="text-[11px] font-extrabold uppercase tracking-widest text-amber-600 mb-2">Work Site Address</p>
@@ -484,13 +650,183 @@ export default function CustomerDetailsPage() {
               </div>
             )}
 
-            {/* Service Reminders (Mocked) */}
-            <div className="p-5 border-b border-slate-100">
-               <div className="flex justify-between items-center mb-2">
-                 <h3 className="font-bold text-slate-800 text-[15px]">Service reminders</h3>
-                 <button className="text-sm font-semibold text-[#14B8A6] hover:underline">View</button>
-               </div>
-               <p className="text-sm text-slate-600">No active service reminders.</p>
+            <div className="border-b border-slate-100 p-5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-[15px] font-bold text-slate-800">Service reminders</h3>
+                <button
+                  type="button"
+                  onClick={() => setSvcScheduleOpen((v) => !v)}
+                  className="shrink-0 text-sm font-semibold text-[#14B8A6] hover:underline"
+                >
+                  {svcScheduleOpen ? 'Hide' : 'View'}
+                </button>
+              </div>
+              {svcScheduleLoading && <p className="text-sm text-slate-500">Loading schedule…</p>}
+              {svcScheduleError && <p className="text-sm text-rose-600">{svcScheduleError}</p>}
+              {!svcScheduleLoading && svcSchedule && (
+                <>
+                  <p className="text-sm text-slate-600">
+                    {svcSchedule.lines.length === 0
+                      ? 'No completed service jobs with renewal email tracks yet. Complete a service job with a next service date, tick services with “remind by email”, and match names to Settings → Job descriptions → Service checklist.'
+                      : `${svcSchedule.lines.filter((l) => l.checklist_matched).length} renewal track(s) from completed jobs.`}{' '}
+                    {svcSchedule.lines.some((l) => l.would_send_today) ? (
+                      <span className="ml-1 font-semibold text-amber-800">
+                        {svcSchedule.lines.filter((l) => l.would_send_today).length} would send on the next reminder run
+                        (if mail is configured).
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    The server sends these when the reminder job runs, or when an admin uses{' '}
+                    <strong>Run pending reminders now</strong> on{' '}
+                    <Link href="/dashboard/settings?tab=service-reminders" className="font-semibold text-[#14B8A6] hover:underline">
+                      Settings → Service renewal reminders
+                    </Link>
+                    .
+                  </p>
+                </>
+              )}
+              {svcScheduleOpen && svcSchedule && (
+                <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+                  {svcSchedule.hints.length > 0 && (
+                    <ul className="list-disc space-y-1 pl-5 text-xs text-slate-600">
+                      {svcSchedule.hints.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-xs text-slate-700">
+                    <p className="font-semibold text-slate-800">Delivery for this customer</p>
+                    <p className="mt-1 text-slate-600">
+                      Organisation default:{' '}
+                      <span className="font-mono text-slate-800">{svcSchedule.tenant_recipient_mode}</span>
+                      {svcSchedule.customer_custom_reminder_email ? (
+                        <span>
+                          . A <strong>custom address</strong> is set and is used first for this customer.
+                        </span>
+                      ) : svcSchedule.customer_recipient_mode ? (
+                        <span>
+                          . This customer overrides the rule to:{' '}
+                          <span className="font-mono text-slate-800">{svcSchedule.customer_recipient_mode}</span>
+                        </span>
+                      ) : (
+                        <span> (no per-customer override).</span>
+                      )}
+                    </p>
+                    <label className="mt-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Override recipient rule
+                    </label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
+                      value={svcRecipientMode}
+                      onChange={(e) => setSvcRecipientMode(e.target.value)}
+                      disabled={svcDeliverySaving || !token}
+                    >
+                      <option value="">Use organisation default</option>
+                      <option value="customer_account">Always this account&apos;s email</option>
+                      <option value="job_contact">Always the job contact on each service job</option>
+                      <option value="primary_contact">Always primary CRM contact (fallback account)</option>
+                    </select>
+                    <label className="mt-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Custom reminder email (optional)
+                    </label>
+                    <input
+                      type="email"
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
+                      placeholder="Leave blank to use rule above"
+                      value={svcCustomEmail}
+                      onChange={(e) => setSvcCustomEmail(e.target.value)}
+                      disabled={svcDeliverySaving || !token}
+                    />
+                    <button
+                      type="button"
+                      disabled={svcDeliverySaving || !token}
+                      onClick={async () => {
+                        if (!token) return;
+                        setSvcDeliverySaving(true);
+                        try {
+                          await patchJson(
+                            `/customers/${id}`,
+                            {
+                              service_reminder_recipient_mode: svcRecipientMode || null,
+                              service_reminder_custom_email: svcCustomEmail.trim() || null,
+                            },
+                            token,
+                          );
+                          await fetchDetails();
+                          await fetchServiceReminderSchedule();
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setSvcDeliverySaving(false);
+                        }
+                      }}
+                      className="mt-2 rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#0d9488] disabled:opacity-50"
+                    >
+                      {svcDeliverySaving ? 'Saving…' : 'Save delivery settings'}
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-500">
+                          <th className="py-1 pr-2">Job</th>
+                          <th className="py-1 pr-2">Service</th>
+                          <th className="py-1 pr-2">Next due</th>
+                          <th className="py-1 pr-2">Status</th>
+                          <th className="py-1">To</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {svcSchedule.lines.map((row, idx) => (
+                          <tr
+                            key={`${row.job_id}-${row.service_name}-${row.next_renewal_due_date ?? 'na'}-${idx}`}
+                            className="border-b border-slate-100 align-top"
+                          >
+                            <td className="py-1.5 pr-2">
+                              <Link href={`/dashboard/jobs/${row.job_id}`} className="text-[#14B8A6] hover:underline">
+                                #{row.job_id}
+                              </Link>{' '}
+                              <span className="text-slate-700">{row.job_title || ''}</span>
+                            </td>
+                            <td className="py-1.5 pr-2 text-slate-800">{row.service_name}</td>
+                            <td className="py-1.5 pr-2 text-slate-700">
+                              {row.next_renewal_due_date || '—'}
+                              {row.early_window_starts ? (
+                                <span className="mt-0.5 block text-[10px] text-slate-500">
+                                  Early window from {row.early_window_starts}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="py-1.5 pr-2 text-slate-700">
+                              {row.would_send_today ? (
+                                <span className="font-semibold text-amber-800">Pending send</span>
+                              ) : (
+                                row.block_reason || '—'
+                              )}
+                            </td>
+                            <td className="py-1.5 text-slate-600">{row.recipient_preview || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {svcSchedule.open_service_jobs.length > 0 && (
+                    <p className="text-xs text-slate-500">
+                      Open service jobs (complete with next service date to start renewals):{' '}
+                      {svcSchedule.open_service_jobs.map((j) => (
+                        <Link
+                          key={j.id}
+                          href={`/dashboard/jobs/${j.id}`}
+                          className="mr-2 font-medium text-[#14B8A6] hover:underline"
+                        >
+                          #{j.id}
+                        </Link>
+                      ))}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Other details */}
@@ -712,7 +1048,12 @@ export default function CustomerDetailsPage() {
                   {tabs.map((tab) => (
                     <button 
                       key={tab.key} 
-                      onClick={() => setActiveTab(tab.key)}
+                      onClick={() => {
+                        setActiveTab(tab.key);
+                        const next = new URLSearchParams(searchParams.toString());
+                        next.set('tab', tab.key);
+                        router.replace(`/dashboard/customers/${id}?${next.toString()}`, { scroll: false });
+                      }}
                       className={`whitespace-nowrap px-4 py-2.5 text-sm font-semibold transition border-b-2 ${
                         activeTab === tab.key ? 'border-[#14B8A6] text-[#14B8A6]' : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                       }`}
@@ -940,7 +1281,16 @@ export default function CustomerDetailsPage() {
                 <CustomerFilesTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
-              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && (
+              {activeTab === 'Site report' && (
+                <CustomerSiteReportTab
+                  customerId={id}
+                  workAddressId={workAddressId || undefined}
+                  clientDisplayName={siteReportClientDisplay}
+                  siteAddressLabel={siteReportAddressLabel}
+                />
+              )}
+
+              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && activeTab !== 'Site report' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

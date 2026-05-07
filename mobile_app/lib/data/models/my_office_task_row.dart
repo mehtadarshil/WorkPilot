@@ -12,6 +12,7 @@ class MyOfficeTaskRow {
     required this.jobUpdatedAt,
     required this.createdAt,
     this.completedAt,
+    this.reminderAt,
   });
 
   factory MyOfficeTaskRow.fromJson(Map<String, dynamic> json) {
@@ -25,6 +26,7 @@ class MyOfficeTaskRow {
       jobUpdatedAt: json['job_updated_at'] as String? ?? '',
       createdAt: json['created_at'] as String? ?? '',
       completedAt: json['completed_at'] as String?,
+      reminderAt: json['reminder_at'] as String?,
     );
   }
 
@@ -37,6 +39,8 @@ class MyOfficeTaskRow {
   final String jobUpdatedAt;
   final String createdAt;
   final String? completedAt;
+  /// Job reminder date from web (optional).
+  final String? reminderAt;
 
   OpenJobSummary toOpenJobSummary() {
     return OpenJobSummary(

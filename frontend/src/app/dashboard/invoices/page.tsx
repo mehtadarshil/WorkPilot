@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
 import ImportCustomerSelect from '../ImportCustomerSelect';
+import WorkAddressSelect from '../WorkAddressSelect';
 
 interface Invoice {
   id: number;
@@ -118,8 +119,41 @@ export default function InvoicesPage() {
   ]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
   const [formCustomerReference, setFormCustomerReference] = useState('');
+  const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
+  const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const fetchWorkAddressesForCustomer = useCallback(
+    async (customerId: number) => {
+      if (!token) {
+        setWorkAddressOptions([]);
+        return;
+      }
+      try {
+        const res = await getJson<{
+          work_addresses: {
+            id: number;
+            name: string;
+            address_line_1?: string | null;
+            town?: string | null;
+            postcode?: string | null;
+          }[];
+        }>(`/customers/${customerId}/work-addresses?status=active`, token);
+        const rows = res.work_addresses ?? [];
+        setWorkAddressOptions(
+          rows.map((w) => {
+            const addr = [w.address_line_1, w.town, w.postcode].filter((x): x is string => Boolean(x && String(x).trim())).join(', ');
+            const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
+            return { id: w.id, label: label || `Work #${w.id}` };
+          }),
+        );
+      } catch {
+        setWorkAddressOptions([]);
+      }
+    },
+    [token],
+  );
 
   const fetchInvoices = useCallback(async () => {
     if (!token) return;
@@ -197,9 +231,28 @@ export default function InvoicesPage() {
     }
   }, [addModalOpen, fetchCustomers, fetchJobs]);
 
+  useEffect(() => {
+    if (!formCustomerId) {
+      setFormWorkAddressId(null);
+      setWorkAddressOptions([]);
+      return;
+    }
+    setFormWorkAddressId(null);
+    fetchWorkAddressesForCustomer(formCustomerId);
+  }, [formCustomerId, fetchWorkAddressesForCustomer]);
+
+  useEffect(() => {
+    if (formWorkAddressId == null) return;
+    if (!workAddressOptions.some((w) => w.id === formWorkAddressId)) {
+      setFormWorkAddressId(null);
+    }
+  }, [workAddressOptions, formWorkAddressId]);
+
   const resetForm = (settings: InvoiceSettings | null) => {
     setFormCustomerId(null);
     setFormJobId('');
+    setFormWorkAddressId(null);
+    setWorkAddressOptions([]);
     const today = new Date().toISOString().slice(0, 10);
     const dueDays = settings?.default_due_days ?? 30;
     const due = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -272,6 +325,7 @@ export default function InvoicesPage() {
           })),
           tax_percentage: formTaxPercentage,
           ...(formCustomerReference.trim() ? { customer_reference: formCustomerReference.trim() } : {}),
+          ...(formWorkAddressId != null ? { invoice_work_address_id: formWorkAddressId } : {}),
         },
         token,
       );
@@ -521,6 +575,37 @@ export default function InvoicesPage() {
                     ))}
                   </select>
                 </div>
+                {formCustomerId && (
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700">Work / site on invoice (optional)</label>
+                    <div className="mt-1 flex gap-2">
+                      <div className="min-w-0 flex-1">
+                        <WorkAddressSelect
+                          options={workAddressOptions}
+                          value={formWorkAddressId}
+                          onChange={setFormWorkAddressId}
+                          className="w-full"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.open(
+                            `/dashboard/customers/${formCustomerId}?tab=${encodeURIComponent('Work address')}`,
+                            '_blank',
+                          )
+                        }
+                        className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
+                        title="Add work / site address"
+                      >
+                        <Plus className="size-4" />
+                      </button>
+                    </div>
+                    {workAddressOptions.length === 0 && (
+                      <p className="mt-1 text-xs text-slate-500">No active work addresses — default billing address is used.</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
@@ -543,7 +628,9 @@ export default function InvoicesPage() {
               <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-4 sm:col-span-2">
                 <p className="text-sm font-medium text-slate-800">Address on invoice</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Uses the customer&apos;s default billing address. To bill a specific work or site address, create the invoice from that work address&apos;s detail page.
+                  {formWorkAddressId != null
+                    ? 'Uses the selected work / site as the invoice address line (customer billing details unchanged).'
+                    : "Uses the customer's default billing address. Pick a work / site above to show a specific location on the invoice."}
                 </p>
               </div>
               <div className="sm:col-span-2">

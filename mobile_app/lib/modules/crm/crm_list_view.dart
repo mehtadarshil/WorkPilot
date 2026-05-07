@@ -75,11 +75,9 @@ class CrmListView extends GetView<CrmListController> {
       child: Scaffold(
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
-          title: Obx(
-            () => Text(
-              controller.title,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-            ),
+          title: Text(
+            controller.title,
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),

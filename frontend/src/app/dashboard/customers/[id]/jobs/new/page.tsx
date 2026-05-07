@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { getJson, postJson, patchJson } from '../../../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../../../../SearchableSelect';
+import {
+  buildCompletedServiceItemsPayload,
+  formatChecklistReminderSummary,
+  parseCompletedServiceItemsFromJob,
+} from '../../../../jobs/serviceJobCompletedItems';
 
 interface JobDescription {
   id: number;
@@ -14,8 +19,6 @@ interface JobDescription {
   default_priority: string;
   default_business_unit: string | null;
   is_service_job: boolean;
-  service_reminder_frequency?: number | null;
-  service_reminder_unit?: string | null;
   pricing_items: DescPricingItem[];
 }
 
@@ -57,6 +60,10 @@ interface ServiceChecklistItem {
   name: string;
   sort_order: number;
   is_active: boolean;
+  reminder_interval_n?: number | null;
+  reminder_interval_unit?: string | null;
+  reminder_early_n?: number | null;
+  reminder_early_unit?: string | null;
 }
 
 interface CustomerContactRow {
@@ -69,6 +76,24 @@ interface CustomerContactRow {
   landline: string | null;
 }
 
+interface QuotationPrefillPayload {
+  id: number;
+  customer_id: number;
+  quotation_number: string;
+  description: string | null;
+  notes: string | null;
+  subtotal: number;
+  tax_amount: number;
+  total_amount: number;
+  line_items: {
+    description: string;
+    quantity: number;
+    unit_price: number;
+    amount: number;
+    sort_order: number;
+  }[];
+}
+
 interface EditableJob {
   contact_name?: string | null;
   job_contact_id?: number | null;
@@ -77,8 +102,6 @@ interface EditableJob {
   skills?: string | null;
   job_notes?: string | null;
   is_service_job?: boolean;
-  service_reminder_frequency?: number | null;
-  service_reminder_unit?: string | null;
   expected_completion?: string | null;
   priority?: string | null;
   user_group?: string | null;
@@ -88,7 +111,7 @@ interface EditableJob {
   customer_reference?: string | null;
   job_pipeline?: string | null;
   pricing_items?: DescPricingItem[];
-  completed_service_items?: string[] | null;
+  completed_service_items?: unknown;
 }
 
 let keyCounter = 0;
@@ -116,9 +139,12 @@ export default function AddNewJobPage() {
   const customerId = params?.id as string;
   const editJobId = searchParams.get('edit');
   const workAddressIdParam = searchParams.get('work_address_id');
+  const fromQuotationId = searchParams.get('from_quotation');
   const isEdit = !!editJobId;
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+  const keepPricingFromQuotationRef = useRef(false);
+  const quotationPrefillDoneRef = useRef(false);
 
   const [customer, setCustomer] = useState<CustomerInfo | null>(null);
   const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
@@ -134,8 +160,6 @@ export default function AddNewJobPage() {
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
   const [isServiceJob, setIsServiceJob] = useState(false);
-  const [reminderFrequency, setReminderFrequency] = useState<number | ''>('');
-  const [reminderUnit, setReminderUnit] = useState<string>('years');
 
   // Right side
   const [expectedDate, setExpectedDate] = useState('');
@@ -153,7 +177,8 @@ export default function AddNewJobPage() {
   // Pricing items
   const [pricingItems, setPricingItems] = useState<PricingItemRow[]>([]);
   const [serviceChecklistItems, setServiceChecklistItems] = useState<ServiceChecklistItem[]>([]);
-  const [completedServiceItems, setCompletedServiceItems] = useState<string[]>([]);
+  const [completedServiceNames, setCompletedServiceNames] = useState<string[]>([]);
+  const [remindEmailByService, setRemindEmailByService] = useState<Record<string, boolean>>({});
 
   // Config lists
   const [businessUnitsList, setBusinessUnitsList] = useState<{id: number, name: string}[]>([]);
@@ -204,16 +229,6 @@ export default function AddNewJobPage() {
     [],
   );
 
-  const reminderUnitOptions = useMemo(
-    (): SearchableSelectOption[] => [
-      { value: 'days', label: 'Days' },
-      { value: 'weeks', label: 'Weeks' },
-      { value: 'months', label: 'Months' },
-      { value: 'years', label: 'Years' },
-    ],
-    [],
-  );
-
   const jobContactOptions = useMemo((): SearchableSelectOption[] => {
     return customerContacts.map((c) => ({
       value: String(c.id),
@@ -257,9 +272,10 @@ export default function AddNewJobPage() {
         setSkills(j.skills || '');
         setJobNotes(j.job_notes || '');
         setIsServiceJob(!!j.is_service_job);
-        setReminderFrequency(j.service_reminder_frequency || '');
-        setReminderUnit(j.service_reminder_unit || 'years');
-        
+        const parsed = parseCompletedServiceItemsFromJob(j.completed_service_items);
+        setCompletedServiceNames(parsed.completedNames);
+        setRemindEmailByService(parsed.remindEmail);
+
         if (j.expected_completion) {
           const d = new Date(j.expected_completion);
           setExpectedDate(d.toISOString().slice(0,10));
@@ -273,8 +289,6 @@ export default function AddNewJobPage() {
         setQuotedAmount(j.quoted_amount ? String(j.quoted_amount) : '');
         setCustomerReference(j.customer_reference || '');
         setJobPipeline(j.job_pipeline || 'Service/Reactive Workflow');
-        setCompletedServiceItems(Array.isArray(j.completed_service_items) ? j.completed_service_items : []);
-
         if (j.pricing_items && Array.isArray(j.pricing_items)) {
           setPricingItems(j.pricing_items.map((pi: DescPricingItem) => {
             const unit = Number(pi.unit_price);
@@ -312,50 +326,135 @@ export default function AddNewJobPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (isEdit || !fromQuotationId || !token || !customerId || loading) return;
+    if (quotationPrefillDoneRef.current) return;
+    const qid = parseInt(fromQuotationId, 10);
+    if (!Number.isFinite(qid)) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getJson<{ quotation: QuotationPrefillPayload }>(`/quotations/${qid}`, token);
+        if (cancelled) return;
+        const q = data.quotation;
+        if (!q || Number(q.customer_id) !== Number(customerId)) {
+          setError('This quotation does not belong to this customer.');
+          return;
+        }
+
+        quotationPrefillDoneRef.current = true;
+        keepPricingFromQuotationRef.current = true;
+
+        setQuotedAmount(Number.isFinite(q.total_amount) ? String(q.total_amount) : '');
+        setCustomerReference((q.quotation_number || '').trim());
+
+        const noteLines: string[] = [`Prefilled from quotation ${q.quotation_number}.`];
+        if (q.description?.trim()) noteLines.push('', q.description.trim());
+        if (q.notes?.trim()) noteLines.push('', 'Quotation notes:', q.notes.trim());
+        setJobNotes((prev) => {
+          const base = noteLines.join('\n').trim();
+          const p = (prev || '').trim();
+          if (!p) return base;
+          if (p.includes('Prefilled from quotation')) return p;
+          return `${base}\n\n${p}`;
+        });
+
+        const sub = Number(q.subtotal);
+        const tax = Number(q.tax_amount);
+        let vatRate = 20;
+        if (sub > 0.0001) {
+          const r = Math.round((tax / sub) * 10000) / 100;
+          if (Number.isFinite(r) && r >= 0 && r <= 99.99) vatRate = r;
+        }
+
+        const rows = Array.isArray(q.line_items) ? q.line_items : [];
+        if (rows.length > 0) {
+          setPricingItems(
+            rows.map((li) => {
+              const unit = Number(li.unit_price);
+              const qty = Number(li.quantity);
+              const qRounded = Number.isFinite(qty) ? Math.max(1, Math.min(999999, Math.round(qty))) : 1;
+              const amt = Number(li.amount);
+              const total = Number.isFinite(amt) ? amt : (Number.isFinite(unit) ? unit : 0) * qRounded;
+              const name = String(li.description || 'Line item').trim();
+              return {
+                key: nextKey(),
+                item_name: name.length > 255 ? `${name.slice(0, 252)}...` : name || 'Line item',
+                time_included: 0,
+                unit_price: Number.isFinite(unit) ? unit : 0,
+                vat_rate: vatRate,
+                quantity: qRounded,
+                total,
+              };
+            }),
+          );
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Could not load quotation to prefill the job.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, fromQuotationId, token, customerId, loading]);
+
   // When description changes, auto-fill skills, job notes, pricing items
   const handleDescriptionChange = async (newId: number | '') => {
     setDescriptionId(newId);
     if (!newId || !token) {
-      // Clear auto-filled
+      keepPricingFromQuotationRef.current = false;
       setSkills('');
       setJobNotes('');
       setIsServiceJob(false);
-      setReminderFrequency('');
-      setReminderUnit('years');
+      setCompletedServiceNames([]);
+      setRemindEmailByService({});
       setPriority('medium');
       setBusinessUnit('');
       setPricingItems([]);
-        setCompletedServiceItems([]);
+      setCompletedServiceNames([]);
+      setRemindEmailByService({});
       return;
     }
 
     try {
       const desc = await getJson<JobDescription>(`/settings/job-descriptions/${newId}`, token);
       setSkills(desc.default_skills || '');
-      setJobNotes(desc.default_job_notes || '');
+      setJobNotes((prev) => {
+        const tmpl = (desc.default_job_notes || '').trim();
+        const p = (prev || '').trim();
+        if (keepPricingFromQuotationRef.current) {
+          if (tmpl && p) return `${tmpl}\n\n${p}`;
+          return tmpl || p;
+        }
+        return tmpl;
+      });
       setIsServiceJob(desc.is_service_job);
-      if (desc.is_service_job) {
-        setReminderFrequency(desc.service_reminder_frequency || '');
-        setReminderUnit(desc.service_reminder_unit || 'years');
-      } else {
-        setCompletedServiceItems([]);
-        setReminderFrequency('');
-        setReminderUnit('years');
+      if (!desc.is_service_job) {
+        setCompletedServiceNames([]);
+        setRemindEmailByService({});
       }
       setPriority(desc.default_priority || 'medium');
       setBusinessUnit(desc.default_business_unit || '');
 
-      // Auto-populate pricing items from template
+      if (keepPricingFromQuotationRef.current) {
+        return;
+      }
+
       if (desc.pricing_items && desc.pricing_items.length > 0) {
-        setPricingItems(desc.pricing_items.map((pi: DescPricingItem) => ({
-          key: nextKey(),
-          item_name: pi.item_name,
-          time_included: pi.time_included,
-          unit_price: Number(pi.unit_price),
-          vat_rate: Number(pi.vat_rate),
-          quantity: pi.quantity,
-          total: Number(pi.unit_price) * pi.quantity,
-        })));
+        setPricingItems(
+          desc.pricing_items.map((pi: DescPricingItem) => ({
+            key: nextKey(),
+            item_name: pi.item_name,
+            time_included: pi.time_included,
+            unit_price: Number(pi.unit_price),
+            vat_rate: Number(pi.vat_rate),
+            quantity: pi.quantity,
+            total: Number(pi.unit_price) * pi.quantity,
+          })),
+        );
       } else {
         setPricingItems([]);
       }
@@ -412,6 +511,11 @@ export default function AddNewJobPage() {
       expectedCompletion = expectedTime ? `${expectedDate}T${expectedTime}:00` : `${expectedDate}T23:59:00`;
     }
 
+    const back =
+      workAddressIdParam && !isEdit
+        ? `/dashboard/customers/${customerId}?work_address_id=${encodeURIComponent(workAddressIdParam)}`
+        : `/dashboard/customers/${customerId}`;
+
     try {
       const payload = {
         title: titleStr,
@@ -425,9 +529,11 @@ export default function AddNewJobPage() {
         skills,
         job_notes: jobNotes,
         is_service_job: isServiceJob,
-        service_reminder_frequency: isServiceJob && reminderFrequency ? reminderFrequency : null,
-        service_reminder_unit: isServiceJob ? reminderUnit : null,
-        completed_service_items: isServiceJob ? completedServiceItems : [],
+        completed_service_items: buildCompletedServiceItemsPayload(
+          isServiceJob,
+          completedServiceNames,
+          remindEmailByService,
+        ),
         quoted_amount: quotedAmount ? Number(quotedAmount) : null,
         customer_reference: customerReference || null,
         job_pipeline: jobPipeline || null,
@@ -445,14 +551,20 @@ export default function AddNewJobPage() {
       if (isEdit) {
         await patchJson(`/jobs/${editJobId}`, payload, token);
       } else {
-        await postJson(`/customers/${customerId}/jobs`, payload, token);
+        const created = await postJson<{ job: { id: number } }>(`/customers/${customerId}/jobs`, payload, token);
+        const newJobId = created.job?.id;
+        if (newJobId && fromQuotationId && token) {
+          try {
+            await postJson(`/quotations/${fromQuotationId}/link-job`, { job_id: newJobId }, token);
+          } catch (linkErr: unknown) {
+            setSaving(false);
+            setError(linkErr instanceof Error ? linkErr.message : 'Job created but the quotation could not be linked.');
+            return;
+          }
+        }
       }
 
-      // Navigate back to customer detail (preserve work-site scope when creating from that context)
-      const back =
-        workAddressIdParam && !isEdit
-          ? `/dashboard/customers/${customerId}?work_address_id=${encodeURIComponent(workAddressIdParam)}`
-          : `/dashboard/customers/${customerId}`;
+      setSaving(false);
       router.push(back);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} job`);
@@ -501,6 +613,16 @@ export default function AddNewJobPage() {
           {error && (
             <div className="rounded-lg bg-rose-50 p-4 text-sm font-medium text-rose-800 border border-rose-200">{error}</div>
           )}
+
+          {fromQuotationId && !isEdit ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950">
+              <p className="font-semibold">Creating a job from a quotation</p>
+              <p className="mt-1 text-emerald-900/90">
+                Quotation line items and totals are copied below. You must still choose a <strong>job description</strong> (and any
+                other required fields), then save. The quotation will be linked to this job after you create it.
+              </p>
+            </div>
+          ) : null}
 
           {/* Card: Add new job */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -591,69 +713,90 @@ export default function AddNewJobPage() {
                       <input
                         type="checkbox"
                         checked={isServiceJob}
-                        onChange={e => {
+                        onChange={(e) => {
                           setIsServiceJob(e.target.checked);
-                          if (!e.target.checked) setCompletedServiceItems([]);
+                          if (!e.target.checked) {
+                            setCompletedServiceNames([]);
+                            setRemindEmailByService({});
+                          }
                         }}
                         className="size-4 mt-0.5 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
                       />
                       <div>
                         <span className="text-sm font-medium text-slate-900">Service job</span>
-                        <p className="text-xs text-slate-500">Enable automatic service reminder scheduling for this job type.</p>
+                        <p className="text-xs text-slate-500">
+                          Per-service reminder timing is set in Settings → Job descriptions (service checklist). Here you choose which services were completed and which to include in reminder emails.
+                        </p>
                       </div>
                     </label>
                   </div>
-
-                  {isServiceJob && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-                      <label className="block text-sm font-medium text-slate-700">Service reminder frequency</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={reminderFrequency}
-                          onChange={e => setReminderFrequency(e.target.value ? Number(e.target.value) : '')}
-                          className={inputClass}
-                          placeholder="e.g. 1"
-                        />
-                        <SearchableSelect
-                          options={reminderUnitOptions}
-                          value={reminderUnit}
-                          onChange={setReminderUnit}
-                          allowEmpty={false}
-                          emptyButtonLabel="Unit"
-                          emptyMenuLabel=""
-                          searchPlaceholder="Search unit…"
-                          className={inputClass}
-                        />
-                      </div>
-                      <p className="text-xs text-slate-500">How often should a reminder be triggered for this service job?</p>
-                    </div>
-                  )}
 
                   {isServiceJob && (
                     <div>
                       <label className={labelClass}>Completed services in this job</label>
                       <div className="rounded-lg border border-slate-200 bg-white px-3 py-3">
                         {activeServiceChecklistItems.length === 0 ? (
-                          <p className="text-sm text-slate-500">No service checklist options configured yet. Add them in Settings → Job Descriptions.</p>
+                          <p className="text-sm text-slate-500">
+                            No service checklist options configured yet. Add them under Settings → Job descriptions (service checklist).
+                          </p>
                         ) : (
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            {activeServiceChecklistItems.map((item) => (
-                              <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={completedServiceItems.includes(item.name)}
-                                  onChange={(e) => {
-                                    setCompletedServiceItems((prev) =>
-                                      e.target.checked ? [...prev, item.name] : prev.filter((name) => name !== item.name),
-                                    );
-                                  }}
-                                  className="size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
-                                />
-                                {item.name}
-                              </label>
-                            ))}
+                          <div className="space-y-3">
+                            {activeServiceChecklistItems.map((item) => {
+                              const done = completedServiceNames.includes(item.name);
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+                                >
+                                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm font-medium text-slate-800">
+                                    <input
+                                      type="checkbox"
+                                      checked={done}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setCompletedServiceNames((prev) =>
+                                            prev.includes(item.name) ? prev : [...prev, item.name],
+                                          );
+                                          setRemindEmailByService((prev) => ({
+                                            ...prev,
+                                            [item.name]: prev[item.name] !== false,
+                                          }));
+                                        } else {
+                                          setCompletedServiceNames((prev) => prev.filter((n) => n !== item.name));
+                                          setRemindEmailByService((prev) => {
+                                            const next = { ...prev };
+                                            delete next[item.name];
+                                            return next;
+                                          });
+                                        }
+                                      }}
+                                      className="size-4 shrink-0 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
+                                    />
+                                    <span className="min-w-0">{item.name}</span>
+                                  </label>
+                                  <label
+                                    className={`flex cursor-pointer items-center gap-2 text-xs sm:text-sm ${done ? 'text-slate-700' : 'cursor-not-allowed text-slate-400'}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      disabled={!done}
+                                      checked={done && remindEmailByService[item.name] !== false}
+                                      onChange={(e) => {
+                                        setRemindEmailByService((prev) => ({
+                                          ...prev,
+                                          [item.name]: e.target.checked,
+                                        }));
+                                      }}
+                                      className="size-4 shrink-0 rounded text-[#14B8A6] focus:ring-[#14B8A6] disabled:opacity-40"
+                                    />
+                                    Include in reminder emails
+                                  </label>
+                                  <p className="w-full text-[11px] leading-snug text-slate-500 sm:order-3 sm:basis-full">
+                                    {formatChecklistReminderSummary(item)}
+                                  </p>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>

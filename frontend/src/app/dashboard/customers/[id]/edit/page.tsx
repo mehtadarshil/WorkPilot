@@ -54,6 +54,8 @@ export default function EditCustomerPage() {
   const [prefersSms, setPrefersSms] = useState(false);
   const [prefersEmail, setPrefersEmail] = useState(false);
   const [prefersLetter, setPrefersLetter] = useState(false);
+  const [invoiceRemindersEnabled, setInvoiceRemindersEnabled] = useState(true);
+  const [serviceRemindersEnabled, setServiceRemindersEnabled] = useState(true);
   const [isLead, setIsLead] = useState(false);
 
   const [leadSource, setLeadSource] = useState('');
@@ -100,6 +102,8 @@ export default function EditCustomerPage() {
       setPrefersSms(!!customer.prefers_sms);
       setPrefersEmail(!!customer.prefers_email);
       setPrefersLetter(!!customer.prefers_letter);
+      setInvoiceRemindersEnabled(customer.invoice_reminders_enabled !== false);
+      setServiceRemindersEnabled(customer.service_reminders_enabled !== false);
       setIsLead(customer.status === 'LEAD');
 
       setLeadSource(customer.lead_source || '');
@@ -158,6 +162,8 @@ export default function EditCustomerPage() {
         prefers_sms: prefersSms,
         prefers_email: prefersEmail,
         prefers_letter: prefersLetter,
+        invoice_reminders_enabled: invoiceRemindersEnabled,
+        service_reminders_enabled: serviceRemindersEnabled,
         lead_source: leadSource,
         price_book_id: priceBookId === '' ? null : Number(priceBookId),
         credit_days: creditDays,
@@ -345,6 +351,38 @@ export default function EditCustomerPage() {
                         <input type="checkbox" checked={prefersLetter} onChange={e => setPrefersLetter(e.target.checked)} className="size-4 text-[#14B8A6] focus:ring-[#14B8A6] rounded" /> Letter
                       </label>
                     </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3">
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={invoiceRemindersEnabled}
+                        onChange={(e) => setInvoiceRemindersEnabled(e.target.checked)}
+                        className="mt-1 size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900">Invoice reminders</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          When enabled, this customer can receive automated payment-chase emails for overdue invoices (if your organisation uses them).
+                        </span>
+                      </span>
+                    </label>
+                    <label className="mt-3 flex cursor-pointer items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={serviceRemindersEnabled}
+                        onChange={(e) => setServiceRemindersEnabled(e.target.checked)}
+                        className="mt-1 size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]"
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900">Service renewal reminders</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          When enabled, completed service jobs for this customer can receive automated renewal emails per
+                          your Settings → Reminders rules.
+                        </span>
+                      </span>
+                    </label>
                   </div>
 
                   {/* Add Checkbox for Is this a lead? */}

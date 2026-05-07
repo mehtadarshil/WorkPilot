@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, User } from 'lucide-react';
-import { getJson } from '../../apiClient';
+import { Bell, Clock, User } from 'lucide-react';
+import { deleteRequest, getJson, postJson } from '../../apiClient';
 
 export interface UserDetailSubject {
   id: number;
@@ -62,7 +62,19 @@ const STATE_LABELS: Record<string, string> = {
   archived: 'Archived',
 };
 
-type TabId = 'overview' | 'timesheet';
+interface StaffReminderRow {
+  id: number;
+  officer_id: number;
+  reminder_message: string;
+  due_date: string;
+  notify_at: string;
+  extra_notify_emails: string | null;
+  last_notified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+type TabId = 'overview' | 'timesheet' | 'reminders';
 
 export function UserDetailModal({
   user,
@@ -78,6 +90,16 @@ export function UserDetailModal({
   const [timesheetLoading, setTimesheetLoading] = useState(false);
   const [timesheetError, setTimesheetError] = useState<string | null>(null);
   const [timesheetFetched, setTimesheetFetched] = useState(false);
+
+  const [staffReminders, setStaffReminders] = useState<StaffReminderRow[]>([]);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+  const [remindersError, setRemindersError] = useState<string | null>(null);
+  const [remindersFetched, setRemindersFetched] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [newDue, setNewDue] = useState('');
+  const [newNotify, setNewNotify] = useState('');
+  const [newExtras, setNewExtras] = useState('');
+  const [savingReminder, setSavingReminder] = useState(false);
 
   const loadTimesheet = useCallback(async () => {
     setTimesheetLoading(true);
@@ -98,14 +120,74 @@ export function UserDetailModal({
     }
   }, [user.id, token]);
 
+  const loadStaffReminders = useCallback(async () => {
+    setRemindersLoading(true);
+    setRemindersError(null);
+    try {
+      const data = await getJson<{ reminders: StaffReminderRow[] }>(`/officers/${user.id}/staff-reminders`, token);
+      setStaffReminders(data.reminders ?? []);
+      setRemindersFetched(true);
+    } catch (e) {
+      setRemindersError(e instanceof Error ? e.message : 'Failed to load reminders');
+      setStaffReminders([]);
+      setRemindersFetched(true);
+    } finally {
+      setRemindersLoading(false);
+    }
+  }, [user.id, token]);
+
   useEffect(() => {
     if (tab === 'timesheet' && !timesheetFetched) {
       void loadTimesheet();
     }
   }, [tab, timesheetFetched, loadTimesheet]);
 
+  useEffect(() => {
+    if (tab === 'reminders' && !remindersFetched) {
+      void loadStaffReminders();
+    }
+  }, [tab, remindersFetched, loadStaffReminders]);
+
   const openTimesheetTab = () => {
     setTab('timesheet');
+  };
+
+  const addStaffReminder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !newDue || !newNotify) return;
+    setSavingReminder(true);
+    setRemindersError(null);
+    try {
+      await postJson(
+        `/officers/${user.id}/staff-reminders`,
+        {
+          reminder_message: newMessage.trim(),
+          due_date: newDue,
+          notify_at: newNotify,
+          extra_notify_emails: newExtras.trim() || null,
+        },
+        token,
+      );
+      setNewMessage('');
+      setNewDue('');
+      setNewNotify('');
+      setNewExtras('');
+      await loadStaffReminders();
+    } catch (err) {
+      setRemindersError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSavingReminder(false);
+    }
+  };
+
+  const deleteStaffReminder = async (rid: number) => {
+    if (!window.confirm('Delete this reminder?')) return;
+    try {
+      await deleteRequest(`/officers/${user.id}/staff-reminders/${rid}`, token);
+      await loadStaffReminders();
+    } catch (err) {
+      setRemindersError(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   return (
@@ -156,6 +238,18 @@ export function UserDetailModal({
               <Clock className="size-4" />
               Timesheet
             </button>
+            <button
+              type="button"
+              onClick={() => setTab('reminders')}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${
+                tab === 'reminders'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Bell className="size-4" />
+              Reminders
+            </button>
           </div>
         </div>
 
@@ -201,6 +295,123 @@ export function UserDetailModal({
                 </dd>
               </div>
             </dl>
+          )}
+
+          {tab === 'reminders' && (
+            <div className="space-y-6">
+              <p className="text-sm text-slate-600">
+                Remind all <strong>tenant admin</strong> dashboard users by email on the notification date. This is
+                about <strong>{user.full_name}</strong> — they are not emailed unless you add their address under extra
+                recipients. Optional extra addresses receive the same message (BCC with other admins).
+              </p>
+              {remindersError && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800">
+                  {remindersError}
+                </div>
+              )}
+              <form onSubmit={addStaffReminder} className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold uppercase text-slate-500">Reminder</label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    placeholder="e.g. Renew Gas Safe registration"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="text-xs font-semibold uppercase text-slate-500">Due date</label>
+                    <input
+                      required
+                      type="date"
+                      value={newDue}
+                      onChange={(e) => setNewDue(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                    <p className="mt-0.5 text-xs text-slate-500">When the obligation is actually due.</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold uppercase text-slate-500">Date to remind</label>
+                    <input
+                      required
+                      type="date"
+                      value={newNotify}
+                      onChange={(e) => setNewNotify(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                    <p className="mt-0.5 text-xs text-slate-500">Must be on or before due date.</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold uppercase text-slate-500">Extra recipients (optional)</label>
+                  <input
+                    type="text"
+                    value={newExtras}
+                    onChange={(e) => setNewExtras(e.target.value)}
+                    placeholder="email1@co.com, email2@co.com"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={savingReminder}
+                  className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+                >
+                  {savingReminder ? 'Saving…' : 'Add reminder'}
+                </button>
+              </form>
+              {remindersLoading && staffReminders.length === 0 && (
+                <p className="py-6 text-center text-sm text-slate-500">Loading…</p>
+              )}
+              {staffReminders.length > 0 && (
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Notify</th>
+                        <th className="px-3 py-2">Due</th>
+                        <th className="px-3 py-2">Message</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {staffReminders.map((r) => (
+                        <tr key={r.id} className="bg-white">
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-800">{r.notify_at}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-800">{r.due_date}</td>
+                          <td className="max-w-[240px] truncate px-3 py-2 text-slate-700" title={r.reminder_message}>
+                            {r.reminder_message}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                            {r.last_notified_at ? (
+                              <span className="text-emerald-700 font-medium">Sent</span>
+                            ) : (
+                              <span className="text-amber-700 font-medium">Pending</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => deleteStaffReminder(r.id)}
+                              className="text-sm font-semibold text-rose-600 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {!remindersLoading && staffReminders.length === 0 && remindersFetched && (
+                <p className="text-center text-sm text-slate-500">No reminders for this user yet.</p>
+              )}
+            </div>
           )}
 
           {tab === 'timesheet' && (

@@ -17,6 +17,20 @@ import '../../modules/timesheet/timesheet_history_binding.dart';
 import '../../modules/timesheet/timesheet_history_view.dart';
 import '../../modules/crm/crm_list_binding.dart';
 import '../../modules/crm/crm_list_view.dart';
+import '../../modules/customers/customer_detail_binding.dart';
+import '../../modules/customers/customer_detail_view.dart';
+import '../../modules/customers/customer_form_binding.dart';
+import '../../modules/customers/customer_form_view.dart';
+import '../../modules/customers/customer_new_job_binding.dart';
+import '../../modules/customers/customer_new_job_view.dart';
+import '../../modules/customers/customer_asset_form_binding.dart';
+import '../../modules/customers/customer_asset_form_view.dart';
+import '../../modules/customers/customer_new_invoice_binding.dart';
+import '../../modules/customers/customer_new_invoice_view.dart';
+import '../../modules/customers/customer_work_address_form_binding.dart';
+import '../../modules/customers/customer_work_address_form_view.dart';
+import '../../modules/customers/customers_list_binding.dart';
+import '../../modules/customers/customers_list_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -66,6 +80,41 @@ class AppPages {
       name: AppRoutes.crmList,
       page: () => const CrmListView(),
       binding: CrmListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customersList,
+      page: () => const CustomersListView(),
+      binding: CustomersListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerDetail,
+      page: () => const CustomerDetailView(),
+      binding: CustomerDetailBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerForm,
+      page: () => const CustomerFormView(),
+      binding: CustomerFormBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerNewJob,
+      page: () => const CustomerNewJobView(),
+      binding: CustomerNewJobBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerWorkAddressForm,
+      page: () => const CustomerWorkAddressFormView(),
+      binding: CustomerWorkAddressFormBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerNewInvoice,
+      page: () => const CustomerNewInvoiceView(),
+      binding: CustomerNewInvoiceBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.customerAssetForm,
+      page: () => const CustomerAssetFormView(),
+      binding: CustomerAssetFormBinding(),
     ),
   ];
 }

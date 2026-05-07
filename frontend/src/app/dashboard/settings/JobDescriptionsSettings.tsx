@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { Plus } from 'lucide-react';
 
@@ -12,8 +13,6 @@ interface JobDescription {
   default_priority: string;
   default_business_unit: string | null;
   is_service_job: boolean;
-  service_reminder_frequency?: number | null;
-  service_reminder_unit?: string | null;
 }
 
 interface PricingItem {
@@ -30,7 +29,24 @@ interface ServiceChecklistItem {
   name: string;
   sort_order: number;
   is_active: boolean;
+  reminder_interval_n?: number | null;
+  reminder_interval_unit?: string | null;
+  reminder_early_n?: number | null;
+  reminder_early_unit?: string | null;
+  customer_reminder_weeks_before?: number | null;
+  customer_email_subject?: string | null;
+  customer_email_body_html?: string | null;
 }
+
+type ServiceReminderDraft = {
+  interval_n: number;
+  interval_u: string;
+  early_n: number;
+  early_u: string;
+  customer_weeks: string;
+  customer_subject: string;
+  customer_body: string;
+};
 
 export default function JobDescriptionsSettings() {
   const [descriptions, setDescriptions] = useState<JobDescription[]>([]);
@@ -44,8 +60,6 @@ export default function JobDescriptionsSettings() {
   const [formPriority, setFormPriority] = useState('medium');
   const [formBusinessUnit, setFormBusinessUnit] = useState('');
   const [formIsService, setFormIsService] = useState(false);
-  const [formReminderFrequency, setFormReminderFrequency] = useState<number | ''>('');
-  const [formReminderUnit, setFormReminderUnit] = useState<string>('years');
   const [error, setError] = useState<string | null>(null);
 
   // Pricing items for editing
@@ -58,6 +72,8 @@ export default function JobDescriptionsSettings() {
   const [piQty, setPiQty] = useState(1);
   const [serviceItems, setServiceItems] = useState<ServiceChecklistItem[]>([]);
   const [newServiceName, setNewServiceName] = useState('');
+  const [serviceReminderDrafts, setServiceReminderDrafts] = useState<Record<number, ServiceReminderDraft>>({});
+  const [savingReminderId, setSavingReminderId] = useState<number | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -102,6 +118,25 @@ export default function JobDescriptionsSettings() {
     fetchServiceItems();
   }, [fetchServiceItems]);
 
+  useEffect(() => {
+    const m: Record<number, ServiceReminderDraft> = {};
+    for (const it of serviceItems) {
+      m[it.id] = {
+        interval_n: it.reminder_interval_n ?? 1,
+        interval_u: it.reminder_interval_unit || 'years',
+        early_n: it.reminder_early_n ?? 14,
+        early_u: it.reminder_early_unit || 'days',
+        customer_weeks:
+          it.customer_reminder_weeks_before != null && Number.isFinite(it.customer_reminder_weeks_before)
+            ? String(it.customer_reminder_weeks_before)
+            : '',
+        customer_subject: it.customer_email_subject ?? '',
+        customer_body: it.customer_email_body_html ?? '',
+      };
+    }
+    setServiceReminderDrafts(m);
+  }, [serviceItems]);
+
   const resetForm = () => {
     setEditingId(null);
     setFormName('');
@@ -110,8 +145,6 @@ export default function JobDescriptionsSettings() {
     setFormPriority('medium');
     setFormBusinessUnit('');
     setFormIsService(false);
-    setFormReminderFrequency('');
-    setFormReminderUnit('years');
     setError(null);
   };
 
@@ -123,8 +156,6 @@ export default function JobDescriptionsSettings() {
     setFormPriority(d.default_priority || 'medium');
     setFormBusinessUnit(d.default_business_unit || '');
     setFormIsService(d.is_service_job);
-    setFormReminderFrequency(d.service_reminder_frequency || '');
-    setFormReminderUnit(d.service_reminder_unit || 'years');
     setError(null);
   };
 
@@ -152,8 +183,6 @@ export default function JobDescriptionsSettings() {
         default_priority: formPriority,
         default_business_unit: formBusinessUnit.trim() || null,
         is_service_job: formIsService,
-        service_reminder_frequency: formIsService && formReminderFrequency ? formReminderFrequency : null,
-        service_reminder_unit: formIsService ? formReminderUnit : null,
       };
 
       if (editingId) {
@@ -234,6 +263,35 @@ export default function JobDescriptionsSettings() {
     }
   };
 
+  const saveServiceReminders = async (itemId: number) => {
+    if (!token) return;
+    const d = serviceReminderDrafts[itemId];
+    if (!d) return;
+    setSavingReminderId(itemId);
+    try {
+      const weeksRaw = d.customer_weeks.trim();
+      const weeksParsed = weeksRaw ? parseInt(weeksRaw, 10) : NaN;
+      const customer_reminder_weeks_before =
+        weeksRaw && Number.isFinite(weeksParsed) && weeksParsed >= 1 && weeksParsed <= 52
+          ? weeksParsed
+          : null;
+      await patchJson(`/settings/service-checklist/${itemId}`, {
+        reminder_interval_n: d.interval_n,
+        reminder_interval_unit: d.interval_u,
+        reminder_early_n: d.early_n,
+        reminder_early_unit: d.early_u,
+        customer_reminder_weeks_before,
+        customer_email_subject: d.customer_subject.trim() || null,
+        customer_email_body_html: d.customer_body.trim() || null,
+      }, token);
+      await fetchServiceItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save reminder settings');
+    } finally {
+      setSavingReminderId(null);
+    }
+  };
+
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
 
   return (
@@ -280,35 +338,8 @@ export default function JobDescriptionsSettings() {
             </div>
             <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
               <input type="checkbox" checked={formIsService} onChange={e => setFormIsService(e.target.checked)} className="size-4 rounded text-[#14B8A6] focus:ring-[#14B8A6]" />
-              This is a service job (enables service reminder setup)
+              This is a service job (shows completed-service checklists on new jobs)
             </label>
-
-            {formIsService && (
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-                <label className="block text-sm font-medium text-slate-700">Service reminder frequency</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    value={formReminderFrequency}
-                    onChange={e => setFormReminderFrequency(e.target.value ? Number(e.target.value) : '')}
-                    className={inputClass}
-                    placeholder="e.g. 1"
-                  />
-                  <select
-                    value={formReminderUnit}
-                    onChange={e => setFormReminderUnit(e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="days">Days</option>
-                    <option value="weeks">Weeks</option>
-                    <option value="months">Months</option>
-                    <option value="years">Years</option>
-                  </select>
-                </div>
-                <p className="text-xs text-slate-500">How often should a reminder be triggered for this service job?</p>
-              </div>
-            )}
 
             {error && <p className="text-sm text-red-600 font-medium pt-2">{error}</p>}
 
@@ -415,11 +446,18 @@ export default function JobDescriptionsSettings() {
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div id="wp-service-checklist" className="scroll-mt-24 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
           <div>
             <h3 className="text-[15px] font-bold text-slate-800">Service checklist options</h3>
-            <p className="text-xs text-slate-500 mt-1">These options are shown as checkboxes when Service job is enabled in Add/Edit Job.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              This list defines each <strong>service type</strong> name, repeat interval, and optional per-type customer email (like Commusoft &quot;configure reminder&quot;). Automated emails go to the customer for each{' '}
+              <strong>completed service job</strong> where that service was ticked with reminder email on, the name matches a row here (same spelling, case-insensitive), and renewal timing falls in the send window. Global on/off and who receives the email (account vs job contact) are under{' '}
+              <Link href="/dashboard/settings?tab=service-reminders" className="font-semibold text-[#14B8A6] hover:underline">
+                Settings → Service renewal reminders
+              </Link>
+              . Default subject/body: Settings → Email → Templates → <code className="rounded bg-white px-0.5">service_reminder</code>. SMS and letter are not implemented yet.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -438,24 +476,193 @@ export default function JobDescriptionsSettings() {
         <div className="divide-y divide-slate-100">
           {serviceItems.length === 0 ? (
             <div className="px-6 py-6 text-sm text-slate-500">No checklist services added yet.</div>
-          ) : serviceItems.map((item) => (
-            <div key={item.id} className="flex items-center justify-between px-6 py-3">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-slate-800">{item.name}</span>
-                <span className={`rounded px-2 py-0.5 text-[11px] font-semibold ${item.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {item.is_active ? 'Active' : 'Inactive'}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <button onClick={() => toggleServiceItem(item)} className="font-semibold text-[#14B8A6] hover:underline">
-                  {item.is_active ? 'Disable' : 'Enable'}
-                </button>
-                <button onClick={() => deleteServiceItem(item.id)} className="font-semibold text-rose-600 hover:underline">
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+          ) : (
+            serviceItems.map((item) => {
+              const draft = serviceReminderDrafts[item.id];
+              return (
+                <div key={item.id} className="space-y-3 px-6 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-sm font-medium text-slate-800">{item.name}</span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11px] font-semibold ${item.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
+                      >
+                        {item.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <button type="button" onClick={() => toggleServiceItem(item)} className="font-semibold text-[#14B8A6] hover:underline">
+                        {item.is_active ? 'Disable' : 'Enable'}
+                      </button>
+                      <button type="button" onClick={() => deleteServiceItem(item.id)} className="font-semibold text-rose-600 hover:underline">
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  {draft && (
+                    <div className="grid gap-3 rounded-lg border border-slate-100 bg-slate-50/80 p-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">Repeat every</label>
+                        <div className="mt-1 flex gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            className={inputClass + ' mt-0 max-w-[100px]'}
+                            value={draft.interval_n}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setServiceReminderDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: { ...draft, interval_n: Number.isFinite(v) && v >= 1 ? v : 1 },
+                              }));
+                            }}
+                          />
+                          <select
+                            className={inputClass + ' mt-0'}
+                            value={draft.interval_u}
+                            onChange={(e) =>
+                              setServiceReminderDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: { ...draft, interval_u: e.target.value },
+                              }))
+                            }
+                          >
+                            <option value="days">Days</option>
+                            <option value="weeks">Weeks</option>
+                            <option value="months">Months</option>
+                            <option value="years">Years</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">First reminder (early)</label>
+                        <div className="mt-1 flex gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            className={inputClass + ' mt-0 max-w-[100px]'}
+                            value={draft.early_n}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setServiceReminderDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: { ...draft, early_n: Number.isFinite(v) && v >= 1 ? v : 1 },
+                              }));
+                            }}
+                          />
+                          <select
+                            className={inputClass + ' mt-0'}
+                            value={draft.early_u}
+                            onChange={(e) =>
+                              setServiceReminderDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: { ...draft, early_u: e.target.value },
+                              }))
+                            }
+                          >
+                            <option value="days">Days</option>
+                            <option value="weeks">Weeks</option>
+                          </select>
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Used when no &quot;weeks before due&quot; override is set below.
+                        </p>
+                      </div>
+                      <div className="sm:col-span-2 border-t border-slate-200 pt-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Customer email (optional)</p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Tags: <code className="rounded bg-white px-1">{`{{customer_name}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_surname}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_account_no}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_email}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_telephone}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_mobile}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_address_line_1}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_town}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_postcode}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{customer_address}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{work_address}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{site_address}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{service_name}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{service_reminder_name}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{service_contact}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{service_reminder_booking_portal_url}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{due_date}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{service_due_date}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{job_title}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{job_id}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{company_name}}`}</code>{' '}
+                          <code className="rounded bg-white px-1">{`{{phase_label}}`}</code>
+                        </p>
+                        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600">Weeks before due (optional)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={52}
+                              placeholder="e.g. 2"
+                              className={inputClass + ' mt-1 max-w-[120px]'}
+                              value={draft.customer_weeks}
+                              onChange={(e) =>
+                                setServiceReminderDrafts((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...draft, customer_weeks: e.target.value },
+                                }))
+                              }
+                            />
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              If set (1–52), customer emails use this many weeks before the due date instead of &quot;First reminder&quot; above.
+                            </p>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-600">Subject override</label>
+                            <input
+                              type="text"
+                              className={inputClass + ' mt-1'}
+                              value={draft.customer_subject}
+                              placeholder="Leave blank to use global service_reminder template subject"
+                              onChange={(e) =>
+                                setServiceReminderDrafts((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...draft, customer_subject: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-600">Body HTML override</label>
+                            <textarea
+                              rows={5}
+                              className={inputClass + ' mt-1 font-mono text-xs'}
+                              value={draft.customer_body}
+                              placeholder="Leave blank to use global template body"
+                              onChange={(e) =>
+                                setServiceReminderDrafts((prev) => ({
+                                  ...prev,
+                                  [item.id]: { ...draft, customer_body: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <button
+                          type="button"
+                          disabled={savingReminderId === item.id}
+                          onClick={() => void saveServiceReminders(item.id)}
+                          className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#119f8e] disabled:opacity-50"
+                        >
+                          {savingReminderId === item.id ? 'Saving…' : 'Save reminder settings'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>

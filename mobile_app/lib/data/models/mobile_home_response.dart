@@ -120,19 +120,26 @@ class MobileHomeResponse {
 
   bool _perm(String key) => mobilePermissions[key] == true;
 
-  /// Extra CRM modules (same flags as the web tenant). Pure field officers keep the classic 3-tab shell unless the tenant grants pipeline/catalog access.
+  /// Extra CRM modules (same flags as the web tenant).
+  ///
+  /// [officerFeatures] is only set when the session is treated as a field mobile profile (linked officer + jobs/scheduling). Staff who sign in on the app without a linked officer still get [mobile_permissions] but [officerFeatures] is false — they must still see the Work hub when CRM flags are on.
   bool get showWorkHubTab {
-    if (!officerFeatures) return false;
     final roleUp = role.toUpperCase();
-    if (_perm('customers') ||
+
+    final hasPipeline = _perm('customers') ||
         _perm('quotations') ||
         _perm('invoices') ||
-        _perm('parts_catalog')) {
-      return true;
+        _perm('parts_catalog');
+
+    if (roleUp == 'OFFICER') {
+      if (!officerFeatures) return false;
+      if (hasPipeline) return true;
+      return false;
     }
-    if (roleUp != 'OFFICER' && (_perm('jobs') || _perm('certifications'))) {
-      return true;
-    }
+
+    // STAFF / ADMIN / SUPER_ADMIN: CRM hub from tenant permissions alone.
+    if (hasPipeline) return true;
+    if (_perm('jobs') || _perm('certifications')) return true;
     return false;
   }
 

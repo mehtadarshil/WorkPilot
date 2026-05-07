@@ -18,6 +18,7 @@ import {
   Trash2,
   ExternalLink,
   Copy,
+  Briefcase,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
@@ -92,6 +93,8 @@ interface Quotation {
   created_at: string;
   updated_at: string;
   public_token?: string | null;
+  job_id?: number | null;
+  job_title?: string | null;
   line_items: LineItem[];
   activities: Activity[];
   internal_notes?: QuotationInternalNote[];
@@ -188,6 +191,14 @@ export default function QuotationDetailPage() {
     }
   };
 
+  const handleOpenCreateJobFromQuotation = () => {
+    if (!quotation) return;
+    setActionError(null);
+    const w = quotation.quotation_work_address_id;
+    const base = `/dashboard/customers/${quotation.customer_id}/jobs/new?from_quotation=${encodeURIComponent(id)}`;
+    router.push(w != null ? `${base}&work_address_id=${encodeURIComponent(String(w))}` : base);
+  };
+
   const handleDeleteQuotation = async () => {
     if (!token || !id) return;
     setDeleting(true);
@@ -227,6 +238,8 @@ export default function QuotationDetailPage() {
 
   const canAcceptReject = quotation.state === 'sent';
   const canTransferToInvoice = quotation.state === 'accepted';
+  const canConvertToJob = quotation.state === 'accepted' && !quotation.job_id;
+  const canOpenLinkedJob = quotation.job_id != null;
 
   const publicCustomerUrl =
     quotation.public_token && appOrigin ? `${appOrigin}/public/quotations/${quotation.public_token}` : null;
@@ -414,6 +427,29 @@ export default function QuotationDetailPage() {
                     Reject
                   </button>
                 </>
+              )}
+
+              {canOpenLinkedJob && (
+                <Link
+                  href={`/dashboard/jobs/${quotation.job_id}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+                >
+                  <Briefcase className="size-4" />
+                  <span className="hidden sm:inline">Open job</span>
+                  <span className="sm:hidden">Job</span>
+                </Link>
+              )}
+
+              {canConvertToJob && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateJobFromQuotation}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 shadow-sm hover:bg-emerald-100 transition-colors"
+                >
+                  <Briefcase className="size-4" />
+                  <span className="hidden sm:inline">Create job from quote</span>
+                  <span className="sm:hidden">Job from quote</span>
+                </button>
               )}
 
               {canTransferToInvoice && (

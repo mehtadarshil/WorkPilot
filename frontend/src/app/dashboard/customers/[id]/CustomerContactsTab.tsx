@@ -55,8 +55,10 @@ type ContactForm = {
   prefers_letter: boolean;
 };
 
+const TITLE_OPTIONS = ['Mr', 'Mrs', 'Miss', 'Ms', 'Dr'] as const;
+
 const emptyForm: ContactForm = {
-  title: 'Mr',
+  title: '',
   first_name: '',
   surname: '',
   position: '',
@@ -117,7 +119,7 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
   const startEdit = (c: Contact) => {
     setEditing(c);
     setForm({
-      title: c.title || 'Mr',
+      title: c.title ?? '',
       first_name: c.first_name || '',
       surname: c.surname || '',
       position: c.position || '',
@@ -148,7 +150,7 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
     setError(null);
     try {
       const payload = {
-        title: form.title,
+        title: form.title.trim() || null,
         first_name: form.first_name || null,
         surname: form.surname,
         position: form.position || null,
@@ -266,8 +268,20 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
                   <div className="space-y-3">
                     <div className="grid grid-cols-[110px_1fr] items-center gap-2">
                       <label className="text-sm text-slate-600">Title</label>
-                      <select value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
-                        <option>Mr</option><option>Mrs</option><option>Miss</option><option>Ms</option><option>Dr</option>
+                      <select
+                        value={form.title}
+                        onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                        className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                      >
+                        <option value="">— None —</option>
+                        {form.title && !TITLE_OPTIONS.includes(form.title as (typeof TITLE_OPTIONS)[number]) ? (
+                          <option value={form.title}>{form.title}</option>
+                        ) : null}
+                        {TITLE_OPTIONS.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div className="grid grid-cols-[110px_1fr] items-center gap-2">

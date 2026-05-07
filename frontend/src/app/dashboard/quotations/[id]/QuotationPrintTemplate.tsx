@@ -60,6 +60,38 @@ function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
 }
 
+function normalizeAddressWs(s: string): string {
+  return s.trim().replace(/\s+/g, ' ').replace(/\uFF0C/g, ',');
+}
+
+/**
+ * Second line only: omit the site title when it is repeated as the start of the formatted address.
+ * Handles "Name, Town, …" (split on comma) and "Name, …" with minor spacing / full-width comma differences.
+ */
+function workSiteAddressWithoutNamePrefix(siteName: string, fullAddress: string): string {
+  const name = normalizeAddressWs(siteName);
+  const addr = normalizeAddressWs(fullAddress);
+  if (!addr) return '';
+  if (!name) return addr;
+  const lowerAddr = addr.toLowerCase();
+  const lowerName = name.toLowerCase();
+  if (lowerAddr === lowerName) return '';
+
+  const segments = addr.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+  if (segments.length >= 2 && segments[0]!.toLowerCase() === lowerName) {
+    return segments.slice(1).join(', ');
+  }
+
+  if (lowerAddr.startsWith(lowerName) && addr.length > name.length) {
+    const rawTail = addr.slice(name.length);
+    if (!/^[\s,;:\-–—]/.test(rawTail)) return addr;
+    const tail = rawTail.replace(/^[\s,;:\-–—]+/, '').trim();
+    return tail.length > 0 ? tail : '';
+  }
+
+  return addr;
+}
+
 type Props = {
   quotation: QuotationPrintModel;
   settings?: QuotationPrintSettings;
@@ -74,6 +106,14 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
   const accentColor = s?.quotation_accent_color || '#14B8A6';
   const accentEndColor = s?.quotation_accent_end_color || s?.quotation_accent_color || '#0D9488';
   const customerAddrLine = quotation.customer_address?.trim() || '—';
+  const customerBillToName = quotation.customer_full_name?.trim() || '—';
+  const customerEmail = quotation.customer_email?.trim();
+  const customerPhone = quotation.customer_phone?.trim();
+  const workSiteName = quotation.work_site_name?.trim() ?? '';
+  const workSiteAddress = quotation.work_site_address?.trim() ?? '';
+  const hasWorkSiteBlock = Boolean(workSiteName || workSiteAddress);
+  const workSiteAddressSecondLine =
+    workSiteName && workSiteAddress ? workSiteAddressWithoutNamePrefix(workSiteName, workSiteAddress) : workSiteAddress;
 
   const shell =
     shellClassName ??
@@ -119,44 +159,64 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 bg-slate-50/30 px-8 py-8 sm:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Bill To</p>
-            <p className="text-base font-bold text-slate-900">{quotation.customer_full_name}</p>
-            {quotation.customer_email && <p className="mt-1 text-sm font-medium text-slate-500">{quotation.customer_email}</p>}
-            {quotation.customer_phone && <p className="text-sm font-medium text-slate-500">{quotation.customer_phone}</p>}
-            <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
-            <p className="mt-1 text-sm leading-relaxed text-slate-600">{customerAddrLine}</p>
-          </div>
-          {(quotation.work_site_name?.trim() || quotation.work_site_address?.trim()) && (
-            <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
-              {quotation.work_site_name?.trim() && (
-                <p className="text-base font-bold text-slate-900">{quotation.work_site_name.trim()}</p>
-              )}
-              {quotation.work_site_address?.trim() && (
-                <p className={`text-sm leading-relaxed text-slate-600 ${quotation.work_site_name?.trim() ? 'mt-1' : ''}`}>
-                  {quotation.work_site_address.trim()}
-                </p>
-              )}
+      <div className="space-y-4 bg-slate-50/30 px-8 py-8">
+        <div className="w-full rounded-xl border border-slate-100 bg-white p-5 shadow-sm print-break-avoid">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm leading-snug text-slate-900 text-pretty">
+                <span className="font-bold">Bill to: </span>
+                <span className="font-semibold">{customerBillToName}</span>
+                {(customerEmail || customerPhone) && (
+                  <>
+                    {' '}
+                    <span className="text-slate-400">-</span>
+                    {' '}
+                    {customerEmail ? <span className="font-medium text-slate-600">{customerEmail}</span> : null}
+                    {customerEmail && customerPhone ? (
+                      <>
+                        {' '}
+                        <span className="text-slate-400">-</span>
+                        {' '}
+                      </>
+                    ) : null}
+                    {customerPhone ? <span className="font-medium text-slate-600">{customerPhone}</span> : null}
+                  </>
+                )}
+              </p>
+              <p className="text-sm leading-snug text-slate-600 text-pretty">
+                <span className="font-bold text-slate-800">Customer address: </span>
+                <span>{customerAddrLine}</span>
+              </p>
             </div>
-          )}
-          {quotation.quotation_custom_address?.trim() &&
-            !quotation.work_site_name?.trim() &&
-            !quotation.work_site_address?.trim() && (
-              <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Billing address</p>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{quotation.quotation_custom_address.trim()}</p>
-              </div>
-            )}
-        </div>
-        <div className="flex flex-col gap-6 sm:items-end">
-          <div className="text-right">
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Valid Until</p>
-            <p className="mt-1 text-base font-bold text-slate-900">{formatDate(quotation.valid_until)}</p>
+            <div className="shrink-0 text-left sm:text-right">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Valid Until</p>
+              <p className="mt-1 text-base font-bold text-slate-900">{formatDate(quotation.valid_until)}</p>
+            </div>
           </div>
         </div>
+        {quotation.quotation_custom_address?.trim() && !hasWorkSiteBlock && (
+          <div className="w-full rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Billing address</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{quotation.quotation_custom_address.trim()}</p>
+          </div>
+        )}
+        {hasWorkSiteBlock && (
+          <div className="w-full rounded-xl border border-slate-100 bg-white p-5 shadow-sm print-break-avoid">
+            <p className="text-base leading-relaxed text-slate-900">
+              {workSiteName ? (
+                <>
+                  <span className="font-bold">Work/site address : </span>
+                  <span className="font-normal">{workSiteName},</span>
+                </>
+              ) : (
+                <span className="font-bold">Work/site address</span>
+              )}
+            </p>
+            {workSiteAddressSecondLine ? (
+              <p className="mt-1 text-sm font-normal leading-relaxed text-slate-600">{workSiteAddressSecondLine}</p>
+            ) : null}
+          </div>
+        )}
       </div>
       
       {quotation.description && (

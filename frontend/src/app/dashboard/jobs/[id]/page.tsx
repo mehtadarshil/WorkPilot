@@ -11,6 +11,7 @@ import JobFilesTab from './JobFilesTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
 import { ArrowLeft, Edit, Calendar, Clock, User, Clipboard, FileText, Info, Wrench, Package, ScrollText, Bell, Paperclip, Receipt, PoundSterling, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
+import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 
 interface JobContact {
   id: number;
@@ -57,7 +58,7 @@ interface JobDetails {
   job_notes: string | null;
   quoted_amount: number | null;
   customer_reference: string | null;
-  completed_service_items?: string[] | null;
+  completed_service_items?: unknown;
   /** Set when the job is scoped to a customer work / site address. */
   work_address?: JobWorkAddress | null;
 }
@@ -108,6 +109,8 @@ interface OfficeTask {
   completed_at: string | null;
   completed_by_name?: string | null;
   completion_source?: 'web' | 'mobile' | string | null;
+  reminder_at?: string | null;
+  reminder_sent_at?: string | null;
   created_at: string;
 }
 
@@ -635,6 +638,16 @@ export default function JobDetailsPage() {
     [token, viewingEvent],
   );
 
+  const openOfficeTasks = useMemo(() => {
+    const open = officeTasks.filter((t) => !t.completed);
+    return [...open].sort((a, b) => {
+      const ra = a.reminder_at ? new Date(a.reminder_at).getTime() : Infinity;
+      const rb = b.reminder_at ? new Date(b.reminder_at).getTime() : Infinity;
+      if (ra !== rb) return ra - rb;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [officeTasks]);
+
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading job details...</div>;
   if (!job) return (
     <div className="p-8">
@@ -659,17 +672,15 @@ export default function JobDetailsPage() {
     'Details',
     'Job report',
     'Client panel',
-    'Office Task',
+    'Reminders',
     'Parts',
     'Certificates',
     'Notes',
-    'Reminders',
     'Files',
     'Invoices',
     'Costs',
     'Items to invoice',
   ];
-  const openOfficeTasks = officeTasks.filter((t) => !t.completed);
 
   return (
     <div className="flex h-full flex-col bg-background-light">
@@ -974,7 +985,7 @@ export default function JobDetailsPage() {
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to manage the client panel.</div>
             )
-          ) : activeTab === 'Office Task' ? (
+          ) : activeTab === 'Reminders' ? (
             <JobOfficeTasksTab
               jobId={id}
               tasks={officeTasks}
@@ -1048,9 +1059,7 @@ export default function JobDetailsPage() {
                     <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
                        <span className="text-[13px] font-bold text-slate-500">Completed services</span>
                        <span className="text-[13px] text-slate-800 font-medium col-span-2">
-                        {Array.isArray(job.completed_service_items) && job.completed_service_items.length > 0
-                          ? job.completed_service_items.join(', ')
-                          : 'None selected'}
+                        {formatCompletedServicesForJobDetail(job.completed_service_items)}
                        </span>
                     </div>
                  </div>
@@ -1073,12 +1082,12 @@ export default function JobDetailsPage() {
             </div>
           </div>
 
-          {/* Open Office Tasks Card */}
+          {/* Open job reminders card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[17px] font-black tracking-tight text-slate-800">Open office tasks</h2>
-                <button onClick={() => setActiveTab('Office Task')} className="text-sm font-bold text-[#14B8A6] hover:underline">Manage tasks</button>
+                <h2 className="text-[17px] font-black tracking-tight text-slate-800">Open reminders</h2>
+                <button onClick={() => setActiveTab('Reminders')} className="text-sm font-bold text-[#14B8A6] hover:underline">Manage reminders</button>
               </div>
             </div>
             {openOfficeTasks.length === 0 ? (
@@ -1086,15 +1095,15 @@ export default function JobDetailsPage() {
                  <div className="bg-slate-100 p-6 rounded-full border border-slate-200 mb-4">
                     <Info className="size-10 text-slate-400 stroke-[1.5]" />
                  </div>
-                 <p className="text-[15px] font-bold text-slate-500">No open office tasks saved</p>
+                 <p className="text-[15px] font-bold text-slate-500">No open reminders saved</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[13px]">
                   <thead className="bg-[#FBFCFD] border-b border-slate-100">
                     <tr>
-                      <th className="px-6 py-3 font-bold text-slate-600">Date</th>
-                      <th className="px-6 py-3 font-bold text-slate-600">Description</th>
+                      <th className="px-6 py-3 font-bold text-slate-600">Reminder date</th>
+                      <th className="px-6 py-3 font-bold text-slate-600">Note</th>
                       <th className="px-6 py-3 font-bold text-slate-600">Created by</th>
                       <th className="px-6 py-3 font-bold text-slate-600">Assignee</th>
                     </tr>
@@ -1102,7 +1111,14 @@ export default function JobDetailsPage() {
                   <tbody className="divide-y divide-slate-50">
                     {openOfficeTasks.map((task) => (
                       <tr key={task.id} className="hover:bg-slate-50/40">
-                        <td className="px-6 py-4 text-slate-600">{dayjs(task.created_at).format('ddd D MMM YYYY [at] h:mm a')}</td>
+                        <td className="px-6 py-4 text-slate-600">
+                          {task.reminder_at
+                            ? dayjs(task.reminder_at).format('ddd D MMM YYYY')
+                            : '—'}
+                          {task.reminder_sent_at ? (
+                            <span className="ml-1 block text-[11px] font-semibold uppercase text-emerald-600">Notified</span>
+                          ) : null}
+                        </td>
                         <td className="px-6 py-4 text-slate-800">{task.description}</td>
                         <td className="px-6 py-4 text-slate-700">{task.created_by_name}</td>
                         <td className="px-6 py-4 text-slate-700">{task.assignee_name || '-'}</td>

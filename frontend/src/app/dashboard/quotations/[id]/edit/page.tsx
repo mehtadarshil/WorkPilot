@@ -60,7 +60,6 @@ export default function EditQuotationPage() {
   const [quotationDate, setQuotationDate] = useState('');
   const [validUntil, setValidUntil] = useState('');
   const [currency, setCurrency] = useState('GBP');
-  const [notes, setNotes] = useState('');
   const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
@@ -87,7 +86,6 @@ export default function EditQuotationPage() {
       setQuotationDate(q.quotation_date.split('T')[0]);
       setValidUntil(q.valid_until.split('T')[0]);
       setCurrency(q.currency);
-      setNotes(q.notes ?? '');
       setDescription(q.description ?? '');
       setWorkAddressId(q.quotation_work_address_id ?? null);
       if (q.quotation_work_address_id) {
@@ -217,7 +215,6 @@ export default function EditQuotationPage() {
         quotation_date: quotationDate,
         valid_until: validUntil,
         currency: currency.trim(),
-        notes: notes.trim() || null,
         description: description.trim() || null,
         state,
         line_items: validItems.map((li) => ({
@@ -392,16 +389,33 @@ export default function EditQuotationPage() {
                 <p className="text-sm font-medium text-slate-800">Address on quotation</p>
                 <label className="block text-sm">
                   <span className="font-medium text-slate-700">Work / site address (optional)</span>
-                  <div className="mt-1">
-                    <WorkAddressSelect
-                      options={workAddressOptions}
-                      value={workAddressId}
-                      onChange={setWorkAddressId}
+                  <div className="mt-1 flex gap-2">
+                    <div className="min-w-0 flex-1">
+                      <WorkAddressSelect
+                        options={workAddressOptions}
+                        value={workAddressId}
+                        onChange={setWorkAddressId}
+                        disabled={customerId == null}
+                        emptyButtonLabel="None — use customer or custom address below"
+                        emptyMenuLabel="None — use customer or custom address below"
+                        className="w-full"
+                      />
+                    </div>
+                    <button
+                      type="button"
                       disabled={customerId == null}
-                      emptyButtonLabel="None — use customer or custom address below"
-                      emptyMenuLabel="None — use customer or custom address below"
-                      className="w-full"
-                    />
+                      onClick={() => {
+                        if (customerId == null) return;
+                        window.open(
+                          `/dashboard/customers/${customerId}?tab=${encodeURIComponent('Work address')}`,
+                          '_blank',
+                        );
+                      }}
+                      className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                      title="Add work / site address"
+                    >
+                      <Plus className="size-4" />
+                    </button>
                   </div>
                 </label>
                 {workAddressOptions.length === 0 && customerId != null ? (
@@ -458,15 +472,6 @@ export default function EditQuotationPage() {
                   rows={4}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                   placeholder="Summarize the project scope or works involved..."
-                />
-              </label>
-              <label className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">Notes (internal reference)</span>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                 />
               </label>
             </div>

@@ -151,6 +151,18 @@ function normalizeActivities(activities: QuotationActivity[], quotationNumber: s
           title: 'Transferred to invoice',
           body: '',
         };
+      case 'linked_job':
+      case 'converted_to_job': {
+        const jid = d.job_id != null ? String(d.job_id) : '';
+        return {
+          id: a.id,
+          kind: 'system',
+          action: a.action,
+          created_at: a.created_at,
+          title: a.action === 'linked_job' ? 'Linked to job' : 'Converted to job',
+          body: jid ? `Job #${jid}` : '',
+        };
+      }
       default:
         return {
           id: a.id,

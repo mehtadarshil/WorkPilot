@@ -59,7 +59,6 @@ export default function EditInvoicePage() {
   const [invoiceDate, setInvoiceDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
-  const [notes, setNotes] = useState('');
   const [description, setDescription] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
@@ -91,7 +90,6 @@ export default function EditInvoicePage() {
       setInvoiceDate(inv.invoice_date);
       setDueDate(inv.due_date);
       setCurrency(inv.currency);
-      setNotes(inv.notes ?? '');
       setDescription(inv.description ?? '');
       setCustomerReference(inv.customer_reference ?? '');
       if (inv.invoice_work_address_id) {
@@ -182,7 +180,6 @@ export default function EditInvoicePage() {
         invoice_date: invoiceDate,
         due_date: dueDate,
         currency: currency.trim(),
-        notes: notes.trim() || null,
         description: description.trim() || null,
         ...addressPatch,
         customer_reference: customerReference.trim() || null,
@@ -432,15 +429,6 @@ export default function EditInvoicePage() {
                   rows={4}
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                   placeholder="Summarize the project scope or works involved..."
-                />
-              </label>
-              <label className="block text-sm sm:col-span-2">
-                <span className="font-medium text-slate-700">Notes (internal reference)</span>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                 />
               </label>
             </div>

@@ -28,6 +28,17 @@ import crypto from 'crypto';
 import { createReadStream } from 'fs';
 import fs from 'fs/promises';
 import { mountJobClientPanelRoutes } from './jobClientPanelRoutes';
+import { runAllScheduledReminders } from './reminders/runAllScheduledReminders';
+import {
+  SERVICE_REMINDER_INTERVAL_UNITS,
+  SERVICE_REMINDER_EARLY_UNITS,
+  SERVICE_REMINDER_RECIPIENT_MODES,
+  normalizeCompletedServiceItemsForDb,
+  utcDateOnlyFromDate,
+  addCalendarInterval,
+  resolveServiceReminderRecipientEmail,
+} from './reminders/serviceReminderHelpers';
+import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderCustomerPreview';
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
 import {
@@ -51,6 +62,12 @@ import {
 } from './mobileFieldAccess';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateQuotationPdfBuffer } from './quotationPdf';
+import { normalizeTemplateSiteReportDocument, collectTemplateDocumentImageIds } from './siteReportTemplates/documentNormalize';
+import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
+import { parseSiteReportTemplateDefinition } from './siteReportTemplates/validateDefinition';
+import { ensureFireRiskAssessmentTemplate, fetchTemplateDefinition } from './siteReportTemplates/seedAndFetch';
+import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefinition';
+import { generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -92,6 +109,45 @@ async function ensureDiaryTechnicalNoteDir(diaryEventId: number, noteId: number)
 
 async function ensureCustomerFilesDir(customerId: number): Promise<string> {
   const dir = path.join(getCustomerFilesRootDir(), String(customerId));
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+function getCustomerSiteReportImagesRootDir(): string {
+  const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_DIR?.trim();
+  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-site-report-images');
+}
+
+async function ensureCustomerSiteReportImageDir(customerId: number, reportId: number): Promise<string> {
+  const dir = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId));
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+async function assertSiteReportTemplateImageIdsBelongToReport(
+  client: Pool | PoolClient,
+  reportId: number,
+  doc: TemplateSiteReportDocument,
+): Promise<boolean> {
+  const arr = collectTemplateDocumentImageIds(doc);
+  if (arr.length === 0) return true;
+  const r = await client.query('SELECT id FROM customer_site_report_images WHERE report_id = $1 AND id = ANY($2::int[])', [
+    reportId,
+    arr,
+  ]);
+  return r.rowCount === arr.length;
+}
+
+const QUOTATION_INTERNAL_NOTE_MAX_FILES = DIARY_EXTRA_MAX_FILES;
+const QUOTATION_INTERNAL_NOTE_FILE_MAX_BYTES = DIARY_EXTRA_FILE_MAX_BYTES;
+
+function getQuotationInternalNotesRootDir(): string {
+  const raw = process.env.QUOTATION_INTERNAL_NOTE_FILES_DIR?.trim();
+  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'quotation-internal-notes');
+}
+
+async function ensureQuotationInternalNoteDir(quotationId: number, noteId: number): Promise<string> {
+  const dir = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId));
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
@@ -688,6 +744,9 @@ async function initDb() {
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_sms BOOLEAN DEFAULT false;`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_email BOOLEAN DEFAULT false;`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS prefers_letter BOOLEAN DEFAULT false;`);
+  await pool.query(
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS invoice_reminders_enabled BOOLEAN NOT NULL DEFAULT true`,
+  );
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS lead_source VARCHAR(255);`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS price_book_id INTEGER REFERENCES price_books(id) ON DELETE SET NULL;`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS w3w VARCHAR(255);`);
@@ -826,6 +885,60 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_files_work_address_id ON customer_files(work_address_id) WHERE work_address_id IS NOT NULL`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_site_reports (
+      id SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE CASCADE,
+      report_title VARCHAR(500),
+      document JSONB NOT NULL DEFAULT '{"sections":[]}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_site_reports_customer_id ON customer_site_reports(customer_id)`);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_site_reports_scope ON customer_site_reports (customer_id, COALESCE(work_address_id, -1))`,
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_site_report_images (
+      id SERIAL PRIMARY KEY,
+      report_id INTEGER NOT NULL REFERENCES customer_site_reports(id) ON DELETE CASCADE,
+      stored_filename VARCHAR(255) NOT NULL,
+      original_filename VARCHAR(500) NOT NULL,
+      content_type VARCHAR(255),
+      byte_size BIGINT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_site_report_images_report_id ON customer_site_report_images(report_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_report_templates (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(100),
+      definition JSONB NOT NULL,
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_report_templates_created_by ON site_report_templates(created_by)`);
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ux_site_report_templates_owner_slug ON site_report_templates (created_by, slug) WHERE slug IS NOT NULL`,
+  );
+
+  await pool.query(`ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS template_id INTEGER REFERENCES site_report_templates(id) ON DELETE SET NULL`);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_customer_site_reports_template_id ON customer_site_reports(template_id) WHERE template_id IS NOT NULL`,
+  );
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_communications (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -934,6 +1047,8 @@ async function initDb() {
   await pool.query(
     `ALTER TABLE office_tasks ADD COLUMN IF NOT EXISTS completion_source VARCHAR(20)`,
   );
+  await pool.query(`ALTER TABLE office_tasks ADD COLUMN IF NOT EXISTS reminder_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE office_tasks ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS service_checklist_items (
@@ -948,6 +1063,53 @@ async function initDb() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_checklist_items_created_by ON service_checklist_items(created_by)`);
+  await pool.query(`ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS reminder_interval_n INTEGER`);
+  await pool.query(`ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS reminder_interval_unit VARCHAR(20)`);
+  await pool.query(`ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS reminder_early_n INTEGER`);
+  await pool.query(`ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS reminder_early_unit VARCHAR(20)`);
+  await pool.query(
+    `ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS customer_reminder_weeks_before INTEGER`,
+  );
+  await pool.query(
+    `ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS customer_email_subject TEXT`,
+  );
+  await pool.query(
+    `ALTER TABLE service_checklist_items ADD COLUMN IF NOT EXISTS customer_email_body_html TEXT`,
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS service_reminder_settings (
+      created_by INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      automated_enabled BOOLEAN NOT NULL DEFAULT true,
+      recipient_mode VARCHAR(32) NOT NULL DEFAULT 'customer_account'
+        CHECK (recipient_mode IN ('customer_account', 'job_contact', 'primary_contact')),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS service_reminder_sent (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      service_name TEXT NOT NULL,
+      phase VARCHAR(8) NOT NULL CHECK (phase IN ('early', 'due')),
+      renewal_due_date DATE NOT NULL,
+      tenant_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (job_id, service_name, phase, renewal_due_date)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_service_reminder_sent_tenant ON service_reminder_sent(tenant_user_id)`,
+  );
+  await pool.query(
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS service_reminders_enabled BOOLEAN NOT NULL DEFAULT true`,
+  );
+  await pool.query(
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS service_reminder_custom_email VARCHAR(320)`,
+  );
+  await pool.query(
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS service_reminder_recipient_mode VARCHAR(32)`,
+  );
 
   // Enhanced job fields
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_description_id INTEGER REFERENCES job_descriptions(id) ON DELETE SET NULL`);
@@ -1112,6 +1274,22 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_report_job_description_questions (
+      id SERIAL PRIMARY KEY,
+      job_description_id INTEGER NOT NULL REFERENCES job_descriptions(id) ON DELETE CASCADE,
+      sort_order INT NOT NULL DEFAULT 0,
+      question_type VARCHAR(40) NOT NULL,
+      prompt TEXT NOT NULL,
+      helper_text TEXT,
+      required BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_job_report_jd_questions_desc ON job_report_job_description_questions(job_description_id)`,
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_report_answers (
@@ -1380,6 +1558,7 @@ async function initDb() {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_quotation_internal_notes_quotation_id ON quotation_internal_notes(quotation_id)`,
   );
+  await pool.query(`ALTER TABLE quotation_internal_notes ADD COLUMN IF NOT EXISTS media JSONB NOT NULL DEFAULT '[]'::jsonb`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_client_report_default_questions (
@@ -1531,6 +1710,27 @@ async function initDb() {
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS officer_staff_reminders (
+      id SERIAL PRIMARY KEY,
+      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
+      reminder_message TEXT NOT NULL,
+      due_date DATE NOT NULL,
+      notify_at DATE NOT NULL,
+      extra_notify_emails TEXT,
+      last_notified_at TIMESTAMPTZ,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_officer_staff_reminders_officer ON officer_staff_reminders(officer_id)`,
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_officer_staff_reminders_pending ON officer_staff_reminders(notify_at) WHERE last_notified_at IS NULL`,
+  );
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS timesheet_entries (
@@ -1712,6 +1912,15 @@ function persistedDiaryStatus(status: unknown): string {
   return raw;
 }
 
+/** Field officers may save job report drafts while travelling or on site (before final submit). */
+function diaryStatusAllowsJobReportDraft(status: unknown): boolean {
+  const n = normalizeDiaryStatusForTimesheet(status);
+  if (n === 'travelling_to_site' || n === 'arrived_at_site') return true;
+  if (typeof status !== 'string') return false;
+  const s = status.trim().toLowerCase().replace(/\s+/g, '_');
+  return s === 'on_site';
+}
+
 async function resolveAbortReasonLabel(
   db: Pick<Pool, 'query'> | Pick<PoolClient, 'query'>,
   raw: unknown,
@@ -1802,19 +2011,114 @@ async function countJobReportQuestionsForJob(
   return parseInt(r.rows[0]?.c || '0', 10);
 }
 
-/** Copy global default checklist into a new job (no-op if default is empty). */
-async function copyDefaultJobReportTemplateToJob(jobId: number): Promise<void> {
-  const n = await pool.query<{ c: string }>(
-    'SELECT COUNT(*)::text AS c FROM job_report_default_questions',
-  );
-  if (parseInt(n.rows[0]?.c || '0', 10) === 0) return;
-  await pool.query(
-    `INSERT INTO job_report_questions (job_id, sort_order, question_type, prompt, helper_text, required)
-     SELECT $1, sort_order, question_type, prompt, helper_text, required
-     FROM job_report_default_questions
-     ORDER BY sort_order, id`,
+type JobReportTemplateRow = {
+  sort_order: number;
+  question_type: string;
+  prompt: string;
+  helper_text: string | null;
+  required: boolean;
+};
+
+function parseOptionalJobDescriptionId(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.trunc(raw)
+      : parseInt(String(raw), 10);
+  return n != null && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function jobReportQuestionDedupeKey(questionType: string, prompt: string): string {
+  return `${String(questionType).trim().toLowerCase()}|${String(prompt).trim().toLowerCase()}`;
+}
+
+/**
+ * When a job's job description is set or changed after creation, append that description's
+ * report template rows that are not already on the job (same type + prompt).
+ */
+async function mergeJobDescriptionReportQuestionsIntoJob(
+  db: Pool,
+  jobId: number,
+  jobDescriptionId: number,
+): Promise<void> {
+  const id = Math.trunc(jobDescriptionId);
+  if (!Number.isFinite(id) || id < 1) return;
+
+  const existing = await db.query<{ question_type: string; prompt: string }>(
+    `SELECT question_type, prompt FROM job_report_questions WHERE job_id = $1`,
     [jobId],
   );
+  const seen = new Set<string>();
+  for (const r of existing.rows) {
+    seen.add(jobReportQuestionDedupeKey(r.question_type, r.prompt));
+  }
+
+  const maxRes = await db.query<{ m: string }>(
+    `SELECT COALESCE(MAX(sort_order), -1)::text AS m FROM job_report_questions WHERE job_id = $1`,
+    [jobId],
+  );
+  let order = parseInt(maxRes.rows[0]?.m ?? '-1', 10);
+  if (!Number.isFinite(order)) order = -1;
+
+  const tpl = await db.query<JobReportTemplateRow>(
+    `SELECT sort_order, question_type, prompt, helper_text, required
+     FROM job_report_job_description_questions
+     WHERE job_description_id = $1
+     ORDER BY sort_order ASC, id ASC`,
+    [id],
+  );
+
+  for (const row of tpl.rows) {
+    const key = jobReportQuestionDedupeKey(row.question_type, row.prompt);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    order += 1;
+    await db.query(
+      `INSERT INTO job_report_questions (job_id, sort_order, question_type, prompt, helper_text, required)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [jobId, order, row.question_type, row.prompt, row.helper_text, row.required],
+    );
+  }
+}
+
+/**
+ * Seeds `job_report_questions` for a new job: global default (Settings → Job report template) first,
+ * then extra rows from the job description template (Settings → Job descriptions → Job report for that type).
+ */
+async function seedJobReportQuestionsForNewJob(jobId: number, jobDescriptionId: number | null): Promise<void> {
+  const globalRes = await pool.query<JobReportTemplateRow>(
+    `SELECT sort_order, question_type, prompt, helper_text, required
+     FROM job_report_default_questions
+     ORDER BY sort_order ASC, id ASC`,
+  );
+  let descRes = { rows: [] as JobReportTemplateRow[] };
+  const jd = jobDescriptionId != null && Number.isFinite(jobDescriptionId) ? Math.trunc(jobDescriptionId) : null;
+  if (jd != null && jd > 0) {
+    descRes = await pool.query<JobReportTemplateRow>(
+      `SELECT sort_order, question_type, prompt, helper_text, required
+       FROM job_report_job_description_questions
+       WHERE job_description_id = $1
+       ORDER BY sort_order ASC, id ASC`,
+      [jd],
+    );
+  }
+  if (globalRes.rows.length === 0 && descRes.rows.length === 0) return;
+
+  let order = 0;
+  for (const row of globalRes.rows) {
+    await pool.query(
+      `INSERT INTO job_report_questions (job_id, sort_order, question_type, prompt, helper_text, required)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [jobId, order++, row.question_type, row.prompt, row.helper_text, row.required],
+    );
+  }
+  for (const row of descRes.rows) {
+    await pool.query(
+      `INSERT INTO job_report_questions (job_id, sort_order, question_type, prompt, helper_text, required)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [jobId, order++, row.question_type, row.prompt, row.helper_text, row.required],
+    );
+  }
 }
 
 async function closeOpenTimesheetSegments(client: PoolClient, officerId: number): Promise<void> {
@@ -2417,7 +2721,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
 
     const myOpenOffice = hasJobs
       ? await pool.query(
-          `SELECT ot.id, ot.job_id, ot.description, ot.created_at,
+          `SELECT ot.id, ot.job_id, ot.description, ot.created_at, ot.reminder_at,
               COALESCE(usr.full_name, usr.email, 'System') AS created_by_name,
               j.title AS job_title, j.state AS job_state, j.updated_at AS job_updated_at
        FROM office_tasks ot
@@ -2432,7 +2736,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
          )
        )
          AND ot.completed = false
-       ORDER BY ot.created_at DESC
+       ORDER BY ot.reminder_at ASC NULLS LAST, ot.created_at DESC
        LIMIT 50`,
           [oid, mentionTag],
         )
@@ -2518,6 +2822,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
         job_state: (r.job_state as string) ?? '',
         job_updated_at: (r.job_updated_at as Date).toISOString(),
         created_at: (r.created_at as Date).toISOString(),
+        reminder_at: r.reminder_at ? (r.reminder_at as Date).toISOString() : null,
       })),
       my_office_tasks_completed: myDoneOffice.rows.map((r: Record<string, unknown>) => ({
         id: Number(r.id),
@@ -2891,7 +3196,7 @@ app.get('/api/customers', authenticate, requireTenantCrmAccess('customers'), asy
       `SELECT id, full_name, email, phone, company, address, city, region, country, status, last_contact, notes, customer_type_id,
               address_line_1, address_line_2, address_line_3, town, county, postcode, landline, credit_days, contact_title, contact_first_name,
               contact_surname, contact_position, contact_mobile, contact_landline, contact_email, prefers_phone, prefers_sms,
-              prefers_email, prefers_letter, lead_source, price_book_id,
+              prefers_email, prefers_letter, COALESCE(invoice_reminders_enabled, true) AS invoice_reminders_enabled, lead_source, price_book_id,
               created_at, updated_at, created_by
        FROM customers ${whereClause} ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       listParams,
@@ -2983,6 +3288,7 @@ app.get('/api/customers', authenticate, requireTenantCrmAccess('customers'), asy
       prefers_sms: !!r.prefers_sms,
       prefers_email: !!r.prefers_email,
       prefers_letter: !!r.prefers_letter,
+      invoice_reminders_enabled: r.invoice_reminders_enabled !== false,
       lead_source: r.lead_source ?? null,
       price_book_id: r.price_book_id ?? null,
       created_at: r.created_at,
@@ -3053,6 +3359,32 @@ app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'),
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.get(
+  '/api/customers/:id/service-reminder-schedule',
+  authenticate,
+  requireTenantCrmAccess('customers'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    try {
+      const ownerRes = await pool.query<{ created_by: number }>(
+        `SELECT created_by FROM customers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+        isSuperAdmin ? [id] : [id, userId],
+      );
+      if ((ownerRes.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+      const tenantUserId = ownerRes.rows[0]!.created_by;
+      const schedule = await getCustomerServiceReminderSchedule(pool, { customerId: id, tenantUserId });
+      if (!schedule) return res.status(404).json({ message: 'Customer not found' });
+      return res.json(schedule);
+    } catch (error) {
+      console.error('Get service reminder schedule error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
 
 app.post('/api/customers/:id/specific-notes', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const idRaw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -3238,6 +3570,8 @@ app.post('/api/customers', authenticate, requireTenantCrmAccess('customers'), as
         prefers_sms: !!c.prefers_sms,
         prefers_email: !!c.prefers_email,
         prefers_letter: !!c.prefers_letter,
+        invoice_reminders_enabled: c.invoice_reminders_enabled !== false,
+        service_reminders_enabled: c.service_reminders_enabled !== false,
         lead_source: c.lead_source ?? null,
         price_book_id: c.price_book_id ?? null,
         created_at: c.created_at,
@@ -3307,6 +3641,34 @@ app.patch('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'
   if (body.prefers_sms !== undefined) { updates.push(`prefers_sms = $${idx++}`); values.push(!!body.prefers_sms); }
   if (body.prefers_email !== undefined) { updates.push(`prefers_email = $${idx++}`); values.push(!!body.prefers_email); }
   if (body.prefers_letter !== undefined) { updates.push(`prefers_letter = $${idx++}`); values.push(!!body.prefers_letter); }
+  if (body.invoice_reminders_enabled !== undefined) {
+    updates.push(`invoice_reminders_enabled = $${idx++}`);
+    values.push(!!body.invoice_reminders_enabled);
+  }
+  if (body.service_reminders_enabled !== undefined) {
+    updates.push(`service_reminders_enabled = $${idx++}`);
+    values.push(!!body.service_reminders_enabled);
+  }
+  if (body.service_reminder_custom_email !== undefined) {
+    const raw =
+      typeof body.service_reminder_custom_email === 'string'
+        ? (body.service_reminder_custom_email as string).trim()
+        : '';
+    updates.push(`service_reminder_custom_email = $${idx++}`);
+    values.push(raw ? raw.toLowerCase() : null);
+  }
+  if (body.service_reminder_recipient_mode !== undefined) {
+    const v = body.service_reminder_recipient_mode;
+    if (v === null || v === '') {
+      updates.push(`service_reminder_recipient_mode = $${idx++}`);
+      values.push(null);
+    } else if (typeof v === 'string' && SERVICE_REMINDER_RECIPIENT_MODES.has(v.trim())) {
+      updates.push(`service_reminder_recipient_mode = $${idx++}`);
+      values.push(v.trim());
+    } else {
+      return res.status(400).json({ message: 'Invalid service_reminder_recipient_mode' });
+    }
+  }
   if (str('lead_source') !== undefined) { updates.push(`lead_source = $${idx++}`); values.push(str('lead_source')); }
   if (body.price_book_id !== undefined) { updates.push(`price_book_id = $${idx++}`); values.push(typeof body.price_book_id === 'number' ? body.price_book_id : null); }
   if (str('w3w') !== undefined) { updates.push(`w3w = $${idx++}`); values.push(str('w3w')); }
@@ -3365,6 +3727,10 @@ app.patch('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'
         prefers_sms: !!(c as any).prefers_sms,
         prefers_email: !!(c as any).prefers_email,
         prefers_letter: !!(c as any).prefers_letter,
+        invoice_reminders_enabled: (c as any).invoice_reminders_enabled !== false,
+        service_reminders_enabled: (c as any).service_reminders_enabled !== false,
+        service_reminder_custom_email: (c as any).service_reminder_custom_email ?? null,
+        service_reminder_recipient_mode: (c as any).service_reminder_recipient_mode ?? null,
         lead_source: (c as any).lead_source ?? null,
         price_book_id: (c as any).price_book_id ?? null,
         created_at: c.created_at,
@@ -4094,6 +4460,190 @@ app.delete('/api/officer-certifications/:id', authenticate, requireTenantCrmAcce
   }
 });
 
+app.get('/api/officers/:id/staff-reminders', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
+  const officerId = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    const officerCheck = await pool.query(
+      `SELECT id FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+      isSuperAdmin ? [officerId] : [officerId, userId],
+    );
+    if ((officerCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
+    const r = await pool.query(
+      `SELECT id, officer_id, reminder_message, due_date::text AS due_date, notify_at::text AS notify_at,
+              extra_notify_emails, last_notified_at, created_at, updated_at
+       FROM officer_staff_reminders WHERE officer_id = $1 ORDER BY notify_at ASC, id ASC`,
+      [officerId],
+    );
+    return res.json({
+      reminders: r.rows.map((row: Record<string, unknown>) => ({
+        id: Number(row.id),
+        officer_id: Number(row.officer_id),
+        reminder_message: String(row.reminder_message ?? ''),
+        due_date: String(row.due_date ?? ''),
+        notify_at: String(row.notify_at ?? ''),
+        extra_notify_emails: (row.extra_notify_emails as string) ?? null,
+        last_notified_at: row.last_notified_at ? (row.last_notified_at as Date).toISOString() : null,
+        created_at: (row.created_at as Date).toISOString(),
+        updated_at: (row.updated_at as Date).toISOString(),
+      })),
+    });
+  } catch (error) {
+    console.error('List staff reminders error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/officers/:id/staff-reminders', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
+  const officerId = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as { reminder_message?: string; due_date?: string; notify_at?: string; extra_notify_emails?: string | null };
+  const message = typeof body.reminder_message === 'string' ? body.reminder_message.trim() : '';
+  const dueRaw = typeof body.due_date === 'string' ? body.due_date.trim().slice(0, 10) : '';
+  const notifyRaw = typeof body.notify_at === 'string' ? body.notify_at.trim().slice(0, 10) : '';
+  if (!message) return res.status(400).json({ message: 'reminder_message is required' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueRaw) || !/^\d{4}-\d{2}-\d{2}$/.test(notifyRaw)) {
+    return res.status(400).json({ message: 'due_date and notify_at must be YYYY-MM-DD' });
+  }
+  if (notifyRaw > dueRaw) {
+    return res.status(400).json({ message: 'notify_at must be on or before due_date' });
+  }
+  const extras = typeof body.extra_notify_emails === 'string' ? body.extra_notify_emails.trim() || null : null;
+  try {
+    const officerCheck = await pool.query(
+      `SELECT id FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+      isSuperAdmin ? [officerId] : [officerId, userId],
+    );
+    if ((officerCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
+    const ins = await pool.query(
+      `INSERT INTO officer_staff_reminders (officer_id, reminder_message, due_date, notify_at, extra_notify_emails, created_by)
+       VALUES ($1, $2, $3::date, $4::date, $5, $6)
+       RETURNING id, officer_id, reminder_message, due_date::text AS due_date, notify_at::text AS notify_at,
+                 extra_notify_emails, last_notified_at, created_at, updated_at`,
+      [officerId, message, dueRaw, notifyRaw, extras, userId],
+    );
+    const row = ins.rows[0] as Record<string, unknown>;
+    return res.status(201).json({
+      reminder: {
+        id: Number(row.id),
+        officer_id: Number(row.officer_id),
+        reminder_message: String(row.reminder_message ?? ''),
+        due_date: String(row.due_date ?? ''),
+        notify_at: String(row.notify_at ?? ''),
+        extra_notify_emails: (row.extra_notify_emails as string) ?? null,
+        last_notified_at: row.last_notified_at ? (row.last_notified_at as Date).toISOString() : null,
+        created_at: (row.created_at as Date).toISOString(),
+        updated_at: (row.updated_at as Date).toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Create staff reminder error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/officers/:id/staff-reminders/:reminderId', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
+  const officerId = parseInt(String(req.params.id), 10);
+  const reminderId = parseInt(String(req.params.reminderId), 10);
+  if (!Number.isFinite(officerId) || !Number.isFinite(reminderId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as { reminder_message?: string; due_date?: string; notify_at?: string; extra_notify_emails?: string | null };
+  try {
+    const existing = await pool.query<{ last_notified_at: Date | null }>(
+      `SELECT sr.last_notified_at FROM officer_staff_reminders sr
+       JOIN officers o ON o.id = sr.officer_id
+       WHERE sr.id = $1 AND sr.officer_id = $2${isSuperAdmin ? '' : ' AND o.created_by = $3'}`,
+      isSuperAdmin ? [reminderId, officerId] : [reminderId, officerId, userId],
+    );
+    if ((existing.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Reminder not found' });
+    const alreadySent = existing.rows[0].last_notified_at != null;
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+    if (typeof body.reminder_message === 'string') {
+      updates.push(`reminder_message = $${idx++}`);
+      values.push(body.reminder_message.trim());
+    }
+    if (!alreadySent) {
+      if (typeof body.due_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.due_date.trim())) {
+        updates.push(`due_date = $${idx++}`);
+        values.push(body.due_date.trim().slice(0, 10));
+      }
+      if (typeof body.notify_at === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.notify_at.trim())) {
+        updates.push(`notify_at = $${idx++}`);
+        values.push(body.notify_at.trim().slice(0, 10));
+      }
+      if (body.extra_notify_emails !== undefined) {
+        updates.push(`extra_notify_emails = $${idx++}`);
+        values.push(typeof body.extra_notify_emails === 'string' ? body.extra_notify_emails.trim() || null : null);
+      }
+    } else if (body.due_date !== undefined || body.notify_at !== undefined || body.extra_notify_emails !== undefined) {
+      return res.status(400).json({ message: 'Cannot change dates or extra emails after notification was sent' });
+    }
+    if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
+    updates.push('updated_at = NOW()');
+    const whereIdIdx = values.length + 1;
+    const whereOffIdx = values.length + 2;
+    values.push(reminderId, officerId);
+    const r = await pool.query(
+      `UPDATE officer_staff_reminders sr SET ${updates.join(', ')}
+       FROM officers o
+       WHERE sr.id = $${whereIdIdx} AND sr.officer_id = $${whereOffIdx} AND sr.officer_id = o.id
+       RETURNING sr.id, sr.officer_id, sr.reminder_message, sr.due_date::text AS due_date, sr.notify_at::text AS notify_at,
+                 sr.extra_notify_emails, sr.last_notified_at, sr.created_at, sr.updated_at`,
+      values,
+    );
+    const row = r.rows[0] as Record<string, unknown>;
+    const dueD = String(row.due_date ?? '');
+    const notifyD = String(row.notify_at ?? '');
+    if (notifyD > dueD) {
+      return res.status(400).json({ message: 'notify_at must be on or before due_date' });
+    }
+    return res.json({
+      reminder: {
+        id: Number(row.id),
+        officer_id: Number(row.officer_id),
+        reminder_message: String(row.reminder_message ?? ''),
+        due_date: dueD,
+        notify_at: notifyD,
+        extra_notify_emails: (row.extra_notify_emails as string) ?? null,
+        last_notified_at: row.last_notified_at ? (row.last_notified_at as Date).toISOString() : null,
+        created_at: (row.created_at as Date).toISOString(),
+        updated_at: (row.updated_at as Date).toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Patch staff reminder error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/officers/:id/staff-reminders/:reminderId', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
+  const officerId = parseInt(String(req.params.id), 10);
+  const reminderId = parseInt(String(req.params.reminderId), 10);
+  if (!Number.isFinite(officerId) || !Number.isFinite(reminderId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    const result = await pool.query(
+      `DELETE FROM officer_staff_reminders sr USING officers o
+       WHERE sr.id = $1 AND sr.officer_id = $2 AND sr.officer_id = o.id${isSuperAdmin ? '' : ' AND o.created_by = $3'}`,
+      isSuperAdmin ? [reminderId, officerId] : [reminderId, officerId, userId],
+    );
+    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Reminder not found' });
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete staff reminder error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.get('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
@@ -4501,12 +5051,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
   const location = typeof body.location === 'string' ? body.location.trim() || null : null;
   const requiredCertifications = typeof body.required_certifications === 'string' ? body.required_certifications.trim() || null : null;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
-  const completedServiceItems = Array.isArray(body.completed_service_items)
-    ? body.completed_service_items
-      .filter((v): v is string => typeof v === 'string')
-      .map((v) => v.trim())
-      .filter(Boolean)
-    : [];
+  const completedServiceItems = normalizeCompletedServiceItemsForDb(body.completed_service_items);
   const createdBy = getTenantScopeUserId(req.user!);
 
   const userId = getTenantScopeUserId(req.user!);
@@ -4529,9 +5074,9 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     );
     const r = result.rows[0];
     try {
-      await copyDefaultJobReportTemplateToJob(r.id);
+      await seedJobReportQuestionsForNewJob(r.id, null);
     } catch (e) {
-      console.error('Copy default job report template to new job:', e);
+      console.error('Seed job report questions for new job:', e);
     }
     return res.status(201).json({
       job: {
@@ -4567,7 +5112,6 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
 
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  const ownershipCheck = isSuperAdmin ? '' : ' AND created_by = $1';
 
   const body = req.body as Record<string, unknown>;
   const updates: string[] = [];
@@ -4622,7 +5166,10 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
   if (str('scheduling_notes') !== undefined) { updates.push(`scheduling_notes = $${idx++}`); values.push(str('scheduling_notes')); }
 
   // New fields
-  if (body.job_description_id !== undefined) { updates.push(`job_description_id = $${idx++}`); values.push(body.job_description_id || null); }
+  if (body.job_description_id !== undefined) {
+    updates.push(`job_description_id = $${idx++}`);
+    values.push(parseOptionalJobDescriptionId(body.job_description_id));
+  }
   if (str('contact_name') !== undefined) { updates.push(`contact_name = $${idx++}`); values.push(str('contact_name')); }
   if (body.job_contact_id !== undefined) {
     const rawJc = body.job_contact_id;
@@ -4662,18 +5209,26 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
   if (str('customer_reference') !== undefined) { updates.push(`customer_reference = $${idx++}`); values.push(str('customer_reference')); }
   if (str('job_pipeline') !== undefined) { updates.push(`job_pipeline = $${idx++}`); values.push(str('job_pipeline')); }
   if (body.completed_service_items !== undefined) {
-    const completedServiceItems = Array.isArray(body.completed_service_items)
-      ? body.completed_service_items
-        .filter((v): v is string => typeof v === 'string')
-        .map((v) => v.trim())
-        .filter(Boolean)
-      : [];
+    const completedServiceItems = normalizeCompletedServiceItemsForDb(body.completed_service_items);
     updates.push(`completed_service_items = $${idx++}`);
     values.push(JSON.stringify(completedServiceItems));
   }
   if (body.book_into_diary !== undefined) { updates.push(`book_into_diary = $${idx++}`); values.push(!!body.book_into_diary); }
 
   if (updates.length === 0 && body.pricing_items === undefined) return res.status(400).json({ message: 'No fields to update' });
+
+  let previousJobDescriptionId: number | null | undefined = undefined;
+  if (body.job_description_id !== undefined) {
+    const prevDescRow = await pool.query<{ job_description_id: number | null }>(
+      isSuperAdmin
+        ? `SELECT job_description_id FROM jobs WHERE id = $1`
+        : `SELECT job_description_id FROM jobs WHERE id = $1 AND created_by = $2`,
+      isSuperAdmin ? [id] : [id, userId],
+    );
+    if ((prevDescRow.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+    const p = prevDescRow.rows[0].job_description_id;
+    previousJobDescriptionId = p != null ? Number(p) : null;
+  }
 
   try {
     // Handle pricing items if provided
@@ -4702,6 +5257,17 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
         values,
       );
       if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+    }
+
+    if (body.job_description_id !== undefined && previousJobDescriptionId !== undefined) {
+      const newDescId = parseOptionalJobDescriptionId(body.job_description_id);
+      if (newDescId != null && newDescId !== previousJobDescriptionId) {
+        try {
+          await mergeJobDescriptionReportQuestionsIntoJob(pool, id, newDescId);
+        } catch (mergeErr) {
+          console.error('Merge job description report questions:', mergeErr);
+        }
+      }
     }
 
     // Final fetch to return full object
@@ -4739,7 +5305,7 @@ app.get('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('j
 
     const tasksResult = await pool.query(
       `SELECT ot.id, ot.job_id, ot.description, ot.assignee_officer_id, ot.created_by, ot.completed, ot.completed_at, ot.created_at, ot.updated_at,
-              ot.completed_by, ot.completion_source,
+              ot.completed_by, ot.completion_source, ot.reminder_at, ot.reminder_sent_at,
               o.full_name AS assignee_name, COALESCE(u.full_name, u.email, 'System') AS created_by_name,
               COALESCE(uc.full_name, uc.email) AS completed_by_name
        FROM office_tasks ot
@@ -4747,7 +5313,7 @@ app.get('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('j
        LEFT JOIN users u ON u.id = ot.created_by
        LEFT JOIN users uc ON uc.id = ot.completed_by
        WHERE ot.job_id = $1
-       ORDER BY ot.completed ASC, ot.created_at DESC`,
+       ORDER BY ot.completed ASC, ot.reminder_at ASC NULLS LAST, ot.created_at DESC`,
       [jobId],
     );
 
@@ -4765,6 +5331,8 @@ app.get('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('j
         completed_by: r.completed_by != null ? Number(r.completed_by) : null,
         completed_by_name: (r.completed_by_name as string) ?? null,
         completion_source: (r.completion_source as string) ?? null,
+        reminder_at: r.reminder_at ? (r.reminder_at as Date).toISOString() : null,
+        reminder_sent_at: r.reminder_sent_at ? (r.reminder_sent_at as Date).toISOString() : null,
         created_at: (r.created_at as Date).toISOString(),
         updated_at: (r.updated_at as Date).toISOString(),
       })),
@@ -4780,12 +5348,18 @@ app.post('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('
   if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  const body = req.body as { description?: string; assignee_officer_id?: number | null };
+  const body = req.body as { description?: string; assignee_officer_id?: number | null; reminder_at?: string | null };
   const description = typeof body.description === 'string' ? body.description.trim() : '';
   if (!description) return res.status(400).json({ message: 'Task description is required' });
   const assigneeOfficerId = body.assignee_officer_id === null || body.assignee_officer_id === undefined
     ? null
     : (typeof body.assignee_officer_id === 'number' ? body.assignee_officer_id : parseInt(String(body.assignee_officer_id), 10));
+  let reminderAt: Date | null = null;
+  if (body.reminder_at !== undefined && body.reminder_at !== null && String(body.reminder_at).trim() !== '') {
+    const d = new Date(String(body.reminder_at));
+    if (Number.isNaN(d.getTime())) return res.status(400).json({ message: 'Invalid reminder_at' });
+    reminderAt = d;
+  }
 
   try {
     const jobCheck = await pool.query<DbJob>('SELECT id, created_by FROM jobs WHERE id = $1', [jobId]);
@@ -4798,10 +5372,10 @@ app.post('/api/jobs/:jobId/office-tasks', authenticate, requireTenantCrmAccess('
     }
 
     const inserted = await pool.query(
-      `INSERT INTO office_tasks (job_id, description, assignee_officer_id, created_by)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO office_tasks (job_id, description, assignee_officer_id, created_by, reminder_at)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [jobId, description, assigneeOfficerId, userId],
+      [jobId, description, assigneeOfficerId, userId, reminderAt],
     );
     return res.status(201).json({ task: { id: Number(inserted.rows[0].id) } });
   } catch (error) {
@@ -4816,7 +5390,7 @@ app.patch('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireTenantCr
   if (!Number.isFinite(jobId) || !Number.isFinite(taskId)) return res.status(400).json({ message: 'Invalid id' });
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  const body = req.body as { description?: string; assignee_officer_id?: number | null; completed?: boolean };
+  const body = req.body as { description?: string; assignee_officer_id?: number | null; completed?: boolean; reminder_at?: string | null };
 
   try {
     const jobCheck = await pool.query<DbJob>('SELECT id, created_by FROM jobs WHERE id = $1', [jobId]);
@@ -4831,6 +5405,21 @@ app.patch('/api/jobs/:jobId/office-tasks/:taskId', authenticate, requireTenantCr
       const assignee = body.assignee_officer_id === null ? null : Number(body.assignee_officer_id);
       updates.push(`assignee_officer_id = $${idx++}`);
       values.push(Number.isFinite(assignee as number) ? assignee : null);
+    }
+    if (body.reminder_at !== undefined) {
+      if (body.reminder_at === null || String(body.reminder_at).trim() === '') {
+        updates.push(`reminder_at = $${idx++}`);
+        values.push(null);
+        updates.push(`reminder_sent_at = $${idx++}`);
+        values.push(null);
+      } else {
+        const d = new Date(String(body.reminder_at));
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ message: 'Invalid reminder_at' });
+        updates.push(`reminder_at = $${idx++}`);
+        values.push(d);
+        updates.push(`reminder_sent_at = $${idx++}`);
+        values.push(null);
+      }
     }
     if (typeof body.completed === 'boolean') {
       updates.push(`completed = $${idx++}`);
@@ -6342,6 +6931,207 @@ app.get(
   },
 );
 
+app.get(
+  '/api/settings/site-report-templates',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    try {
+      await ensureFireRiskAssessmentTemplate(pool, uid);
+      const result = await pool.query<{ id: number; name: string; slug: string | null; updated_at: Date }>(
+        `SELECT id, name, slug, updated_at FROM site_report_templates
+         WHERE created_by = $1
+         ORDER BY CASE WHEN slug = 'fra' THEN 0 ELSE 1 END, name ASC`,
+        [uid],
+      );
+      return res.json({
+        templates: result.rows.map((r) => ({
+          id: Number(r.id),
+          name: String(r.name ?? ''),
+          slug: r.slug,
+          updated_at: (r.updated_at as Date).toISOString(),
+        })),
+      });
+    } catch (error) {
+      console.error('list site report templates error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.get(
+  '/api/settings/site-report-templates/:templateId',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    const templateId = parseInt(String(req.params.templateId), 10);
+    if (!Number.isFinite(templateId)) return res.status(400).json({ message: 'Invalid template id' });
+    try {
+      const row = await pool.query<{ id: number; name: string; slug: string | null; definition: unknown; updated_at: Date }>(
+        `SELECT id, name, slug, definition, updated_at FROM site_report_templates WHERE id = $1 AND created_by = $2`,
+        [templateId, uid],
+      );
+      if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Template not found' });
+      const r = row.rows[0];
+      return res.json({
+        template: {
+          id: Number(r.id),
+          name: String(r.name ?? ''),
+          slug: r.slug,
+          definition: r.definition,
+          updated_at: (r.updated_at as Date).toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('get site report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.put(
+  '/api/settings/site-report-templates/:templateId',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    const templateId = parseInt(String(req.params.templateId), 10);
+    if (!Number.isFinite(templateId)) return res.status(400).json({ message: 'Invalid template id' });
+    const body = req.body as Record<string, unknown>;
+    const defParsed = parseSiteReportTemplateDefinition(body.definition);
+    if (!defParsed) return res.status(400).json({ message: 'Invalid definition JSON' });
+    const nameRaw = typeof body.name === 'string' ? body.name.trim().slice(0, 255) : null;
+    try {
+      const own = await pool.query<{ slug: string | null }>(
+        'SELECT slug FROM site_report_templates WHERE id = $1 AND created_by = $2',
+        [templateId, uid],
+      );
+      if ((own.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Template not found' });
+      const updates: string[] = ['definition = $1::jsonb', 'updated_at = NOW()', 'updated_by = $2'];
+      const vals: unknown[] = [JSON.stringify(defParsed), uid];
+      let n = 3;
+      if (nameRaw) {
+        updates.push(`name = $${n++}`);
+        vals.push(nameRaw);
+      }
+      vals.push(templateId, uid);
+      await pool.query(
+        `UPDATE site_report_templates SET ${updates.join(', ')} WHERE id = $${n++} AND created_by = $${n}`,
+        vals,
+      );
+      const row = await pool.query<{ id: number; name: string; slug: string | null; definition: unknown; updated_at: Date }>(
+        `SELECT id, name, slug, definition, updated_at FROM site_report_templates WHERE id = $1`,
+        [templateId],
+      );
+      const r = row.rows[0];
+      return res.json({
+        template: {
+          id: Number(r.id),
+          name: String(r.name ?? ''),
+          slug: r.slug,
+          definition: r.definition,
+          updated_at: (r.updated_at as Date).toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('put site report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.post(
+  '/api/settings/site-report-templates/fra/reset',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    try {
+      const id = await ensureFireRiskAssessmentTemplate(pool, uid);
+      const def = getFraTemplateDefinition();
+      await pool.query(
+        `UPDATE site_report_templates SET definition = $1::jsonb, name = $2, updated_at = NOW(), updated_by = $3 WHERE id = $4 AND created_by = $5`,
+        [JSON.stringify(def), 'Fire Risk Assessment', uid, id, uid],
+      );
+      const row = await pool.query<{ id: number; name: string; slug: string | null; definition: unknown; updated_at: Date }>(
+        `SELECT id, name, slug, definition, updated_at FROM site_report_templates WHERE id = $1`,
+        [id],
+      );
+      const r = row.rows[0];
+      return res.json({
+        template: {
+          id: Number(r.id),
+          name: String(r.name ?? ''),
+          slug: r.slug,
+          definition: r.definition,
+          updated_at: (r.updated_at as Date).toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('reset fra site report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.post(
+  '/api/settings/site-report-templates',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    const body = req.body as Record<string, unknown>;
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 255) : '';
+    if (!name) return res.status(400).json({ message: 'name is required' });
+    try {
+      let definition = parseSiteReportTemplateDefinition(body.definition);
+      if (!definition) {
+        const dupId =
+          typeof body.duplicate_from_template_id === 'number' && Number.isFinite(body.duplicate_from_template_id)
+            ? Math.trunc(body.duplicate_from_template_id as number)
+            : typeof body.duplicate_from_template_id === 'string' && String(body.duplicate_from_template_id).trim()
+              ? parseInt(String(body.duplicate_from_template_id).trim(), 10)
+              : NaN;
+        if (!Number.isFinite(dupId)) {
+          return res.status(400).json({ message: 'definition or duplicate_from_template_id is required' });
+        }
+        const src = await pool.query<{ definition: unknown }>(
+          'SELECT definition FROM site_report_templates WHERE id = $1 AND created_by = $2',
+          [dupId, uid],
+        );
+        if ((src.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Source template not found' });
+        definition = parseSiteReportTemplateDefinition(src.rows[0].definition);
+        if (!definition) return res.status(400).json({ message: 'Source template definition invalid' });
+      }
+      const ins = await pool.query<{ id: number; updated_at: Date }>(
+        `INSERT INTO site_report_templates (name, slug, definition, created_by, updated_by, updated_at)
+         VALUES ($1, NULL, $2::jsonb, $3, $3, NOW())
+         RETURNING id, updated_at`,
+        [name, JSON.stringify(definition), uid],
+      );
+      return res.status(201).json({
+        template: {
+          id: Number(ins.rows[0].id),
+          name,
+          slug: null as string | null,
+          definition,
+          updated_at: (ins.rows[0].updated_at as Date).toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('create site report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
 app.put('/api/jobs/:id/job-report-questions', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
   const jobId = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(jobId)) {
@@ -6708,6 +7498,148 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
   } catch (error) {
     console.error('get diary job report error:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Auto-save job report answers (partial) without completing the visit or changing job state. */
+app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const diaryEventId = parseInt(String(idParam), 10);
+  const role = req.user!.role;
+  const tokenOfficerId = req.user!.officerId ?? null;
+
+  if (!Number.isFinite(diaryEventId)) {
+    return res.status(400).json({ message: 'Invalid event id' });
+  }
+
+  const body = req.body as { answers?: unknown };
+  if (!Array.isArray(body.answers)) {
+    return res.status(400).json({ message: 'Body must include answers array' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const eventRes = await client.query<{
+      job_id: number;
+      officer_id: number | null;
+      job_officer_id: number | null;
+      event_status: string;
+    }>(
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status
+       FROM diary_events d
+       INNER JOIN jobs j ON j.id = d.job_id
+       WHERE d.id = $1`,
+      [diaryEventId],
+    );
+    if ((eventRes.rowCount ?? 0) === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Event not found' });
+    }
+    const ev = eventRes.rows[0];
+
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
+      const assigned = ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId;
+      if (!assigned) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ message: 'You can only update job reports for your visits' });
+      }
+    } else if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const statusNorm = normalizeDiaryStatusForTimesheet(ev.event_status);
+    if (statusNorm === 'completed' || statusNorm === 'cancelled') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This visit is already closed' });
+    }
+    const isFieldOfficer = diaryActsAsFieldOfficer(req, {
+      role,
+      officerId: tokenOfficerId,
+      permissions: req.user!.permissions ?? null,
+    });
+    if (isFieldOfficer && !diaryStatusAllowsJobReportDraft(ev.event_status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        message: 'Draft save is only available while travelling to site or on site.',
+      });
+    }
+
+    const questionsRes = await client.query<{
+      id: number;
+      question_type: string;
+      required: boolean;
+      prompt: string;
+      helper_text: string | null;
+    }>(
+      `SELECT id, question_type, required, prompt, helper_text FROM job_report_questions WHERE job_id = $1 ORDER BY sort_order ASC, id ASC`,
+      [ev.job_id],
+    );
+    const questions = questionsRes.rows;
+    if (questions.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This job has no job report questions configured.' });
+    }
+
+    const allowedIds = new Set(questions.map((q) => q.id));
+    const answerMap = new Map<number, string>();
+    for (const raw of body.answers) {
+      if (!raw || typeof raw !== 'object') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Each answer must be an object with question_id and value' });
+      }
+      const a = raw as Record<string, unknown>;
+      const qid = typeof a.question_id === 'number' ? a.question_id : parseInt(String(a.question_id), 10);
+      if (!Number.isFinite(qid) || !allowedIds.has(qid)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Unknown or invalid question_id: ${a.question_id}` });
+      }
+      const value = typeof a.value === 'string' ? a.value : '';
+      answerMap.set(qid, value);
+    }
+
+    for (const q of questions) {
+      const v = answerMap.get(q.id);
+      if (v !== undefined && jobReportAnswerIsPresent(v)) {
+        await client.query(
+          `INSERT INTO job_report_answers (diary_event_id, question_id, value, prompt_snapshot, question_type_snapshot, helper_text_snapshot, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (diary_event_id, question_id)
+           DO UPDATE SET value = EXCLUDED.value,
+             prompt_snapshot = EXCLUDED.prompt_snapshot,
+             question_type_snapshot = EXCLUDED.question_type_snapshot,
+             helper_text_snapshot = EXCLUDED.helper_text_snapshot,
+             updated_at = NOW()`,
+          [
+            diaryEventId,
+            q.id,
+            v.trim(),
+            q.prompt,
+            q.question_type,
+            q.helper_text != null && String(q.helper_text).trim() ? String(q.helper_text).trim() : null,
+          ],
+        );
+      } else if (v !== undefined && !jobReportAnswerIsPresent(v)) {
+        await client.query('DELETE FROM job_report_answers WHERE diary_event_id = $1 AND question_id = $2', [
+          diaryEventId,
+          q.id,
+        ]);
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ok: true, saved_at: new Date().toISOString() });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
+    console.error('draft diary job report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -7934,6 +8866,13 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
       subject: 'Message from {{company_name}}',
       body: '<p>{{message}}</p>',
     },
+    {
+      key: 'service_reminder',
+      name: 'Service renewal reminder',
+      subject: '{{company_name}} — Service reminder ({{service_name}})',
+      body:
+        '<p>Hi {{customer_name}},</p><p>This is a {{phase_label}} for your <strong>{{service_name}}</strong> service.</p><p>Job: {{job_title}} (#{{job_id}})<br/>Next due: <strong>{{due_date}}</strong></p><p>Work / site (this job): {{work_address}}</p><p>Billing address: {{customer_address}}</p><p>Please contact us to book your next visit.</p><p>Kind regards,<br/>{{company_name}}</p>',
+    },
   ];
   for (const d of defaults) {
     await pool.query(
@@ -8122,6 +9061,374 @@ async function getInvoiceSettings(userId: number): Promise<{
     payment_terms: null,
     bank_details: null,
   };
+}
+
+function formatJoinedAddressLines(parts: (string | null | undefined)[]): string {
+  return parts
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter((s) => s.length > 0)
+    .join(', ');
+}
+
+/** Work/site line for the job's linked customer work address only (j.work_address_id). */
+function serviceReminderWorkSiteStrings(job: {
+  wa_name: string | null;
+  wa_branch_name: string | null;
+  wa_line1: string | null;
+  wa_line2: string | null;
+  wa_line3: string | null;
+  wa_town: string | null;
+  wa_county: string | null;
+  wa_postcode: string | null;
+}): Record<string, string> {
+  const street = formatJoinedAddressLines([
+    job.wa_line1,
+    job.wa_line2,
+    job.wa_line3,
+    job.wa_town,
+    job.wa_county,
+    job.wa_postcode,
+  ]);
+  const siteName = (job.wa_name || '').trim();
+  const branch = (job.wa_branch_name || '').trim();
+  const namePart = siteName ? (branch ? `${siteName} (${branch})` : siteName) : '';
+  const workAddressLine =
+    namePart && street ? `${namePart} — ${street}` : namePart || street || '';
+
+  return {
+    work_address_name: siteName,
+    work_address_branch: branch,
+    work_address_line_1: (job.wa_line1 || '').trim(),
+    work_address_line_2: (job.wa_line2 || '').trim(),
+    work_address_line_3: (job.wa_line3 || '').trim(),
+    work_address_town: (job.wa_town || '').trim(),
+    work_address_county: (job.wa_county || '').trim(),
+    work_address_postcode: (job.wa_postcode || '').trim(),
+    work_address: workAddressLine,
+    site_address: workAddressLine,
+  };
+}
+
+async function runAutomatedServiceReminders(pool: Pool): Promise<{ sent: number; skipped: number; errors: string[] }> {
+  const today = utcDateOnlyFromDate(new Date());
+  const errors: string[] = [];
+  let sent = 0;
+  let skipped = 0;
+
+  const tenantRows = await pool.query<{ created_by: number }>(
+    `SELECT DISTINCT j.created_by AS created_by
+     FROM jobs j
+     WHERE j.is_service_job = true
+       AND j.expected_completion IS NOT NULL
+       AND j.customer_id IS NOT NULL
+       AND j.state IN ('completed', 'closed')`,
+  );
+
+  for (const { created_by: tenantUserId } of tenantRows.rows) {
+    if (!tenantUserId) continue;
+
+    const settingsRes = await pool.query<{
+      automated_enabled: boolean;
+      recipient_mode: string;
+    }>(
+      `SELECT automated_enabled, recipient_mode FROM service_reminder_settings WHERE created_by = $1`,
+      [tenantUserId],
+    );
+    const settingsRow = settingsRes.rows[0];
+    const automatedEnabled = settingsRow ? settingsRow.automated_enabled !== false : true;
+    if (!automatedEnabled) {
+      skipped += 1;
+      continue;
+    }
+    const recipientMode = SERVICE_REMINDER_RECIPIENT_MODES.has(settingsRow?.recipient_mode || '')
+      ? (settingsRow!.recipient_mode as string)
+      : 'customer_account';
+
+    const emailCfg = await loadEmailSettingsPayload(tenantUserId);
+    const canSend =
+      !!emailCfg.from_email?.trim() &&
+      (!!emailCfg.oauth_provider || (emailCfg.smtp_enabled && !!createMailTransport(emailCfg)));
+    if (!canSend) {
+      skipped += 1;
+      continue;
+    }
+
+    await ensureDefaultEmailTemplates(tenantUserId);
+    const tpl = await pool.query<{ subject: string; body_html: string }>(
+      `SELECT subject, body_html FROM email_templates WHERE created_by = $1 AND template_key = 'service_reminder'`,
+      [tenantUserId],
+    );
+    const tplRow = tpl.rows[0];
+    if (!tplRow) {
+      errors.push(`tenant ${tenantUserId}: missing service_reminder template`);
+      continue;
+    }
+
+    const invSettings = await getInvoiceSettings(tenantUserId);
+    const companyName = invSettings.company_name || 'WorkPilot';
+
+    const checklistRes = await pool.query<{
+      name: string;
+      reminder_interval_n: number | null;
+      reminder_interval_unit: string | null;
+      reminder_early_n: number | null;
+      reminder_early_unit: string | null;
+      customer_reminder_weeks_before: number | null;
+      customer_email_subject: string | null;
+      customer_email_body_html: string | null;
+    }>(
+      `SELECT name, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit,
+              customer_reminder_weeks_before, customer_email_subject, customer_email_body_html
+       FROM service_checklist_items
+       WHERE created_by = $1 AND is_active = true`,
+      [tenantUserId],
+    );
+    const checklistByKey = new Map<string, (typeof checklistRes.rows)[0]>();
+    for (const row of checklistRes.rows) {
+      checklistByKey.set(row.name.trim().toLowerCase(), row);
+    }
+
+    const jobsRes = await pool.query<{
+      id: number;
+      title: string | null;
+      customer_id: number;
+      expected_completion: Date;
+      completed_service_items: unknown;
+      job_contact_id: number | null;
+      customer_name: string | null;
+      customer_email: string | null;
+      service_reminders_enabled: boolean;
+      customer_phone: string | null;
+      customer_landline: string | null;
+      customer_contact_mobile: string | null;
+      customer_address_line_1: string | null;
+      customer_address_line_2: string | null;
+      customer_address_line_3: string | null;
+      customer_town: string | null;
+      customer_county: string | null;
+      customer_postcode: string | null;
+      customer_contact_surname: string | null;
+      service_reminder_custom_email: string | null;
+      service_reminder_recipient_mode: string | null;
+      job_contact_first_name: string | null;
+      job_contact_surname: string | null;
+      wa_name: string | null;
+      wa_branch_name: string | null;
+      wa_line1: string | null;
+      wa_line2: string | null;
+      wa_line3: string | null;
+      wa_town: string | null;
+      wa_county: string | null;
+      wa_postcode: string | null;
+    }>(
+      `SELECT j.id, j.title, j.customer_id, j.expected_completion, j.completed_service_items, j.job_contact_id,
+              c.full_name AS customer_name, c.email AS customer_email,
+              COALESCE(c.service_reminders_enabled, true) AS service_reminders_enabled,
+              c.phone AS customer_phone,
+              c.landline AS customer_landline,
+              c.contact_mobile AS customer_contact_mobile,
+              c.address_line_1 AS customer_address_line_1,
+              c.address_line_2 AS customer_address_line_2,
+              c.address_line_3 AS customer_address_line_3,
+              c.town AS customer_town,
+              c.county AS customer_county,
+              c.postcode AS customer_postcode,
+              c.contact_surname AS customer_contact_surname,
+              c.service_reminder_custom_email,
+              c.service_reminder_recipient_mode,
+              jcc.first_name AS job_contact_first_name,
+              jcc.surname AS job_contact_surname,
+              wa.name AS wa_name,
+              wa.branch_name AS wa_branch_name,
+              wa.address_line_1 AS wa_line1,
+              wa.address_line_2 AS wa_line2,
+              wa.address_line_3 AS wa_line3,
+              wa.town AS wa_town,
+              wa.county AS wa_county,
+              wa.postcode AS wa_postcode
+       FROM jobs j
+       INNER JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_contacts jcc ON jcc.id = j.job_contact_id AND jcc.customer_id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+       WHERE j.created_by = $1
+         AND j.is_service_job = true
+         AND j.expected_completion IS NOT NULL
+         AND j.customer_id IS NOT NULL
+         AND j.state IN ('completed', 'closed')`,
+      [tenantUserId],
+    );
+
+    for (const job of jobsRes.rows) {
+      if (job.service_reminders_enabled === false) continue;
+
+      const items = normalizeCompletedServiceItemsForDb(job.completed_service_items);
+      const anchor = new Date(job.expected_completion);
+      if (Number.isNaN(anchor.getTime())) continue;
+
+      for (const svc of items) {
+        if (!svc.remind_email) continue;
+        const ck = checklistByKey.get(svc.name.trim().toLowerCase());
+        if (!ck) continue;
+
+        let intervalN = ck.reminder_interval_n != null ? Math.trunc(Number(ck.reminder_interval_n)) : 1;
+        let intervalU = (ck.reminder_interval_unit || 'years').trim().toLowerCase();
+        if (!Number.isFinite(intervalN) || intervalN < 1) intervalN = 1;
+        if (!SERVICE_REMINDER_INTERVAL_UNITS.has(intervalU)) intervalU = 'years';
+
+        let earlyN = ck.reminder_early_n != null ? Math.trunc(Number(ck.reminder_early_n)) : 14;
+        let earlyU = (ck.reminder_early_unit || 'days').trim().toLowerCase();
+        if (!Number.isFinite(earlyN) || earlyN < 1) earlyN = 14;
+        if (!SERVICE_REMINDER_EARLY_UNITS.has(earlyU)) earlyU = 'days';
+
+        const anchorDay = new Date(
+          Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()),
+        );
+        let nextDue = addCalendarInterval(anchorDay, intervalN, intervalU);
+        const todayD = new Date(`${today}T00:00:00.000Z`);
+        while (nextDue.getTime() < todayD.getTime()) {
+          nextDue = addCalendarInterval(nextDue, intervalN, intervalU);
+        }
+        const renewalYmd = utcDateOnlyFromDate(nextDue);
+        const weeksBefore =
+          ck.customer_reminder_weeks_before != null
+            ? Math.trunc(Number(ck.customer_reminder_weeks_before))
+            : NaN;
+        const earlyStart =
+          Number.isFinite(weeksBefore) && weeksBefore >= 1 && weeksBefore <= 52
+            ? addCalendarInterval(nextDue, -weeksBefore, 'weeks')
+            : addCalendarInterval(nextDue, -earlyN, earlyU);
+        const earlyStartYmd = utcDateOnlyFromDate(earlyStart);
+
+        const inEarlyWindow = today >= earlyStartYmd && today < renewalYmd;
+        const inDueWindow = today >= renewalYmd;
+
+        let phase: 'early' | 'due' | null = null;
+        if (inEarlyWindow) phase = 'early';
+        else if (inDueWindow) phase = 'due';
+        if (!phase) continue;
+
+        const dup = await pool.query(
+          `SELECT 1 FROM service_reminder_sent
+           WHERE job_id = $1 AND service_name = $2 AND phase = $3 AND renewal_due_date = $4`,
+          [job.id, svc.name, phase, renewalYmd],
+        );
+        if ((dup.rowCount ?? 0) > 0) continue;
+
+        const modeRaw = (job.service_reminder_recipient_mode ?? '').trim();
+        const effectiveRecipientMode = SERVICE_REMINDER_RECIPIENT_MODES.has(modeRaw)
+          ? modeRaw
+          : recipientMode;
+
+        let toEmail = (job.service_reminder_custom_email ?? '').trim();
+        if (!toEmail) {
+          toEmail =
+            (await resolveServiceReminderRecipientEmail(
+              pool,
+              job.customer_id,
+              job.customer_email,
+              job.job_contact_id,
+              effectiveRecipientMode,
+            )) || '';
+        }
+        if (!toEmail) continue;
+
+        const phaseLabel = phase === 'early' ? 'friendly reminder' : 'reminder that your service is now due';
+        const dueDisplay = nextDue.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        });
+        const nameWords = (job.customer_name || '').trim().split(/\s+/).filter(Boolean);
+        const customerSurname =
+          (job.customer_contact_surname || '').trim() ||
+          (nameWords.length > 1 ? nameWords[nameWords.length - 1]! : '');
+        const jobContactDisplay = [job.job_contact_first_name, job.job_contact_surname]
+          .map((x) => (x ?? '').trim())
+          .filter(Boolean)
+          .join(' ');
+        const customerTel =
+          (job.customer_landline || '').trim() || (job.customer_phone || '').trim() || (job.customer_contact_mobile || '').trim();
+        const customerMobile = (job.customer_contact_mobile || '').trim() || (job.customer_phone || '').trim();
+        const bookingPortal = (process.env.WORKPILOT_CUSTOMER_PORTAL_URL || '').trim();
+        const customerAddressLine = formatJoinedAddressLines([
+          job.customer_address_line_1,
+          job.customer_address_line_2,
+          job.customer_address_line_3,
+          job.customer_town,
+          job.customer_county,
+          job.customer_postcode,
+        ]);
+        const siteVars = serviceReminderWorkSiteStrings(job);
+        const vars: Record<string, string> = {
+          company_name: companyName,
+          customer_name: (job.customer_name || 'there').trim(),
+          customer_surname: customerSurname,
+          customer_account_no: String(job.customer_id),
+          customer_email: (job.customer_email || '').trim(),
+          customer_telephone: customerTel,
+          customer_mobile: customerMobile,
+          customer_address: customerAddressLine,
+          customer_address_line_1: (job.customer_address_line_1 || '').trim(),
+          customer_address_line_2: (job.customer_address_line_2 || '').trim(),
+          customer_address_line_3: (job.customer_address_line_3 || '').trim(),
+          customer_town: (job.customer_town || '').trim(),
+          customer_county: (job.customer_county || '').trim(),
+          customer_postcode: (job.customer_postcode || '').trim(),
+          customer_advertising: '',
+          service_name: svc.name,
+          service_reminder_name: svc.name,
+          service_contact: jobContactDisplay,
+          service_reminder_booking_portal_url: bookingPortal,
+          job_title: (job.title || 'Service job').trim(),
+          job_id: String(job.id),
+          due_date: dueDisplay,
+          service_due_date: dueDisplay,
+          phase_label: phaseLabel,
+          ...siteVars,
+        };
+        const subjTpl =
+          typeof ck.customer_email_subject === 'string' && ck.customer_email_subject.trim()
+            ? ck.customer_email_subject.trim()
+            : tplRow.subject;
+        const bodyTpl =
+          typeof ck.customer_email_body_html === 'string' && ck.customer_email_body_html.trim()
+            ? ck.customer_email_body_html.trim()
+            : tplRow.body_html;
+        const subject = applyTemplateVars(subjTpl, vars);
+        const bodyInner = applyTemplateVars(bodyTpl, vars);
+        const html = wrapEmailHtml(bodyInner, emailCfg.default_signature_html);
+        const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
+
+        try {
+          await sendUserEmail(pool, tenantUserId, emailCfg, {
+            from,
+            to: toEmail,
+            subject,
+            html,
+            replyTo: emailCfg.reply_to,
+          });
+          await pool.query(
+            `INSERT INTO service_reminder_sent (job_id, service_name, phase, renewal_due_date, tenant_user_id)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [job.id, svc.name, phase, renewalYmd, tenantUserId],
+          );
+          await pool.query(
+            `INSERT INTO customer_communications
+              (customer_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
+             VALUES ($1, 'email', $2, $3, 'sent', $4, 'job', $5, $6)`,
+            [job.customer_id, subject, bodyInner, toEmail, job.id, tenantUserId],
+          );
+          sent += 1;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          errors.push(`job ${job.id} / ${svc.name} / ${phase}: ${msg}`);
+        }
+      }
+    }
+  }
+
+  return { sent, skipped, errors };
 }
 
 function escapeRegexChars(s: string): string {
@@ -8951,10 +10258,25 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
     const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
     const custRef =
       typeof body.customer_reference === 'string' ? body.customer_reference.trim() || null : null;
-    /** Work/site linkage. */
-    const billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    /** Work/site linkage: validate id belongs to customer; billing line follows site when set. */
+    const resolvedWorkAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, body.invoice_work_address_id);
+    const rawWa = body.invoice_work_address_id;
+    const requestedWa =
+      rawWa !== undefined &&
+      rawWa !== null &&
+      !(typeof rawWa === 'string' && String(rawWa).trim() === '') &&
+      (typeof rawWa === 'number' || (typeof rawWa === 'string' && String(rawWa).trim() !== ''));
+    if (requestedWa && resolvedWorkAddressId === null) {
+      return res.status(400).json({ message: 'Invalid work / site address for this customer' });
+    }
+    let billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
+    let invoiceWorkAddressId: number | null = resolvedWorkAddressId;
+    if (resolvedWorkAddressId != null) {
+      const resolvedBill = await resolveInvoiceBillingFromWorkAddress(customerId, resolvedWorkAddressId);
+      billingAddress = resolvedBill.billing_address;
+      invoiceWorkAddressId = resolvedBill.invoice_work_address_id;
+    }
     const description = typeof body.description === 'string' ? body.description.trim() || null : null;
-    const invoiceWorkAddressId = typeof body.invoice_work_address_id === 'number' ? body.invoice_work_address_id : null;
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     let subtotal = 0;
@@ -9487,11 +10809,13 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireTenantCrmAccess(
       cust_county?: string | null;
       cust_postcode?: string | null;
       job_created_by?: number | null;
+      customer_invoice_reminders_enabled?: boolean;
     }
   >(
     `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name,
             c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
             c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode,
+            COALESCE(c.invoice_reminders_enabled, true) AS customer_invoice_reminders_enabled,
             j.created_by AS job_created_by
      FROM invoices i
      JOIN customers c ON c.id = i.customer_id
@@ -9555,6 +10879,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireTenantCrmAccess(
       default_to: inv.customer_email ?? '',
       customer_name: inv.customer_full_name ?? '',
       to_email_options: toEmailOptions,
+      customer_invoice_reminders_enabled: inv.customer_invoice_reminders_enabled !== false,
     });
   } catch (error) {
     console.error('Email compose draft error:', error);
@@ -10095,11 +11420,12 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
     const internalNotesResult = await pool.query<{
       id: number;
       body: string;
+      media: unknown;
       created_at: Date;
       created_by: number | null;
       created_by_label: string | null;
     }>(
-      `SELECT n.id, n.body, n.created_at, n.created_by,
+      `SELECT n.id, n.body, n.media, n.created_at, n.created_by,
               COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS created_by_label
        FROM quotation_internal_notes n
        LEFT JOIN users u ON u.id = n.created_by
@@ -10160,13 +11486,36 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
         created_at: (row.created_at as Date).toISOString(),
         created_by: row.created_by,
       })),
-      internal_notes: internalNotesResult.rows.map((row) => ({
-        id: row.id,
-        body: row.body,
-        created_at: (row.created_at as Date).toISOString(),
-        created_by: row.created_by,
-        created_by_label: row.created_by_label ?? null,
-      })),
+      internal_notes: internalNotesResult.rows.map((row) => {
+        const rawMedia = Array.isArray(row.media) ? row.media : [];
+        const media = rawMedia
+          .filter((m: unknown) => m && typeof m === 'object' && typeof (m as { stored_filename?: unknown }).stored_filename === 'string')
+          .map((m: unknown) => {
+            const item = m as {
+              stored_filename: string;
+              original_filename?: string;
+              content_type?: string;
+              kind?: string;
+              byte_size?: number;
+            };
+            return {
+              stored_filename: item.stored_filename,
+              original_filename: item.original_filename ?? null,
+              content_type: item.content_type ?? null,
+              kind: item.kind ?? 'image',
+              byte_size: item.byte_size ?? null,
+              file_path: `/quotations/${id}/internal-notes/${row.id}/files/${encodeURIComponent(item.stored_filename)}`,
+            };
+          });
+        return {
+          id: row.id,
+          body: row.body,
+          media,
+          created_at: (row.created_at as Date).toISOString(),
+          created_by: row.created_by,
+          created_by_label: row.created_by_label ?? null,
+        };
+      }),
       settings,
     };
 
@@ -10212,48 +11561,130 @@ app.post('/api/quotations/:id/internal-notes', authenticate, requireTenantCrmAcc
   if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  const bodyRaw = (req.body as { body?: string })?.body;
-  const text = typeof bodyRaw === 'string' ? bodyRaw.trim() : '';
-  if (!text) return res.status(400).json({ message: 'Note text is required' });
-  if (text.length > 20000) return res.status(400).json({ message: 'Note is too long' });
 
+  const body = req.body as { body?: unknown; media?: unknown };
+  const text = typeof body.body === 'string' ? body.body.trim() : '';
+  const rawMedia = Array.isArray(body.media) ? body.media : [];
+  if (text.length === 0 && rawMedia.length === 0) {
+    return res.status(400).json({ message: 'Add a note and/or at least one image.' });
+  }
+  if (text.length > 20000) return res.status(400).json({ message: 'Note is too long' });
+  if (rawMedia.length > QUOTATION_INTERNAL_NOTE_MAX_FILES) {
+    return res.status(400).json({ message: `At most ${QUOTATION_INTERNAL_NOTE_MAX_FILES} images per note` });
+  }
+
+  const decoded: { buf: Buffer; contentType: string; original: string }[] = [];
+  for (const item of rawMedia) {
+    if (!item || typeof item !== 'object') {
+      return res.status(400).json({ message: 'Invalid media item' });
+    }
+    const m = item as Record<string, unknown>;
+    const b64 = typeof m.content_base64 === 'string' ? m.content_base64.trim() : '';
+    if (!b64) return res.status(400).json({ message: 'Each image needs content_base64' });
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(b64, 'base64');
+    } catch {
+      return res.status(400).json({ message: 'Invalid base64 in media' });
+    }
+    if (buf.length === 0) return res.status(400).json({ message: 'Empty image' });
+    if (buf.length > QUOTATION_INTERNAL_NOTE_FILE_MAX_BYTES) {
+      return res.status(400).json({
+        message: `Each image must be at most ${Math.round(QUOTATION_INTERNAL_NOTE_FILE_MAX_BYTES / (1024 * 1024))} MB`,
+      });
+    }
+    const contentType = typeof m.content_type === 'string' ? m.content_type.trim().toLowerCase().slice(0, 80) : '';
+    const baseCt = contentType.split(';')[0]!.trim();
+    if (!baseCt.startsWith('image/')) {
+      return res.status(400).json({ message: 'Internal note attachments support image files only' });
+    }
+    const original =
+      typeof m.filename === 'string' && m.filename.trim() ? sanitizeStoredOriginalName(m.filename) : 'upload.jpg';
+    decoded.push({ buf, contentType: baseCt, original });
+  }
+
+  const client = await pool.connect();
   try {
-    const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    const qCheck = await client.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
     if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
     const qRow = qCheck.rows[0];
     if (!canAccessQuotation(qRow, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
 
-    const ins = await pool.query<{
-      id: number;
-      body: string;
-      created_at: Date;
-      created_by: number | null;
-      created_by_label: string | null;
-    }>(
-      `WITH ins AS (
-         INSERT INTO quotation_internal_notes (quotation_id, body, created_by)
-         VALUES ($1, $2, $3)
-         RETURNING id, body, created_at, created_by
-       )
-       SELECT ins.id, ins.body, ins.created_at, ins.created_by,
-              COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS created_by_label
-       FROM ins
-       LEFT JOIN users u ON u.id = ins.created_by`,
+    await client.query('BEGIN');
+    const ins = await client.query<{ id: number; body: string; created_at: Date; created_by: number | null }>(
+      `INSERT INTO quotation_internal_notes (quotation_id, body, created_by, media)
+       VALUES ($1, $2, $3, '[]'::jsonb)
+       RETURNING id, body, created_at, created_by`,
       [quotationId, text, userId],
     );
-    const row = ins.rows[0];
+    const noteRow = ins.rows[0];
+    const noteId = noteRow.id;
+
+    const mediaJson: {
+      stored_filename: string;
+      original_filename: string;
+      content_type: string;
+      kind: string;
+      byte_size: number;
+    }[] = [];
+
+    if (decoded.length > 0) {
+      const dir = await ensureQuotationInternalNoteDir(quotationId, noteId);
+      for (const d of decoded) {
+        const ext = path.extname(d.original).slice(0, 32) || '.jpg';
+        const storedFilename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+        const fullPath = path.join(dir, storedFilename);
+        await fs.writeFile(fullPath, d.buf);
+        mediaJson.push({
+          stored_filename: storedFilename,
+          original_filename: d.original,
+          content_type: d.contentType,
+          kind: 'image',
+          byte_size: d.buf.length,
+        });
+      }
+      await client.query(`UPDATE quotation_internal_notes SET media = $1::jsonb WHERE id = $2`, [JSON.stringify(mediaJson), noteId]);
+    }
+
+    const labelRes = await client.query<{ created_by_label: string | null }>(
+      `SELECT COALESCE(NULLIF(TRIM(u.full_name), ''), u.email) AS created_by_label
+       FROM quotation_internal_notes n
+       LEFT JOIN users u ON u.id = n.created_by
+       WHERE n.id = $1`,
+      [noteId],
+    );
+    await client.query('COMMIT');
+
+    const createdByLabel = labelRes.rows[0]?.created_by_label ?? null;
+    const mediaOut = mediaJson.map((m) => ({
+      stored_filename: m.stored_filename,
+      original_filename: m.original_filename,
+      content_type: m.content_type,
+      kind: m.kind,
+      byte_size: m.byte_size,
+      file_path: `/quotations/${quotationId}/internal-notes/${noteId}/files/${encodeURIComponent(m.stored_filename)}`,
+    }));
+
     return res.status(201).json({
       note: {
-        id: row.id,
-        body: row.body,
-        created_at: (row.created_at as Date).toISOString(),
-        created_by: row.created_by,
-        created_by_label: row.created_by_label ?? null,
+        id: noteId,
+        body: noteRow.body,
+        media: mediaOut,
+        created_at: (noteRow.created_at as Date).toISOString(),
+        created_by: noteRow.created_by,
+        created_by_label: createdByLabel,
       },
     });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* */
+    }
     console.error('Create quotation internal note error:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -10274,12 +11705,60 @@ app.delete('/api/quotations/:id/internal-notes/:noteId', authenticate, requireTe
 
     const del = await pool.query('DELETE FROM quotation_internal_notes WHERE id = $1 AND quotation_id = $2', [noteId, quotationId]);
     if ((del.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    const noteDir = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId));
+    await fs.rm(noteDir, { recursive: true, force: true }).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete quotation internal note error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.get(
+  '/api/quotations/:id/internal-notes/:noteId/files/:file',
+  authenticate,
+  requireTenantCrmAccess('quotations'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const quotationId = parseInt(String(idParam), 10);
+    const noteId = parseInt(String(req.params.noteId), 10);
+    const fileParam = req.params.file;
+    const fileName = typeof fileParam === 'string' ? decodeURIComponent(fileParam) : '';
+    if (!Number.isFinite(quotationId) || !Number.isFinite(noteId) || !fileName || fileName.includes('..') || path.isAbsolute(fileName)) {
+      return res.status(400).json({ message: 'Invalid request' });
+    }
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+    try {
+      const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+      if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+      if (!canAccessQuotation(qCheck.rows[0], userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+      const m = await pool.query<{ media: unknown }>(
+        'SELECT media FROM quotation_internal_notes WHERE id = $1 AND quotation_id = $2',
+        [noteId, quotationId],
+      );
+      if ((m.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Not found' });
+      const list = m.rows[0].media as { stored_filename?: string; content_type?: string }[];
+      const meta = Array.isArray(list) ? list.find((x) => x.stored_filename === fileName) : null;
+      if (!meta) return res.status(404).json({ message: 'Not found' });
+
+      const fullPath = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId), fileName);
+      if (!fullPath.startsWith(getQuotationInternalNotesRootDir())) {
+        return res.status(400).json({ message: 'Invalid path' });
+      }
+      const st = await fs.stat(fullPath);
+      const ct = meta.content_type && String(meta.content_type).trim() ? String(meta.content_type) : 'application/octet-stream';
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.setHeader('Content-Length', String(st.size));
+      return createReadStream(fullPath).pipe(res);
+    } catch {
+      return res.status(404).json({ message: 'File not found' });
+    }
+  },
+);
 
 app.get('/api/quotations/:id/email-compose', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -10975,6 +12454,50 @@ app.post('/api/quotations/:id/transfer-to-invoice', authenticate, requireTenantC
   }
 });
 
+/** Link an accepted quotation to a job after the job is created from the dashboard (PATCH quotation disallows accepted edits). */
+app.post('/api/quotations/:id/link-job', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as { job_id?: unknown };
+  const jobIdRaw = body.job_id;
+  const jobId =
+    typeof jobIdRaw === 'number' && Number.isFinite(jobIdRaw)
+      ? Math.trunc(jobIdRaw)
+      : typeof jobIdRaw === 'string' && String(jobIdRaw).trim()
+        ? parseInt(String(jobIdRaw).trim(), 10)
+        : NaN;
+  if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'job_id is required' });
+
+  const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const q = qCheck.rows[0];
+  if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+  if (q.state !== 'accepted') {
+    return res.status(400).json({ message: 'Only accepted quotations can be linked to a job' });
+  }
+
+  const jobRow = await pool.query<{ customer_id: number }>('SELECT customer_id FROM jobs WHERE id = $1', [jobId]);
+  if ((jobRow.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+  if (jobRow.rows[0].customer_id !== q.customer_id) {
+    return res.status(400).json({ message: 'Job must belong to the same customer as the quotation' });
+  }
+
+  if (q.job_id != null && q.job_id !== jobId) {
+    const ex = await pool.query('SELECT id FROM jobs WHERE id = $1 AND customer_id = $2', [q.job_id, q.customer_id]);
+    if ((ex.rowCount ?? 0) > 0) {
+      return res.status(400).json({ message: 'This quotation is already linked to a different job' });
+    }
+  }
+
+  await pool.query('UPDATE quotations SET job_id = $1, updated_at = NOW() WHERE id = $2', [jobId, quotationId]);
+  await logQuotationActivity(quotationId, 'linked_job', { job_id: jobId, quotation_number: q.quotation_number }, userId);
+  return res.json({ success: true, quotation_id: quotationId, job_id: jobId });
+});
+
 app.delete('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
@@ -11496,7 +13019,7 @@ app.patch('/api/settings/email-templates/:key', authenticate, requireAdmin, requ
   }
 });
 
-const SYSTEM_EMAIL_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general']);
+const SYSTEM_EMAIL_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general', 'service_reminder']);
 
 app.post('/api/settings/email-templates', authenticate, requireAdmin, requirePermission('settings_company'), async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
@@ -11535,7 +13058,9 @@ app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, req
     return res.status(400).json({ message: 'Invalid template key' });
   }
   if (SYSTEM_EMAIL_TEMPLATE_KEYS.has(templateKey.toLowerCase())) {
-    return res.status(400).json({ message: 'Built-in templates (invoice, quotation, general) cannot be deleted' });
+    return res.status(400).json({
+      message: 'Built-in templates (invoice, quotation, general, service_reminder) cannot be deleted',
+    });
   }
   try {
     const r = await pool.query('DELETE FROM email_templates WHERE created_by = $1 AND template_key = $2', [
@@ -11953,6 +13478,118 @@ app.delete('/api/settings/job-descriptions/:id', authenticate, requireAdmin, req
   }
 });
 
+app.get(
+  '/api/settings/job-descriptions/:id/job-report-questions',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const descId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(descId)) return res.status(400).json({ message: 'Invalid ID' });
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    try {
+      const own = await pool.query<{ id: number }>(
+        `SELECT id FROM job_descriptions WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+        isSuperAdmin ? [descId] : [descId, userId],
+      );
+      if ((own.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Not found' });
+      const result = await pool.query(
+        `SELECT id, sort_order, question_type, prompt, helper_text, required
+         FROM job_report_job_description_questions
+         WHERE job_description_id = $1
+         ORDER BY sort_order ASC, id ASC`,
+        [descId],
+      );
+      return res.json({ questions: result.rows });
+    } catch (error) {
+      console.error('get job description job report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.put(
+  '/api/settings/job-descriptions/:id/job-report-questions',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const descId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(descId)) return res.status(400).json({ message: 'Invalid ID' });
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const raw = req.body as { questions?: unknown };
+    if (!Array.isArray(raw.questions)) {
+      return res.status(400).json({ message: 'Body must include questions array' });
+    }
+    const client = await pool.connect();
+    try {
+      const own = await client.query<{ id: number }>(
+        `SELECT id FROM job_descriptions WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+        isSuperAdmin ? [descId] : [descId, userId],
+      );
+      if ((own.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Not found' });
+      }
+      await client.query('BEGIN');
+      await client.query('DELETE FROM job_report_job_description_questions WHERE job_description_id = $1', [descId]);
+      let order = 0;
+      for (const item of raw.questions) {
+        if (!item || typeof item !== 'object') {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Each question must be an object' });
+        }
+        const q = item as Record<string, unknown>;
+        const questionType = typeof q.question_type === 'string' ? q.question_type.trim() : '';
+        const prompt = typeof q.prompt === 'string' ? q.prompt.trim() : '';
+        if (!prompt) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Each question needs a non-empty prompt' });
+        }
+        if (!isJobReportQuestionType(questionType)) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            message: `Invalid question_type "${questionType}". Allowed: ${JOB_REPORT_QUESTION_TYPES.join(', ')}`,
+          });
+        }
+        const helperText =
+          typeof q.helper_text === 'string' && q.helper_text.trim() ? q.helper_text.trim() : null;
+        const required = q.required === false ? false : true;
+        const sortOrder =
+          typeof q.sort_order === 'number' && Number.isFinite(q.sort_order)
+            ? Math.round(q.sort_order)
+            : order;
+        await client.query(
+          `INSERT INTO job_report_job_description_questions (job_description_id, sort_order, question_type, prompt, helper_text, required)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [descId, sortOrder, questionType, prompt, helperText, required],
+        );
+        order += 1;
+      }
+      await client.query('COMMIT');
+      const result = await pool.query(
+        `SELECT id, sort_order, question_type, prompt, helper_text, required
+         FROM job_report_job_description_questions
+         WHERE job_description_id = $1
+         ORDER BY sort_order ASC, id ASC`,
+        [descId],
+      );
+      return res.json({ questions: result.rows });
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      console.error('put job description job report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  },
+);
+
 // ── Pricing items for a job description template ──
 
 app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
@@ -12068,7 +13705,10 @@ app.get('/api/settings/service-checklist', authenticate, requireAdmin, requirePe
   const userId = getTenantScopeUserId(req.user!);
   try {
     const result = await pool.query(
-      `SELECT id, name, sort_order, is_active, created_at, updated_at
+      `SELECT id, name, sort_order, is_active,
+              reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit,
+              customer_reminder_weeks_before, customer_email_subject, customer_email_body_html,
+              created_at, updated_at
        FROM service_checklist_items
        WHERE created_by = $1
        ORDER BY sort_order ASC, id ASC`,
@@ -12089,9 +13729,10 @@ app.post('/api/settings/service-checklist', authenticate, requireAdmin, requireP
   if (!name) return res.status(400).json({ message: 'Name is required' });
   try {
     const result = await pool.query(
-      `INSERT INTO service_checklist_items (name, sort_order, is_active, created_by)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, sort_order, is_active, created_at, updated_at`,
+      `INSERT INTO service_checklist_items (name, sort_order, is_active, created_by, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit)
+       VALUES ($1, $2, $3, $4, 1, 'years', 14, 'days')
+       RETURNING id, name, sort_order, is_active, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit,
+                 customer_reminder_weeks_before, customer_email_subject, customer_email_body_html, created_at, updated_at`,
       [name, sortOrder, isActive, userId],
     );
     return res.status(201).json({ item: result.rows[0] });
@@ -12111,6 +13752,14 @@ app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, req
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
   const sortOrder = req.body?.sort_order !== undefined ? Number(req.body.sort_order) : undefined;
   const isActive = req.body?.is_active !== undefined ? !!req.body.is_active : undefined;
+  const body = req.body as Record<string, unknown>;
+  const hasInterval =
+    body.reminder_interval_n !== undefined || body.reminder_interval_unit !== undefined;
+  const hasEarly = body.reminder_early_n !== undefined || body.reminder_early_unit !== undefined;
+  const hasCustomerEmail =
+    body.customer_reminder_weeks_before !== undefined ||
+    body.customer_email_subject !== undefined ||
+    body.customer_email_body_html !== undefined;
 
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -12118,6 +13767,70 @@ app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, req
   if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name || null); }
   if (sortOrder !== undefined && Number.isFinite(sortOrder)) { updates.push(`sort_order = $${idx++}`); values.push(sortOrder); }
   if (isActive !== undefined) { updates.push(`is_active = $${idx++}`); values.push(isActive); }
+  if (hasInterval) {
+    const rawN = body.reminder_interval_n;
+    const n =
+      typeof rawN === 'number' && Number.isFinite(rawN)
+        ? Math.trunc(rawN)
+        : typeof rawN === 'string' && String(rawN).trim()
+          ? parseInt(String(rawN).trim(), 10)
+          : NaN;
+    const u =
+      typeof body.reminder_interval_unit === 'string' ? body.reminder_interval_unit.trim().toLowerCase() : '';
+    if (!Number.isFinite(n) || n < 1 || !SERVICE_REMINDER_INTERVAL_UNITS.has(u)) {
+      return res.status(400).json({ message: 'Invalid reminder interval (use amount ≥ 1 and unit: days, weeks, months, years)' });
+    }
+    updates.push(`reminder_interval_n = $${idx++}`);
+    values.push(n);
+    updates.push(`reminder_interval_unit = $${idx++}`);
+    values.push(u);
+  }
+  if (hasEarly) {
+    const rawEn = body.reminder_early_n;
+    const en =
+      typeof rawEn === 'number' && Number.isFinite(rawEn)
+        ? Math.trunc(rawEn)
+        : typeof rawEn === 'string' && String(rawEn).trim()
+          ? parseInt(String(rawEn).trim(), 10)
+          : NaN;
+    const eu =
+      typeof body.reminder_early_unit === 'string' ? body.reminder_early_unit.trim().toLowerCase() : '';
+    if (!Number.isFinite(en) || en < 1 || !SERVICE_REMINDER_EARLY_UNITS.has(eu)) {
+      return res.status(400).json({ message: 'Invalid early reminder (use amount ≥ 1 and unit: days or weeks)' });
+    }
+    updates.push(`reminder_early_n = $${idx++}`);
+    values.push(en);
+    updates.push(`reminder_early_unit = $${idx++}`);
+    values.push(eu);
+  }
+  if (hasCustomerEmail) {
+    if (body.customer_reminder_weeks_before !== undefined) {
+      if (body.customer_reminder_weeks_before === null) {
+        updates.push(`customer_reminder_weeks_before = $${idx++}`);
+        values.push(null);
+      } else {
+        const w =
+          typeof body.customer_reminder_weeks_before === 'number'
+            ? Math.trunc(body.customer_reminder_weeks_before)
+            : parseInt(String(body.customer_reminder_weeks_before).trim(), 10);
+        if (!Number.isFinite(w) || w < 1 || w > 52) {
+          return res.status(400).json({ message: 'customer_reminder_weeks_before must be 1–52 or null' });
+        }
+        updates.push(`customer_reminder_weeks_before = $${idx++}`);
+        values.push(w);
+      }
+    }
+    if (body.customer_email_subject !== undefined) {
+      const s = typeof body.customer_email_subject === 'string' ? body.customer_email_subject.trim() : '';
+      updates.push(`customer_email_subject = $${idx++}`);
+      values.push(s || null);
+    }
+    if (body.customer_email_body_html !== undefined) {
+      const h = typeof body.customer_email_body_html === 'string' ? body.customer_email_body_html.trim() : '';
+      updates.push(`customer_email_body_html = $${idx++}`);
+      values.push(h || null);
+    }
+  }
   if (!updates.length) return res.status(400).json({ message: 'No fields to update' });
   updates.push('updated_at = NOW()');
   values.push(id, userId);
@@ -12127,7 +13840,8 @@ app.patch('/api/settings/service-checklist/:id', authenticate, requireAdmin, req
       `UPDATE service_checklist_items
        SET ${updates.join(', ')}
        WHERE id = $${idx++} AND created_by = $${idx}
-       RETURNING id, name, sort_order, is_active, created_at, updated_at`,
+       RETURNING id, name, sort_order, is_active, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit,
+                 customer_reminder_weeks_before, customer_email_subject, customer_email_body_html, created_at, updated_at`,
       values,
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Service not found' });
@@ -12152,6 +13866,130 @@ app.delete('/api/settings/service-checklist/:id', authenticate, requireAdmin, re
   }
 });
 
+app.get('/api/settings/service-reminders', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    await pool.query(
+      `INSERT INTO service_reminder_settings (created_by) VALUES ($1)
+       ON CONFLICT (created_by) DO NOTHING`,
+      [userId],
+    );
+    const r = await pool.query<{
+      automated_enabled: boolean;
+      recipient_mode: string;
+    }>(
+      `SELECT automated_enabled, recipient_mode FROM service_reminder_settings WHERE created_by = $1`,
+      [userId],
+    );
+    const row = r.rows[0];
+    return res.json({
+      settings: {
+        automated_enabled: row?.automated_enabled !== false,
+        recipient_mode: SERVICE_REMINDER_RECIPIENT_MODES.has(row?.recipient_mode || '')
+          ? row!.recipient_mode
+          : 'customer_account',
+      },
+    });
+  } catch (error) {
+    console.error('Get service reminder settings error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/service-reminders', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const body = req.body as { automated_enabled?: unknown; recipient_mode?: unknown };
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (body.automated_enabled !== undefined) {
+    updates.push(`automated_enabled = $${idx++}`);
+    values.push(!!body.automated_enabled);
+  }
+  if (body.recipient_mode !== undefined) {
+    const m = typeof body.recipient_mode === 'string' ? body.recipient_mode.trim() : '';
+    if (!SERVICE_REMINDER_RECIPIENT_MODES.has(m)) {
+      return res.status(400).json({
+        message: 'recipient_mode must be customer_account, job_contact, or primary_contact',
+      });
+    }
+    updates.push(`recipient_mode = $${idx++}`);
+    values.push(m);
+  }
+  if (!updates.length) return res.status(400).json({ message: 'No fields to update' });
+  updates.push('updated_at = NOW()');
+  values.push(userId);
+  try {
+    await pool.query(
+      `INSERT INTO service_reminder_settings (created_by) VALUES ($1)
+       ON CONFLICT (created_by) DO NOTHING`,
+      [userId],
+    );
+    await pool.query(`UPDATE service_reminder_settings SET ${updates.join(', ')} WHERE created_by = $${idx}`, values);
+    const r = await pool.query<{
+      automated_enabled: boolean;
+      recipient_mode: string;
+    }>(
+      `SELECT automated_enabled, recipient_mode FROM service_reminder_settings WHERE created_by = $1`,
+      [userId],
+    );
+    const row = r.rows[0];
+    return res.json({
+      settings: {
+        automated_enabled: row?.automated_enabled !== false,
+        recipient_mode: SERVICE_REMINDER_RECIPIENT_MODES.has(row?.recipient_mode || '')
+          ? row!.recipient_mode
+          : 'customer_account',
+      },
+    });
+  } catch (error) {
+    console.error('Patch service reminder settings error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post(
+  '/api/settings/service-reminders/run-now',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const result = await runAllScheduledReminders(pool, {
+        loadEmailSettingsPayload,
+        sendUserEmail,
+        runServiceCustomerReminders: runAutomatedServiceReminders,
+      });
+      return res.json(result);
+    } catch (error) {
+      console.error('Run service reminders error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+async function handleInternalRemindersCron(req: Request, res: Response) {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) return res.status(503).json({ message: 'CRON_SECRET is not configured' });
+  const hdr = req.headers['x-cron-secret'];
+  const provided = typeof hdr === 'string' ? hdr : Array.isArray(hdr) ? hdr[0] : '';
+  if (provided !== secret) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const result = await runAllScheduledReminders(pool, {
+      loadEmailSettingsPayload,
+      sendUserEmail,
+      runServiceCustomerReminders: runAutomatedServiceReminders,
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error('Cron reminders error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+app.post('/api/internal/service-reminders', handleInternalRemindersCron);
+app.post('/api/internal/reminders', handleInternalRemindersCron);
+
 // ───────────────────────────────── ENHANCED JOB CREATION (with pricing items) ─────────────────────────────────
 
 app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
@@ -12167,12 +14005,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
   const title = req.body.title?.trim() || 'Untitled Job';
   const createdBy = getTenantScopeUserId(req.user!);
 
-  const completedServiceItems = Array.isArray(completed_service_items)
-    ? completed_service_items
-      .filter((v: unknown): v is string => typeof v === 'string')
-      .map((v: string) => v.trim())
-      .filter(Boolean)
-    : [];
+  const completedServiceItems = normalizeCompletedServiceItemsForDb(completed_service_items);
 
   try {
     const workAddressIdJob = await resolveWorkAddressIdForCustomer(pool, customerId, (req.body as { work_address_id?: unknown }).work_address_id);
@@ -12214,9 +14047,9 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
     const job = jobResult.rows[0];
 
     try {
-      await copyDefaultJobReportTemplateToJob(job.id);
+      await seedJobReportQuestionsForNewJob(job.id, parseOptionalJobDescriptionId(job.job_description_id));
     } catch (e) {
-      console.error('Copy default job report template to new job:', e);
+      console.error('Seed job report questions for new job:', e);
     }
     // Insert pricing items if provided
     if (Array.isArray(pricing_items) && pricing_items.length > 0) {
@@ -13260,6 +15093,419 @@ app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireTena
   }
 });
 
+app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const waRaw = req.query.work_address_id;
+  const waParsed = typeof waRaw === 'string' && waRaw.trim() ? parseInt(waRaw.trim(), 10) : null;
+  if (waRaw != null && String(waRaw).trim() !== '' && !Number.isFinite(waParsed)) {
+    return res.status(400).json({ message: 'Invalid work_address_id' });
+  }
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const resolvedWa = waParsed && Number.isFinite(waParsed) ? await resolveWorkAddressIdForCustomer(pool, customerId, waParsed) : null;
+    if (waParsed != null && Number.isFinite(waParsed) && resolvedWa == null) {
+      return res.status(400).json({ message: 'Work address not found for this customer' });
+    }
+
+    const ownerUserId = Number(customer.rows[0].created_by);
+    if (!Number.isFinite(ownerUserId)) return res.status(500).json({ message: 'Invalid customer owner' });
+    const fraTemplateId = await ensureFireRiskAssessmentTemplate(pool, ownerUserId);
+    const emptyDoc = normalizeTemplateSiteReportDocument(null, fraTemplateId);
+
+    let row = await pool.query<{
+      id: number;
+      template_id: number | null;
+      report_title: string | null;
+      document: unknown;
+      updated_at: Date;
+    }>(
+      `SELECT id, template_id, report_title, document, updated_at FROM customer_site_reports
+       WHERE customer_id = $1 AND (
+         ($2::integer IS NULL AND work_address_id IS NULL)
+         OR (work_address_id = $2)
+       )`,
+      [customerId, resolvedWa],
+    );
+    if ((row.rowCount ?? 0) === 0) {
+      try {
+        const ins = await pool.query<{
+          id: number;
+          template_id: number | null;
+          report_title: string | null;
+          document: unknown;
+          updated_at: Date;
+        }>(
+          `INSERT INTO customer_site_reports (customer_id, work_address_id, report_title, document, template_id, created_by, updated_by)
+           VALUES ($1, $2, NULL, $3::jsonb, $4, $5, $5)
+           RETURNING id, template_id, report_title, document, updated_at`,
+          [customerId, resolvedWa, JSON.stringify(emptyDoc), fraTemplateId, userId],
+        );
+        row = ins;
+      } catch (insErr: unknown) {
+        const code = insErr && typeof insErr === 'object' && 'code' in insErr ? (insErr as { code?: string }).code : '';
+        if (code !== '23505') throw insErr;
+        row = await pool.query<{
+          id: number;
+          template_id: number | null;
+          report_title: string | null;
+          document: unknown;
+          updated_at: Date;
+        }>(
+          `SELECT id, template_id, report_title, document, updated_at FROM customer_site_reports
+           WHERE customer_id = $1 AND (
+             ($2::integer IS NULL AND work_address_id IS NULL)
+             OR (work_address_id = $2)
+           )`,
+          [customerId, resolvedWa],
+        );
+      }
+    }
+
+    const r0 = row.rows[0];
+    const rawDoc = r0.document;
+    const needsMigrate =
+      r0.template_id == null ||
+      !rawDoc ||
+      typeof rawDoc !== 'object' ||
+      (rawDoc as Record<string, unknown>).mode !== 'template_v1';
+    if (needsMigrate) {
+      const fresh = normalizeTemplateSiteReportDocument(null, fraTemplateId);
+      await pool.query(
+        `UPDATE customer_site_reports SET template_id = $1, document = $2::jsonb, updated_by = $3, updated_at = NOW() WHERE id = $4`,
+        [fraTemplateId, JSON.stringify(fresh), userId, r0.id],
+      );
+    }
+
+    const rFinal = await pool.query<{
+      id: number;
+      template_id: number | null;
+      report_title: string | null;
+      document: unknown;
+      updated_at: Date;
+    }>('SELECT id, template_id, report_title, document, updated_at FROM customer_site_reports WHERE id = $1', [r0.id]);
+    const r = rFinal.rows[0];
+    const tid = r.template_id != null ? Number(r.template_id) : fraTemplateId;
+    const doc = normalizeTemplateSiteReportDocument(r.document, tid);
+    const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
+    if (!def) return res.status(500).json({ message: 'Site report template could not be loaded' });
+
+    return res.json({
+      report: {
+        id: Number(r.id),
+        customer_id: customerId,
+        work_address_id: resolvedWa,
+        template_id: tid,
+        report_title: r.report_title,
+        document: doc,
+        updated_at: (r.updated_at as Date).toISOString(),
+      },
+      template: { id: tid, definition: def },
+    });
+  } catch (error) {
+    console.error('Get customer site report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as Record<string, unknown>;
+
+  const waParsed =
+    body.work_address_id === undefined || body.work_address_id === null || body.work_address_id === ''
+      ? null
+      : typeof body.work_address_id === 'number' && Number.isFinite(body.work_address_id)
+        ? Math.trunc(body.work_address_id as number)
+        : typeof body.work_address_id === 'string' && String(body.work_address_id).trim()
+          ? parseInt(String(body.work_address_id).trim(), 10)
+          : NaN;
+  if (body.work_address_id != null && String(body.work_address_id).trim() !== '' && !Number.isFinite(waParsed)) {
+    return res.status(400).json({ message: 'Invalid work_address_id' });
+  }
+
+  const reportIdRaw = body.report_id;
+  const reportId =
+    typeof reportIdRaw === 'number' && Number.isFinite(reportIdRaw)
+      ? Math.trunc(reportIdRaw)
+      : typeof reportIdRaw === 'string' && String(reportIdRaw).trim()
+        ? parseInt(String(reportIdRaw).trim(), 10)
+        : NaN;
+  if (!Number.isFinite(reportId)) return res.status(400).json({ message: 'report_id is required' });
+
+  const reportTitle =
+    typeof body.report_title === 'string' ? body.report_title.trim().slice(0, 500) : body.report_title === null ? null : undefined;
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const ownerUserId = Number(customer.rows[0].created_by);
+    const fraTemplateId = await ensureFireRiskAssessmentTemplate(pool, ownerUserId);
+
+    const resolvedWa = waParsed && Number.isFinite(waParsed) ? await resolveWorkAddressIdForCustomer(pool, customerId, waParsed) : null;
+    if (waParsed != null && Number.isFinite(waParsed) && resolvedWa == null) {
+      return res.status(400).json({ message: 'Work address not found for this customer' });
+    }
+
+    const own = await pool.query<{ id: number; template_id: number | null }>(
+      `SELECT id, template_id FROM customer_site_reports WHERE id = $1 AND customer_id = $2 AND (
+         ($3::integer IS NULL AND work_address_id IS NULL)
+         OR (work_address_id = $3)
+       )`,
+      [reportId, customerId, resolvedWa],
+    );
+    if ((own.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
+
+    const templateIdForDoc =
+      own.rows[0].template_id != null && Number.isFinite(Number(own.rows[0].template_id))
+        ? Number(own.rows[0].template_id)
+        : fraTemplateId;
+    const documentNorm = normalizeTemplateSiteReportDocument(body.document, templateIdForDoc);
+    documentNorm.template_id = templateIdForDoc;
+    if (documentNorm.mode !== 'template_v1') {
+      return res.status(400).json({ message: 'Invalid document: expected template_v1 payload' });
+    }
+
+    const okImages = await assertSiteReportTemplateImageIdsBelongToReport(pool, reportId, documentNorm);
+    if (!okImages) return res.status(400).json({ message: 'One or more image references are invalid for this report' });
+
+    const updates: string[] = ['document = $1::jsonb', 'updated_at = NOW()', 'updated_by = $2'];
+    const vals: unknown[] = [JSON.stringify(documentNorm), userId];
+    let idx = 3;
+    if (reportTitle !== undefined) {
+      updates.push(`report_title = $${idx++}`);
+      vals.push(reportTitle);
+    }
+    vals.push(reportId, customerId);
+    await pool.query(
+      `UPDATE customer_site_reports SET ${updates.join(', ')} WHERE id = $${idx++} AND customer_id = $${idx}`,
+      vals,
+    );
+
+    const r = await pool.query<{
+      report_title: string | null;
+      document: unknown;
+      updated_at: Date;
+      template_id: number | null;
+    }>('SELECT report_title, document, updated_at, template_id FROM customer_site_reports WHERE id = $1', [reportId]);
+    const row = r.rows[0];
+    const tid = row.template_id != null ? Number(row.template_id) : templateIdForDoc;
+    const doc = normalizeTemplateSiteReportDocument(row.document, tid);
+    const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
+    if (!def) return res.status(500).json({ message: 'Site report template could not be loaded' });
+    return res.json({
+      report: {
+        id: reportId,
+        customer_id: customerId,
+        work_address_id: resolvedWa,
+        template_id: tid,
+        report_title: row.report_title,
+        document: doc,
+        updated_at: (row.updated_at as Date).toISOString(),
+      },
+      template: { id: tid, definition: def },
+    });
+  } catch (error) {
+    console.error('Put customer site report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as Record<string, unknown>;
+  const filenameRaw = typeof body.filename === 'string' ? body.filename : '';
+  const b64 = typeof body.content_base64 === 'string' ? body.content_base64.trim() : '';
+  const contentType =
+    typeof body.content_type === 'string' && body.content_type.trim() ? body.content_type.trim().slice(0, 255) : null;
+
+  if (!filenameRaw.trim() || !b64) {
+    return res.status(400).json({ message: 'filename and content_base64 are required' });
+  }
+
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(b64, 'base64');
+  } catch {
+    return res.status(400).json({ message: 'Invalid base64 file data' });
+  }
+  if (buf.length === 0) return res.status(400).json({ message: 'Empty file' });
+  if (buf.length > CUSTOMER_FILE_MAX_BYTES) {
+    return res.status(400).json({ message: `File too large (max ${Math.round(CUSTOMER_FILE_MAX_BYTES / (1024 * 1024))} MB)` });
+  }
+
+  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
+  const ext = path.extname(originalFilename).slice(0, 32) || '';
+  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${ext}`;
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const rep = await pool.query<{ id: number }>(
+      'SELECT id FROM customer_site_reports WHERE id = $1 AND customer_id = $2',
+      [reportId, customerId],
+    );
+    if ((rep.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
+
+    const dir = await ensureCustomerSiteReportImageDir(customerId, reportId);
+    const fullPath = path.join(dir, storedFilename);
+    await fs.writeFile(fullPath, buf);
+
+    try {
+      const inserted = await pool.query(
+        `INSERT INTO customer_site_report_images (report_id, stored_filename, original_filename, content_type, byte_size, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, created_at`,
+        [reportId, storedFilename, originalFilename, contentType, buf.length, userId],
+      );
+      return res.status(201).json({
+        image: {
+          id: Number(inserted.rows[0].id),
+          created_at: (inserted.rows[0].created_at as Date).toISOString(),
+        },
+      });
+    } catch (dbErr) {
+      await fs.unlink(fullPath).catch(() => {});
+      throw dbErr;
+    }
+  } catch (error) {
+    console.error('Upload customer site report image error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/content', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  const imageId = parseInt(String(req.params.imageId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId) || !Number.isFinite(imageId)) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const row = await pool.query<{
+      stored_filename: string;
+      original_filename: string;
+      content_type: string | null;
+    }>(
+      `SELECT i.stored_filename, i.original_filename, i.content_type
+       FROM customer_site_report_images i
+       INNER JOIN customer_site_reports r ON r.id = i.report_id
+       WHERE i.id = $1 AND i.report_id = $2 AND r.customer_id = $3`,
+      [imageId, reportId, customerId],
+    );
+    if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Image not found' });
+
+    const fullPath = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId), row.rows[0].stored_filename);
+    let data: Buffer;
+    try {
+      data = await fs.readFile(fullPath);
+    } catch {
+      return res.status(404).json({ message: 'Image not found on disk' });
+    }
+
+    const ct = row.rows[0].content_type || 'application/octet-stream';
+    res.setHeader('Content-Type', ct);
+    return res.send(data);
+  } catch (error) {
+    console.error('Get customer site report image error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  const imageId = parseInt(String(req.params.imageId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId) || !Number.isFinite(imageId)) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const row = await pool.query<{ stored_filename: string }>(
+      `DELETE FROM customer_site_report_images i
+       USING customer_site_reports r
+       WHERE i.id = $1 AND i.report_id = $2 AND i.report_id = r.id AND r.customer_id = $3
+       RETURNING i.stored_filename`,
+      [imageId, reportId, customerId],
+    );
+    if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Image not found' });
+
+    const fullPath = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId), row.rows[0].stored_filename);
+    await fs.unlink(fullPath).catch(() => {});
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete customer site report image error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/customers/:customerId/site-report/:reportId/pdf', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const ownerUserId = Number(customer.rows[0].created_by);
+    if (!Number.isFinite(ownerUserId)) return res.status(500).json({ message: 'Invalid customer owner' });
+
+    const { pdf, filenameBase } = await generateCustomerSiteReportPdfBuffer(pool, {
+      customerId,
+      reportId,
+      ownerUserId,
+    });
+    const asciiName = `${filenameBase.replace(/[^\x20-\x7E]/g, '_') || 'site-report'}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '';
+    if (msg === 'REPORT_NOT_FOUND') return res.status(404).json({ message: 'Report not found' });
+    if (msg === 'INVALID_DOCUMENT' || msg === 'TEMPLATE_NOT_FOUND' || msg === 'INVALID_TEMPLATE') {
+      return res.status(400).json({ message: 'Report data is incomplete. Save the report in the app and try again.' });
+    }
+    console.error('Customer site report PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.post('/api/import/customers-sites', authenticate, requireAdmin, requirePermission('settings_master_data'), async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
   const body = req.body as Record<string, unknown>;
@@ -13579,6 +15825,29 @@ initDb()
   .then(() => {
     app.listen(port, () => {
       console.log(`Server is running on port ${port}`);
+      const rawMs = process.env.SERVICE_REMINDER_INTERVAL_MS;
+      const parsed = rawMs != null && String(rawMs).trim() !== '' ? parseInt(String(rawMs), 10) : NaN;
+      const intervalMs = Number.isFinite(parsed) && parsed >= 60_000 ? parsed : 6 * 60 * 60 * 1000;
+      const tick = () => {
+        runAllScheduledReminders(pool, {
+          loadEmailSettingsPayload,
+          sendUserEmail,
+          runServiceCustomerReminders: runAutomatedServiceReminders,
+        })
+          .then((r) => {
+            const loggable =
+              r.service_reminders.sent > 0 ||
+              r.service_reminders.errors.length > 0 ||
+              r.job_office_task_reminders.sent > 0 ||
+              r.job_office_task_reminders.errors.length > 0 ||
+              r.staff_reminders.sent > 0 ||
+              r.staff_reminders.errors.length > 0;
+            if (loggable) console.log('[scheduled-reminders]', r);
+          })
+          .catch((e) => console.error('[scheduled-reminders]', e));
+      };
+      setTimeout(tick, 90_000);
+      setInterval(tick, intervalMs);
     });
   })
   .catch((error) => {

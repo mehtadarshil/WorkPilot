@@ -30,7 +30,22 @@ interface EmailTemplateRow {
   updated_at: string;
 }
 
-const BUILTIN_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general']);
+const BUILTIN_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general', 'service_reminder']);
+
+const EMAIL_TEMPLATE_LIST_ORDER = ['invoice', 'quotation', 'service_reminder', 'general'] as const;
+
+function sortEmailTemplatesForDisplay(rows: EmailTemplateRow[]): EmailTemplateRow[] {
+  return [...rows].sort((a, b) => {
+    const ia = EMAIL_TEMPLATE_LIST_ORDER.indexOf(a.template_key as (typeof EMAIL_TEMPLATE_LIST_ORDER)[number]);
+    const ib = EMAIL_TEMPLATE_LIST_ORDER.indexOf(b.template_key as (typeof EMAIL_TEMPLATE_LIST_ORDER)[number]);
+    if (ia !== -1 || ib !== -1) {
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }
+    return a.template_key.localeCompare(b.template_key);
+  });
+}
 
 const VARS_HELP: Record<string, string> = {
   invoice:
@@ -38,6 +53,8 @@ const VARS_HELP: Record<string, string> = {
   quotation:
     '{{company_name}}, {{customer_name}}, {{customer_address}}, {{work_address}}, {{quotation_number}}, {{quotation_total}}, {{currency}}, {{quotation_date}}, {{valid_until}}, {{quotation_link}}',
   general: '{{company_name}}, {{message}}',
+  service_reminder:
+    '{{company_name}}, {{customer_name}}, {{work_address}} / {{site_address}} (this job’s site), {{customer_address}}, {{service_name}}, {{job_title}}, {{due_date}}, {{phase_label}}, …',
 };
 
 function templateVarsHint(templateKey: string): string {
@@ -96,10 +113,51 @@ const PLACEHOLDER_REFERENCE: {
     ],
   },
   {
+    templateKey: 'service_reminder',
+    title: 'Service renewal reminder',
+    whenUsed:
+      'Automated customer emails for recurring service jobs (cron). Per–service-type overrides live under Settings → Job descriptions → Service reminders. Recipient is resolved from the job’s customer contact, then account email.',
+    tags: [
+      { tag: '{{company_name}}', purpose: 'Your organisation name (invoice settings fallback).' },
+      { tag: '{{customer_name}}', purpose: 'Customer display name on the job’s account.' },
+      { tag: '{{customer_surname}}', purpose: 'Billing contact surname when available.' },
+      { tag: '{{customer_account_no}}', purpose: 'Customer account id (same as customer id).' },
+      { tag: '{{customer_email}}', purpose: 'Account email on file (may be empty).' },
+      { tag: '{{customer_telephone}}', purpose: 'Landline or main phone when set.' },
+      { tag: '{{customer_mobile}}', purpose: 'Mobile when set.' },
+      { tag: '{{customer_address}}', purpose: 'Billing address as one comma-separated line.' },
+      { tag: '{{customer_address_line_1}}', purpose: 'Billing address line 1.' },
+      { tag: '{{customer_address_line_2}}', purpose: 'Billing address line 2.' },
+      { tag: '{{customer_address_line_3}}', purpose: 'Billing address line 3.' },
+      { tag: '{{customer_town}}', purpose: 'Billing town.' },
+      { tag: '{{customer_county}}', purpose: 'Billing county.' },
+      { tag: '{{customer_postcode}}', purpose: 'Billing postcode.' },
+      { tag: '{{work_address}}', purpose: 'This job’s linked work/site only (job work address id). Same value as {{site_address}}. Empty if the job has no work address.' },
+      { tag: '{{site_address}}', purpose: 'Alias of {{work_address}} for templates that prefer “site” wording.' },
+      { tag: '{{work_address_name}}', purpose: 'Work address label / site name only.' },
+      { tag: '{{work_address_branch}}', purpose: 'Branch name on the work address when set.' },
+      { tag: '{{work_address_line_1}}', purpose: 'Work/site address line 1 (this job only).' },
+      { tag: '{{work_address_line_2}}', purpose: 'Work/site address line 2.' },
+      { tag: '{{work_address_line_3}}', purpose: 'Work/site address line 3.' },
+      { tag: '{{work_address_town}}', purpose: 'Work/site town.' },
+      { tag: '{{work_address_county}}', purpose: 'Work/site county.' },
+      { tag: '{{work_address_postcode}}', purpose: 'Work/site postcode.' },
+      { tag: '{{service_name}}', purpose: 'Service checklist item name (same as {{service_reminder_name}}).' },
+      { tag: '{{service_reminder_name}}', purpose: 'Alias of {{service_name}}.' },
+      { tag: '{{service_contact}}', purpose: 'Job contact display name when set.' },
+      { tag: '{{service_reminder_booking_portal_url}}', purpose: 'WORKPILOT_CUSTOMER_PORTAL_URL from server env when configured.' },
+      { tag: '{{job_title}}', purpose: 'Job title.' },
+      { tag: '{{job_id}}', purpose: 'Internal job id.' },
+      { tag: '{{due_date}}', purpose: 'Next service due date for this send (same as {{service_due_date}}).' },
+      { tag: '{{service_due_date}}', purpose: 'Alias of {{due_date}}.' },
+      { tag: '{{phase_label}}', purpose: 'e.g. “first reminder” / “final reminder” for this phase.' },
+    ],
+  },
+  {
     templateKey: 'user_templates',
     title: 'Templates you add',
     whenUsed:
-      'Extra templates are saved for copy/paste or future automations. Only invoice and quotation sends substitute invoice/quotation placeholders automatically. Use {{company_name}} and {{message}} where the sender supplies them.',
+      'Extra templates are saved for copy/paste or future automations. Invoice, quotation, and service reminder sends substitute their own placeholders; other keys use only what each integration passes (often {{company_name}} and {{message}}).',
     tags: [
       { tag: '{{company_name}}', purpose: 'Organisation name from Invoice settings when provided by the send flow.' },
       { tag: '{{message}}', purpose: 'Body text when the integration passes it.' },
@@ -177,7 +235,7 @@ export default function EmailSettings() {
       setSignatureSession((v) => v + 1);
       setOauthConnected(!!s.oauth_connected);
       setOauthProvider(s.oauth_provider ?? null);
-      setTemplates(tplRes.templates ?? []);
+      setTemplates(sortEmailTemplatesForDisplay(tplRes.templates ?? []));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load email settings');
     } finally {
@@ -358,7 +416,7 @@ export default function EmailSettings() {
       <div>
         <h2 className="text-lg font-bold text-slate-900">Email Settings</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Configure outgoing mail for invoices, quotations, and future automations. Connect your mailbox below.
+          Configure outgoing mail for invoices, quotations, service renewal reminders, and other automations. Connect your mailbox below.
         </p>
       </div>
 
@@ -557,8 +615,8 @@ export default function EmailSettings() {
         </div>
         <p className="mt-1 text-sm text-slate-500">
           Subject and body support <code className="rounded bg-slate-100 px-1 text-xs">{'{{variable}}'}</code> placeholders
-          (double curly braces). Only the tags listed below are replaced for each template; anything else stays literal. Invoice
-          and quotation sends merge these into the subject and HTML body before your default signature is appended.
+          (double curly braces). Only the tags listed below are replaced for each template; anything else stays literal. Invoice,
+          quotation, and automated service reminder sends merge these into the subject and HTML body before your default signature is appended where applicable.
         </p>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/90 p-4">

@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getJson, patchJson } from '../../apiClient';
 import CustomerTypesSettings from './CustomerTypesSettings';
@@ -11,8 +11,10 @@ import BusinessUnitsSettings from './BusinessUnitsSettings';
 import UserGroupsSettings from './UserGroupsSettings';
 import UsersSettings from './UsersSettings';
 import EmailSettings from './EmailSettings';
+import ServiceRemindersSettings from './ServiceRemindersSettings';
 import ImportSettings from './ImportSettings';
-import JobReportTab from '../jobs/[id]/JobReportTab';
+import JobReportTemplateSettings from './JobReportTemplateSettings';
+import SiteReportTemplatesSettings from './SiteReportTemplatesSettings';
 import AbortReasonsSettings from './AbortReasonsSettings';
 import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
@@ -69,22 +71,48 @@ const THEME_PRESETS = [
   { name: 'Slate', accent: '#475569', end: '#334155' },
 ] as const;
 
+type SettingsTab =
+  | 'company'
+  | 'invoice'
+  | 'quotation'
+  | 'email'
+  | 'service-reminders'
+  | 'customer-types'
+  | 'price-books'
+  | 'job-descriptions'
+  | 'job-report-template'
+  | 'site-report-templates'
+  | 'diary-abort-reasons'
+  | 'business-units'
+  | 'user-groups'
+  | 'users'
+  | 'import';
+
+const SETTINGS_TAB_VALUES: SettingsTab[] = [
+  'company',
+  'invoice',
+  'quotation',
+  'email',
+  'service-reminders',
+  'customer-types',
+  'price-books',
+  'job-descriptions',
+  'job-report-template',
+  'site-report-templates',
+  'diary-abort-reasons',
+  'business-units',
+  'user-groups',
+  'users',
+  'import',
+];
+
+function parseSettingsTabParam(raw: string | null): SettingsTab | null {
+  if (!raw) return null;
+  return SETTINGS_TAB_VALUES.includes(raw as SettingsTab) ? (raw as SettingsTab) : null;
+}
+
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<
-    | 'company'
-    | 'invoice'
-    | 'quotation'
-    | 'email'
-    | 'customer-types'
-    | 'price-books'
-    | 'job-descriptions'
-    | 'job-report-template'
-    | 'diary-abort-reasons'
-    | 'business-units'
-    | 'user-groups'
-    | 'users'
-    | 'import'
-  >('company');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('company');
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [quotationSettings, setQuotationSettings] = useState<QuotationSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -245,6 +273,21 @@ export default function SettingsPage() {
     if (activeTab === 'company' || activeTab === 'invoice') fetchInvoiceSettings();
   }, [activeTab, fetchQuotationSettings, fetchInvoiceSettings]);
 
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    const t = parseSettingsTabParam(new URLSearchParams(window.location.search).get('tab'));
+    if (t) setActiveTab(t);
+  }, []);
+
+  const goSettingsTab = useCallback((tab: SettingsTab) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const u = new URL(window.location.href);
+      u.searchParams.set('tab', tab);
+      window.history.replaceState(null, '', `${u.pathname}${u.search}`);
+    }
+  }, []);
+
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -359,7 +402,7 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-1 w-full md:w-64 shrink-0">
             <button
               type="button"
-              onClick={() => setActiveTab('company')}
+              onClick={() => goSettingsTab('company')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'company' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Building2 className="size-4" />
@@ -367,7 +410,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('invoice')}
+              onClick={() => goSettingsTab('invoice')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'invoice' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <FileText className="size-4" />
@@ -375,7 +418,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('quotation')}
+              onClick={() => goSettingsTab('quotation')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'quotation' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Quote className="size-4" />
@@ -383,7 +426,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('email')}
+              onClick={() => goSettingsTab('email')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'email' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Mail className="size-4" />
@@ -391,7 +434,15 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('customer-types')}
+              onClick={() => goSettingsTab('service-reminders')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'service-reminders' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Bell className="size-4" />
+              Reminders
+            </button>
+            <button
+              type="button"
+              onClick={() => goSettingsTab('customer-types')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'customer-types' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Users className="size-4" />
@@ -399,7 +450,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('price-books')}
+              onClick={() => goSettingsTab('price-books')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'price-books' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <BookOpen className="size-4" />
@@ -407,7 +458,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('job-descriptions')}
+              onClick={() => goSettingsTab('job-descriptions')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'job-descriptions' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Wrench className="size-4" />
@@ -415,7 +466,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('job-report-template')}
+              onClick={() => goSettingsTab('job-report-template')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'job-report-template' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <ListChecks className="size-4" />
@@ -423,7 +474,15 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('diary-abort-reasons')}
+              onClick={() => goSettingsTab('site-report-templates')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'site-report-templates' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <FileText className="size-4" />
+              Site report templates
+            </button>
+            <button
+              type="button"
+              onClick={() => goSettingsTab('diary-abort-reasons')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'diary-abort-reasons' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Ban className="size-4" />
@@ -431,7 +490,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('business-units')}
+              onClick={() => goSettingsTab('business-units')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'business-units' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Briefcase className="size-4" />
@@ -439,7 +498,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('user-groups')}
+              onClick={() => goSettingsTab('user-groups')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'user-groups' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Users2 className="size-4" />
@@ -447,7 +506,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('users')}
+              onClick={() => goSettingsTab('users')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'users' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <UserCog className="size-4" />
@@ -455,7 +514,7 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('import')}
+              onClick={() => goSettingsTab('import')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'import' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Database className="size-4" />
@@ -1286,6 +1345,16 @@ export default function SettingsPage() {
           </motion.div>
         )}
 
+        {activeTab === 'service-reminders' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-t-0 border-slate-200 bg-white p-8 shadow-sm"
+          >
+            <ServiceRemindersSettings token={token} />
+          </motion.div>
+        )}
+
         {activeTab === 'customer-types' && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -1313,9 +1382,23 @@ export default function SettingsPage() {
             className="rounded-b-xl border border-slate-200 bg-white overflow-hidden"
           >
             {token ? (
-              <JobReportTab token={token} templateTarget="default" />
+              <JobReportTemplateSettings token={token} />
             ) : (
               <p className="p-6 text-slate-500">Sign in to edit the default job report template.</p>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === 'site-report-templates' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-slate-200 bg-white overflow-hidden"
+          >
+            {token ? (
+              <SiteReportTemplatesSettings token={token} />
+            ) : (
+              <p className="p-6 text-slate-500">Sign in to edit site report templates.</p>
             )}
           </motion.div>
         )}
