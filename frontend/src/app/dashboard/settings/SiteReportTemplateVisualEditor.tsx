@@ -232,7 +232,7 @@ export default function SiteReportTemplateVisualEditor({ value, onChange }: Prop
           placeholder="e.g. Fire Risk Assessment"
           className="mt-1 w-full max-w-lg rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
         />
-        <p className="mt-1 text-xs text-slate-500">Suggested title when staff open a new site report from a job.</p>
+        <p className="mt-1 text-xs text-slate-500">Suggested title when staff open a new report from a job.</p>
       </div>
 
       <div className="space-y-4">

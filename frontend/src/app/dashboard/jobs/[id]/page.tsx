@@ -403,7 +403,7 @@ export default function JobDetailsPage() {
     return (job.customer_full_name || '').trim();
   }, [job]);
 
-  /** Property/site line for site report: work site when job is scoped to one; otherwise customer address. */
+  /** Property/site line for Reports: work site when job is scoped to one; otherwise customer address. */
   const jobSiteReportSiteAddress = useMemo(() => {
     if (!job) return '';
     if (job.work_address) {
@@ -693,7 +693,7 @@ export default function JobDetailsPage() {
   const tabs = [
     'Details',
     'Job report',
-    'Site report',
+    'Reports',
     'Client panel',
     'Reminders',
     'Parts',
@@ -1000,9 +1000,9 @@ export default function JobDetailsPage() {
             token ? (
               <JobReportTab jobId={id} token={token} />
             ) : (
-              <div className="p-8 text-slate-500 text-sm">Sign in to edit the job report template.</div>
+              <div className="p-8 text-slate-500 text-sm">Sign in to edit Final Job Report Templates.</div>
             )
-          ) : activeTab === 'Site report' ? (
+          ) : activeTab === 'Reports' ? (
             token ? (
               <CustomerSiteReportTab
                 customerId={String(job.customer_id)}
@@ -1011,7 +1011,7 @@ export default function JobDetailsPage() {
                 siteAddressLabel={jobSiteReportSiteAddress}
               />
             ) : (
-              <div className="p-8 text-slate-500 text-sm">Sign in to view the site report.</div>
+              <div className="p-8 text-slate-500 text-sm">Sign in to view reports.</div>
             )
           ) : activeTab === 'Client panel' ? (
             token ? (

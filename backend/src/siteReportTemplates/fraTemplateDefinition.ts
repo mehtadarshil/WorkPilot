@@ -9,7 +9,7 @@ function f(
   return { id, label, type, ...extra };
 }
 
-/** Fire Risk Assessment — fields aligned to the sample PDF (4 pages). Editable in Settings → Site report templates. */
+/** Fire Risk Assessment — fields aligned to the sample PDF (4 pages). Editable in Settings → Reports. */
 export function getFraTemplateDefinition(): SiteReportTemplateDefinition {
   const sections: SiteReportTemplateSection[] = [
     {

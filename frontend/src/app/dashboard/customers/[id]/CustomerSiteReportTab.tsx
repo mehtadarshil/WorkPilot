@@ -438,7 +438,7 @@ export default function CustomerSiteReportTab({
     () => ({
       client: clientDisplayName,
       site: siteAddressLabel,
-      title: reportTitle.trim() || template?.definition.report_title_default?.trim() || 'Site report',
+      title: reportTitle.trim() || template?.definition.report_title_default?.trim() || 'Report',
     }),
     [clientDisplayName, siteAddressLabel, reportTitle, template?.definition.report_title_default],
   );
@@ -570,10 +570,10 @@ export default function CustomerSiteReportTab({
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">{def.report_title_default || 'Site report'}</h2>
+          <h2 className="text-lg font-bold text-slate-900">{def.report_title_default || 'Report'}</h2>
           <p className="text-sm text-slate-600 mt-0.5">
             Fields and layout come from your{' '}
-            <span className="font-semibold text-slate-800">Settings → Site report templates</span> (Fire Risk Assessment is
+            <span className="font-semibold text-slate-800">Settings → Reports</span> (Fire Risk Assessment is
             provided by default).
           </p>
         </div>

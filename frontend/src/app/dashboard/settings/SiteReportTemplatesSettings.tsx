@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getJson, putJson, postJson } from '../../apiClient';
-import { Loader2, Save, RotateCcw, CopyPlus, Plus } from 'lucide-react';
+import { getJson, putJson, postJson, deleteRequest } from '../../apiClient';
+import { Loader2, Save, RotateCcw, CopyPlus, Plus, Eye, Trash2 } from 'lucide-react';
 import type { SiteReportTemplateDefinition } from '@/lib/siteReportTemplateTypes';
 import { coerceSiteReportDefinition } from '@/lib/siteReportTemplateTypes';
 import SiteReportTemplateVisualEditor from './SiteReportTemplateVisualEditor';
+import SiteReportTemplatePreviewModal from './SiteReportTemplatePreviewModal';
 
 type TemplateRow = { id: number; name: string; slug: string | null; updated_at: string };
 
@@ -23,6 +24,8 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
   const [blankTemplateName, setBlankTemplateName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadList = useCallback(async () => {
     setLoadingList(true);
@@ -135,6 +138,30 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
     }
   };
 
+  const handleDeleteTemplate = async (t: TemplateRow) => {
+    if (t.slug === 'fra') return;
+    const okConfirm = window.confirm(
+      `Delete template "${t.name}"?\n\nCustomer reports that used this template will switch to the default Fire Risk Assessment. Their answers are kept where field IDs still match.`,
+    );
+    if (!okConfirm) return;
+    setDeletingId(t.id);
+    setError(null);
+    try {
+      await deleteRequest(`/settings/site-report-templates/${t.id}`, token);
+      setPreviewOpen(false);
+      if (selectedId === t.id) {
+        setSelectedId(null);
+        setDefinition(null);
+        setName('');
+      }
+      await loadList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleCreateBlank = async () => {
     const nm = blankTemplateName.trim();
     if (!nm) {
@@ -165,9 +192,9 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-lg font-bold text-slate-900">Site report templates</h2>
+        <h2 className="text-lg font-bold text-slate-900">Reports</h2>
         <p className="mt-1 text-sm text-slate-600 max-w-3xl">
-          Design the forms your team fills on the job <strong className="text-slate-800">Site report</strong> tab (job detail page). The
+          Design the forms your team fills on the job <strong className="text-slate-800">Reports</strong> tab (job detail page). The
           default <strong className="text-slate-800">Fire Risk Assessment</strong> matches a typical UK-style layout: sections,
           yes/no/N/A questions, note areas, and a certificate block. Use the editor below to add or change sections and fields
           without touching raw code.
@@ -185,17 +212,31 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
           ) : (
             <ul className="rounded-lg border border-slate-200 divide-y divide-slate-100 bg-white text-sm shadow-sm">
               {templates.map((t) => (
-                <li key={t.id}>
+                <li key={t.id} className="flex items-stretch gap-0">
                   <button
                     type="button"
                     onClick={() => void loadDetail(t.id)}
-                    className={`w-full px-3 py-2.5 text-left font-medium transition hover:bg-slate-50 ${
+                    className={`min-w-0 flex-1 px-3 py-2.5 text-left font-medium transition hover:bg-slate-50 ${
                       selectedId === t.id ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-800'
                     }`}
                   >
                     {t.name}
                     {t.slug === 'fra' ? <span className="ml-1 text-[10px] font-normal uppercase text-slate-400">(default)</span> : null}
                   </button>
+                  {t.slug !== 'fra' ? (
+                    <button
+                      type="button"
+                      title="Delete template"
+                      disabled={deletingId === t.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDeleteTemplate(t);
+                      }}
+                      className="shrink-0 border-l border-slate-100 px-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                    >
+                      {deletingId === t.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -236,6 +277,15 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
             >
               {resetting ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
               Reset FRA to factory fields
+            </button>
+            <button
+              type="button"
+              disabled={!definition}
+              onClick={() => setPreviewOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Eye className="size-4" />
+              Preview
             </button>
             <button
               type="button"
@@ -298,6 +348,15 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
           )}
         </div>
       </div>
+
+      {definition ? (
+        <SiteReportTemplatePreviewModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          definition={definition}
+          templateName={name}
+        />
+      ) : null}
     </div>
   );
 }

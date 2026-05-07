@@ -470,7 +470,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'job-report-template' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <ListChecks className="size-4" />
-              Job report template
+              Final Job Report Templates
             </button>
             <button
               type="button"
@@ -478,7 +478,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'site-report-templates' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <FileText className="size-4" />
-              Site report templates
+              Reports
             </button>
             <button
               type="button"
@@ -1384,7 +1384,7 @@ export default function SettingsPage() {
             {token ? (
               <JobReportTemplateSettings token={token} />
             ) : (
-              <p className="p-6 text-slate-500">Sign in to edit the default job report template.</p>
+              <p className="p-6 text-slate-500">Sign in to edit Final Job Report Templates.</p>
             )}
           </motion.div>
         )}
@@ -1398,7 +1398,7 @@ export default function SettingsPage() {
             {token ? (
               <SiteReportTemplatesSettings token={token} />
             ) : (
-              <p className="p-6 text-slate-500">Sign in to edit site report templates.</p>
+              <p className="p-6 text-slate-500">Sign in to edit report templates.</p>
             )}
           </motion.div>
         )}

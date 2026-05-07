@@ -360,7 +360,7 @@ export async function getCustomerSiteReportPrintHtml(
   const reportTitle =
     (row.report_title && String(row.report_title).trim()) ||
     definition.report_title_default?.trim() ||
-    'Site report';
+    'Report';
   const updatedAtLabel = `Updated ${new Date(row.updated_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`;
 
   const headerOverrides: Record<string, string> = {

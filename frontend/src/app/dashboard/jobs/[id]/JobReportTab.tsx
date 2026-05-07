@@ -148,7 +148,7 @@ export default function JobReportTab({
   }
 
   if (loading) {
-    return <div className="p-8 text-slate-500 text-sm font-medium">Loading job report template…</div>;
+    return <div className="p-8 text-slate-500 text-sm font-medium">Loading Final Job Report Templates…</div>;
   }
 
   return (
@@ -156,17 +156,17 @@ export default function JobReportTab({
       <div>
         <h2 className="text-lg font-bold text-slate-900">
           {templateTarget === 'default'
-            ? 'Default job report template'
+            ? 'Default Final Job Report Template'
             : templateTarget === 'job-description'
               ? 'Job report — extra fields for this job type'
-              : 'Job report template'}
+              : 'Final Job Report Templates'}
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           {templateTarget === 'default' ? (
             <>
               This checklist is <strong>copied first</strong> onto every new job when the job is created. If the job
               uses a job description that has its own extra report fields, those are <strong>appended after</strong>{' '}
-              this default (see <span className="font-semibold text-slate-800">Job report template</span> below for
+              this default (see <span className="font-semibold text-slate-800">Final Job Report Templates</span> below for
               per-type extras). Existing jobs are not changed.
             </>
           ) : templateTarget === 'job-description' ? (
@@ -180,7 +180,7 @@ export default function JobReportTab({
             <>
               For <strong>this job only</strong> — it overrides the default for visits on this job. To edit the
               company-wide default for <strong>new</strong> jobs, go to{' '}
-              <span className="font-semibold text-slate-800">Settings → Job report template</span>. Field officers must
+              <span className="font-semibold text-slate-800">Settings → Final Job Report Templates</span>. Field officers must
               submit this report before a visit can be marked complete on jobs that include at least one question.
             </>
           )}

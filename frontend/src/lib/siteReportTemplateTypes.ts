@@ -93,7 +93,7 @@ export function emptyFooter(): SiteReportTemplateFooter {
 export function coerceSiteReportDefinition(raw: unknown): SiteReportTemplateDefinition {
   const minimal: SiteReportTemplateDefinition = {
     version: 1,
-    report_title_default: 'Site report',
+    report_title_default: 'Report',
     sections: [newTemplateSection()],
   };
   if (!raw || typeof raw !== 'object') return minimal;

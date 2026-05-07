@@ -2106,7 +2106,7 @@ async function mergeJobDescriptionReportQuestionsIntoJob(
 }
 
 /**
- * Seeds `job_report_questions` for a new job: global default (Settings → Job report template) first,
+ * Seeds `job_report_questions` for a new job: global default (Settings → Final Job Report Templates) first,
  * then extra rows from the job description template (Settings → Job descriptions → Job report for that type).
  */
 async function seedJobReportQuestionsForNewJob(jobId: number, jobDescriptionId: number | null): Promise<void> {
@@ -7152,6 +7152,70 @@ app.post(
     } catch (error) {
       console.error('create site report template error:', error);
       return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
+app.delete(
+  '/api/settings/site-report-templates/:templateId',
+  authenticate,
+  requireAdmin,
+  requirePermission('settings_master_data'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const uid = getTenantScopeUserId(req.user!);
+    const templateId = parseInt(String(req.params.templateId), 10);
+    if (!Number.isFinite(templateId)) return res.status(400).json({ message: 'Invalid template id' });
+
+    const fraId = await ensureFireRiskAssessmentTemplate(pool, uid);
+    if (templateId === fraId) {
+      return res.status(400).json({ message: 'The default Fire Risk Assessment template cannot be deleted' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const own = await client.query<{ slug: string | null }>(
+        'SELECT slug FROM site_report_templates WHERE id = $1 AND created_by = $2',
+        [templateId, uid],
+      );
+      if ((own.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      if (own.rows[0].slug === 'fra') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'The default Fire Risk Assessment template cannot be deleted' });
+      }
+
+      await client.query(
+        `UPDATE customer_site_reports csr
+         SET template_id = $1,
+             document = jsonb_set(COALESCE(csr.document, '{}'::jsonb), '{template_id}', to_jsonb($1::int), true)
+         FROM customers c
+         WHERE csr.customer_id = c.id AND c.created_by = $2 AND csr.template_id = $3`,
+        [fraId, uid, templateId],
+      );
+
+      const del = await client.query('DELETE FROM site_report_templates WHERE id = $1 AND created_by = $2 RETURNING id', [
+        templateId,
+        uid,
+      ]);
+      if ((del.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Template not found' });
+      }
+      await client.query('COMMIT');
+      return res.status(204).send();
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      console.error('delete site report template error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
     }
   },
 );
@@ -15390,7 +15454,7 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const tid = r.template_id != null ? Number(r.template_id) : fraTemplateId;
     const doc = normalizeTemplateSiteReportDocument(r.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
-    if (!def) return res.status(500).json({ message: 'Site report template could not be loaded' });
+    if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
 
     return res.json({
       report: {
@@ -15499,7 +15563,7 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const tid = row.template_id != null ? Number(row.template_id) : templateIdForDoc;
     const doc = normalizeTemplateSiteReportDocument(row.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
-    if (!def) return res.status(500).json({ message: 'Site report template could not be loaded' });
+    if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
     return res.json({
       report: {
         id: reportId,
