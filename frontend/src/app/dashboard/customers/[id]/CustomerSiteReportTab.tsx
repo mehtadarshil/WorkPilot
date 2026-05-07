@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getJson, postJson, putJson, deleteRequest, getBlob, getText } from '../../../apiClient';
+import { getJson, postJson, putJson, deleteRequest, getBlob } from '../../../apiClient';
 import { Plus, Save, Printer, Download, ImagePlus, Loader2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import type {
@@ -11,7 +11,7 @@ import type {
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
 } from '@/lib/siteReportTemplateTypes';
-import { IMAGE_MAX_BYTES, collectImageIds, newId, pdfFilenameFromTitle, readFileAsBase64 } from './customerSiteReportShared';
+import { IMAGE_MAX_BYTES, collectImageIds, newId, readFileAsBase64 } from './customerSiteReportShared';
 import {
   SiteReportFieldImageList,
   SiteReportSignatureBlock,
@@ -53,7 +53,6 @@ export default function CustomerSiteReportTab({
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
   const [signatureBusyFieldId, setSignatureBusyFieldId] = useState<string | null>(null);
   const imageUrlsRef = useRef<Map<number, string>>(new Map());
 
@@ -386,84 +385,6 @@ export default function CustomerSiteReportTab({
     }
   };
 
-  /** Server-built print HTML (no headless Chrome on the server). PDF is generated in the browser. */
-  const fetchReportPrintHtml = useCallback(async () => {
-    if (!token || !report) throw new Error('Not signed in or report not loaded');
-    return getText(`/customers/${encodeURIComponent(customerId)}/site-report/${report.id}/print.html`, token);
-  }, [token, report, customerId]);
-
-  const handleDownloadPdf = async () => {
-    if (!report) return;
-    setPdfBusy(true);
-    setError(null);
-    let iframe: HTMLIFrameElement | null = null;
-    try {
-      const html = await fetchReportPrintHtml();
-      iframe = document.createElement('iframe');
-      iframe.setAttribute('title', 'Site report PDF');
-      iframe.setAttribute(
-        'style',
-        'position:fixed;left:-12000px;top:0;width:210mm;min-height:297mm;border:0;visibility:hidden',
-      );
-      iframe.srcdoc = html;
-      document.body.appendChild(iframe);
-      const win = iframe.contentWindow;
-      const doc = iframe.contentDocument;
-      if (!win || !doc?.body) throw new Error('Could not prepare PDF layout');
-
-      await new Promise<void>((resolve) => {
-        iframe!.addEventListener('load', () => resolve(), { once: true });
-        window.setTimeout(() => resolve(), 2000);
-      });
-
-      const html2pdf = (await import('html2pdf.js')).default;
-      await html2pdf()
-        .set({
-          margin: [8, 8, 8, 8],
-          filename: pdfFilenameFromTitle(printHeader.title),
-          image: { type: 'jpeg', quality: 0.92 },
-          html2canvas: { scale: 2, useCORS: true, logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        })
-        .from(doc.body)
-        .save();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'PDF download failed');
-    } finally {
-      if (iframe?.parentNode) iframe.parentNode.removeChild(iframe);
-      setPdfBusy(false);
-    }
-  };
-
-  const handleOpenPdfForPrint = async () => {
-    if (!report) return;
-    setPdfBusy(true);
-    setError(null);
-    try {
-      const html = await fetchReportPrintHtml();
-      const w = window.open('', '_blank', 'noopener,noreferrer');
-      if (!w) {
-        setError('Pop-up blocked. Allow pop-ups for this site, or use Download PDF.');
-        return;
-      }
-      w.document.open();
-      w.document.write(html);
-      w.document.close();
-      window.setTimeout(() => {
-        try {
-          w.focus();
-          w.print();
-        } catch {
-          /* ignore */
-        }
-      }, 300);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not open print preview');
-    } finally {
-      setPdfBusy(false);
-    }
-  };
-
   const printHeader = useMemo(
     () => ({
       client: clientDisplayName,
@@ -472,6 +393,36 @@ export default function CustomerSiteReportTab({
     }),
     [clientDisplayName, siteAddressLabel, reportTitle, template?.definition.report_title_default],
   );
+
+  /** Same pattern as client panel public report: full print page with iframe + browser print / optional client PDF. */
+  const openSiteReportPrintPage = useCallback(
+    (opts: { mode: 'preview' | 'download'; autoprint?: boolean }) => {
+      if (!report) return;
+      const params = new URLSearchParams({
+        customer_id: String(customerId),
+        report_id: String(report.id),
+        mode: opts.mode,
+        title: printHeader.title,
+      });
+      if (opts.autoprint) params.set('autoprint', '1');
+      const url = `/dashboard/site-report-print?${params.toString()}`;
+      const w = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!w) {
+        setError('Pop-up blocked. Allow pop-ups for this site, then try again.');
+      }
+    },
+    [customerId, report, printHeader.title],
+  );
+
+  const handleDownloadPdf = () => {
+    setError(null);
+    openSiteReportPrintPage({ mode: 'download' });
+  };
+
+  const handleOpenPdfForPrint = () => {
+    setError(null);
+    openSiteReportPrintPage({ mode: 'preview', autoprint: true });
+  };
 
   const renderSection = (sec: SiteReportTemplateSection) => (
     <section
@@ -610,21 +561,22 @@ export default function CustomerSiteReportTab({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={pdfBusy || !report}
-            onClick={() => void handleDownloadPdf()}
+            disabled={!report}
+            onClick={handleDownloadPdf}
+            title="Opens a print layout page and builds a PDF file in your browser (same idea as the client panel viewer)."
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
-            {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            <Download className="size-4" />
             Download PDF
           </button>
           <button
             type="button"
-            disabled={pdfBusy || !report}
-            onClick={() => void handleOpenPdfForPrint()}
-            title="Opens the print layout in a new tab. Use your browser Print dialog (Save as PDF if you prefer)."
+            disabled={!report}
+            onClick={handleOpenPdfForPrint}
+            title="Opens the print layout in a new tab and your print dialog. Choose Save as PDF for a file."
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
-            {pdfBusy ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />}
+            <Printer className="size-4" />
             Print preview
           </button>
           <button
