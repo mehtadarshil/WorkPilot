@@ -73,7 +73,7 @@ import { PdfRenderUnavailableError } from './jobClientReportPdf';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-/** Default 8 MB so base64 JSON stays under typical 12 MB body limits. */
+/** Default 8 MB per decoded file; JSON body limit is separate (REQUEST_BODY_LIMIT, default 32mb). */
 const CUSTOMER_FILE_MAX_BYTES = (() => {
   const n = parseInt(process.env.CUSTOMER_FILE_MAX_BYTES || '8388608', 10);
   return Number.isFinite(n) && n > 0 ? Math.min(n, 20 * 1024 * 1024) : 8388608;
@@ -317,9 +317,9 @@ if (corsOrigins && corsOrigins.length > 0) {
 } else {
   app.use(cors());
 }
-// Settings UI can upload base64 data URLs (logos). Increase request size limit to avoid 413 Payload Too Large.
-app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '12mb' }));
-app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '12mb' }));
+// Base64 image uploads (e.g. HEIC→JPEG still ~1.3× file size). Nginx in front must allow at least this (client_max_body_size) or 413 + misleading CORS errors.
+app.use(express.json({ limit: process.env.REQUEST_BODY_LIMIT || '32mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.REQUEST_BODY_LIMIT || '32mb' }));
 
 function createPool(): Pool {
   const databaseUrl = process.env.DATABASE_URL?.trim();

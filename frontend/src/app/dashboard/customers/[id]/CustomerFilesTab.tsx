@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson, deleteRequest, getBlob } from '../../../apiClient';
+import { prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
 import { Upload, FileText, Trash2, Download, AlertCircle, Eye } from 'lucide-react';
 import dayjs from 'dayjs';
 
@@ -32,19 +33,6 @@ function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const s = r.result as string;
-      const i = s.indexOf(',');
-      resolve(i >= 0 ? s.slice(i + 1) : s);
-    };
-    r.onerror = () => reject(new Error('Could not read file'));
-    r.readAsDataURL(file);
-  });
 }
 
 export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
@@ -80,15 +68,16 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
     setError(null);
     try {
       for (const file of arr) {
-        if (file.size > MAX_BYTES) {
-          throw new Error(`"${file.name}" is too large (max ${formatBytes(MAX_BYTES)} per file).`);
+        const prepared = await prepareImageFileForUpload(file);
+        if (prepared.size > MAX_BYTES) {
+          throw new Error(`"${file.name}" is too large after processing (max ${formatBytes(MAX_BYTES)} per file).`);
         }
-        const content_base64 = await readFileAsBase64(file);
+        const content_base64 = await readFileAsBase64(prepared);
         await postJson(
           `/customers/${customerId}/files`,
           {
-            filename: file.name,
-            content_type: file.type || null,
+            filename: prepared.name,
+            content_type: prepared.type || null,
             content_base64,
             ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
           },

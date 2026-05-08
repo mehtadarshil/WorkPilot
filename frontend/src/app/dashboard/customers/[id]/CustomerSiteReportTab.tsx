@@ -11,7 +11,14 @@ import type {
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
 } from '@/lib/siteReportTemplateTypes';
-import { IMAGE_MAX_BYTES, collectImageIds, newId, pdfFilenameFromTitle, readFileAsBase64 } from './customerSiteReportShared';
+import {
+  IMAGE_MAX_BYTES,
+  collectImageIds,
+  newId,
+  pdfFilenameFromTitle,
+  prepareImageFileForUpload,
+  readFileAsBase64,
+} from './customerSiteReportShared';
 import {
   SiteReportFieldImageList,
   SiteReportSignatureBlock,
@@ -187,17 +194,18 @@ export default function CustomerSiteReportTab({
 
   const uploadSectionImage = async (sectionKey: string, file: File) => {
     if (!token || !report) return;
-    if (file.size > IMAGE_MAX_BYTES) {
-      setError(`Image is too large (max ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB).`);
-      return;
-    }
     setUploadingKey(`${sectionKey}:${file.name}`);
     setError(null);
     try {
-      const content_base64 = await readFileAsBase64(file);
+      const fileToSend = await prepareImageFileForUpload(file);
+      if (fileToSend.size > IMAGE_MAX_BYTES) {
+        setError(`Image is too large (max ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB).`);
+        return;
+      }
+      const content_base64 = await readFileAsBase64(fileToSend);
       const res = await postJson<{ image: { id: number } }>(
         `/customers/${customerId}/site-report/${report.id}/images`,
-        { filename: file.name, content_type: file.type || null, content_base64 },
+        { filename: fileToSend.name, content_type: fileToSend.type || null, content_base64 },
         token,
       );
       const imageId = res.image.id;
@@ -256,17 +264,18 @@ export default function CustomerSiteReportTab({
 
   const uploadFieldImage = async (fieldId: string, file: File) => {
     if (!token || !report) return;
-    if (file.size > IMAGE_MAX_BYTES) {
-      setError(`Image is too large (max ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB).`);
-      return;
-    }
     setUploadingKey(`field:${fieldId}`);
     setError(null);
     try {
-      const content_base64 = await readFileAsBase64(file);
+      const fileToSend = await prepareImageFileForUpload(file);
+      if (fileToSend.size > IMAGE_MAX_BYTES) {
+        setError(`Image is too large (max ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB).`);
+        return;
+      }
+      const content_base64 = await readFileAsBase64(fileToSend);
       const res = await postJson<{ image: { id: number } }>(
         `/customers/${customerId}/site-report/${report.id}/images`,
-        { filename: file.name, content_type: file.type || null, content_base64 },
+        { filename: fileToSend.name, content_type: fileToSend.type || null, content_base64 },
         token,
       );
       const imageId = res.image.id;
