@@ -1,6 +1,9 @@
 import path from 'path';
 import sharp from 'sharp';
 
+// Pure-JS fallback when Sharp/libvips has no libheif (typical on minimal Linux images).
+import heicConvert = require('heic-convert');
+
 const HEIC_EXT = /\.(heic|heif)$/i;
 
 function isHeicMajorBrand(buf: Buffer): boolean {
@@ -41,10 +44,17 @@ export async function normalizeCustomerImageUpload(
   try {
     const out = await sharp(buffer).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
     return { buffer: out, contentType: 'image/jpeg', storedExtension: '.jpg' };
-  } catch (err) {
-    console.error('HEIC/HEIF conversion failed:', err);
-    const e = new Error('HEIC_DECODE_FAILED');
-    e.name = 'HEIC_DECODE_FAILED';
-    throw e;
+  } catch (sharpErr) {
+    console.warn('HEIC via Sharp failed (often missing libheif); trying heic-convert:', sharpErr);
+    try {
+      const raw = await heicConvert({ buffer, format: 'JPEG', quality: 0.88 });
+      const jpegBuf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+      return { buffer: jpegBuf, contentType: 'image/jpeg', storedExtension: '.jpg' };
+    } catch (fallbackErr) {
+      console.error('HEIC/HEIF conversion failed (Sharp and heic-convert):', fallbackErr);
+      const e = new Error('HEIC_DECODE_FAILED');
+      e.name = 'HEIC_DECODE_FAILED';
+      throw e;
+    }
   }
 }
