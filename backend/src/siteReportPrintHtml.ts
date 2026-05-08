@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
 import type {
+  SiteReportSectionImageRow,
   SiteReportTemplateDefinition,
   SiteReportTemplateField,
   SiteReportTemplateSection,
@@ -103,6 +104,32 @@ function collectAllImageIds(doc: TemplateSiteReportDocument): number[] {
   return [...s];
 }
 
+function imageRowHasUserText(im: SiteReportSectionImageRow): boolean {
+  return !!(String(im.description || '').trim() || String(im.note || '').trim());
+}
+
+/** When every image in a group has no caption/note, lay them out in a row for PDF/print. */
+function renderImageGalleryHtml(rows: SiteReportSectionImageRow[], imageMap: Map<number, string>): string {
+  const withSrc: SiteReportSectionImageRow[] = [];
+  for (const im of rows) {
+    if (imageMap.get(im.image_id)) withSrc.push(im);
+  }
+  if (withSrc.length === 0) return '';
+  const anyText = withSrc.some(imageRowHasUserText);
+  const useRow = !anyText && withSrc.length >= 2;
+  const parts: string[] = [`<div class="images${useRow ? ' images--row' : ''}">`];
+  for (const im of withSrc) {
+    const src = imageMap.get(im.image_id)!;
+    const cap = String(im.description || '').trim();
+    const note = String(im.note || '').trim();
+    const capHtml = cap ? `<div class="imgcap">${escapeHtml(cap)}</div>` : '';
+    const noteHtml = note ? `<div class="imgnote">${nl2br(im.note)}</div>` : '';
+    parts.push(`<div class="imgwrap"><img src=${JSON.stringify(src)} alt="" />${capHtml}${noteHtml}</div>`);
+  }
+  parts.push('</div>');
+  return parts.join('');
+}
+
 function renderFieldImagesHtml(
   fieldId: string,
   fieldImages: FieldImages | undefined,
@@ -110,17 +137,7 @@ function renderFieldImagesHtml(
 ): string {
   const rows = fieldImages?.[fieldId];
   if (!rows || rows.length === 0) return '';
-  const parts: string[] = ['<div class="images">'];
-  for (const im of rows) {
-    const src = imageMap.get(im.image_id);
-    if (src) {
-      parts.push(
-        `<div class="imgwrap"><img src=${JSON.stringify(src)} alt="" /><div class="imgcap">${escapeHtml(im.description || '')}</div>${im.note ? `<div class="imgnote">${nl2br(im.note)}</div>` : ''}</div>`,
-      );
-    }
-  }
-  parts.push('</div>');
-  return parts.join('');
+  return renderImageGalleryHtml(rows, imageMap);
 }
 
 function fieldHasUserEntry(
@@ -209,15 +226,7 @@ function renderSectionImagesHtml(
 ): string {
   const rows = sectionImages?.[sectionKey];
   if (!rows || rows.length === 0) return '';
-  const parts: string[] = ['<div class="images">'];
-  for (const im of rows) {
-    const src = imageMap.get(im.image_id);
-    if (src) {
-      parts.push(`<div class="imgwrap"><img src=${JSON.stringify(src)} alt="" /><div class="imgcap">${escapeHtml(im.description || '')}</div>${im.note ? `<div class="imgnote">${nl2br(im.note)}</div>` : ''}</div>`);
-    }
-  }
-  parts.push('</div>');
-  return parts.join('');
+  return renderImageGalleryHtml(rows, imageMap);
 }
 
 export function buildSiteReportPrintHtml(input: {
@@ -299,6 +308,9 @@ export function buildSiteReportPrintHtml(input: {
     .field .value { font-size: 10pt; color: #0f172a; }
     .static { font-size: 9.5pt; color: #334155; padding: 10px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; }
     .images { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+    .images--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+    .images--row .imgwrap { flex: 1 1 45%; min-width: 0; max-width: calc(50% - 5px); }
+    .images--row .imgwrap img { width: 100%; }
     .imgwrap { break-inside: avoid; }
     .imgwrap img { max-width: 100%; max-height: 220px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 6px; }
     .imgcap { font-size: 9pt; font-weight: 600; margin-top: 6px; color: #334155; }
