@@ -75,16 +75,18 @@ export default function ServiceRemindersSettings({ token }: { token: string | nu
     try {
       const r = await postJson<{
         service_reminders: { sent: number; skipped: number; errors: string[] };
+        site_report_renewals: { sent: number; skipped: number; errors: string[] };
         job_office_task_reminders: { sent: number; errors: string[] };
         staff_reminders: { sent: number; errors: string[] };
       }>('/settings/service-reminders/run-now', {}, token);
       const svc = r.service_reminders;
+      const srr = r.site_report_renewals;
       const job = r.job_office_task_reminders;
       const st = r.staff_reminders;
-      const allErr = [...svc.errors, ...job.errors, ...st.errors];
+      const allErr = [...svc.errors, ...srr.errors, ...job.errors, ...st.errors];
       const errPart = allErr.length ? ` Errors: ${allErr.slice(0, 5).join('; ')}` : '';
       setMessage(
-        `Run finished. Service renewals: sent ${svc.sent}, skipped ${svc.skipped}. Job reminders: sent ${job.sent}. Staff reminders: sent ${st.sent}.${errPart}`,
+        `Run finished. Service renewals: sent ${svc.sent}, skipped ${svc.skipped}. Site report renewals: sent ${srr.sent}, skipped ${srr.skipped}. Job reminders: sent ${job.sent}. Staff reminders: sent ${st.sent}.${errPart}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Run failed');
@@ -150,6 +152,10 @@ export default function ServiceRemindersSettings({ token }: { token: string | nu
           <li>
             Email wording defaults under Settings → Email → Templates (<code className="rounded bg-white px-0.5">service_reminder</code>).
           </li>
+          <li>
+            <strong>Site reports</strong> (e.g. FRA on the job <strong>Reports</strong> tab): renewal reminders are configured on the report itself and use the{' '}
+            <code className="rounded bg-white px-0.5">site_report_renewal</code> template. The recipient options above apply there too (link a job on the report if you use job contact).
+          </li>
         </ol>
         <p className="mt-3 text-xs text-slate-500">
           Staff reminders (about an employee, to tenant admins) are managed under{' '}
@@ -212,11 +218,11 @@ export default function ServiceRemindersSettings({ token }: { token: string | nu
       </form>
 
       <p className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-500">
-        Edit the <strong>service_reminder</strong> email template under Settings → Email → Templates. Optional: call{' '}
+        Edit <strong>service_reminder</strong> and <strong>site_report_renewal</strong> under Settings → Email → Templates. Optional: call{' '}
         <code className="rounded bg-slate-100 px-1">POST /api/internal/reminders</code> (or{' '}
         <code className="rounded bg-slate-100 px-1">POST /api/internal/service-reminders</code>) with header{' '}
         <code className="rounded bg-slate-100 px-1">x-cron-secret</code> (same value as <code className="rounded bg-slate-100 px-1">CRON_SECRET</code>
-        ) to run service renewals, job reminder emails, and staff reminder emails. The server also runs this on a timer
+        ) to run service renewals, site report renewals, job reminder emails, and staff reminder emails. The server also runs this on a timer
         (override interval with <code className="rounded bg-slate-100 px-1">SERVICE_REMINDER_INTERVAL_MS</code>).
       </p>
     </div>

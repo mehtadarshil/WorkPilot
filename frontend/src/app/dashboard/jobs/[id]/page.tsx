@@ -1009,6 +1009,7 @@ export default function JobDetailsPage() {
                 workAddressId={job.work_address ? String(job.work_address.id) : undefined}
                 clientDisplayName={jobSiteReportClientDisplay}
                 siteAddressLabel={jobSiteReportSiteAddress}
+                jobId={id}
               />
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to view reports.</div>

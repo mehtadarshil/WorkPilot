@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getJson, postJson, putJson, deleteRequest, getBlob } from '../../../apiClient';
-import { Plus, Save, Printer, Download, ImagePlus, Loader2 } from 'lucide-react';
+import { Save, Printer, Download, Loader2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import type {
   SiteReportTemplateDefinition,
@@ -19,11 +19,8 @@ import {
   prepareImageFileForUpload,
   readFileAsBase64,
 } from './customerSiteReportShared';
-import {
-  SiteReportFieldImageList,
-  SiteReportSignatureBlock,
-  renderSiteReportFieldInput,
-} from './CustomerSiteReportFieldBlocks';
+import CustomerSiteReportRenewalCard, { type SiteReportRenewalState } from './CustomerSiteReportRenewalCard';
+import { CustomerSiteReportSectionView } from './CustomerSiteReportSectionView';
 
 interface ReportPayload {
   id: number;
@@ -34,6 +31,11 @@ interface ReportPayload {
   document: TemplateSiteReportDocument;
   updated_at: string;
   certificate_number?: string;
+  renewal_reminder_enabled: boolean;
+  renewal_anchor_date: string | null;
+  renewal_interval_years: number;
+  renewal_early_days: number;
+  renewal_job_id: number | null;
 }
 
 interface Props {
@@ -41,6 +43,8 @@ interface Props {
   workAddressId?: string;
   clientDisplayName: string;
   siteAddressLabel: string;
+  /** When embedded from a job, used to link the job contact for renewal emails. */
+  jobId?: string | null;
 }
 
 export default function CustomerSiteReportTab({
@@ -48,6 +52,7 @@ export default function CustomerSiteReportTab({
   workAddressId,
   clientDisplayName,
   siteAddressLabel,
+  jobId,
 }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [report, setReport] = useState<ReportPayload | null>(null);
@@ -112,7 +117,15 @@ export default function CustomerSiteReportTab({
         `/customers/${customerId}/site-report${qs}`,
         token,
       );
-      setReport(res.report);
+      const rp = res.report as ReportPayload;
+      setReport({
+        ...rp,
+        renewal_reminder_enabled: rp.renewal_reminder_enabled ?? false,
+        renewal_anchor_date: rp.renewal_anchor_date ?? null,
+        renewal_interval_years: rp.renewal_interval_years ?? 1,
+        renewal_early_days: rp.renewal_early_days ?? 14,
+        renewal_job_id: rp.renewal_job_id ?? null,
+      });
       setTemplate(res.template);
       const title = res.report.report_title?.trim();
       const defTitle = res.template.definition.report_title_default?.trim();
@@ -162,7 +175,15 @@ export default function CustomerSiteReportTab({
         body,
         token,
       );
-      setReport(res.report);
+      const rp = res.report as ReportPayload;
+      setReport({
+        ...rp,
+        renewal_reminder_enabled: rp.renewal_reminder_enabled ?? false,
+        renewal_anchor_date: rp.renewal_anchor_date ?? null,
+        renewal_interval_years: rp.renewal_interval_years ?? 1,
+        renewal_early_days: rp.renewal_early_days ?? 14,
+        renewal_job_id: rp.renewal_job_id ?? null,
+      });
       setTemplate(res.template);
       setValues(res.report.document.values || {});
       setSectionImages(res.report.document.section_images || {});
@@ -470,112 +491,6 @@ export default function CustomerSiteReportTab({
     [clientDisplayName, siteAddressLabel, reportTitle, template?.definition.report_title_default],
   );
 
-  const renderSection = (sec: SiteReportTemplateSection) => (
-    <section
-      key={sec.id}
-      className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none break-inside-avoid"
-    >
-      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-        <h3 className="text-base font-bold text-slate-900">{sec.title}</h3>
-        {sec.helper_text ? <p className="mt-1 text-xs text-slate-600">{sec.helper_text}</p> : null}
-      </div>
-      <div className="space-y-5 p-4">
-        {sec.fields.map((field) => (
-          <div key={field.id} className="space-y-1.5">
-            {field.label ? <label className="block text-sm font-semibold text-slate-800">{field.label}</label> : null}
-            {sec.id === 'client_header' && (field.id === 'client_name_display' || field.id === 'property_address_display') ? (
-              <div className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm text-slate-800 whitespace-pre-wrap">
-                {field.id === 'client_name_display' ? clientDisplayName : siteAddressLabel}
-              </div>
-            ) : field.type === 'image' ? (
-              <SiteReportFieldImageList
-                rows={fieldImages[field.id] || []}
-                imageUrlFor={imageUrlFor}
-                uploading={uploadingKey === `field:${field.id}`}
-                onPickFile={(f) => void uploadFieldImage(field.id, f)}
-                onUpdateMeta={(rowId, patch) => updateFieldImageMeta(field.id, rowId, patch)}
-                onRemove={(row) => void removeFieldImage(field.id, row)}
-              />
-            ) : field.type === 'signature' ? (
-              <SiteReportSignatureBlock
-                rows={fieldImages[field.id] || []}
-                imageUrlFor={imageUrlFor}
-                busy={signatureBusyFieldId === field.id}
-                onSaveBlob={(blob) => void replaceSignatureField(field.id, blob)}
-                onClearSaved={() => void clearSignatureField(field.id)}
-              />
-            ) : (
-              renderSiteReportFieldInput(field, values[field.id] ?? '', (v) => setFieldValue(field.id, v))
-            )}
-          </div>
-        ))}
-
-        {sec.allow_section_images ? (
-          <div className="border-t border-slate-100 pt-4 print:hidden">
-            <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Section images</p>
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              <ImagePlus className="size-3.5" />
-              Add image
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={!!uploadingKey?.startsWith(sec.id)}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = '';
-                  if (f) void uploadSectionImage(sec.id, f);
-                }}
-              />
-            </label>
-            {uploadingKey?.startsWith(sec.id) ? (
-              <span className="ml-2 text-xs text-slate-500 inline-flex items-center gap-1">
-                <Loader2 className="size-3.5 animate-spin" /> Uploading…
-              </span>
-            ) : null}
-            <div className="mt-3 space-y-3">
-              {(sectionImages[sec.id] || []).map((im) => {
-                const src = imageUrlFor(im.image_id);
-                return (
-                  <div key={im.id} className="flex flex-wrap gap-3 rounded-lg border border-slate-100 p-3">
-                    <div className="w-full sm:w-40 shrink-0">
-                      {src ? (
-                        <img src={src} alt="" className="w-full rounded-md border border-slate-100 object-contain max-h-36 bg-slate-50" />
-                      ) : (
-                        <div className="flex h-24 items-center justify-center rounded border border-dashed text-xs text-slate-400">No preview</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <input
-                        value={im.description}
-                        onChange={(e) => updateImageMeta(sec.id, im.id, { description: e.target.value })}
-                        placeholder="What the image shows"
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-sm"
-                      />
-                      <input
-                        value={im.note}
-                        onChange={(e) => updateImageMeta(sec.id, im.id, { note: e.target.value })}
-                        placeholder="Short note (optional)"
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void removeSectionImage(sec.id, im)}
-                        className="text-xs font-semibold text-rose-600 hover:underline print:hidden"
-                      >
-                        Remove image
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </section>
-  );
-
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-12 text-sm font-medium text-slate-500">
@@ -592,6 +507,26 @@ export default function CustomerSiteReportTab({
   }
 
   const def = template.definition;
+  const sectionHandlers = {
+    setFieldValue,
+    uploadFieldImage,
+    updateFieldImageMeta,
+    removeFieldImage,
+    replaceSignatureField,
+    clearSignatureField,
+    uploadSectionImage,
+    updateImageMeta,
+    removeSectionImage,
+  };
+  const footerSection: SiteReportTemplateSection | null =
+    def.footer && def.footer.fields.length > 0
+      ? {
+          id: 'footer',
+          title: def.footer.title || 'Footer',
+          fields: def.footer.fields,
+          allow_section_images: def.footer.allow_section_images,
+        }
+      : null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -669,96 +604,60 @@ export default function CustomerSiteReportTab({
         <p className="mt-3 text-xs text-slate-500 print:hidden">Last updated {dayjs(report.updated_at).format('D MMM YYYY HH:mm')}</p>
       </div>
 
-      <div className="space-y-8">{def.sections.map((sec) => renderSection(sec))}</div>
+      {token ? (
+        <CustomerSiteReportRenewalCard
+          token={token}
+          customerId={customerId}
+          workAddressId={workAddressId}
+          reportId={report.id}
+          reportUpdatedAt={report.updated_at}
+          jobId={jobId}
+          initial={{
+            renewal_reminder_enabled: report.renewal_reminder_enabled,
+            renewal_anchor_date: report.renewal_anchor_date,
+            renewal_interval_years: report.renewal_interval_years,
+            renewal_early_days: report.renewal_early_days,
+            renewal_job_id: report.renewal_job_id,
+          }}
+          onApplied={(next: SiteReportRenewalState) => {
+            setReport((prev) => (prev ? { ...prev, ...next } : prev));
+          }}
+        />
+      ) : null}
 
-      {def.footer && def.footer.fields.length > 0 ? (
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none break-inside-avoid">
-          <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-            <h3 className="text-base font-bold text-slate-900">{def.footer.title || 'Footer'}</h3>
-          </div>
-          <div className="space-y-5 p-4">
-            {def.footer.fields.map((field) => (
-              <div key={field.id} className="space-y-1.5">
-                {field.label ? <label className="block text-sm font-semibold text-slate-800">{field.label}</label> : null}
-                {field.type === 'image' ? (
-                  <SiteReportFieldImageList
-                    rows={fieldImages[field.id] || []}
-                    imageUrlFor={imageUrlFor}
-                    uploading={uploadingKey === `field:${field.id}`}
-                    onPickFile={(f) => void uploadFieldImage(field.id, f)}
-                    onUpdateMeta={(rowId, patch) => updateFieldImageMeta(field.id, rowId, patch)}
-                    onRemove={(row) => void removeFieldImage(field.id, row)}
-                  />
-                ) : field.type === 'signature' ? (
-                  <SiteReportSignatureBlock
-                    rows={fieldImages[field.id] || []}
-                    imageUrlFor={imageUrlFor}
-                    busy={signatureBusyFieldId === field.id}
-                    onSaveBlob={(blob) => void replaceSignatureField(field.id, blob)}
-                    onClearSaved={() => void clearSignatureField(field.id)}
-                  />
-                ) : (
-                  renderSiteReportFieldInput(field, values[field.id] ?? '', (v) => setFieldValue(field.id, v))
-                )}
-              </div>
-            ))}
-            {def.footer.allow_section_images ? (
-              <div className="border-t border-slate-100 pt-4 print:hidden">
-                <p className="text-xs font-semibold uppercase text-slate-500 mb-2">Images (e.g. signature)</p>
-                <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                  <Plus className="size-3.5" />
-                  Add image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    disabled={!!uploadingKey?.startsWith('footer')}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = '';
-                      if (f) void uploadSectionImage('footer', f);
-                    }}
-                  />
-                </label>
-                <div className="mt-3 space-y-3">
-                  {(sectionImages.footer || []).map((im) => {
-                    const src = imageUrlFor(im.image_id);
-                    return (
-                      <div key={im.id} className="flex flex-wrap gap-3 rounded-lg border border-slate-100 p-3">
-                        <div className="w-full sm:w-40 shrink-0">
-                          {src ? (
-                            <img src={src} alt="" className="w-full rounded-md border object-contain max-h-36 bg-slate-50" />
-                          ) : null}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <input
-                            value={im.description}
-                            onChange={(e) => updateImageMeta('footer', im.id, { description: e.target.value })}
-                            className="w-full rounded border px-2 py-1 text-sm"
-                            placeholder="Description"
-                          />
-                          <input
-                            value={im.note}
-                            onChange={(e) => updateImageMeta('footer', im.id, { note: e.target.value })}
-                            className="w-full rounded border px-2 py-1 text-sm"
-                            placeholder="Note"
-                          />
-                          <button
-                            type="button"
-                            className="text-xs font-semibold text-rose-600"
-                            onClick={() => void removeSectionImage('footer', im)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </section>
+      <div className="space-y-8">
+        {def.sections.map((sec) => (
+          <CustomerSiteReportSectionView
+            key={sec.id}
+            sec={sec}
+            variant="default"
+            clientDisplayName={clientDisplayName}
+            siteAddressLabel={siteAddressLabel}
+            values={values}
+            sectionImages={sectionImages}
+            fieldImages={fieldImages}
+            uploadingKey={uploadingKey}
+            signatureBusyFieldId={signatureBusyFieldId}
+            imageUrlFor={imageUrlFor}
+            h={sectionHandlers}
+          />
+        ))}
+      </div>
+
+      {footerSection ? (
+        <CustomerSiteReportSectionView
+          sec={footerSection}
+          variant="footer"
+          clientDisplayName={clientDisplayName}
+          siteAddressLabel={siteAddressLabel}
+          values={values}
+          sectionImages={sectionImages}
+          fieldImages={fieldImages}
+          uploadingKey={uploadingKey}
+          signatureBusyFieldId={signatureBusyFieldId}
+          imageUrlFor={imageUrlFor}
+          h={sectionHandlers}
+        />
       ) : null}
     </div>
   );

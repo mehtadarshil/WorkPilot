@@ -31,6 +31,43 @@ const QUOTATION_TAGS = [
 const GENERAL_TAGS = ['{{company_name}}', '{{message}}'] as const;
 
 /** Same substitution set as automated service reminder sends (per job’s linked work address). */
+/** Site report renewal sends (cron); mirrors service reminder customer/site tags plus report fields. */
+const SITE_REPORT_RENEWAL_TAGS = [
+  '{{company_name}}',
+  '{{customer_name}}',
+  '{{customer_surname}}',
+  '{{customer_account_no}}',
+  '{{customer_email}}',
+  '{{customer_telephone}}',
+  '{{customer_mobile}}',
+  '{{customer_address}}',
+  '{{customer_address_line_1}}',
+  '{{customer_address_line_2}}',
+  '{{customer_address_line_3}}',
+  '{{customer_town}}',
+  '{{customer_county}}',
+  '{{customer_postcode}}',
+  '{{work_address}}',
+  '{{site_address}}',
+  '{{work_address_name}}',
+  '{{work_address_branch}}',
+  '{{work_address_line_1}}',
+  '{{work_address_line_2}}',
+  '{{work_address_line_3}}',
+  '{{work_address_town}}',
+  '{{work_address_county}}',
+  '{{work_address_postcode}}',
+  '{{service_reminder_booking_portal_url}}',
+  '{{job_title}}',
+  '{{job_id}}',
+  '{{job_line}}',
+  '{{due_date}}',
+  '{{service_due_date}}',
+  '{{phase_label}}',
+  '{{report_title}}',
+  '{{certificate_number}}',
+] as const;
+
 const SERVICE_REMINDER_TAGS = [
   '{{company_name}}',
   '{{customer_name}}',
@@ -81,6 +118,8 @@ export function placeholderTagsForTemplate(templateKey: string | null, mode: 'ad
       return [...GENERAL_TAGS];
     case 'service_reminder':
       return [...SERVICE_REMINDER_TAGS];
+    case 'site_report_renewal':
+      return [...SITE_REPORT_RENEWAL_TAGS];
     default:
       return Array.from(new Set([...COMMON, '{{customer_name}}', '{{customer_address}}', '{{work_address}}']));
   }

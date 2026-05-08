@@ -968,6 +968,39 @@ async function initDb() {
      WHERE certificate_number IS NULL OR TRIM(certificate_number) = ''`,
   );
 
+  await pool.query(
+    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_reminder_enabled BOOLEAN NOT NULL DEFAULT false`,
+  );
+  await pool.query(`ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_anchor_date DATE`);
+  await pool.query(
+    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_interval_years INTEGER NOT NULL DEFAULT 1`,
+  );
+  await pool.query(
+    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 14`,
+  );
+  await pool.query(
+    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL`,
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_customer_site_reports_renewal ON customer_site_reports (customer_id)
+     WHERE renewal_reminder_enabled = true AND renewal_anchor_date IS NOT NULL`,
+  );
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS customer_site_report_renewal_sent (
+      id SERIAL PRIMARY KEY,
+      report_id INTEGER NOT NULL REFERENCES customer_site_reports(id) ON DELETE CASCADE,
+      phase VARCHAR(8) NOT NULL CHECK (phase IN ('early', 'due')),
+      renewal_due_date DATE NOT NULL,
+      tenant_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (report_id, phase, renewal_due_date)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_csrr_sent_tenant ON customer_site_report_renewal_sent(tenant_user_id)`,
+  );
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_communications (
       id SERIAL PRIMARY KEY,
@@ -9082,6 +9115,13 @@ async function ensureDefaultEmailTemplates(userId: number): Promise<void> {
       body:
         '<p>Hi {{customer_name}},</p><p>This is a {{phase_label}} for your <strong>{{service_name}}</strong> service.</p><p>Job: {{job_title}} (#{{job_id}})<br/>Next due: <strong>{{due_date}}</strong></p><p>Work / site (this job): {{work_address}}</p><p>Billing address: {{customer_address}}</p><p>Please contact us to book your next visit.</p><p>Kind regards,<br/>{{company_name}}</p>',
     },
+    {
+      key: 'site_report_renewal',
+      name: 'Site report renewal reminder',
+      subject: '{{company_name}} — Report renewal ({{report_title}})',
+      body:
+        '<p>Hi {{customer_name}},</p><p>This is a {{phase_label}} for your <strong>{{report_title}}</strong> (certificate {{certificate_number}}).</p><p>Next renewal due: <strong>{{due_date}}</strong></p><p>Property / site: {{site_address}}</p><p>Billing address: {{customer_address}}</p><p>{{job_line}}</p><p>Please contact us to book your reassessment.</p><p>Kind regards,<br/>{{company_name}}</p>',
+    },
   ];
   for (const d of defaults) {
     await pool.query(
@@ -15587,13 +15627,24 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
       report_title: string | null;
       document: unknown;
       updated_at: Date;
-    }>('SELECT id, template_id, report_title, document, updated_at FROM customer_site_reports WHERE id = $1', [r0.id]);
+      renewal_reminder_enabled: boolean;
+      renewal_anchor_date: unknown;
+      renewal_interval_years: number;
+      renewal_early_days: number;
+      renewal_job_id: number | null;
+    }>(
+      `SELECT id, template_id, report_title, document, updated_at,
+              renewal_reminder_enabled, renewal_anchor_date, renewal_interval_years, renewal_early_days, renewal_job_id
+       FROM customer_site_reports WHERE id = $1`,
+      [r0.id],
+    );
     const r = rFinal.rows[0];
     const tid = r.template_id != null ? Number(r.template_id) : fraTemplateId;
     const doc = normalizeTemplateSiteReportDocument(r.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
     if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
     const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, Number(r.id));
+    const anchorYmd = formatInvoiceDateFromDb(r.renewal_anchor_date);
 
     return res.json({
       report: {
@@ -15605,6 +15656,11 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         document: doc,
         updated_at: (r.updated_at as Date).toISOString(),
         certificate_number: certificateNumber,
+        renewal_reminder_enabled: r.renewal_reminder_enabled === true,
+        renewal_anchor_date: anchorYmd || null,
+        renewal_interval_years: Math.max(1, Math.min(10, Number(r.renewal_interval_years) || 1)),
+        renewal_early_days: Math.max(1, Math.min(120, Number(r.renewal_early_days) || 14)),
+        renewal_job_id: r.renewal_job_id != null ? Number(r.renewal_job_id) : null,
       },
       template: { id: tid, definition: def },
     });
@@ -15698,13 +15754,24 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
       document: unknown;
       updated_at: Date;
       template_id: number | null;
-    }>('SELECT report_title, document, updated_at, template_id FROM customer_site_reports WHERE id = $1', [reportId]);
+      renewal_reminder_enabled: boolean;
+      renewal_anchor_date: unknown;
+      renewal_interval_years: number;
+      renewal_early_days: number;
+      renewal_job_id: number | null;
+    }>(
+      `SELECT report_title, document, updated_at, template_id,
+              renewal_reminder_enabled, renewal_anchor_date, renewal_interval_years, renewal_early_days, renewal_job_id
+       FROM customer_site_reports WHERE id = $1`,
+      [reportId],
+    );
     const row = r.rows[0];
     const tid = row.template_id != null ? Number(row.template_id) : templateIdForDoc;
     const doc = normalizeTemplateSiteReportDocument(row.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
     if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
     const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, reportId);
+    const anchorYmdPut = formatInvoiceDateFromDb(row.renewal_anchor_date);
     return res.json({
       report: {
         id: reportId,
@@ -15715,6 +15782,11 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         document: doc,
         updated_at: (row.updated_at as Date).toISOString(),
         certificate_number: certificateNumber,
+        renewal_reminder_enabled: row.renewal_reminder_enabled === true,
+        renewal_anchor_date: anchorYmdPut || null,
+        renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
+        renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+        renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
       },
       template: { id: tid, definition: def },
     });
@@ -15723,6 +15795,189 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.patch(
+  '/api/customers/:customerId/site-report/renewal-reminder',
+  authenticate,
+  requireTenantCrmAccess('customers'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const customerId = parseInt(String(req.params.customerId), 10);
+    if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const body = req.body as Record<string, unknown>;
+
+    const waParsed =
+      body.work_address_id === undefined || body.work_address_id === null || body.work_address_id === ''
+        ? null
+        : typeof body.work_address_id === 'number' && Number.isFinite(body.work_address_id)
+          ? Math.trunc(body.work_address_id as number)
+          : typeof body.work_address_id === 'string' && String(body.work_address_id).trim()
+            ? parseInt(String(body.work_address_id).trim(), 10)
+            : NaN;
+    if (body.work_address_id != null && String(body.work_address_id).trim() !== '' && !Number.isFinite(waParsed)) {
+      return res.status(400).json({ message: 'Invalid work_address_id' });
+    }
+
+    const reportIdRaw = body.report_id;
+    const reportId =
+      typeof reportIdRaw === 'number' && Number.isFinite(reportIdRaw)
+        ? Math.trunc(reportIdRaw)
+        : typeof reportIdRaw === 'string' && String(reportIdRaw).trim()
+          ? parseInt(String(reportIdRaw).trim(), 10)
+          : NaN;
+    if (!Number.isFinite(reportId)) return res.status(400).json({ message: 'report_id is required' });
+
+    const renewalEnabled =
+      typeof body.renewal_reminder_enabled === 'boolean'
+        ? body.renewal_reminder_enabled
+        : body.renewal_reminder_enabled === 'true'
+          ? true
+          : body.renewal_reminder_enabled === 'false'
+            ? false
+            : undefined;
+    if (renewalEnabled === undefined) return res.status(400).json({ message: 'renewal_reminder_enabled is required' });
+
+    let anchorYmd: string | null = null;
+    if (body.renewal_anchor_date === undefined) {
+      return res.status(400).json({ message: 'renewal_anchor_date is required (YYYY-MM-DD or null)' });
+    }
+    if (body.renewal_anchor_date === null || body.renewal_anchor_date === '') {
+      anchorYmd = null;
+    } else {
+      const rawA = typeof body.renewal_anchor_date === 'string' ? body.renewal_anchor_date.trim() : String(body.renewal_anchor_date);
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawA);
+      if (!m) return res.status(400).json({ message: 'renewal_anchor_date must be YYYY-MM-DD or null' });
+      anchorYmd = rawA;
+    }
+
+    let intervalYears =
+      typeof body.renewal_interval_years === 'number' && Number.isFinite(body.renewal_interval_years)
+        ? Math.trunc(body.renewal_interval_years)
+        : typeof body.renewal_interval_years === 'string' && String(body.renewal_interval_years).trim()
+          ? parseInt(String(body.renewal_interval_years).trim(), 10)
+          : 1;
+    if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
+    if (intervalYears > 10) intervalYears = 10;
+
+    let earlyDays =
+      typeof body.renewal_early_days === 'number' && Number.isFinite(body.renewal_early_days)
+        ? Math.trunc(body.renewal_early_days)
+        : typeof body.renewal_early_days === 'string' && String(body.renewal_early_days).trim()
+          ? parseInt(String(body.renewal_early_days).trim(), 10)
+          : 14;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    if (earlyDays > 120) earlyDays = 120;
+
+    const jobRaw = body.renewal_job_id;
+    let renewalJobId: number | null = null;
+    if (jobRaw === null || jobRaw === undefined || jobRaw === '') {
+      renewalJobId = null;
+    } else {
+      const jid =
+        typeof jobRaw === 'number' && Number.isFinite(jobRaw)
+          ? Math.trunc(jobRaw)
+          : typeof jobRaw === 'string' && String(jobRaw).trim()
+            ? parseInt(String(jobRaw).trim(), 10)
+            : NaN;
+      if (!Number.isFinite(jid)) return res.status(400).json({ message: 'Invalid renewal_job_id' });
+      renewalJobId = jid;
+    }
+
+    if (renewalEnabled && !anchorYmd) {
+      return res.status(400).json({ message: 'Set a renewal anchor date before enabling reminders' });
+    }
+
+    try {
+      const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+      if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+      if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+      const ownerUserId = Number(customer.rows[0].created_by);
+      const fraTemplateId = await ensureFireRiskAssessmentTemplate(pool, ownerUserId);
+
+      const resolvedWa = waParsed && Number.isFinite(waParsed) ? await resolveWorkAddressIdForCustomer(pool, customerId, waParsed) : null;
+      if (waParsed != null && Number.isFinite(waParsed) && resolvedWa == null) {
+        return res.status(400).json({ message: 'Work address not found for this customer' });
+      }
+
+      if (renewalJobId != null) {
+        const jk = await pool.query<{ id: number }>(
+          `SELECT id FROM jobs WHERE id = $1 AND customer_id = $2`,
+          [renewalJobId, customerId],
+        );
+        if ((jk.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Job not found for this customer' });
+      }
+
+      const own = await pool.query<{ id: number; template_id: number | null }>(
+        `SELECT id, template_id FROM customer_site_reports WHERE id = $1 AND customer_id = $2 AND (
+           ($3::integer IS NULL AND work_address_id IS NULL)
+           OR (work_address_id = $3)
+         )`,
+        [reportId, customerId, resolvedWa],
+      );
+      if ((own.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
+
+      await pool.query(
+        `UPDATE customer_site_reports SET
+           renewal_reminder_enabled = $1,
+           renewal_anchor_date = $2,
+           renewal_interval_years = $3,
+           renewal_early_days = $4,
+           renewal_job_id = $5,
+           updated_at = NOW(),
+           updated_by = $6
+         WHERE id = $7 AND customer_id = $8`,
+        [renewalEnabled, anchorYmd, intervalYears, earlyDays, renewalJobId, userId, reportId, customerId],
+      );
+
+      const r = await pool.query<{
+        report_title: string | null;
+        document: unknown;
+        updated_at: Date;
+        template_id: number | null;
+        renewal_reminder_enabled: boolean;
+        renewal_anchor_date: unknown;
+        renewal_interval_years: number;
+        renewal_early_days: number;
+        renewal_job_id: number | null;
+      }>(
+        `SELECT report_title, document, updated_at, template_id,
+                renewal_reminder_enabled, renewal_anchor_date, renewal_interval_years, renewal_early_days, renewal_job_id
+         FROM customer_site_reports WHERE id = $1`,
+        [reportId],
+      );
+      const row = r.rows[0];
+      const tid = row.template_id != null ? Number(row.template_id) : fraTemplateId;
+      const doc = normalizeTemplateSiteReportDocument(row.document, tid);
+      const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
+      if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
+      const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, reportId);
+      const anchorOut = formatInvoiceDateFromDb(row.renewal_anchor_date);
+      return res.json({
+        report: {
+          id: reportId,
+          customer_id: customerId,
+          work_address_id: resolvedWa,
+          template_id: tid,
+          report_title: row.report_title,
+          document: doc,
+          updated_at: (row.updated_at as Date).toISOString(),
+          certificate_number: certificateNumber,
+          renewal_reminder_enabled: row.renewal_reminder_enabled === true,
+          renewal_anchor_date: anchorOut || null,
+          renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
+          renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+          renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
+        },
+        template: { id: tid, definition: def },
+      });
+    } catch (error) {
+      console.error('Patch site report renewal reminder error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
 
 app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
@@ -16259,6 +16514,8 @@ initDb()
             const loggable =
               r.service_reminders.sent > 0 ||
               r.service_reminders.errors.length > 0 ||
+              r.site_report_renewals.sent > 0 ||
+              r.site_report_renewals.errors.length > 0 ||
               r.job_office_task_reminders.sent > 0 ||
               r.job_office_task_reminders.errors.length > 0 ||
               r.staff_reminders.sent > 0 ||

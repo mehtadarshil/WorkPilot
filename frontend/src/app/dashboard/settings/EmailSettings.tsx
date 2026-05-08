@@ -30,9 +30,9 @@ interface EmailTemplateRow {
   updated_at: string;
 }
 
-const BUILTIN_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general', 'service_reminder']);
+const BUILTIN_TEMPLATE_KEYS = new Set(['invoice', 'quotation', 'general', 'service_reminder', 'site_report_renewal']);
 
-const EMAIL_TEMPLATE_LIST_ORDER = ['invoice', 'quotation', 'service_reminder', 'general'] as const;
+const EMAIL_TEMPLATE_LIST_ORDER = ['invoice', 'quotation', 'service_reminder', 'site_report_renewal', 'general'] as const;
 
 function sortEmailTemplatesForDisplay(rows: EmailTemplateRow[]): EmailTemplateRow[] {
   return [...rows].sort((a, b) => {
@@ -55,6 +55,8 @@ const VARS_HELP: Record<string, string> = {
   general: '{{company_name}}, {{message}}',
   service_reminder:
     '{{company_name}}, {{customer_name}}, {{work_address}} / {{site_address}} (this job’s site), {{customer_address}}, {{service_name}}, {{job_title}}, {{due_date}}, {{phase_label}}, …',
+  site_report_renewal:
+    '{{company_name}}, {{customer_name}}, {{report_title}}, {{certificate_number}}, {{due_date}}, {{phase_label}}, {{site_address}}, {{job_line}}, …',
 };
 
 function templateVarsHint(templateKey: string): string {
@@ -151,6 +153,47 @@ const PLACEHOLDER_REFERENCE: {
       { tag: '{{due_date}}', purpose: 'Next service due date for this send (same as {{service_due_date}}).' },
       { tag: '{{service_due_date}}', purpose: 'Alias of {{due_date}}.' },
       { tag: '{{phase_label}}', purpose: 'e.g. “first reminder” / “final reminder” for this phase.' },
+    ],
+  },
+  {
+    templateKey: 'site_report_renewal',
+    title: 'Site report renewal reminder',
+    whenUsed:
+      'Automated customer emails when a site report (e.g. FRA) is due for renewal (cron). Anchors and intervals are set on the customer / job site report screen. Recipient rules match Settings → Service reminders.',
+    tags: [
+      { tag: '{{company_name}}', purpose: 'Your organisation name from Invoice settings.' },
+      { tag: '{{customer_name}}', purpose: 'Customer display name.' },
+      { tag: '{{customer_surname}}', purpose: 'Billing contact surname when available.' },
+      { tag: '{{customer_account_no}}', purpose: 'Customer account id.' },
+      { tag: '{{customer_email}}', purpose: 'Account email on file.' },
+      { tag: '{{customer_telephone}}', purpose: 'Landline or main phone when set.' },
+      { tag: '{{customer_mobile}}', purpose: 'Mobile when set.' },
+      { tag: '{{customer_address}}', purpose: 'Billing address as one line.' },
+      { tag: '{{customer_address_line_1}}', purpose: 'Billing address line 1.' },
+      { tag: '{{customer_address_line_2}}', purpose: 'Billing address line 2.' },
+      { tag: '{{customer_address_line_3}}', purpose: 'Billing address line 3.' },
+      { tag: '{{customer_town}}', purpose: 'Billing town.' },
+      { tag: '{{customer_county}}', purpose: 'Billing county.' },
+      { tag: '{{customer_postcode}}', purpose: 'Billing postcode.' },
+      { tag: '{{work_address}}', purpose: 'This report’s linked work/site when set.' },
+      { tag: '{{site_address}}', purpose: 'Alias of {{work_address}}.' },
+      { tag: '{{work_address_name}}', purpose: 'Work address label / site name only.' },
+      { tag: '{{work_address_branch}}', purpose: 'Branch name on the work address when set.' },
+      { tag: '{{work_address_line_1}}', purpose: 'Work/site line 1.' },
+      { tag: '{{work_address_line_2}}', purpose: 'Work/site line 2.' },
+      { tag: '{{work_address_line_3}}', purpose: 'Work/site line 3.' },
+      { tag: '{{work_address_town}}', purpose: 'Work/site town.' },
+      { tag: '{{work_address_county}}', purpose: 'Work/site county.' },
+      { tag: '{{work_address_postcode}}', purpose: 'Work/site postcode.' },
+      { tag: '{{service_reminder_booking_portal_url}}', purpose: 'WORKPILOT_CUSTOMER_PORTAL_URL from server env when configured.' },
+      { tag: '{{report_title}}', purpose: 'Report title for print / email.' },
+      { tag: '{{certificate_number}}', purpose: 'Certificate number for this report.' },
+      { tag: '{{due_date}}', purpose: 'Next renewal due date (display format).' },
+      { tag: '{{service_due_date}}', purpose: 'Alias of {{due_date}}.' },
+      { tag: '{{phase_label}}', purpose: 'Friendly copy for early vs due reminder.' },
+      { tag: '{{job_title}}', purpose: 'Linked job title when a job is linked for contact resolution.' },
+      { tag: '{{job_id}}', purpose: 'Linked job id when set.' },
+      { tag: '{{job_line}}', purpose: 'Preformatted sentence about the linked job, or empty.' },
     ],
   },
   {
