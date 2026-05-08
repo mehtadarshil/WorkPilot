@@ -67,6 +67,7 @@ import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
 import { parseSiteReportTemplateDefinition } from './siteReportTemplates/validateDefinition';
 import { ensureFireRiskAssessmentTemplate, fetchTemplateDefinition } from './siteReportTemplates/seedAndFetch';
 import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefinition';
+import { normalizeCustomerImageUpload } from './imageUploadNormalize';
 import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
 
@@ -15364,13 +15365,30 @@ app.post('/api/customers/:customerId/files', authenticate, requireTenantCrmAcces
     return res.status(400).json({ message: 'Invalid base64 file data' });
   }
   if (buf.length === 0) return res.status(400).json({ message: 'Empty file' });
-  if (buf.length > CUSTOMER_FILE_MAX_BYTES) {
+
+  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
+  let uploadBuf = buf;
+  let uploadContentType = contentType;
+  let storedExt = path.extname(originalFilename).slice(0, 32) || '';
+  try {
+    const normalized = await normalizeCustomerImageUpload(buf, contentType, originalFilename);
+    uploadBuf = normalized.buffer;
+    uploadContentType = normalized.contentType;
+    storedExt = normalized.storedExtension || storedExt;
+  } catch (normErr) {
+    if (normErr instanceof Error && normErr.message === 'HEIC_DECODE_FAILED') {
+      return res.status(400).json({
+        message:
+          'Could not read this HEIC/HEIF image. Save as JPEG from your device, or ensure the server has HEIC support (Sharp + libheif).',
+      });
+    }
+    throw normErr;
+  }
+  if (uploadBuf.length > CUSTOMER_FILE_MAX_BYTES) {
     return res.status(400).json({ message: `File too large (max ${Math.round(CUSTOMER_FILE_MAX_BYTES / (1024 * 1024))} MB)` });
   }
 
-  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
-  const ext = path.extname(originalFilename).slice(0, 32) || '';
-  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${ext}`;
+  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${storedExt || path.extname(originalFilename).slice(0, 32) || ''}`;
 
   try {
     const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
@@ -15381,14 +15399,14 @@ app.post('/api/customers/:customerId/files', authenticate, requireTenantCrmAcces
 
     const dir = await ensureCustomerFilesDir(customerId);
     const fullPath = path.join(dir, storedFilename);
-    await fs.writeFile(fullPath, buf);
+    await fs.writeFile(fullPath, uploadBuf);
 
     try {
       const inserted = await pool.query(
         `INSERT INTO customer_files (customer_id, work_address_id, original_filename, stored_filename, content_type, byte_size, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, created_at`,
-        [customerId, workAddressId, originalFilename, storedFilename, contentType, buf.length, userId],
+        [customerId, workAddressId, originalFilename, storedFilename, uploadContentType, uploadBuf.length, userId],
       );
       return res.status(201).json({
         file: {
@@ -15729,13 +15747,30 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
     return res.status(400).json({ message: 'Invalid base64 file data' });
   }
   if (buf.length === 0) return res.status(400).json({ message: 'Empty file' });
-  if (buf.length > CUSTOMER_FILE_MAX_BYTES) {
+
+  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
+  let uploadBuf = buf;
+  let uploadContentType = contentType;
+  let storedExt = path.extname(originalFilename).slice(0, 32) || '';
+  try {
+    const normalized = await normalizeCustomerImageUpload(buf, contentType, originalFilename);
+    uploadBuf = normalized.buffer;
+    uploadContentType = normalized.contentType;
+    storedExt = normalized.storedExtension || storedExt;
+  } catch (normErr) {
+    if (normErr instanceof Error && normErr.message === 'HEIC_DECODE_FAILED') {
+      return res.status(400).json({
+        message:
+          'Could not read this HEIC/HEIF image. Save as JPEG from your device, or ensure the server has HEIC support (Sharp + libheif).',
+      });
+    }
+    throw normErr;
+  }
+  if (uploadBuf.length > CUSTOMER_FILE_MAX_BYTES) {
     return res.status(400).json({ message: `File too large (max ${Math.round(CUSTOMER_FILE_MAX_BYTES / (1024 * 1024))} MB)` });
   }
 
-  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
-  const ext = path.extname(originalFilename).slice(0, 32) || '';
-  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${ext}`;
+  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${storedExt || path.extname(originalFilename).slice(0, 32) || ''}`;
 
   try {
     const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
@@ -15750,14 +15785,14 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
 
     const dir = await ensureCustomerSiteReportImageDir(customerId, reportId);
     const fullPath = path.join(dir, storedFilename);
-    await fs.writeFile(fullPath, buf);
+    await fs.writeFile(fullPath, uploadBuf);
 
     try {
       const inserted = await pool.query(
         `INSERT INTO customer_site_report_images (report_id, stored_filename, original_filename, content_type, byte_size, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, created_at`,
-        [reportId, storedFilename, originalFilename, contentType, buf.length, userId],
+        [reportId, storedFilename, originalFilename, uploadContentType, uploadBuf.length, userId],
       );
       return res.status(201).json({
         image: {
