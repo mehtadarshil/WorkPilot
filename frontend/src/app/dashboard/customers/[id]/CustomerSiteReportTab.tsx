@@ -26,6 +26,7 @@ interface ReportPayload {
   report_title: string | null;
   document: TemplateSiteReportDocument;
   updated_at: string;
+  certificate_number?: string;
 }
 
 interface Props {
@@ -417,17 +418,34 @@ export default function CustomerSiteReportTab({
     if (!report) return;
     setPdfBusy(true);
     setError(null);
+    // window.open must run in the same synchronous turn as the click; after await the browser
+    // treats a new window as an unsolicited popup and returns null (blocked).
+    const w = window.open('about:blank', '_blank');
+    if (!w) {
+      setPdfBusy(false);
+      setError('Pop-up blocked. Use Download PDF or allow pop-ups for this site.');
+      return;
+    }
+    try {
+      w.document.open();
+      w.document.write(
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print preview</title></head><body style="margin:0;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f8fafc;color:#64748b">Preparing PDF…</body></html>',
+      );
+      w.document.close();
+    } catch {
+      /* noop: rare noopener / policy edge cases */
+    }
     try {
       const blob = await fetchReportPdfBlob();
       const objectUrl = URL.createObjectURL(blob);
-      const w = window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      if (!w) {
-        URL.revokeObjectURL(objectUrl);
-        setError('Pop-up blocked. Use Download PDF or allow pop-ups for this site.');
-        return;
-      }
+      w.location.replace(objectUrl);
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
     } catch (e) {
+      try {
+        w.close();
+      } catch {
+        /* noop */
+      }
       setError(e instanceof Error ? e.message : 'Could not open PDF');
     } finally {
       setPdfBusy(false);
@@ -571,6 +589,11 @@ export default function CustomerSiteReportTab({
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h2 className="text-lg font-bold text-slate-900">{def.report_title_default || 'Report'}</h2>
+          {report.certificate_number ? (
+            <p className="mt-0.5 text-sm font-medium text-slate-700">
+              Certificate no. <span className="font-mono tracking-tight">{report.certificate_number}</span>
+            </p>
+          ) : null}
           <p className="text-sm text-slate-600 mt-0.5">
             Fields and layout come from your{' '}
             <span className="font-semibold text-slate-800">Settings → Reports</span> (Fire Risk Assessment is

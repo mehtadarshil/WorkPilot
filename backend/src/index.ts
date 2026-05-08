@@ -67,7 +67,7 @@ import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
 import { parseSiteReportTemplateDefinition } from './siteReportTemplates/validateDefinition';
 import { ensureFireRiskAssessmentTemplate, fetchTemplateDefinition } from './siteReportTemplates/seedAndFetch';
 import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefinition';
-import { generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
+import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -960,6 +960,11 @@ async function initDb() {
   await pool.query(`ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS template_id INTEGER REFERENCES site_report_templates(id) ON DELETE SET NULL`);
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_customer_site_reports_template_id ON customer_site_reports(template_id) WHERE template_id IS NOT NULL`,
+  );
+  await pool.query(`ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS certificate_number VARCHAR(100)`);
+  await pool.query(
+    `UPDATE customer_site_reports SET certificate_number = 'WP-FRA-' || id::text
+     WHERE certificate_number IS NULL OR TRIM(certificate_number) = ''`,
   );
 
   await pool.query(`
@@ -15570,6 +15575,7 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const doc = normalizeTemplateSiteReportDocument(r.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
     if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
+    const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, Number(r.id));
 
     return res.json({
       report: {
@@ -15580,6 +15586,7 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         report_title: r.report_title,
         document: doc,
         updated_at: (r.updated_at as Date).toISOString(),
+        certificate_number: certificateNumber,
       },
       template: { id: tid, definition: def },
     });
@@ -15679,6 +15686,7 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const doc = normalizeTemplateSiteReportDocument(row.document, tid);
     const def = await fetchTemplateDefinition(pool, tid, ownerUserId);
     if (!def) return res.status(500).json({ message: 'Report template could not be loaded' });
+    const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, reportId);
     return res.json({
       report: {
         id: reportId,
@@ -15688,6 +15696,7 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         report_title: row.report_title,
         document: doc,
         updated_at: (row.updated_at as Date).toISOString(),
+        certificate_number: certificateNumber,
       },
       template: { id: tid, definition: def },
     });

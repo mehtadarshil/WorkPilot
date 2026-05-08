@@ -2,7 +2,11 @@ import path from 'path';
 import fs from 'fs/promises';
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
-import type { SiteReportTemplateDefinition, SiteReportTemplateField } from './siteReportTemplates/types';
+import type {
+  SiteReportTemplateDefinition,
+  SiteReportTemplateField,
+  SiteReportTemplateSection,
+} from './siteReportTemplates/types';
 import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
 
 type SectionImages = NonNullable<TemplateSiteReportDocument['section_images']>;
@@ -119,6 +123,60 @@ function renderFieldImagesHtml(
   return parts.join('');
 }
 
+function fieldHasUserEntry(
+  field: SiteReportTemplateField,
+  values: Record<string, string>,
+  overrides: Record<string, string>,
+  fieldImages: FieldImages | undefined,
+): boolean {
+  if (field.type === 'static_text') return false;
+  if (field.type === 'image' || field.type === 'signature') {
+    const rows = fieldImages?.[field.id];
+    return !!(rows && rows.length > 0);
+  }
+  const override = overrides[field.id];
+  const rawVal = override !== undefined ? override : (values[field.id] ?? '');
+  if (field.type === 'yes_no_na') return rawVal.trim().length > 0;
+  if (field.type === 'text' || field.type === 'textarea' || field.type === 'date') return rawVal.trim().length > 0;
+  return false;
+}
+
+function sectionHasAnyUserContent(
+  sec: SiteReportTemplateSection,
+  values: Record<string, string>,
+  overrides: Record<string, string>,
+  fieldImages: FieldImages | undefined,
+  sectionImages: SectionImages | undefined,
+): boolean {
+  for (const f of sec.fields) {
+    if (fieldHasUserEntry(f, values, overrides, fieldImages)) return true;
+  }
+  if (sec.allow_section_images) {
+    const rows = sectionImages?.[sec.id];
+    if (rows && rows.length > 0) return true;
+  }
+  return false;
+}
+
+/** Footer may contain mandatory static certificate text — print it even when no signature/name yet. */
+function footerHasRenderableContent(
+  footer: NonNullable<SiteReportTemplateDefinition['footer']>,
+  values: Record<string, string>,
+  overrides: Record<string, string>,
+  fieldImages: FieldImages | undefined,
+  sectionImages: SectionImages | undefined,
+): boolean {
+  for (const f of footer.fields) {
+    if (f.type === 'static_text' && (f.content || '').trim()) return true;
+    if (fieldHasUserEntry(f, values, overrides, fieldImages)) return true;
+  }
+  if (footer.allow_section_images) {
+    const rows = sectionImages?.footer;
+    if (rows && rows.length > 0) return true;
+  }
+  return false;
+}
+
 function renderFieldBlock(
   field: SiteReportTemplateField,
   values: Record<string, string>,
@@ -169,13 +227,13 @@ export function buildSiteReportPrintHtml(input: {
   reportTitle: string;
   clientLine: string;
   siteLine: string;
-  updatedAtLabel: string;
+  certificateNumber: string;
   definition: SiteReportTemplateDefinition;
   document: TemplateSiteReportDocument;
   imageMap: Map<number, string>;
   headerOverrides: Record<string, string>;
 }): string {
-  const { accent, companyName, logoUrl, reportTitle, clientLine, siteLine, updatedAtLabel, definition, document, imageMap, headerOverrides } = input;
+  const { accent, companyName, logoUrl, reportTitle, clientLine, siteLine, certificateNumber, definition, document, imageMap, headerOverrides } = input;
   const values = document.values || {};
   const sectionImages = document.section_images || {};
   const fieldImages = document.field_images || {};
@@ -184,9 +242,14 @@ export function buildSiteReportPrintHtml(input: {
     ? `<img class="logo" src=${JSON.stringify(logoUrl)} alt="" crossorigin="anonymous" />`
     : `<div class="logo-fallback">${escapeHtml(companyName.slice(0, 2).toUpperCase())}</div>`;
 
+  const certLine = certificateNumber.trim()
+    ? `<p class="cert-ref">Certificate no. <strong>${escapeHtml(certificateNumber.trim())}</strong></p>`
+    : '';
+
   const sectionsHtml: string[] = [];
   for (const sec of definition.sections) {
     if (sec.omit_from_pdf) continue;
+    if (!sectionHasAnyUserContent(sec, values, headerOverrides, fieldImages, sectionImages)) continue;
     const fieldsHtml: string[] = [];
     for (const f of sec.fields) {
       fieldsHtml.push(renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap));
@@ -201,9 +264,11 @@ export function buildSiteReportPrintHtml(input: {
   let footerHtml = '';
   if (definition.footer && definition.footer.fields.length > 0) {
     const ft = definition.footer;
-    const ff = ft.fields.map((f) => renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap)).join('');
-    const fImgs = ft.allow_section_images ? renderSectionImagesHtml('footer', sectionImages, imageMap) : '';
-    footerHtml = `<section class="sec footer"><h2 class="sec-title">${escapeHtml(ft.title || 'Footer')}</h2><div class="fields">${ff}</div>${fImgs}</section>`;
+    if (footerHasRenderableContent(ft, values, headerOverrides, fieldImages, sectionImages)) {
+      const ff = ft.fields.map((f) => renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap)).join('');
+      const fImgs = ft.allow_section_images ? renderSectionImagesHtml('footer', sectionImages, imageMap) : '';
+      footerHtml = `<section class="sec footer"><h2 class="sec-title">${escapeHtml(ft.title || 'Footer')}</h2><div class="fields">${ff}</div>${fImgs}</section>`;
+    }
   }
 
   return `<!DOCTYPE html>
@@ -216,13 +281,13 @@ export function buildSiteReportPrintHtml(input: {
     * { box-sizing: border-box; }
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; font-size: 10.5pt; line-height: 1.45; margin: 0; padding: 14mm 16mm; background: #fff; }
     .accent { color: ${escapeHtml(accent)}; }
-    .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 3px solid ${escapeHtml(accent)}; }
+    .top { display: flex; align-items: flex-start; justify-content: flex-start; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 3px solid ${escapeHtml(accent)}; }
     .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
     .logo { max-height: 52px; max-width: 220px; object-fit: contain; }
     .logo-fallback { width: 52px; height: 52px; border-radius: 8px; background: ${escapeHtml(accent)}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14pt; flex-shrink: 0; }
     .company { font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
-    .meta { text-align: right; font-size: 9pt; color: #64748b; }
-    h1.doc-title { font-size: 18pt; font-weight: 800; margin: 0 0 16px; color: #0f172a; letter-spacing: -0.02em; }
+    h1.doc-title { font-size: 18pt; font-weight: 800; margin: 0 0 8px; color: #0f172a; letter-spacing: -0.02em; }
+    p.cert-ref { font-size: 10pt; color: #475569; margin: 0 0 14px; }
     .keyline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 20px; padding: 12px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 10pt; }
     .keyline .k { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 4px; }
     .keyline .v { font-weight: 600; color: #0f172a; white-space: pre-wrap; }
@@ -247,9 +312,9 @@ export function buildSiteReportPrintHtml(input: {
       ${logoBlock}
       <div class="company">${escapeHtml(companyName)}</div>
     </div>
-    <div class="meta">${escapeHtml(updatedAtLabel)}</div>
   </div>
   <h1 class="doc-title">${escapeHtml(reportTitle)}</h1>
+  ${certLine}
   <div class="keyline">
     <div><div class="k">Client</div><div class="v">${nl2br(clientLine)}</div></div>
     <div><div class="k">Property / site</div><div class="v">${nl2br(siteLine)}</div></div>
@@ -258,6 +323,21 @@ export function buildSiteReportPrintHtml(input: {
   ${footerHtml}
 </body>
 </html>`;
+}
+
+/** Assign a stable certificate reference when missing; returns the value stored (or generated fallback). */
+export async function ensureCustomerSiteReportCertificateNumber(pool: Pool, reportId: number): Promise<string> {
+  await pool.query(
+    `UPDATE customer_site_reports SET certificate_number = 'WP-FRA-' || id::text
+     WHERE id = $1 AND (certificate_number IS NULL OR TRIM(certificate_number) = '')`,
+    [reportId],
+  );
+  const r = await pool.query<{ certificate_number: string | null }>(
+    'SELECT certificate_number FROM customer_site_reports WHERE id = $1',
+    [reportId],
+  );
+  const s = String(r.rows[0]?.certificate_number ?? '').trim();
+  return s || `WP-FRA-${reportId}`;
 }
 
 /** Build the same HTML used for PDFs, without running headless Chrome (for browser print / client-side PDF). */
@@ -276,14 +356,14 @@ export async function getCustomerSiteReportPrintHtml(
     work_address_id: number | null;
     report_title: string | null;
     document: unknown;
-    updated_at: Date;
-  }>('SELECT id, work_address_id, report_title, document, updated_at FROM customer_site_reports WHERE id = $1 AND customer_id = $2', [
+  }>('SELECT id, work_address_id, report_title, document FROM customer_site_reports WHERE id = $1 AND customer_id = $2', [
     reportId,
     customerId,
   ]);
   if ((rep.rowCount ?? 0) === 0) throw new Error('REPORT_NOT_FOUND');
 
   const row = rep.rows[0];
+  const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, row.id);
   const doc = row.document as TemplateSiteReportDocument;
   if (!doc || doc.mode !== 'template_v1') throw new Error('INVALID_DOCUMENT');
 
@@ -361,7 +441,6 @@ export async function getCustomerSiteReportPrintHtml(
     (row.report_title && String(row.report_title).trim()) ||
     definition.report_title_default?.trim() ||
     'Report';
-  const updatedAtLabel = `Updated ${new Date(row.updated_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`;
 
   const headerOverrides: Record<string, string> = {
     client_name_display: clientLine,
@@ -378,7 +457,7 @@ export async function getCustomerSiteReportPrintHtml(
     reportTitle,
     clientLine,
     siteLine,
-    updatedAtLabel,
+    certificateNumber,
     definition,
     document: doc,
     imageMap,
