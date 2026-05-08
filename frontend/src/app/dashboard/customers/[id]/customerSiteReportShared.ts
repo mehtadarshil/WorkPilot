@@ -26,21 +26,27 @@ function isHeicLikeFile(file: File): boolean {
 
 /**
  * HEIC uploads are large as base64 JSON and often hit reverse-proxy body limits (413).
- * Convert to JPEG in the browser before upload when possible.
+ * Prefer converting in the browser; if wasm/libheif fails (common on newer iPhone HEIC),
+ * return the original file so the API can convert with Sharp instead.
  */
 export async function prepareImageFileForUpload(file: File): Promise<File> {
   if (!isHeicLikeFile(file)) return file;
+  const base = file.name.replace(/\.[^.]+$/i, '') || 'photo';
   try {
     const { default: heic2any } = await import('heic2any');
     const out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.88 });
     const blob = Array.isArray(out) ? out[0] : out;
-    const base = file.name.replace(/\.[^.]+$/i, '') || 'photo';
     return new File([blob], `${base}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
-  } catch (e) {
-    console.error('HEIC conversion in browser failed:', e);
-    throw new Error(
-      'Could not convert this HEIC photo in the browser. Open it in Photos and export as JPEG, or try a smaller image.',
-    );
+  } catch {
+    try {
+      const { default: heic2any } = await import('heic2any');
+      const out = await heic2any({ blob: file, toType: 'image/png' });
+      const blob = Array.isArray(out) ? out[0] : out;
+      return new File([blob], `${base}.png`, { type: 'image/png', lastModified: Date.now() });
+    } catch (e2) {
+      console.warn('HEIC in-browser conversion unavailable; uploading original for server conversion.', e2);
+      return file;
+    }
   }
 }
 
