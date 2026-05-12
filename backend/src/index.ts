@@ -70,6 +70,7 @@ import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefin
 import { normalizeCustomerImageUpload } from './imageUploadNormalize';
 import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
+import { authLimiter } from './middleware/rateLimiters';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -2242,7 +2243,7 @@ app.get('/api/health', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/auth/login', async (req: Request, res: Response) => {
+app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => {
   const { email, password } = req.body as { email?: string; password?: string };
 
   if (!email || !password) {
@@ -9002,7 +9003,7 @@ async function findFirstEmailConfigUserId(): Promise<number | null> {
 }
 
 /** Officers with mobile password: request reset link by email (uses system email settings). */
-app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+app.post('/api/auth/forgot-password', authLimiter, async (req: Request, res: Response) => {
   const raw = req.body as { email?: string };
   const emailNorm = typeof raw.email === 'string' ? raw.email.trim().toLowerCase() : '';
   if (!emailNorm) {
@@ -9059,7 +9060,7 @@ app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
 });
 
 /** Complete password reset using token from forgot-password email. */
-app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+app.post('/api/auth/reset-password', authLimiter, async (req: Request, res: Response) => {
   const raw = req.body as { token?: string; new_password?: string };
   const token = typeof raw.token === 'string' ? raw.token.trim() : '';
   const newPassword = typeof raw.new_password === 'string' ? raw.new_password : '';
