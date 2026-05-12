@@ -302,6 +302,11 @@ async function sendUserEmail(pool: Pool, userId: number, emailCfg: any, opts: an
 const isProduction = process.env.NODE_ENV === 'production';
 
 const app = express();
+// Trust the first proxy hop (nginx on the same host terminates TLS and
+// forwards over HTTP). This makes req.ip, req.protocol, req.secure and
+// the X-Forwarded-* headers reflect the real client request rather than
+// the loopback connection from nginx.
+app.set('trust proxy', 1);
 const port = parseInt(process.env.PORT || '4000', 10);
 
 const corsOrigins = process.env.CORS_ORIGIN?.split(',')
