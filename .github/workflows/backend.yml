@@ -1,48 +1,109 @@
 name: Deploy Backend
 
+# Triggered by:
+#   - push to main that touches backend/** → auto-deploy backend
+#   - manual run from the GitHub Actions UI → emergency / forced deploys
+#
+# This workflow is a thin wrapper. All real deploy logic lives in
+# scripts/deploy.sh on the server. See that file for the contract.
+
 on:
   push:
     branches:
       - main
     paths:
       - 'backend/**'
+      - 'ecosystem.config.cjs'
+      - 'scripts/deploy.sh'
       - '.github/workflows/backend.yml'
+  workflow_dispatch:
+    inputs:
+      skip_build:
+        description: 'Skip npm ci/build, just pm2 reload (use only if build is fresh)'
+        required: false
+        default: false
+        type: boolean
+
+# Both backend.yml and frontend.yml share this group. A push that touches both
+# directories triggers both workflows; the group serializes them so they don't
+# race on `git reset --hard` against the same working tree.
+concurrency:
+  group: deploy-workpilot
+  cancel-in-progress: false
 
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Install & Build Backend
-        working-directory: ./backend
-        run: |
-          npm install
-          npm run build
-
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Deploy backend via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          # appleboy/ssh-action default is 10s — way too short for npm ci + build.
+          command_timeout: 15m
+          # IMPORTANT: do NOT enable script_stop. It wraps every command with
+          # `if [ $? -ne 0 ]; then exit 1; fi` which kills the script on any
+          # legitimate non-zero exit — including `[ "$a" = "$b" ]` returning 1
+          # for the false branch of an if-statement. We use bash `set -e`
+          # instead, which correctly ignores test commands inside `if`.
+          envs: GITHUB_SHA,GITHUB_RUN_ID,SKIP_BUILD_FLAG
           script: |
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+            set -Eeuo pipefail
+            trap 'rc=$?; echo "!! workflow script exited $rc at line $LINENO" >&2' ERR
 
-            # Pull from repo root; dirty files under backend/ (e.g. package-lock.json) block pull when cwd is backend/.
-            cd WorkPilot
+            cd /home/ubuntu/WorkPilot
+
+            export NVM_DIR="$HOME/.nvm"
+            # shellcheck disable=SC1091
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            nvm use 22 >/dev/null 2>&1 || nvm use 24 >/dev/null 2>&1 || true
+
+            echo "==> Node $(node -v)  npm $(npm -v)  pm2 $(pm2 -v 2>/dev/null || echo 'MISSING')"
+            echo "==> Triggered by SHA: ${GITHUB_SHA:-unknown}  run: ${GITHUB_RUN_ID:-unknown}"
+
+            # ---------- 1. Preserve any server-side edits as a recoverable stash ----------
+            STASH_NAME="ci-pre-deploy-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "==> Server has dirty working tree — stashing as: $STASH_NAME"
+              git stash push --include-untracked -m "$STASH_NAME" || {
+                echo "!! Could not stash server-side dirt. Aborting to avoid data loss."
+                echo "!! Inspect manually: ssh ubuntu@SERVER 'cd /home/ubuntu/WorkPilot && git status'"
+                exit 1
+              }
+              echo "==> Recover with: ssh ubuntu@SERVER 'cd /home/ubuntu/WorkPilot && git stash list'"
+            else
+              echo "==> Working tree clean."
+            fi
+
+            # ---------- 2. Sync to origin/main ----------
             git fetch origin main
+            BEFORE=$(git rev-parse --short HEAD)
             git reset --hard origin/main
-            cd backend
-            npm ci || npm install
-            npm run build
-            pm2 restart workpilot-backend
+            AFTER=$(git rev-parse --short HEAD)
+            if [ "$BEFORE" = "$AFTER" ]; then
+              echo "==> Already at $AFTER, no code change."
+            else
+              echo "==> Reset $BEFORE → $AFTER"
+              git --no-pager log --oneline "$BEFORE..$AFTER" | head -20
+            fi
+
+            # ---------- 3. Sanity check + run the atomic deploy script ----------
+            if [ ! -f scripts/deploy.sh ]; then
+              echo "!! scripts/deploy.sh missing at this commit. Aborting."
+              ls -la scripts/ 2>&1 || true
+              exit 1
+            fi
+            chmod +x scripts/deploy.sh
+
+            DEPLOY_FLAGS="--no-pull"
+            if [ "${SKIP_BUILD_FLAG:-false}" = "true" ]; then
+              DEPLOY_FLAGS="$DEPLOY_FLAGS --skip-build"
+            fi
+            echo "==> ./scripts/deploy.sh $DEPLOY_FLAGS backend"
+            ./scripts/deploy.sh $DEPLOY_FLAGS backend
+        env:
+          SKIP_BUILD_FLAG: ${{ github.event.inputs.skip_build || 'false' }}
