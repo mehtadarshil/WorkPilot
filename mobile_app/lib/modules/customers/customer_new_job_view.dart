@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
+import '../../data/repositories/quotations_repository.dart';
 import 'customer_new_job_pricing_panel.dart';
 import 'customer_new_job_pricing_row.dart';
 import 'customer_tabs/helpers.dart';
@@ -34,6 +35,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
 
   late int _customerId;
   int? _workAddressId;
+  int? _fromQuotationId;
 
   Map<String, dynamic>? _customer;
   List<Map<String, dynamic>> _jobDescriptions = [];
@@ -80,6 +82,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
       final m = Map<String, dynamic>.from(a);
       _customerId = (m['customerId'] as num?)?.toInt() ?? (m['id'] as num?)?.toInt() ?? 0;
       _workAddressId = (m['work_address_id'] as num?)?.toInt();
+      _fromQuotationId = (m['from_quotation'] as num?)?.toInt();
     } else {
       _customerId = 0;
     }
@@ -135,6 +138,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         _contacts = contacts;
         _loading = false;
       });
+      await _prefillFromQuotation();
     } on ApiException catch (e) {
       setState(() {
         _loading = false;
@@ -146,6 +150,41 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         _pageError = e.toString();
       });
     }
+  }
+
+  Future<void> _prefillFromQuotation() async {
+    final qid = _fromQuotationId;
+    if (qid == null) return;
+    try {
+      final qr = Get.find<QuotationsRepository>();
+      final q = await qr.getQuotation(qid);
+      if ((q['customer_id'] as num?)?.toInt() != _customerId) {
+        if (mounted) setState(() => _pageError = 'This quotation does not belong to this customer.');
+        return;
+      }
+      final tot = (q['total_amount'] as num?)?.toDouble();
+      if (tot != null) _quotedAmount.text = tot.toStringAsFixed(2);
+      final qn = (q['quotation_number'] as String?)?.trim();
+      if (qn != null && qn.isNotEmpty) _customerReference.text = qn;
+      final desc = (q['description'] as String?)?.trim();
+      final notes = (q['notes'] as String?)?.trim();
+      final buf = StringBuffer('Prefilled from quotation ${q['quotation_number']}.');
+      if (desc != null && desc.isNotEmpty) {
+        buf.writeln();
+        buf.writeln(desc);
+      }
+      if (notes != null && notes.isNotEmpty) {
+        buf.writeln();
+        buf.writeln('Quotation notes:');
+        buf.writeln(notes);
+      }
+      final base = buf.toString();
+      final existing = _jobNotes.text.trim();
+      if (existing.isEmpty || !existing.contains('Prefilled from quotation')) {
+        _jobNotes.text = existing.isEmpty ? base : '$base\n\n$existing';
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   List<String> get _userGroupChoices {
@@ -219,6 +258,9 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
             ),
           );
         }
+      }
+      if (_fromQuotationId != null) {
+        await _prefillFromQuotation();
       }
       setState(() {});
     } catch (_) {
@@ -333,7 +375,19 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         if (_workAddressId != null) 'work_address_id': _workAddressId,
       };
 
-      await _repo.createCustomerJob(_customerId, body);
+      final job = await _repo.createCustomerJob(_customerId, body);
+      final newJobId = (job['id'] as num?)?.toInt();
+      if (_fromQuotationId != null && newJobId != null) {
+        try {
+          await Get.find<QuotationsRepository>().linkJobToQuotation(_fromQuotationId!, newJobId);
+        } on ApiException catch (e) {
+          setState(() {
+            _saving = false;
+            _pageError = '${e.message} (job was created)';
+          });
+          return;
+        }
+      }
       Get.back(result: true);
     } on ApiException catch (e) {
       setState(() {

@@ -17,6 +17,16 @@ import '../../modules/timesheet/timesheet_history_binding.dart';
 import '../../modules/timesheet/timesheet_history_view.dart';
 import '../../modules/crm/crm_list_binding.dart';
 import '../../modules/crm/crm_list_view.dart';
+import '../../modules/jobs/job_detail_binding.dart';
+import '../../modules/jobs/job_detail_view.dart';
+import '../../modules/quotations/quotation_detail_page.dart';
+import '../../modules/quotations/quotation_form_page.dart';
+import '../../modules/quotations/quotations_list_binding.dart';
+import '../../modules/quotations/quotations_list_view.dart';
+import '../../modules/invoices/invoice_detail_page.dart';
+import '../../modules/invoices/invoice_form_page.dart';
+import '../../modules/invoices/invoices_list_binding.dart';
+import '../../modules/invoices/invoices_list_view.dart';
 import '../../modules/customers/customer_detail_binding.dart';
 import '../../modules/customers/customer_detail_view.dart';
 import '../../modules/customers/customer_form_binding.dart';
@@ -80,6 +90,37 @@ class AppPages {
       name: AppRoutes.crmList,
       page: () => const CrmListView(),
       binding: CrmListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.jobDetail,
+      page: () => JobDetailView(),
+      binding: JobDetailBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.quotations,
+      page: () => const QuotationsListView(),
+      binding: QuotationsListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.quotationDetail,
+      page: () => const QuotationDetailPage(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.quotationForm,
+      page: () => const QuotationFormPage(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.invoices,
+      page: () => const InvoicesListView(),
+      binding: InvoicesListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.invoiceDetail,
+      page: () => const InvoiceDetailPage(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.invoiceForm,
+      page: () => const InvoiceFormPage(),
     ),
     GetPage<void>(
       name: AppRoutes.customersList,

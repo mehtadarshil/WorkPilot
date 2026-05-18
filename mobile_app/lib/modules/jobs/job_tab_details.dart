@@ -1,0 +1,409 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../app/routes/app_routes.dart';
+import '../../core/values/app_colors.dart';
+import '../open_jobs/open_job_formatters.dart';
+import 'job_detail_controller.dart';
+import 'job_formatters.dart';
+import 'job_states.dart';
+
+String _str(Map<String, dynamic> m, String k) {
+  final v = m[k];
+  if (v is String) return v.trim();
+  if (v != null) return v.toString().trim();
+  return '';
+}
+
+String? _nonEmpty(String s) => s.isEmpty ? null : s;
+
+String _formatIsoShort(String? iso) {
+  if (iso == null || iso.isEmpty) return '—';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  final l = d.toLocal();
+  return '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}/${l.year}';
+}
+
+String _dateMilestones(Map<String, dynamic> j) {
+  final parts = <String>[];
+  final sd = j['start_date'] as String?;
+  final dl = j['deadline'] as String?;
+  final ex = j['expected_completion'] as String?;
+  if (sd != null && sd.trim().isNotEmpty) parts.add('Start ${_formatIsoShort(sd)}');
+  if (dl != null && dl.trim().isNotEmpty) parts.add('Due ${_formatIsoShort(dl)}');
+  if (ex != null && ex.trim().isNotEmpty) parts.add('Expected ${_formatIsoShort(ex)}');
+  return parts.isEmpty ? 'No start / due dates on file' : parts.join(' · ');
+}
+
+String _scheduleLine(Map<String, dynamic> j) {
+  final iso = j['schedule_start'] as String?;
+  if (iso == null || iso.isEmpty) return 'Not scheduled';
+  final d = DateTime.tryParse(iso);
+  if (d == null) return iso;
+  final local = d.toLocal();
+  return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year} '
+      '· ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
+
+String _workSiteLine(Map<String, dynamic> wa) {
+  final name = _nonEmpty(_str(wa, 'name')) ?? 'Work site';
+  final parts = <String>[
+    if (_nonEmpty(_str(wa, 'branch_name')) != null) _str(wa, 'branch_name'),
+    if (_nonEmpty(_str(wa, 'address_line_1')) != null) _str(wa, 'address_line_1'),
+    if (_nonEmpty(_str(wa, 'town')) != null) _str(wa, 'town'),
+    if (_nonEmpty(_str(wa, 'postcode')) != null) _str(wa, 'postcode'),
+  ].where((e) => e.isNotEmpty).join(', ');
+  return parts.isEmpty ? name : '$name · $parts';
+}
+
+class JobTabDetails extends StatelessWidget {
+  const JobTabDetails({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Get.find<JobDetailController>();
+    return Obx(() {
+      final j = c.job.value;
+      if (j == null) {
+        return const Center(child: Text('—', style: TextStyle(color: Colors.white54)));
+      }
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                final cid = (j['customer_id'] as num?)?.toInt();
+                if (cid != null) Get.toNamed(AppRoutes.customerDetail, arguments: cid);
+              },
+              icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primary, size: 20),
+              label: Text('Customer workspace', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ),
+          ),
+          Text(
+            _nonEmpty(_str(j, 'title')) ?? 'Job',
+            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _Chip(label: formatJobState(_str(j, 'state')), emphasized: true),
+              if (_str(j, 'priority').isNotEmpty) _Chip(label: formatJobState(_str(j, 'priority')), emphasized: false),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Obx(() {
+            return DropdownButtonFormField<String>(
+              isExpanded: true,
+              value: _str(j, 'state').isEmpty ? 'draft' : _str(j, 'state'),
+              dropdownColor: const Color(0xFF1e293b),
+              style: GoogleFonts.inter(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Status',
+                labelStyle: TextStyle(color: Colors.white70),
+              ),
+              items: [
+                for (final s in kJobStatesOrdered)
+                  DropdownMenuItem(value: s, child: Text(jobStateLabelUi(s))),
+              ],
+              onChanged: c.patchingState.value
+                  ? null
+                  : (v) {
+                      if (v != null) c.patchJobState(v);
+                    },
+            );
+          }),
+          const SizedBox(height: 16),
+          _section(
+            'Schedule',
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _row(Icons.event, _scheduleLine(j)),
+                if (formatDurationMinutes((j['duration_minutes'] as num?)?.toInt()) != null) ...[
+                  const SizedBox(height: 8),
+                  _row(Icons.timer_outlined, formatDurationMinutes((j['duration_minutes'] as num?)?.toInt())!),
+                ],
+                const SizedBox(height: 8),
+                _row(Icons.date_range, _dateMilestones(j)),
+              ],
+            ),
+          ),
+          if (_nonEmpty(_str(j, 'dispatched_at')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Dispatched', _row(Icons.local_shipping, _str(j, 'dispatched_at'))),
+          ],
+          if (_nonEmpty(_str(j, 'customer_full_name')) != null) ...[
+            const SizedBox(height: 12),
+            _section(
+              'Customer',
+              InkWell(
+                onTap: () {
+                  final id = (j['customer_id'] as num?)?.toInt();
+                  if (id != null) Get.toNamed(AppRoutes.customerDetail, arguments: id);
+                },
+                child: _row(Icons.person, _str(j, 'customer_full_name'), link: true),
+              ),
+            ),
+          ],
+          if (j['work_address'] is Map) ...[
+            const SizedBox(height: 12),
+            _section(
+              'Work / site',
+              _row(Icons.business, _workSiteLine(Map<String, dynamic>.from(j['work_address'] as Map))),
+            ),
+          ],
+          if (_nonEmpty(_str(j, 'officer_full_name')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Assigned officer', _row(Icons.engineering, _str(j, 'officer_full_name'))),
+          ],
+          if (_nonEmpty(_str(j, 'location')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Location', _row(Icons.place, _str(j, 'location'))),
+          ],
+          if (_nonEmpty(_str(j, 'required_certifications')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Certifications', Text(_str(j, 'required_certifications'), style: _bodyStyle)),
+          ],
+          if (_nonEmpty(_str(j, 'description_name')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Job type', Text(_str(j, 'description_name'), style: _bodyStyle)),
+          ],
+          const SizedBox(height: 12),
+          _section(
+            'Completed services',
+            Text(formatCompletedServicesForJobDetail(j['completed_service_items']), style: _bodyStyle),
+          ),
+          if (_nonEmpty(_str(j, 'job_notes')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Notes', Text(_str(j, 'job_notes'), style: _bodyStyle)),
+          ],
+          if (_nonEmpty(_str(j, 'customer_reference')) != null) ...[
+            const SizedBox(height: 12),
+            _section('Customer reference', Text(_str(j, 'customer_reference'), style: _bodyStyle)),
+          ],
+          if (j['quoted_amount'] is num && (j['quoted_amount'] as num) != 0) ...[
+            const SizedBox(height: 12),
+            _section('Quoted amount', Text('${j['quoted_amount']}', style: _bodyStyle)),
+          ],
+          if (j['pricing_items'] is List && (j['pricing_items'] as List).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _section(
+              'Items to invoice (pricing)',
+              Column(
+                children: [
+                  for (final row in (j['pricing_items'] as List))
+                    if (row is Map)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          '${row['item_name'] ?? ''} · qty ${row['quantity'] ?? ''} · ${row['unit_price'] ?? ''}',
+                          style: _bodyStyle,
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Text('Diary events', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () => _showAddVisit(context, c),
+            icon: const Icon(Icons.add),
+            label: const Text('Add diary visit'),
+          ),
+          const SizedBox(height: 12),
+          ...c.diaryEvents.map((e) => _diaryRow(context, c, e, j)),
+        ],
+      );
+    });
+  }
+
+  static TextStyle get _bodyStyle => GoogleFonts.inter(fontSize: 14, height: 1.45, color: AppColors.slate300);
+
+  Future<void> _showAddVisit(BuildContext context, JobDetailController c) async {
+    DateTime start = DateTime.now().add(const Duration(days: 1));
+    int? officerId;
+    final notesC = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('New visit'),
+          content: StatefulBuilder(
+            builder: (ctx, setS) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: const Text('Start'),
+                    subtitle: Text(start.toIso8601String().split('T').first),
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: start,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (d != null) setS(() => start = DateTime(d.year, d.month, d.day, 9));
+                    },
+                  ),
+                  DropdownButtonFormField<int?>(
+                    value: officerId,
+                    decoration: const InputDecoration(labelText: 'Officer'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Unassigned')),
+                      for (final o in c.officers)
+                        DropdownMenuItem(
+                          value: (o['id'] as num?)?.toInt(),
+                          child: Text((o['full_name'] as String?) ?? ''),
+                        ),
+                    ],
+                    onChanged: (v) => setS(() => officerId = v),
+                  ),
+                  TextField(controller: notesC, decoration: const InputDecoration(labelText: 'Notes')),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+          ],
+        );
+      },
+    );
+    if (ok == true) {
+      try {
+        await c.postDiaryVisit(officerId: officerId, start: start, notes: notesC.text.trim().isEmpty ? null : notesC.text.trim());
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+    }
+    notesC.dispose();
+  }
+
+  Widget _diaryRow(BuildContext context, JobDetailController c, Map<String, dynamic> e, Map<String, dynamic> job) {
+    final id = (e['id'] as num?)?.toInt();
+    final status = e['status'] as String?;
+    final officer = (e['officer_full_name'] as String?) ?? 'Unassigned';
+    final start = e['start_time'] as String?;
+    final dur = (e['duration_minutes'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppColors.whiteOverlay(0.06),
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          title: Text(officer, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            '${start ?? ''} · $dur min · ${status ?? ''}',
+            style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (id != null && diaryVisitAllowsDelete(status))
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                  onPressed: () async {
+                    final ok = await Get.dialog<bool>(
+                      AlertDialog(
+                        title: const Text('Delete visit?'),
+                        actions: [
+                          TextButton(onPressed: () => Get.back(result: false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Get.back(result: true), child: const Text('Delete')),
+                        ],
+                      ),
+                    );
+                    if (ok == true && id != null) {
+                      try {
+                        await c.deleteDiaryVisit(id);
+                      } catch (err) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$err')));
+                        }
+                      }
+                    }
+                  },
+                ),
+              if (id != null)
+                TextButton(
+                  onPressed: () => Get.toNamed(AppRoutes.diaryEventDetail, arguments: id),
+                  child: Text('Open', style: GoogleFonts.inter(color: AppColors.primary)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _section(String title, Widget child) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: AppColors.whiteOverlay(0.08),
+        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.slate400)),
+            const SizedBox(height: 8),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(IconData icon, String text, {bool link = false}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: link ? AppColors.primary : AppColors.slate400),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text, style: GoogleFonts.inter(fontSize: 14, color: link ? AppColors.primary : AppColors.slate300))),
+      ],
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.label, required this.emphasized});
+
+  final String label;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: emphasized ? AppColors.primary.withValues(alpha: 0.22) : AppColors.whiteOverlay(0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: emphasized ? AppColors.primary.withValues(alpha: 0.45) : AppColors.whiteOverlay(0.12)),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: emphasized ? AppColors.primary : AppColors.slate300,
+        ),
+      ),
+    );
+  }
+}

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import 'crm_list_controller.dart';
 
@@ -158,6 +159,14 @@ class CrmListView extends GetView<CrmListController> {
                         color: AppColors.whiteOverlay(0.08),
                         borderRadius: BorderRadius.circular(16),
                         child: ListTile(
+                          onTap: () {
+                            if (controller.module != 'jobs') return;
+                            final raw = row['id'];
+                            final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
+                            if (id != null) {
+                              Get.toNamed(AppRoutes.jobDetail, arguments: id);
+                            }
+                          },
                           title: Text(
                             _titleLine(row),
                             style: GoogleFonts.inter(

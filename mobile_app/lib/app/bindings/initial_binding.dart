@@ -6,7 +6,10 @@ import '../../core/offline/offline_queue_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../data/providers/api_provider.dart';
 import '../../data/repositories/customers_repository.dart';
+import '../../data/repositories/invoices_repository.dart';
+import '../../data/repositories/jobs_repository.dart';
 import '../../data/repositories/mobile_repository.dart';
+import '../../data/repositories/quotations_repository.dart';
 
 /// Global dependencies available before any route loads.
 class InitialBinding extends Bindings {
@@ -26,6 +29,18 @@ class InitialBinding extends Bindings {
     );
     Get.put<CustomersRepository>(
       CustomersRepository(Get.find<ApiProvider>()),
+      permanent: true,
+    );
+    Get.put<QuotationsRepository>(
+      QuotationsRepository(Get.find<ApiProvider>()),
+      permanent: true,
+    );
+    Get.put<InvoicesRepository>(
+      InvoicesRepository(Get.find<ApiProvider>()),
+      permanent: true,
+    );
+    Get.put<JobsRepository>(
+      JobsRepository(Get.find<ApiProvider>()),
       permanent: true,
     );
   }

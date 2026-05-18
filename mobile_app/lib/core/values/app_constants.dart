@@ -38,6 +38,26 @@ abstract class AppConstants {
     defaultValue: 'http://127.0.0.1:4000/api',
   );
 
+  /// Optional full origin for public quotation links (`/public/quotations/...`).
+  /// When empty, `/api` is stripped from [apiBaseUrl] (works when web and API share one host).
+  static const String webAppBaseUrl = String.fromEnvironment(
+    'WEB_APP_BASE_URL',
+    defaultValue: '',
+  );
+
+  /// Base URL for opening customer-facing pages in the browser (no trailing slash).
+  static String get resolvedWebAppOrigin {
+    final fromEnv = webAppBaseUrl.trim();
+    if (fromEnv.isNotEmpty) {
+      return fromEnv.replaceAll(RegExp(r'/$'), '');
+    }
+    final api = apiBaseUrl.trim().replaceAll(RegExp(r'/$'), '');
+    if (api.endsWith('/api')) {
+      return api.substring(0, api.length - 4);
+    }
+    return api;
+  }
+
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
 

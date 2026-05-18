@@ -11981,6 +11981,107 @@ app.get('/api/quotations/:id/pdf', authenticate, requireTenantCrmAccess('quotati
   }
 });
 
+/** Manual timeline entries for quotation Notes & Communications (mirrors invoice communications). */
+app.post('/api/quotations/:id/communications', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const qRow = qCheck.rows[0];
+  if (!canAccessQuotation(qRow, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+  const body = req.body as {
+    type?: string;
+    text?: string;
+    subject?: string;
+    body?: string;
+    to_email?: string;
+    to_phone?: string;
+    summary?: string;
+    duration_minutes?: number;
+    email_status?: string;
+    attachment_name?: string;
+  };
+  const type = typeof body.type === 'string' ? body.type.trim() : '';
+
+  try {
+    if (type === 'note') {
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      if (!text) return res.status(400).json({ message: 'Note text is required' });
+      await logQuotationActivity(id, 'comm_note', { text }, userId);
+      return res.status(201).json({ success: true });
+    }
+    if (type === 'email') {
+      const subject = typeof body.subject === 'string' ? body.subject.trim() : '';
+      const emailBody = typeof body.body === 'string' ? body.body.trim() : '';
+      const toEmail = typeof body.to_email === 'string' ? body.to_email.trim() : '';
+      if (!subject || !emailBody) return res.status(400).json({ message: 'Subject and body are required' });
+      await logQuotationActivity(
+        id,
+        'comm_email',
+        {
+          subject,
+          body: emailBody,
+          to_email: toEmail || null,
+          status: typeof body.email_status === 'string' ? body.email_status : 'sent',
+          attachment_name: typeof body.attachment_name === 'string' ? body.attachment_name.trim() || null : null,
+        },
+        userId,
+      );
+      return res.status(201).json({ success: true });
+    }
+    if (type === 'sms') {
+      const smsBody = typeof body.body === 'string' ? body.body.trim() : '';
+      if (!smsBody) return res.status(400).json({ message: 'SMS body is required' });
+      await logQuotationActivity(
+        id,
+        'comm_sms',
+        {
+          body: smsBody,
+          to_phone: typeof body.to_phone === 'string' ? body.to_phone.trim() || null : null,
+        },
+        userId,
+      );
+      return res.status(201).json({ success: true });
+    }
+    if (type === 'phone') {
+      const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+      if (!summary) return res.status(400).json({ message: 'Call summary is required' });
+      await logQuotationActivity(
+        id,
+        'comm_phone',
+        {
+          summary,
+          duration_minutes:
+            typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes) ? body.duration_minutes : null,
+        },
+        userId,
+      );
+      return res.status(201).json({ success: true });
+    }
+    if (type === 'print') {
+      await logQuotationActivity(
+        id,
+        'comm_print',
+        {
+          label: 'Quotation printed',
+          quotation_number: qRow.quotation_number,
+        },
+        userId,
+      );
+      return res.status(201).json({ success: true });
+    }
+    return res.status(400).json({ message: 'Invalid communication type' });
+  } catch (error) {
+    console.error('Add quotation communication error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.post('/api/quotations/:id/internal-notes', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const quotationId = parseInt(String(idParam), 10);

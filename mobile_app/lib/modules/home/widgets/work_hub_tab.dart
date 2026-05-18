@@ -29,8 +29,20 @@ class WorkHubTab extends StatelessWidget {
   final HomeController controller;
 
   void _open(String module) {
+    if (module == 'jobs') {
+      Get.toNamed(AppRoutes.crmList, arguments: 'jobs');
+      return;
+    }
     if (module == 'customers') {
       Get.toNamed(AppRoutes.customersList);
+      return;
+    }
+    if (module == 'quotations') {
+      Get.toNamed(AppRoutes.quotations);
+      return;
+    }
+    if (module == 'invoices') {
+      Get.toNamed(AppRoutes.invoices);
       return;
     }
     Get.toNamed(AppRoutes.crmList, arguments: module);
@@ -204,7 +216,7 @@ class WorkHubTab extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Customers run fully in the app. Other modules use the same lists as the web until their native screens ship.',
+                              'Customers and quotations run natively in the app. Other CRM tiles still use compact lists until their full screens ship.',
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(

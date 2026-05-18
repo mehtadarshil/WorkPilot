@@ -470,7 +470,17 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
                             final partial = paidNum > 0 && paidNum < totalNum;
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
-                              child: customerPanel(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () async {
+                                    final id = (r['id'] as num?)?.toInt();
+                                    if (id == null || id <= 0) return;
+                                    await Get.toNamed(AppRoutes.invoiceDetail, arguments: id);
+                                    if (mounted) await _load();
+                                  },
+                                  child: customerPanel(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -527,6 +537,8 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
                                   ],
                                 ),
                               ),
+                            ),
+                          ),
                             );
                           },
                         ),
