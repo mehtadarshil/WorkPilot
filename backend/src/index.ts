@@ -41,6 +41,7 @@ import {
 import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderCustomerPreview';
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
+import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import {
   getTenantScopeUserId,
   requirePermission,
@@ -1006,6 +1007,8 @@ async function initDb() {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_csrr_sent_tenant ON customer_site_report_renewal_sent(tenant_user_id)`,
   );
+
+  await ensureElectricalCertificateSchema(pool);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_communications (
@@ -16826,6 +16829,7 @@ mountTenantStaffRoutes(app, { pool, authenticate });
 mountTenantTeamRoutes(app, { pool, authenticate });
 mountJobEmailRoutes(app, { pool, authenticate, loadEmailSettingsPayload, sendUserEmail });
 mountJobFilesRoutes(app, { pool, authenticate });
+mountElectricalCertificateRoutes(app, { pool, authenticate });
 
 mountJobClientPanelRoutes(app, {
   pool,

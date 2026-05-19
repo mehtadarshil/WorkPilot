@@ -650,7 +650,7 @@ function OfficerCertificationsModal({ officer, token, onClose, onRefresh }: { of
                 </div>
                 <div className="flex items-center gap-2">
                   <Link
-                    href={`/dashboard/certifications/certificate/${a.id}`}
+                    href={`/dashboard/staff-certifications/certificate/${a.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"

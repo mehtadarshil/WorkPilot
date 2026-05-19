@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award } from 'lucide-react';
+import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2 } from 'lucide-react';
 import { getJson } from '../apiClient';
 import type { TenantPermissionKey } from '../../lib/tenantPermissions';
 
@@ -190,17 +190,30 @@ export default function DashboardLayout({
               </Link>
             )}
             {hasNavPermission(user, 'certifications') && (
-              <Link
-                href="/dashboard/certifications"
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                  pathname.startsWith('/dashboard/certifications')
-                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <Award className="size-4" />
-                Certifications
-              </Link>
+              <>
+                <Link
+                  href="/dashboard/certificates"
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                    pathname.startsWith('/dashboard/certificates')
+                      ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <FileCheck2 className="size-4" />
+                  Certificates
+                </Link>
+                <Link
+                  href="/dashboard/staff-certifications"
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                    pathname.startsWith('/dashboard/staff-certifications')
+                      ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Award className="size-4" />
+                  Staff certs
+                </Link>
+              </>
             )}
             {hasNavPermission(user, 'jobs') && (
               <Link
