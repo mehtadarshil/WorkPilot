@@ -14,6 +14,7 @@ class DiaryEventRow {
     this.siteContactName,
     this.jobReportQuestionCount = 0,
     this.abortReason,
+    this.officerFullName,
   });
 
   factory DiaryEventRow.fromJson(Map<String, dynamic> json) {
@@ -38,6 +39,7 @@ class DiaryEventRow {
       abortReason: (json['abort_reason'] as String?)?.trim().isNotEmpty == true
           ? (json['abort_reason'] as String).trim()
           : null,
+      officerFullName: json['officer_full_name'] as String?,
     );
   }
 
@@ -54,6 +56,7 @@ class DiaryEventRow {
   final String? siteContactName;
   final int jobReportQuestionCount;
   final String? abortReason;
+  final String? officerFullName;
 
   String get displayContactName {
     final s = siteContactName?.trim();
@@ -84,6 +87,7 @@ class DiaryEventRow {
         if (siteContactName != null) 'site_contact_name': siteContactName,
         'job_report_question_count': jobReportQuestionCount,
         if (abortReason != null) 'abort_reason': abortReason,
+        if (officerFullName != null) 'officer_full_name': officerFullName,
       };
 
   DiaryEventRow copyWith({
@@ -104,6 +108,7 @@ class DiaryEventRow {
       siteContactName: siteContactName,
       jobReportQuestionCount: jobReportQuestionCount,
       abortReason: abortReason ?? this.abortReason,
+      officerFullName: officerFullName,
     );
   }
 }

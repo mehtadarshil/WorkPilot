@@ -10,10 +10,14 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/offline/diary_timesheet_sync.dart';
 import '../../../core/offline/offline_api_support.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/user_profile_cache.dart';
 import '../../../data/models/diary_event_row.dart';
 import '../../../data/models/mobile_home_response.dart';
 import '../../../data/models/my_office_task_row.dart';
 import '../../../data/repositories/mobile_repository.dart';
+
+/// Diary list filter: personal field schedule vs tenant-wide (admin).
+enum DiaryListScope { mine, team }
 
 class HomeController extends GetxController {
   HomeController({StorageService? storage, MobileRepository? mobile})
@@ -34,6 +38,17 @@ class HomeController extends GetxController {
 
   final RxList<DiaryEventRow> diaryEvents = <DiaryEventRow>[].obs;
   final RxBool diaryLoading = false.obs;
+  final Rx<DiaryListScope> diaryListScope = DiaryListScope.mine.obs;
+
+  /// Bump after profile edit so Profile tab reloads photo/summary.
+  final RxInt profileRevision = 0.obs;
+
+  void bumpProfileRevision() {
+    profileRevision.value++;
+    if (Get.isRegistered<UserProfileCache>()) {
+      unawaited(Get.find<UserProfileCache>().refresh());
+    }
+  }
 
   /// First name for “Hi …”
   final RxString greetingFirstName = 'there'.obs;
@@ -51,6 +66,33 @@ class HomeController extends GetxController {
   Timer? _timesheetTicker;
 
   bool get officerFeatures => home.value?.officerFeatures ?? false;
+
+  /// Personal diary + field actions (linked officer profile).
+  bool get canViewMyDiary => officerFeatures;
+
+  /// Tenant-wide diary (admin / staff with jobs or scheduling).
+  bool get canViewTeamDiary {
+    final h = home.value;
+    if (h == null) return false;
+    final role = h.role.toUpperCase();
+    if (role == 'SUPER_ADMIN' || role == 'ADMIN') return true;
+    if (role == 'STAFF') {
+      return h.mobilePermissions['jobs'] == true || h.mobilePermissions['scheduling'] == true;
+    }
+    return false;
+  }
+
+  bool get showDiaryScopeTabs => canViewMyDiary && canViewTeamDiary;
+
+  bool get canUseDiaryTab => canViewMyDiary || canViewTeamDiary;
+
+  int? get myOfficerId => home.value?.profile?.id;
+
+  bool isOwnDiaryVisit(DiaryEventRow e) {
+    final oid = myOfficerId;
+    if (oid == null) return false;
+    return e.officerId == oid;
+  }
 
   bool get showWorkHubTab => home.value?.showWorkHubTab ?? false;
 
@@ -70,7 +112,7 @@ class HomeController extends GetxController {
     _loadAppVersion();
     refreshHome();
     ever<int>(navIndex, (i) {
-      if (i == 1 && officerFeatures) {
+      if (i == 1 && canUseDiaryTab) {
         loadDiaryWeek();
       }
     });
@@ -89,6 +131,9 @@ class HomeController extends GetxController {
   }
 
   Future<void> refreshHome() async {
+    if (Get.isRegistered<UserProfileCache>()) {
+      unawaited(Get.find<UserProfileCache>().refresh());
+    }
     homeLoading.value = true;
     homeError.value = '';
     try {
@@ -102,7 +147,8 @@ class HomeController extends GetxController {
       }
       _applyGreetingFromProfile(r.data);
       _applyHomeToTimesheet(r.data);
-      if (r.data.officerFeatures) {
+      _applyDefaultDiaryScope();
+      if (canUseDiaryTab) {
         await loadDiaryWeek();
       } else {
         diaryEvents.clear();
@@ -175,8 +221,24 @@ class HomeController extends GetxController {
     });
   }
 
+  void _applyDefaultDiaryScope() {
+    if (!canViewMyDiary && canViewTeamDiary) {
+      diaryListScope.value = DiaryListScope.team;
+    } else if (canViewMyDiary) {
+      diaryListScope.value = DiaryListScope.mine;
+    }
+  }
+
+  void setDiaryListScope(DiaryListScope scope) {
+    if (diaryListScope.value == scope) return;
+    diaryListScope.value = scope;
+    loadDiaryWeek();
+  }
+
   Future<void> loadDiaryWeek() async {
-    if (!officerFeatures) return;
+    final scope = diaryListScope.value;
+    if (scope == DiaryListScope.mine && !canViewMyDiary) return;
+    if (scope == DiaryListScope.team && !canViewTeamDiary) return;
     diaryLoading.value = true;
     // Home "next" uses start+duration>now, so a visit that started *yesterday*
     // can still be upcoming. Align diary list with (yesterday 00:00)…(+6d) to match
@@ -204,10 +266,12 @@ class HomeController extends GetxController {
       59,
       999,
     ).toIso8601String();
+    final apiScope = scope == DiaryListScope.team ? 'team' : 'mine';
     try {
       final list = await _mobile.fetchDiaryEvents(
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
+        scope: apiScope,
       );
       diaryEvents.assignAll(list);
     } on ApiException catch (e) {
@@ -215,6 +279,7 @@ class HomeController extends GetxController {
         final cached = _storage.readCachedDiaryEventsIfRangeMatches(
           rangeStart: rangeStart,
           rangeEnd: rangeEnd,
+          scope: apiScope,
         );
         if (cached != null && cached.isNotEmpty) {
           diaryEvents.assignAll(cached.map(DiaryEventRow.fromJson).toList());

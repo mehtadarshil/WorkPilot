@@ -120,14 +120,18 @@ class MobileRepository extends BaseRepository {
 
   /// [rangeStart] / [rangeEnd] are inclusive local-day bounds as ISO-8601 (with offset),
   /// matching the web so filtering is correct in every time zone.
+  /// [scope] `mine` = assigned to linked officer; `team` = tenant-wide (admin scheduling view).
   Future<List<DiaryEventRow>> fetchDiaryEvents({
     required String rangeStart,
     required String rangeEnd,
+    String scope = 'mine',
   }) async {
+    final apiScope = scope == 'team' ? 'team' : 'mine';
     if (_connectivitySaysOffline()) {
       final cached = _storage.readCachedDiaryEventsIfRangeMatches(
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
+        scope: apiScope,
       );
       if (cached != null) {
         return cached.map(DiaryEventRow.fromJson).toList();
@@ -139,6 +143,7 @@ class MobileRepository extends BaseRepository {
         queryParameters: <String, dynamic>{
           'range_start': rangeStart,
           'range_end': rangeEnd,
+          if (apiScope == 'team') 'scope': 'team',
         },
       );
       final data = res.data;
@@ -153,6 +158,7 @@ class MobileRepository extends BaseRepository {
       await _storage.writeCachedDiaryEnvelope(
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
+        scope: apiScope,
         events: list.map((e) => e.toJson()).toList(),
       );
       return list;
@@ -161,6 +167,7 @@ class MobileRepository extends BaseRepository {
         final cached = _storage.readCachedDiaryEventsIfRangeMatches(
           rangeStart: rangeStart,
           rangeEnd: rangeEnd,
+          scope: apiScope,
         );
         if (cached != null) {
           return cached.map(DiaryEventRow.fromJson).toList();

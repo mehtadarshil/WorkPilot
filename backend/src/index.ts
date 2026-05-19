@@ -52,8 +52,10 @@ import {
 } from './tenantAccess';
 import { mountTenantStaffRoutes } from './tenantStaffRoutes';
 import { mountTenantTeamRoutes } from './tenantTeamRoutes';
+import { ensureMobileProfileColumns, mountMobileProfileRoutes } from './mobileProfileRoutes';
 import { presetFieldOfficerPermissions } from './tenantPermissions';
 import {
+  canUseTeamDiaryScope,
   diaryActsAsFieldOfficer,
   fieldEffectivePerms,
   fieldMobileFeaturesEnabled,
@@ -1069,6 +1071,8 @@ async function initDb() {
   await pool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_officers_linked_user_unique ON officers(linked_user_id) WHERE linked_user_id IS NOT NULL`,
   );
+
+  await ensureMobileProfileColumns(pool);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS jobs (
@@ -6200,7 +6204,31 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     let nextParam = params.length + 1;
     let officerClause = '';
     const tokenOid = req.user!.officerId ?? null;
-    if (tokenOid != null && diaryActsAsFieldOfficer(req, { role: req.user!.role, officerId: tokenOid, permissions: req.user!.permissions ?? null })) {
+    const scopeRaw = typeof req.query.scope === 'string' ? req.query.scope.trim().toLowerCase() : 'mine';
+    const scopeTeam = scopeRaw === 'team' || scopeRaw === 'all';
+    const fieldUser = {
+      role: req.user!.role,
+      officerId: tokenOid,
+      permissions: req.user!.permissions ?? null,
+    };
+
+    if (scopeTeam) {
+      if (!canUseTeamDiaryScope(fieldUser)) {
+        return res.status(403).json({ message: 'Forbidden: team diary requires jobs or scheduling access' });
+      }
+      if (typeof req.query.officer_id === 'string') {
+        const oid = parseInt(req.query.officer_id, 10);
+        if (Number.isFinite(oid)) {
+          officerClause = ` AND d.officer_id = $${nextParam}`;
+          params.push(oid);
+          nextParam += 1;
+        }
+      } else if (req.user!.role !== 'SUPER_ADMIN') {
+        officerClause = ` AND j.created_by = $${nextParam}`;
+        params.push(getTenantScopeUserId(req.user!));
+        nextParam += 1;
+      }
+    } else if (tokenOid != null && diaryActsAsFieldOfficer(req, fieldUser)) {
       officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam})`;
       params.push(tokenOid);
       nextParam += 1;
@@ -16827,6 +16855,7 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
 
 mountTenantStaffRoutes(app, { pool, authenticate });
 mountTenantTeamRoutes(app, { pool, authenticate });
+mountMobileProfileRoutes(app, { pool, authenticate });
 mountJobEmailRoutes(app, { pool, authenticate, loadEmailSettingsPayload, sendUserEmail });
 mountJobFilesRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });

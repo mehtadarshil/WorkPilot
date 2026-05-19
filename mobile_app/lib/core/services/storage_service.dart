@@ -105,12 +105,15 @@ class StorageService extends GetxService {
   List<Map<String, dynamic>>? readCachedDiaryEventsIfRangeMatches({
     required String rangeStart,
     required String rangeEnd,
+    String scope = 'mine',
   }) {
     final raw = readCachedDiaryWeekJson();
     if (raw == null || raw.isEmpty) return null;
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
-      if (m['range_start'] != rangeStart || m['range_end'] != rangeEnd) {
+      if (m['range_start'] != rangeStart ||
+          m['range_end'] != rangeEnd ||
+          (m['scope'] as String? ?? 'mine') != scope) {
         return null;
       }
       final ev = m['events'];
@@ -125,11 +128,13 @@ class StorageService extends GetxService {
     required String rangeStart,
     required String rangeEnd,
     required List<Map<String, dynamic>> events,
+    String scope = 'mine',
   }) async {
     await writeCachedDiaryWeekJson(
       jsonEncode(<String, dynamic>{
         'range_start': rangeStart,
         'range_end': rangeEnd,
+        'scope': scope,
         'events': events,
       }),
     );

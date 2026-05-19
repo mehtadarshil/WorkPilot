@@ -4,10 +4,12 @@ import '../../core/network/dio_client.dart';
 import '../../core/offline/connectivity_service.dart';
 import '../../core/offline/offline_queue_service.dart';
 import '../../core/services/storage_service.dart';
+import '../../core/services/user_profile_cache.dart';
 import '../../data/providers/api_provider.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/invoices_repository.dart';
 import '../../data/repositories/jobs_repository.dart';
+import '../../data/repositories/mobile_profile_repository.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
 
@@ -27,6 +29,11 @@ class InitialBinding extends Bindings {
       MobileRepository(Get.find<ApiProvider>()),
       permanent: true,
     );
+    Get.put<MobileProfileRepository>(
+      MobileProfileRepository(Get.find<ApiProvider>()),
+      permanent: true,
+    );
+    Get.put<UserProfileCache>(UserProfileCache(), permanent: true);
     Get.put<CustomersRepository>(
       CustomersRepository(Get.find<ApiProvider>()),
       permanent: true,

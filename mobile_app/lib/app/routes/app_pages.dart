@@ -41,6 +41,10 @@ import '../../modules/customers/customer_work_address_form_binding.dart';
 import '../../modules/customers/customer_work_address_form_view.dart';
 import '../../modules/customers/customers_list_binding.dart';
 import '../../modules/customers/customers_list_view.dart';
+import '../../modules/profile/id_card_binding.dart';
+import '../../modules/profile/id_card_view.dart';
+import '../../modules/profile/profile_edit_binding.dart';
+import '../../modules/profile/profile_edit_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -56,6 +60,16 @@ class AppPages {
       name: AppRoutes.home,
       page: () => const HomeView(),
       binding: HomeBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.profileEdit,
+      page: () => const ProfileEditView(),
+      binding: ProfileEditBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.idCard,
+      page: () => const IdCardView(),
+      binding: IdCardBinding(),
     ),
     GetPage<void>(
       name: AppRoutes.timesheetHistory,

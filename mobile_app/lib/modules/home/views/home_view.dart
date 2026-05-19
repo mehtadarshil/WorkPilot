@@ -10,7 +10,9 @@ import '../../../core/services/storage_service.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
+import '../../../data/repositories/mobile_profile_repository.dart';
 import '../../diary_event/diary_event_detail_controller.dart';
+import '../../profile/widgets/profile_avatar_button.dart';
 import '../../legal/legal_document_view.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/work_hub_tab.dart';
@@ -672,17 +674,10 @@ class _HomeHeader extends GetView<HomeController> {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          CircleAvatar(
+          ProfileAvatarButton(
             radius: 28,
-            backgroundColor: AppColors.whiteOverlay(0.12),
-            child: Text(
-              initial,
-              style: GoogleFonts.inter(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
+            fallbackInitial: initial,
+            onTap: openIdCard,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1424,6 +1419,48 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
   }
 }
 
+class _DiaryScopeChip extends StatelessWidget {
+  const _DiaryScopeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppColors.primary.withValues(alpha: 0.22) : AppColors.whiteOverlay(0.06),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.primary.withValues(alpha: 0.55) : AppColors.whiteOverlay(0.12),
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: selected ? AppColors.primary : AppColors.slate400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DiaryTab extends GetView<HomeController> {
   const _DiaryTab();
 
@@ -1472,13 +1509,40 @@ class _DiaryTab extends GetView<HomeController> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                'Ongoing and upcoming',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.slate400,
-                ),
-              ),
+              Obx(() {
+                final team = controller.diaryListScope.value == DiaryListScope.team;
+                return Text(
+                  team ? 'All team visits · ongoing and upcoming' : 'Ongoing and upcoming',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.slate400,
+                  ),
+                );
+              }),
+              const SizedBox(height: 10),
+              Obx(() {
+                if (!controller.showDiaryScopeTabs) return const SizedBox.shrink();
+                final selected = controller.diaryListScope.value;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _DiaryScopeChip(
+                        label: 'Mine',
+                        selected: selected == DiaryListScope.mine,
+                        onTap: () => controller.setDiaryListScope(DiaryListScope.mine),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _DiaryScopeChip(
+                        label: 'All team',
+                        selected: selected == DiaryListScope.team,
+                        onTap: () => controller.setDiaryListScope(DiaryListScope.team),
+                      ),
+                    ),
+                  ],
+                );
+              }),
               const SizedBox(height: 10),
               const _OfflineSyncBanner(),
             ],
@@ -1487,12 +1551,12 @@ class _DiaryTab extends GetView<HomeController> {
         const SizedBox(height: 16),
         Expanded(
           child: Obx(() {
-            if (!controller.officerFeatures) {
+            if (!controller.canUseDiaryTab) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    'Diary is available for field officer accounts.',
+                    'Diary needs a linked field profile (Mine) or jobs/scheduling access (All team). Ask your administrator in Team & access.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 15,
@@ -1519,7 +1583,9 @@ class _DiaryTab extends GetView<HomeController> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'No diary entries this week',
+                      controller.diaryListScope.value == DiaryListScope.team
+                          ? 'No team diary entries this week'
+                          : 'No diary entries this week',
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         color: AppColors.slate400,
@@ -1529,12 +1595,15 @@ class _DiaryTab extends GetView<HomeController> {
                 ),
               );
             }
+            final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
+            final allowFieldActions = !showTeamFields;
             return ListView.builder(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               physics: const BouncingScrollPhysics(),
               itemCount: controller.diaryEvents.length,
               itemBuilder: (context, i) {
                 final e = controller.diaryEvents[i];
+                final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Material(
@@ -1592,6 +1661,18 @@ class _DiaryTab extends GetView<HomeController> {
                                   color: AppColors.slate400,
                                 ),
                               ),
+                              if (showTeamFields &&
+                                  (e.officerFullName ?? '').trim().isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Officer: ${e.officerFullName!.trim()}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
                               if (e.displayContactName.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
@@ -1637,14 +1718,17 @@ class _DiaryTab extends GetView<HomeController> {
                               ],
                               const SizedBox(height: 6),
                               Text(
-                                'Tap card for visit details, site contact, and to mark arrived.',
+                                ownVisit
+                                    ? 'Tap card for visit details, site contact, and to mark arrived.'
+                                    : 'Tap card to view visit details (read-only).',
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   height: 1.35,
                                   color: AppColors.slate500,
                                 ),
                               ),
-                              if (!_visitCompleted(e.eventStatus) &&
+                              if (ownVisit &&
+                                  !_visitCompleted(e.eventStatus) &&
                                   !_visitCancelled(e.eventStatus)) ...[
                                 const SizedBox(height: 10),
                                 Obx(() {
@@ -1810,20 +1894,18 @@ class _ProfileTab extends GetView<HomeController> {
               'Account',
               style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate400),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             _HomeGlassCard(
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  CircleAvatar(
-                    radius: 34,
-                    backgroundColor: AppColors.whiteOverlay(0.12),
-                    child: Text(
-                      initial,
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
+                  Obx(
+                    () => ProfileAvatarButton(
+                      key: ValueKey(controller.profileRevision.value),
+                      radius: 34,
+                      fallbackInitial: initial,
+                      onTap: openIdCard,
+                      showEditHint: true,
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -1838,6 +1920,8 @@ class _ProfileTab extends GetView<HomeController> {
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -1846,9 +1930,21 @@ class _ProfileTab extends GetView<HomeController> {
                             fontSize: 13,
                             color: AppColors.slate400,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
+                  ),
+                  const SizedBox(width: 10),
+                  _ProfileCardEditButton(
+                    onPressed: () async {
+                      final ok = await Get.toNamed(AppRoutes.profileEdit);
+                      if (ok == true) {
+                        await controller.refreshHome();
+                        controller.bumpProfileRevision();
+                      }
+                    },
                   ),
                 ],
               ),
@@ -1908,6 +2004,9 @@ class _ProfileTab extends GetView<HomeController> {
                 ],
               ),
             ),
+            Obx(() => _ProfileContactSummary(
+                  key: ValueKey('contact-${controller.profileRevision.value}'),
+                )),
             const SizedBox(height: 14),
             _HomeGlassCard(
               child: Obx(() {
@@ -2160,6 +2259,131 @@ class _ProfileTab extends GetView<HomeController> {
           ],
         );
       }),
+    );
+  }
+}
+
+/// Teal ring edit control on the profile identity card.
+class _ProfileCardEditButton extends StatelessWidget {
+  const _ProfileCardEditButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Edit profile',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Ink(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.28),
+                  AppColors.whiteOverlay(0.06),
+                ],
+              ),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.65),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.edit_rounded,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  'Edit',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileContactSummary extends StatefulWidget {
+  const _ProfileContactSummary({super.key});
+
+  @override
+  State<_ProfileContactSummary> createState() => _ProfileContactSummaryState();
+}
+
+class _ProfileContactSummaryState extends State<_ProfileContactSummary> {
+  String? _mobile;
+  String? _kin;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final p = await Get.find<MobileProfileRepository>().getProfile();
+      if (!mounted) return;
+      setState(() {
+        _mobile = p.mobilePhone ?? p.phone;
+        _kin = p.nextOfKinName;
+      });
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if ((_mobile == null || _mobile!.isEmpty) && (_kin == null || _kin!.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: _HomeGlassCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your details',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+            ),
+            const SizedBox(height: 12),
+            if (_mobile != null && _mobile!.isNotEmpty)
+              _ProfileLine(label: 'Mobile', value: _mobile!),
+            if (_kin != null && _kin!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _ProfileLine(label: 'Next of kin', value: _kin!),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

@@ -56,3 +56,13 @@ export function fieldMobileHasJobs(u: FieldMobileJwtUser): boolean {
 export function fieldMobileHasScheduling(u: FieldMobileJwtUser): boolean {
   return fieldEffectivePerms(u).scheduling === true;
 }
+
+/** Tenant-wide diary list (mobile “All team” tab) — admin, super admin, or staff with jobs/scheduling. */
+export function canUseTeamDiaryScope(u: FieldMobileJwtUser): boolean {
+  if (u.role === 'SUPER_ADMIN' || u.role === 'ADMIN') return true;
+  if (u.role === 'STAFF') {
+    const p = fieldEffectivePerms(u);
+    return p.jobs === true || p.scheduling === true;
+  }
+  return false;
+}
