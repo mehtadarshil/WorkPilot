@@ -4,6 +4,13 @@ export type BoardStatus = 'in_progress' | 'done';
 
 export type InspectionOutcome = '' | 'pass' | 'c1' | 'c2' | 'c3' | 'fi' | 'lim' | 'nv' | 'na' | 'x';
 
+export interface CertificatePhoto {
+  id: string;
+  caption: string;
+  /** JPEG/PNG data URL stored in certificate JSON. */
+  dataUrl: string;
+}
+
 export interface ObservationItem {
   id: string;
   code: 'c1' | 'c2' | 'c3' | 'fi';
@@ -80,6 +87,7 @@ export interface BoardRecord {
   /** When true, Max Zs uses 100% tabulated value; when false, 80% (test limit). */
   maxZsUse100Percent: boolean;
   circuits: CircuitRow[];
+  photos: CertificatePhoto[];
 }
 
 export interface ElectricalCertificateDocument {
@@ -153,7 +161,7 @@ export interface ElectricalCertificateDocument {
   };
   inspectionSchedule: Record<string, InspectionOutcome>;
   boards: BoardRecord[];
-  appendix: { content: string };
+  appendix: { content: string; photos: CertificatePhoto[] };
 }
 
 export interface ValidationIssue {

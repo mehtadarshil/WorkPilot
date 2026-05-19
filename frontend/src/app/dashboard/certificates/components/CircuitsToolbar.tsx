@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Calculator, Hash, Plus, Rows3, Wand2 } from 'lucide-react';
+import { Calculator, Hash, Plus, Replace, Rows3, Wand2 } from 'lucide-react';
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { CIRCUIT_COLUMNS } from '@/lib/electricalCertificates/circuitColumns';
 
 type Props = {
   board: BoardRecord;
+  readOnly?: boolean;
+  onFindReplace: () => void;
   onQuickAdd: (n: number) => void;
   onAdd: () => void;
   onRenumber: () => void;
@@ -18,6 +20,8 @@ type Props = {
 
 export function CircuitsToolbar({
   board,
+  readOnly = false,
+  onFindReplace,
   onQuickAdd,
   onAdd,
   onRenumber,
@@ -39,44 +43,58 @@ export function CircuitsToolbar({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          disabled={readOnly}
           onClick={() => onQuickAdd(6)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           Quick add 6
         </button>
         <button
           type="button"
+          disabled={readOnly}
           onClick={onAdd}
-          className="flex items-center gap-1 rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0d9488]"
+          className="flex items-center gap-1 rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0d9488] disabled:opacity-40"
         >
           <Plus className="size-3.5" /> Add
         </button>
         <button
           type="button"
+          disabled={readOnly}
+          onClick={onFindReplace}
+          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          <Replace className="size-3.5" /> Find &amp; replace
+        </button>
+        <button
+          type="button"
+          disabled={readOnly}
           onClick={onAutofillFromPrevious}
-          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           <Wand2 className="size-3.5" /> Autofill
         </button>
         <button
           type="button"
+          disabled={readOnly}
           onClick={onRenumber}
-          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           <Hash className="size-3.5" /> Renumber
         </button>
         <button
           type="button"
+          disabled={readOnly}
           onClick={onRecalculateAll}
-          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           title="Recalculate all calculator fields"
         >
           <Calculator className="size-3.5" /> Recalculate
         </button>
         <button
           type="button"
+          disabled={readOnly}
           onClick={onToggle100MaxZs}
-          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${
             board.maxZsUse100Percent
               ? 'border-amber-400 bg-amber-50 text-amber-900'
               : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -121,7 +139,7 @@ export function CircuitsToolbar({
         </label>
         <button
           type="button"
-          disabled={!fillValue.trim() || board.circuits.length === 0}
+          disabled={readOnly || !fillValue.trim() || board.circuits.length === 0}
           onClick={() => {
             onFillColumn(fillKey, fillValue.trim());
             setFillValue('');

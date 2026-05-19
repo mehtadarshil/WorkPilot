@@ -1,4 +1,4 @@
-import type { BoardRecord, CircuitRow, ElectricalCertificateDocument } from './types';
+import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument } from './types';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -53,15 +53,29 @@ function coerceCircuit(raw: unknown): CircuitRow {
   };
 }
 
+function coercePhoto(raw: unknown): CertificatePhoto | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Partial<CertificatePhoto>;
+  if (typeof o.dataUrl !== 'string' || !o.dataUrl.startsWith('data:image/')) return null;
+  return {
+    id: typeof o.id === 'string' ? o.id : newId('ph'),
+    caption: typeof o.caption === 'string' ? o.caption : '',
+    dataUrl: o.dataUrl,
+  };
+}
+
 function coerceBoard(raw: unknown): BoardRecord {
   const base = emptyBoard();
   if (!raw || typeof raw !== 'object') return base;
-  const o = raw as Partial<BoardRecord> & { circuits?: unknown[] };
+  const o = raw as Partial<BoardRecord> & { circuits?: unknown[]; photos?: unknown[] };
   return {
     ...base,
     ...o,
     maxZsUse100Percent: o.maxZsUse100Percent ?? false,
     circuits: Array.isArray(o.circuits) ? o.circuits.map(coerceCircuit) : [],
+    photos: Array.isArray(o.photos)
+      ? o.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+      : [],
   };
 }
 
@@ -92,6 +106,7 @@ export function emptyBoard(name = 'DB-1'): BoardRecord {
     notes: '',
     maxZsUse100Percent: false,
     circuits: [],
+    photos: [],
   };
 }
 
@@ -165,7 +180,7 @@ export function createDefaultDocument(): ElectricalCertificateDocument {
     },
     inspectionSchedule: {},
     boards: [emptyBoard()],
-    appendix: { content: '' },
+    appendix: { content: '', photos: [] },
   };
 }
 
@@ -188,6 +203,11 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
       o.inspectionSchedule && typeof o.inspectionSchedule === 'object' ? o.inspectionSchedule : {},
     boards:
       Array.isArray(o.boards) && o.boards.length > 0 ? o.boards.map(coerceBoard) : [emptyBoard()],
-    appendix: { ...base.appendix, ...(o.appendix ?? {}) },
+    appendix: {
+      content: o.appendix?.content ?? base.appendix.content,
+      photos: Array.isArray(o.appendix?.photos)
+        ? o.appendix.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+        : [],
+    },
   };
 }

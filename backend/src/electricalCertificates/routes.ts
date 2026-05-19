@@ -5,6 +5,9 @@ import type { TenantAuthUser } from '../tenantAccess';
 import { coerceDocument, createDefaultDocument } from './documentDefaults';
 import { validateElectricalCertificate } from './validation';
 import type { CertificateStatus, ElectricalCertificateDocument } from './types';
+import { loadCompanyBranding } from './companyBranding';
+import { generateElectricalCertificatePdfBuffer } from './generateCertificatePdf';
+import { PdfRenderUnavailableError } from '../jobClientReportPdf';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -150,6 +153,59 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     });
   });
 
+  app.get('/api/electrical-certificates/branding', ...guard, async (req: Request, res: Response) => {
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    try {
+      const branding = await loadCompanyBranding(pool, userId);
+      return res.json({ branding });
+    } catch (e) {
+      console.error('Certificate branding error:', e);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/electrical-certificates/:id/pdf', ...guard, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+
+    const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
+    if (!cert) return res.status(404).json({ message: 'Certificate not found' });
+
+    const ownerR = await pool.query<{ created_by: number }>(
+      'SELECT created_by FROM electrical_certificates WHERE id = $1',
+      [id],
+    );
+    const ownerUserId = Number(ownerR.rows[0]?.created_by);
+    if (!Number.isFinite(ownerUserId)) {
+      return res.status(500).json({ message: 'Invalid certificate owner' });
+    }
+
+    try {
+      const { pdf, filenameBase } = await generateElectricalCertificatePdfBuffer(pool, {
+        certificateId: id,
+        ownerUserId,
+        certificateNumber: cert.certificate_number,
+        jobNumber: cert.job_number,
+        customerName: cert.customer_full_name,
+        installationLabel: cert.installation_label,
+        documentRaw: cert.document,
+      });
+      const asciiName = `${filenameBase.replace(/[^\x20-\x7E]/g, '_')}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"`);
+      res.setHeader('Content-Length', String(pdf.length));
+      return res.send(pdf);
+    } catch (error: unknown) {
+      if (error instanceof PdfRenderUnavailableError) {
+        return res.status(503).json({ message: error.message });
+      }
+      console.error('Certificate PDF error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.get('/api/electrical-certificates/:id', ...guard, async (req: Request, res: Response) => {
     const id = parseInt(String(req.params.id), 10);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
@@ -167,6 +223,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       job_id?: number | null;
       job_number?: string;
       type_slug?: string;
+      document?: ElectricalCertificateDocument;
     };
     const customerId = typeof body.customer_id === 'number' ? body.customer_id : null;
     if (!customerId) return res.status(400).json({ message: 'Client is required' });
@@ -191,8 +248,12 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     }
 
     const customerName = (custCheck.rows[0] as { full_name: string }).full_name;
-    const doc = createDefaultDocument();
-    doc.installation.occupierName = customerName;
+    const typeSlug =
+      typeof body.type_slug === 'string' && body.type_slug.trim() ? body.type_slug.trim() : 'eicr_18e_a3';
+    const doc = body.document ? coerceDocument(body.document) : createDefaultDocument();
+    if (!body.document) {
+      doc.installation.occupierName = customerName;
+    }
 
     const jobNumber = typeof body.job_number === 'string' ? body.job_number.trim() || null : null;
     const certNumber = await generateCertificateNumber(pool);
@@ -200,11 +261,12 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     try {
       const ins = await pool.query(
         `INSERT INTO electrical_certificates (certificate_number, job_number, type_slug, status, customer_id, work_address_id, job_id, document, created_by, updated_by)
-         VALUES ($1, $2, 'eicr_18e_a3', 'in_progress', $3, $4, $5, $6::jsonb, $7, $7)
+         VALUES ($1, $2, $3, 'in_progress', $4, $5, $6, $7::jsonb, $8, $8)
          RETURNING id`,
         [
           certNumber,
           jobNumber,
+          typeSlug,
           customerId,
           workAddressId,
           body.job_id && Number.isFinite(body.job_id) ? body.job_id : null,

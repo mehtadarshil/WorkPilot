@@ -1,0 +1,68 @@
+import { emptyBoard, newId } from './documentDefaults';
+import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument } from './types';
+
+export function cloneCircuit(circuit: CircuitRow): CircuitRow {
+  return {
+    ...circuit,
+    id: newId('c'),
+    calcOverrides: circuit.calcOverrides ? { ...circuit.calcOverrides } : {},
+  };
+}
+
+export function cloneBoard(board: BoardRecord, nameSuffix = ' copy'): BoardRecord {
+  const base = emptyBoard();
+  return {
+    ...base,
+    ...board,
+    id: newId('db'),
+    name: `${board.name.trim() || 'DB'}${nameSuffix}`.trim(),
+    status: 'in_progress',
+    circuits: board.circuits.map(cloneCircuit),
+    photos: board.photos.map((p) => ({ ...p, id: newId('ph') })),
+  };
+}
+
+export function clonePhoto(photo: CertificatePhoto): CertificatePhoto {
+  return { ...photo, id: newId('ph') };
+}
+
+export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCertificateDocument {
+  return {
+    ...doc,
+    boards: doc.boards.map((b) => cloneBoard(b, '')),
+    observations: {
+      ...doc.observations,
+      items: doc.observations.items.map((o) => ({ ...o, id: newId('obs') })),
+    },
+    inspectionSchedule: { ...doc.inspectionSchedule },
+    appendix: {
+      ...doc.appendix,
+      photos: doc.appendix.photos.map(clonePhoto),
+    },
+  };
+}
+
+export function moveItem<T>(items: T[], from: number, to: number): T[] {
+  if (from < 0 || from >= items.length || to < 0 || to >= items.length || from === to) {
+    return items;
+  }
+  const next = [...items];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+export function replaceInCircuits(
+  circuits: CircuitRow[],
+  column: keyof CircuitRow,
+  find: string,
+  replace: string,
+): CircuitRow[] {
+  if (!find) return circuits;
+  return circuits.map((c) => {
+    const raw = c[column];
+    if (typeof raw !== 'string') return c;
+    if (!raw.includes(find)) return c;
+    return { ...c, [column]: raw.split(find).join(replace) };
+  });
+}

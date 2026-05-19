@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { Calculator, Trash2 } from 'lucide-react';
+import { Calculator, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import type { BoardRecord, CircuitRow, CircuitCalcOverrideKey } from '@/lib/electricalCertificates/types';
 import { CIRCUIT_COLUMNS } from '@/lib/electricalCertificates/circuitColumns';
@@ -22,9 +22,11 @@ type Props = {
   boardId: string;
   board: BoardRecord;
   circuits: CircuitRow[];
+  readOnly?: boolean;
+  onMoveCircuit?: (circuitId: string, direction: -1 | 1) => void;
 };
 
-export function CircuitsGrid({ boardId, board, circuits }: Props) {
+export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMoveCircuit }: Props) {
   const { setDocument } = useCertificateEditor();
 
   const updateBoardCircuits = useCallback(
@@ -127,7 +129,7 @@ export function CircuitsGrid({ boardId, board, circuits }: Props) {
                 <th key={`g-${i}`} colSpan={g.span} className="border-b border-slate-200 bg-slate-50" />
               ),
             )}
-            <th className="w-9 bg-slate-50" rowSpan={2} />
+            <th className="w-16 bg-slate-50" rowSpan={2} />
           </tr>
           <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wide text-slate-500">
             {CIRCUIT_COLUMNS.map((col) => (
@@ -165,7 +167,8 @@ export function CircuitsGrid({ boardId, board, circuits }: Props) {
                   >
                     <div className="relative flex items-center">
                       <input
-                        className={`w-full border-0 px-1.5 py-1.5 outline-none focus:bg-white focus:ring-1 focus:ring-[#14B8A6] ${
+                        disabled={readOnly}
+                        className={`w-full border-0 px-1.5 py-1.5 outline-none focus:bg-white focus:ring-1 focus:ring-[#14B8A6] disabled:cursor-not-allowed disabled:opacity-60 ${
                           isCalc ? 'bg-teal-50/50 text-teal-900' : 'bg-transparent'
                         } ${overridden ? 'ring-1 ring-amber-200' : ''}`}
                         value={cellValue}
@@ -186,14 +189,40 @@ export function CircuitsGrid({ boardId, board, circuits }: Props) {
                   </td>
                 );
               })}
-              <td className="p-0.5 text-center">
-                <button
-                  type="button"
-                  onClick={() => removeCircuit(c.id)}
-                  className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
+              <td className="p-0.5">
+                <div className="flex items-center justify-center gap-0.5">
+                  {onMoveCircuit && !readOnly && (
+                    <>
+                      <button
+                        type="button"
+                        title="Move up"
+                        disabled={circuits.findIndex((x) => x.id === c.id) === 0}
+                        onClick={() => onMoveCircuit(c.id, -1)}
+                        className="rounded p-0.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30"
+                      >
+                        <ChevronUp className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Move down"
+                        disabled={circuits.findIndex((x) => x.id === c.id) === circuits.length - 1}
+                        onClick={() => onMoveCircuit(c.id, 1)}
+                        className="rounded p-0.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30"
+                      >
+                        <ChevronDown className="size-3.5" />
+                      </button>
+                    </>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => removeCircuit(c.id)}
+                      className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { FileCheck2, Plus, Search } from 'lucide-react';
+import { Copy, FileCheck2, MoreVertical, Plus, Search, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getJson, postJson } from '../../apiClient';
+import { deleteRequest, getJson, postJson } from '../../apiClient';
+import { cloneDocument } from '@/lib/electricalCertificates/documentHelpers';
 import { Pagination } from '../Pagination';
 import ImportCustomerSelect from '../ImportCustomerSelect';
 import WorkAddressSelect from '../WorkAddressSelect';
 import { CERTIFICATE_TYPE_CATALOG } from '@/lib/electricalCertificates/types';
 import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
+import { ConvertCertificateModal } from './components/ConvertCertificateModal';
+import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
 
 const PAGE_SIZE = 15;
 
@@ -34,6 +37,11 @@ export default function ElectricalCertificatesPage() {
   const [customers, setCustomers] = useState<{ id: number; full_name: string }[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rowMenuId, setRowMenuId] = useState<number | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertSource, setConvertSource] = useState<ElectricalCertificate | null>(null);
+  const [pdfBusyId, setPdfBusyId] = useState<number | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -128,6 +136,56 @@ export default function ElectricalCertificatesPage() {
     setJobNumber('');
     setError(null);
     setCreateOpen(true);
+  };
+
+  const handleCopyConvert = async (
+    cert: ElectricalCertificate,
+    typeSlug: string,
+    _mode: 'copy' | 'convert',
+  ) => {
+    if (!token) return;
+    setDuplicatingId(cert.id);
+    try {
+      const full = await getJson<{ certificate: ElectricalCertificate }>(
+        `/electrical-certificates/${cert.id}`,
+        token,
+      );
+      const doc = cloneDocument(full.certificate.document);
+      doc.typeSlug = typeSlug as typeof doc.typeSlug;
+      const res = await postJson<{ certificate: ElectricalCertificate }>(
+        '/electrical-certificates',
+        {
+          customer_id: full.certificate.customer_id,
+          work_address_id: full.certificate.work_address_id,
+          job_number: full.certificate.job_number,
+          type_slug: typeSlug,
+          document: doc,
+        },
+        token,
+      );
+      setRowMenuId(null);
+      setConvertOpen(false);
+      setConvertSource(null);
+      router.push(`/dashboard/certificates/${res.certificate.id}/installation-details`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to create certificate');
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
+
+  const handleDelete = async (cert: ElectricalCertificate) => {
+    if (!token) return;
+    if (!window.confirm(`Delete certificate ${cert.certificate_number}? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteRequest(`/electrical-certificates/${cert.id}`, token);
+      setRowMenuId(null);
+      void fetchList();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed');
+    }
   };
 
   const handleCreate = async () => {
@@ -233,12 +291,67 @@ export default function ElectricalCertificatesPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/dashboard/certificates/${c.id}/installation-details`}
-                      className="font-semibold text-[#14B8A6] hover:underline"
-                    >
-                      Open
-                    </Link>
+                    <div className="relative inline-flex items-center gap-2">
+                      <Link
+                        href={`/dashboard/certificates/${c.id}/installation-details`}
+                        className="font-semibold text-[#14B8A6] hover:underline"
+                      >
+                        Open
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setRowMenuId((id) => (id === c.id ? null : c.id))}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                        aria-label="More actions"
+                      >
+                        <MoreVertical className="size-4" />
+                      </button>
+                      {rowMenuId === c.id && (
+                        <ul className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg">
+                          <li>
+                            <button
+                              type="button"
+                              disabled={duplicatingId === c.id}
+                              onClick={() => {
+                                setConvertSource(c);
+                                setConvertOpen(true);
+                                setRowMenuId(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <Copy className="size-4" /> Copy / convert…
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              type="button"
+                              disabled={pdfBusyId === c.id}
+                              onClick={() => {
+                                if (!token) return;
+                                setPdfBusyId(c.id);
+                                void downloadCertificatePdf(c.id, c.certificate_number, token)
+                                  .catch((e) => alert(e instanceof Error ? e.message : 'PDF failed'))
+                                  .finally(() => setPdfBusyId(null));
+                                setRowMenuId(null);
+                              }}
+                              className="flex w-full px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {pdfBusyId === c.id ? 'Generating PDF…' : 'Download PDF'}
+                            </button>
+                          </li>
+                          <li className="my-1 border-t border-slate-100" />
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(c)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                            >
+                              <Trash2 className="size-4" /> Delete
+                            </button>
+                          </li>
+                        </ul>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -359,6 +472,19 @@ export default function ElectricalCertificatesPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ConvertCertificateModal
+        open={convertOpen}
+        source={convertSource}
+        onClose={() => {
+          setConvertOpen(false);
+          setConvertSource(null);
+        }}
+        onConfirm={async (typeSlug, mode) => {
+          if (!convertSource) return;
+          await handleCopyConvert(convertSource, typeSlug, mode);
+        }}
+      />
     </div>
   );
 }

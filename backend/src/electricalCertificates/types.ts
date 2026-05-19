@@ -15,6 +15,12 @@ export interface ObservationItem {
   location: string;
 }
 
+export interface CertificatePhoto {
+  id: string;
+  caption: string;
+  dataUrl: string;
+}
+
 export type CircuitCalcOverrideKey =
   | 'maxDisconnectTime'
   | 'ocpdBreakingKa'
@@ -82,6 +88,7 @@ export interface BoardRecord {
   notes: string;
   maxZsUse100Percent: boolean;
   circuits: CircuitRow[];
+  photos: CertificatePhoto[];
 }
 
 export interface ElectricalCertificateDocument {
@@ -157,6 +164,7 @@ export interface ElectricalCertificateDocument {
   boards: BoardRecord[];
   appendix: {
     content: string;
+    photos: CertificatePhoto[];
   };
 }
 

@@ -16,6 +16,8 @@ import {
 import { EDITOR_SECTIONS, type EditorSectionKey } from '@/lib/electricalCertificates/types';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import { ValidateSheet } from './ValidateSheet';
+import { CertificateEditorMenu } from './CertificateEditorMenu';
+import { EditorQuickNav } from './EditorQuickNav';
 
 const SECTION_ICONS: Record<EditorSectionKey, React.ReactNode> = {
   'installation-details': <Building2 className="size-4" />,
@@ -86,6 +88,7 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
             >
               <Menu className="size-4" /> Validate
             </button>
+            <CertificateEditorMenu />
           </div>
         </div>
         <nav className="mt-3 flex gap-1 overflow-x-auto pb-1">
@@ -118,7 +121,8 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
           })}
         </nav>
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 pb-24">{children}</main>
+      <EditorQuickNav />
       <ValidateSheet />
     </div>
   );
