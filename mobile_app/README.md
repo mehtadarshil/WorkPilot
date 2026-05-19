@@ -1,16 +1,30 @@
-# WorkPilot (mobile app)
+# WorkPilot mobile app
 
-WorkPilot field officer Flutter app (`package:mobile_app`).
+Flutter field app for WorkPilot CRM.
 
-## Getting Started
+## API URL
 
-This project is a starting point for a Flutter application.
+| Build mode | API base URL |
+|------------|----------------|
+| **Debug** (`flutter run`) | `http://10.0.2.2:4000/api` on Android emulator, `http://127.0.0.1:4000/api` on iOS simulator |
+| **Release** (`flutter build --release`, store) | `https://api.work-pilot.co/api` |
 
-A few resources to get you started if this is your first Flutter project:
+Override any mode:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+flutter run --dart-define=API_BASE_URL=https://staging.example/api
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Physical device on the same Wi‑Fi as your laptop (debug only):
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://192.168.x.x:4000/api
+```
+
+## Verify production API
+
+```bash
+curl -s https://api.work-pilot.co/api/health
+```
+
+Expected: `{"status":"ok",...}`

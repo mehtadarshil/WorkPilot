@@ -26,7 +26,8 @@ class ApiException implements Exception {
         msg = 'Request timed out. Please try again.';
         break;
       case DioExceptionType.connectionError:
-        msg = 'No internet connection.';
+        msg =
+            'Unable to reach WorkPilot servers. Check your connection and try again.';
         break;
       default:
         break;

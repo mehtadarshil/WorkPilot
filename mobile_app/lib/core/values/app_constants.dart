@@ -1,6 +1,16 @@
+import 'package:flutter/foundation.dart';
+
 /// App-wide constants (API base URL, timeouts, storage keys).
 abstract class AppConstants {
   AppConstants._();
+
+  static const String _productionApiBaseUrl = 'https://api.work-pilot.co/api';
+
+  /// Set via `--dart-define=API_BASE_URL=...` to override debug/release defaults.
+  static const String _apiBaseUrlFromEnv = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
 
   static const String appName = 'WorkPilot';
 
@@ -30,13 +40,23 @@ abstract class AppConstants {
   /// Branding (same file as web `public/logo.jpg`).
   static const String assetLogo = 'assets/images/logo.jpg';
 
-  /// Backend `/api` root. Use `--dart-define=API_BASE_URL=...` per environment.
-  /// Android emulator: `http://10.0.2.2:4000/api` · iOS simulator: `http://127.0.0.1:4000/api`
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    // defaultValue: 'https://api.work-pilot.co/api',
-    defaultValue: 'http://127.0.0.1:4000/api',
-  );
+  /// Backend `/api` root.
+  /// - **Release** (`flutter run --release`, store builds): production API.
+  /// - **Debug** (`flutter run`): local backend (emulator-friendly host on Android).
+  /// - **Override**: `--dart-define=API_BASE_URL=https://custom.example/api`
+  static String get apiBaseUrl {
+    final fromEnv = _apiBaseUrlFromEnv.trim();
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (kReleaseMode) return _productionApiBaseUrl;
+    return _debugApiBaseUrl;
+  }
+
+  static String get _debugApiBaseUrl {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:4000/api';
+    }
+    return 'http://127.0.0.1:4000/api';
+  }
 
   /// Optional full origin for public quotation links (`/public/quotations/...`).
   /// When empty, `/api` is stripped from [apiBaseUrl] (works when web and API share one host).
