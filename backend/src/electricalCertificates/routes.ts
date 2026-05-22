@@ -40,17 +40,83 @@ export async function ensureElectricalCertificateSchema(pool: Pool): Promise<voi
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_electrical_certificates_created_by ON electrical_certificates(created_by)`,
   );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS electrical_certificate_number_settings (
+      id SERIAL PRIMARY KEY,
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type_slug VARCHAR(50) NOT NULL,
+      prefix VARCHAR(30) NOT NULL,
+      next_number INTEGER NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(created_by, type_slug)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_electrical_certificate_number_settings_owner ON electrical_certificate_number_settings(created_by)`,
+  );
 }
 
-async function generateCertificateNumber(pool: Pool): Promise<string> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    const num = `EICR-${ymd}-${suffix}`;
-    const exists = await pool.query('SELECT 1 FROM electrical_certificates WHERE certificate_number = $1', [num]);
-    if ((exists.rowCount ?? 0) === 0) return num;
+function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
+  return raw === 'portable_appliance_test' ? 'portable_appliance_test' : 'eicr_18e_a3';
+}
+
+function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeSlug']): string {
+  return typeSlug === 'portable_appliance_test' ? 'PAT' : 'EICR';
+}
+
+function formatCertificateNumber(prefix: string, seq: number): string {
+  const cleanPrefix = (prefix || 'CERT').trim().replace(/\s+/g, '-').slice(0, 30) || 'CERT';
+  return `${cleanPrefix}-${String(Math.max(1, seq)).padStart(6, '0')}`;
+}
+
+async function ensureNumberSetting(pool: Pool, userId: number, typeSlug: ElectricalCertificateDocument['typeSlug']) {
+  const prefix = defaultCertificatePrefix(typeSlug);
+  await pool.query(
+    `INSERT INTO electrical_certificate_number_settings (created_by, type_slug, prefix, next_number)
+     VALUES ($1, $2, $3, 1)
+     ON CONFLICT (created_by, type_slug) DO NOTHING`,
+    [userId, typeSlug, prefix],
+  );
+}
+
+async function generateCertificateNumber(pool: Pool, userId: number, typeSlug: ElectricalCertificateDocument['typeSlug']): Promise<string> {
+  await ensureNumberSetting(pool, userId, typeSlug);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const row = await client.query<{ prefix: string; next_number: number }>(
+      `SELECT prefix, next_number FROM electrical_certificate_number_settings
+       WHERE created_by = $1 AND type_slug = $2
+       FOR UPDATE`,
+      [userId, typeSlug],
+    );
+    let prefix = row.rows[0]?.prefix || defaultCertificatePrefix(typeSlug);
+    let seq = Math.max(1, Number(row.rows[0]?.next_number) || 1);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const num = formatCertificateNumber(prefix, seq);
+      const exists = await client.query('SELECT 1 FROM electrical_certificates WHERE certificate_number = $1', [num]);
+      seq += 1;
+      if ((exists.rowCount ?? 0) === 0) {
+        await client.query(
+          `UPDATE electrical_certificate_number_settings
+           SET next_number = $3, updated_at = NOW()
+           WHERE created_by = $1 AND type_slug = $2`,
+          [userId, typeSlug, seq],
+        );
+        await client.query('COMMIT');
+        return num;
+      }
+    }
+    prefix = defaultCertificatePrefix(typeSlug);
+    const num = `${prefix}-${Date.now()}`;
+    await client.query('COMMIT');
+    return num;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  throw new Error('Failed to generate unique certificate number');
 }
 
 function mapRow(row: Record<string, unknown>) {
@@ -63,7 +129,7 @@ function mapRow(row: Record<string, unknown>) {
     customer_id: row.customer_id as number,
     work_address_id: (row.work_address_id as number | null) ?? null,
     job_id: (row.job_id as number | null) ?? null,
-    document: coerceDocument(row.document),
+    document: coerceDocument({ ...((row.document as Record<string, unknown>) ?? {}), typeSlug: row.type_slug }),
     customer_full_name: (row.customer_full_name as string | null) ?? null,
     installation_label: (row.installation_label as string | null) ?? null,
     created_at: (row.created_at as Date).toISOString(),
@@ -164,6 +230,75 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     }
   });
 
+  app.get('/api/electrical-certificates/numbering-settings', ...guard, async (req: Request, res: Response) => {
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const types: ElectricalCertificateDocument['typeSlug'][] = ['eicr_18e_a3', 'portable_appliance_test'];
+    try {
+      for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
+      const rows = await pool.query<{ type_slug: string; prefix: string; next_number: number }>(
+        `SELECT type_slug, prefix, next_number
+         FROM electrical_certificate_number_settings
+         WHERE created_by = $1
+         ORDER BY type_slug ASC`,
+        [userId],
+      );
+      return res.json({
+        settings: rows.rows.map((row) => ({
+          type_slug: row.type_slug,
+          prefix: row.prefix,
+          next_number: Number(row.next_number) || 1,
+        })),
+      });
+    } catch (error) {
+      console.error('Certificate numbering settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/electrical-certificates/numbering-settings', ...guard, async (req: Request, res: Response) => {
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const body = req.body as { settings?: unknown };
+    const items = Array.isArray(body.settings) ? (body.settings as Record<string, unknown>[]) : [];
+    try {
+      for (const item of items) {
+        const typeSlug = normalizeCertificateTypeSlug(item.type_slug);
+        const prefixRaw = typeof item.prefix === 'string' ? item.prefix.trim() : defaultCertificatePrefix(typeSlug);
+        const prefix = (prefixRaw || defaultCertificatePrefix(typeSlug)).replace(/\s+/g, '-').slice(0, 30);
+        const nextNumberRaw =
+          typeof item.next_number === 'number' && Number.isFinite(item.next_number)
+            ? Math.trunc(item.next_number)
+            : typeof item.next_number === 'string' && item.next_number.trim()
+              ? parseInt(item.next_number.trim(), 10)
+              : 1;
+        const nextNumber = Math.max(1, Number.isFinite(nextNumberRaw) ? nextNumberRaw : 1);
+        await pool.query(
+          `INSERT INTO electrical_certificate_number_settings (created_by, type_slug, prefix, next_number, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (created_by, type_slug)
+           DO UPDATE SET prefix = EXCLUDED.prefix, next_number = EXCLUDED.next_number, updated_at = NOW()`,
+          [userId, typeSlug, prefix, nextNumber],
+        );
+      }
+      const rows = await pool.query<{ type_slug: string; prefix: string; next_number: number }>(
+        `SELECT type_slug, prefix, next_number
+         FROM electrical_certificate_number_settings
+         WHERE created_by = $1
+         ORDER BY type_slug ASC`,
+        [userId],
+      );
+      return res.json({
+        settings: rows.rows.map((row) => ({
+          type_slug: row.type_slug,
+          prefix: row.prefix,
+          next_number: Number(row.next_number) || 1,
+        })),
+      });
+    } catch (error) {
+      console.error('Update certificate numbering settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.get('/api/electrical-certificates/:id/pdf', ...guard, async (req: Request, res: Response) => {
     const id = parseInt(String(req.params.id), 10);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
@@ -248,15 +383,17 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     }
 
     const customerName = (custCheck.rows[0] as { full_name: string }).full_name;
-    const typeSlug =
-      typeof body.type_slug === 'string' && body.type_slug.trim() ? body.type_slug.trim() : 'eicr_18e_a3';
-    const doc = body.document ? coerceDocument(body.document) : createDefaultDocument();
+    const typeSlug = normalizeCertificateTypeSlug(body.type_slug);
+    const doc = body.document ? coerceDocument({ ...body.document, typeSlug }) : createDefaultDocument(typeSlug, customerName);
     if (!body.document) {
       doc.installation.occupierName = customerName;
+      if (typeSlug === 'portable_appliance_test' && doc.pat) {
+        doc.pat.jobAddress.customerName = customerName;
+      }
     }
 
     const jobNumber = typeof body.job_number === 'string' ? body.job_number.trim() || null : null;
-    const certNumber = await generateCertificateNumber(pool);
+    const certNumber = await generateCertificateNumber(pool, userId, typeSlug);
 
     try {
       const ins = await pool.query(

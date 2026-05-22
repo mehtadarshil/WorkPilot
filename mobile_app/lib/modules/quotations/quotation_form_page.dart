@@ -7,6 +7,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
+import '../../widgets/searchable_select_field.dart';
 import 'quotation_helpers.dart';
 import 'quotations_list_controller.dart';
 
@@ -299,37 +300,36 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         child: Text(_error!, style: GoogleFonts.inter(color: const Color(0xFFFECACA))),
                       ),
                     _panel(
-                      child: DropdownButtonFormField<int>(
-                        isExpanded: true,
+                      child: SearchableSelectField<int>(
+                        label: 'Customer *',
+                        hint: 'Choose customer',
+                        sheetTitle: 'Customer',
                         value: _customerId,
-                        dropdownColor: const Color(0xFF1e293b),
-                        style: GoogleFonts.inter(color: Colors.white),
+                        enabled: !_saving,
                         decoration: _inputDeco('').copyWith(
                           labelText: 'Customer *',
                           labelStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.65)),
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                         ),
-                        items: [
+                        options: [
                           for (final c in _customers)
-                            DropdownMenuItem<int>(
-                              value: (c['id'] as num?)?.toInt(),
-                              child: Text(
-                                (c['full_name'] as String?)?.trim().isNotEmpty == true
+                            if ((c['id'] as num?) != null)
+                              SelectOption<int>(
+                                value: (c['id'] as num).toInt(),
+                                label: (c['full_name'] as String?)?.trim().isNotEmpty == true
                                     ? c['full_name'] as String
                                     : 'Customer #${c['id']}',
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
                               ),
-                            ),
                         ],
                         onChanged: _saving
                             ? null
                             : (v) async {
+                                if (v == null) return;
                                 setState(() {
                                   _customerId = v;
                                   _workAddressId = null;
                                 });
-                                if (v != null) await _loadWorkAddresses(v);
+                                await _loadWorkAddresses(v);
                               },
                       ),
                     ),

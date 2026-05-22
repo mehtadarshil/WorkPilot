@@ -1,4 +1,4 @@
-import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument } from './types';
+import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument, PatApplianceRow, PatCertificateData } from './types';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -110,11 +110,88 @@ export function emptyBoard(name = 'DB-1'): BoardRecord {
   };
 }
 
-export function createDefaultDocument(): ElectricalCertificateDocument {
+export function createDefaultPatData(customerName = ''): PatCertificateData {
+  const today = new Date().toISOString().slice(0, 10);
+  const appliances: PatApplianceRow[] = Array.from({ length: 1 }, (_, idx) => {
+    const n = String(idx + 1).padStart(3, '0');
+    return {
+      id: newId('pat'),
+      applianceId: n,
+      brand: '',
+      description: '',
+      location: '',
+      serialNo: '',
+      retestPeriod: '12 Months',
+      status: '',
+    };
+  });
+  return applyPatTotals({
+    registeredBusiness: { name: '', address: '', phone: '' },
+    jobAddress: { customerName, address: '', landlordAgent: '' },
+    certificateInfo: { date: today, number: '', totalTested: '', totalPassed: '', totalFailed: '' },
+    appliances,
+    testEquipment: { make: '', serialNo: '', notes: '' },
+    engineer: { name: '', notes: '' },
+  });
+}
+
+export function applyPatTotals(pat: PatCertificateData): PatCertificateData {
+  const totalTested = pat.appliances.filter((row) => row.status === 'pass' || row.status === 'fail').length;
+  const totalPassed = pat.appliances.filter((row) => row.status === 'pass').length;
+  const totalFailed = pat.appliances.filter((row) => row.status === 'fail').length;
+  return {
+    ...pat,
+    certificateInfo: {
+      ...pat.certificateInfo,
+      totalTested: String(totalTested),
+      totalPassed: String(totalPassed),
+      totalFailed: String(totalFailed),
+    },
+  };
+}
+
+function coercePatAppliance(raw: unknown, index: number): PatApplianceRow {
+  const n = String(index + 1).padStart(3, '0');
+  if (!raw || typeof raw !== 'object') {
+    return { id: newId('pat'), applianceId: n, brand: '', description: '', location: '', serialNo: '', retestPeriod: '12 Months', status: '' };
+  }
+  const o = raw as Partial<PatApplianceRow>;
+  const status = o.status === 'pass' || o.status === 'fail' ? o.status : '';
+  return {
+    id: typeof o.id === 'string' && o.id ? o.id : newId('pat'),
+    applianceId: typeof o.applianceId === 'string' ? o.applianceId : n,
+    brand: typeof o.brand === 'string' ? o.brand : '',
+    description: typeof o.description === 'string' ? o.description : '',
+    location: typeof o.location === 'string' ? o.location : '',
+    serialNo: typeof o.serialNo === 'string' ? o.serialNo : '',
+    retestPeriod: typeof o.retestPeriod === 'string' ? o.retestPeriod : '12 Months',
+    status,
+  };
+}
+
+export function coercePatData(raw: unknown, customerName = ''): PatCertificateData {
+  const base = createDefaultPatData(customerName);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<PatCertificateData>;
+  const appliancesRaw = Array.isArray(o.appliances) ? o.appliances : [];
+  const appliances = appliancesRaw.length > 0
+    ? appliancesRaw.map((item, idx) => coercePatAppliance(item, idx))
+    : base.appliances;
+  return applyPatTotals({
+    registeredBusiness: { ...base.registeredBusiness, ...(o.registeredBusiness ?? {}) },
+    jobAddress: { ...base.jobAddress, ...(o.jobAddress ?? {}) },
+    certificateInfo: { ...base.certificateInfo, ...(o.certificateInfo ?? {}) },
+    appliances,
+    testEquipment: { ...base.testEquipment, ...(o.testEquipment ?? {}) },
+    engineer: { ...base.engineer, ...(o.engineer ?? {}) },
+  });
+}
+
+export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['typeSlug'] = 'eicr_18e_a3', customerName = ''): ElectricalCertificateDocument {
   const today = new Date().toISOString().slice(0, 10);
   return {
     version: 1,
-    typeSlug: 'eicr_18e_a3',
+    typeSlug,
     installation: {
       hideClientOnReport: false,
       reason: '',
@@ -184,18 +261,23 @@ export function createDefaultDocument(): ElectricalCertificateDocument {
     inspectionSchedule: {},
     boards: [emptyBoard()],
     appendix: { content: '', photos: [] },
+    ...(typeSlug === 'portable_appliance_test' ? { pat: createDefaultPatData(customerName) } : {}),
   };
 }
 
 export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
-  const base = createDefaultDocument();
+  const rawType =
+    raw && typeof raw === 'object' && (raw as Partial<ElectricalCertificateDocument>).typeSlug === 'portable_appliance_test'
+      ? 'portable_appliance_test'
+      : 'eicr_18e_a3';
+  const base = createDefaultDocument(rawType);
   if (!raw || typeof raw !== 'object') return base;
   const o = raw as Partial<ElectricalCertificateDocument>;
   return {
     ...base,
     ...o,
     version: 1,
-    typeSlug: 'eicr_18e_a3',
+    typeSlug: rawType,
     installation: { ...base.installation, ...(o.installation ?? {}) },
     observations: {
       noRemedialRequired: o.observations?.noRemedialRequired ?? base.observations.noRemedialRequired,
@@ -212,5 +294,6 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
         ? o.appendix.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
         : [],
     },
+    ...(rawType === 'portable_appliance_test' ? { pat: coercePatData(o.pat) } : {}),
   };
 }

@@ -1,5 +1,29 @@
 import type { SiteReportSectionImageRow, TemplateSiteReportDocument } from './types';
 
+function applyApplianceResultTotals(values: Record<string, string>): Record<string, string> {
+  let hasApplianceStatus = false;
+  let passed = 0;
+  let failed = 0;
+
+  for (const [key, raw] of Object.entries(values)) {
+    if (!/^appliance_\d{3}_status$/.test(key)) continue;
+    hasApplianceStatus = true;
+    const status = String(raw || '').trim().toLowerCase();
+    if (status === 'pass') passed += 1;
+    if (status === 'fail') failed += 1;
+  }
+
+  if (!hasApplianceStatus && values.total_appliance_passed === undefined && values.total_appliance_failed === undefined) {
+    return values;
+  }
+
+  return {
+    ...values,
+    total_appliance_passed: String(passed),
+    total_appliance_failed: String(failed),
+  };
+}
+
 function normalizeImageRow(raw: unknown, index: number): SiteReportSectionImageRow | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -66,7 +90,7 @@ export function normalizeTemplateSiteReportDocument(raw: unknown, templateId: nu
       }
     }
     const field_images = o.field_images && typeof o.field_images === 'object' ? normalizeFieldImagesMap(o.field_images) : {};
-    return { mode: 'template_v1', template_id: tid, values, section_images, field_images };
+    return { mode: 'template_v1', template_id: tid, values: applyApplianceResultTotals(values), section_images, field_images };
   }
   return base;
 }

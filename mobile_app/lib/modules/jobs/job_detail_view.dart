@@ -11,10 +11,9 @@ import 'job_tab_files.dart';
 import 'job_tab_invoices.dart';
 import 'job_tab_job_report.dart';
 import 'job_tab_office_tasks.dart';
-import 'job_tab_parts.dart';
 import 'job_tab_site_reports.dart';
 
-/// Job detail with the same primary tabs as the web job page (details, report, site report, client share, reminders, parts, files, invoices).
+/// Job detail with the same primary tabs as the web job page (details, report, site report, client share, reminders, files, invoices).
 class JobDetailView extends StatefulWidget {
   const JobDetailView({super.key});
 
@@ -22,7 +21,8 @@ class JobDetailView extends StatefulWidget {
   State<JobDetailView> createState() => _JobDetailViewState();
 }
 
-class _JobDetailViewState extends State<JobDetailView> with SingleTickerProviderStateMixin {
+class _JobDetailViewState extends State<JobDetailView>
+    with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
   static const _tabWidgets = <Widget>[
@@ -31,7 +31,6 @@ class _JobDetailViewState extends State<JobDetailView> with SingleTickerProvider
     JobTabSiteReports(),
     JobTabClientPanel(),
     JobTabOfficeTasks(),
-    JobTabParts(),
     JobTabFiles(),
     JobTabInvoices(),
   ];
@@ -61,7 +60,10 @@ class _JobDetailViewState extends State<JobDetailView> with SingleTickerProvider
       child: Scaffold(
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
-          title: Text('Job #${controller.jobId}', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+          title: Text(
+            'Job #${controller.jobId}',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
@@ -88,7 +90,6 @@ class _JobDetailViewState extends State<JobDetailView> with SingleTickerProvider
               Tab(text: 'Reports'),
               Tab(text: 'Client'),
               Tab(text: 'Reminders'),
-              Tab(text: 'Parts'),
               Tab(text: 'Files'),
               Tab(text: 'Invoices'),
             ],
@@ -99,14 +100,21 @@ class _JobDetailViewState extends State<JobDetailView> with SingleTickerProvider
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [AppColors.gradientStart, AppColors.gradientMid, AppColors.gradientEnd],
+              colors: [
+                AppColors.gradientStart,
+                AppColors.gradientMid,
+                AppColors.gradientEnd,
+              ],
             ),
           ),
           child: Obx(() {
             if (controller.loading.value && controller.job.value == null) {
-              return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+              return const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              );
             }
-            if (controller.error.value.isNotEmpty && controller.job.value == null) {
+            if (controller.error.value.isNotEmpty &&
+                controller.job.value == null) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -119,14 +127,22 @@ class _JobDetailViewState extends State<JobDetailView> with SingleTickerProvider
                         style: GoogleFonts.inter(color: AppColors.slate400),
                       ),
                       const SizedBox(height: 16),
-                      FilledButton(onPressed: controller.refreshAll, child: const Text('Retry')),
+                      FilledButton(
+                        onPressed: controller.refreshAll,
+                        child: const Text('Retry'),
+                      ),
                     ],
                   ),
                 ),
               );
             }
             if (controller.job.value == null) {
-              return Center(child: Text('No data', style: GoogleFonts.inter(color: AppColors.slate400)));
+              return Center(
+                child: Text(
+                  'No data',
+                  style: GoogleFonts.inter(color: AppColors.slate400),
+                ),
+              );
             }
             return TabBarView(
               controller: _tabs,

@@ -29,6 +29,9 @@ export function CertificatePrintTemplate({
   branding: CompanyBranding;
 }) {
   const doc = certificate.document;
+  if (doc.typeSlug === 'portable_appliance_test') {
+    return <PatPrintTemplate certificate={certificate} branding={branding} />;
+  }
   const inst = doc.installation;
   const sup = doc.supply;
   const sections = [...new Set(INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))];
@@ -165,6 +168,76 @@ export function CertificatePrintTemplate({
       <footer className="mt-8 border-t border-slate-200 pt-3 text-center text-xs text-slate-500">
         {branding.footer_text || `${branding.company_name} · ${certificate.certificate_number}`}
       </footer>
+    </div>
+  );
+}
+
+function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCertificate; branding: CompanyBranding }) {
+  const pat = certificate.document.pat;
+  if (!pat) return null;
+  return (
+    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
+      <CertificateBrandedHeader branding={branding} certificateNumber={certificate.certificate_number} />
+      <section className="mb-6">
+        <h1 className="text-lg font-bold">Portable Appliance Test Certificate</h1>
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <InfoBlock title="Registered Business" lines={[pat.registeredBusiness.name, pat.registeredBusiness.address, pat.registeredBusiness.phone]} />
+          <InfoBlock title="Job Address" lines={[pat.jobAddress.customerName, pat.jobAddress.address, pat.jobAddress.landlordAgent]} />
+          <InfoBlock
+            title="Certificate Information"
+            lines={[
+              `Date: ${pat.certificateInfo.date || '—'}`,
+              `Number: ${pat.certificateInfo.number || certificate.certificate_number}`,
+              `Total tested: ${pat.certificateInfo.totalTested || '0'}`,
+              `Passed: ${pat.certificateInfo.totalPassed || '0'}`,
+              `Failed: ${pat.certificateInfo.totalFailed || '0'}`,
+            ]}
+          />
+        </div>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Appliance details and test results</h2>
+        <table className="w-full border-collapse text-[9px]">
+          <thead>
+            <tr className="bg-slate-100">
+              {['ID', 'Brand', 'Description', 'Location', 'Serial no', 'Retest period', 'Status'].map((h) => (
+                <th key={h} className="border border-slate-300 px-1 py-0.5 text-left">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pat.appliances.map((row) => (
+              <tr key={row.id}>
+                <td className="border border-slate-200 px-1">{row.applianceId}</td>
+                <td className="border border-slate-200 px-1">{row.brand || 'N/A'}</td>
+                <td className="border border-slate-200 px-1">{row.description}</td>
+                <td className="border border-slate-200 px-1">{row.location}</td>
+                <td className="border border-slate-200 px-1">{row.serialNo || 'N/A'}</td>
+                <td className="border border-slate-200 px-1">{row.retestPeriod}</td>
+                <td className="border border-slate-200 px-1 font-bold">{row.status ? row.status[0].toUpperCase() + row.status.slice(1) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="grid grid-cols-2 gap-4">
+        <InfoBlock title="Test equipment used" lines={[pat.testEquipment.make, `Serial no: ${pat.testEquipment.serialNo}`, pat.testEquipment.notes]} />
+        <InfoBlock title="Engineer declaration" lines={[pat.engineer.name, pat.engineer.notes]} />
+      </section>
+      <footer className="mt-8 border-t border-slate-200 pt-3 text-center text-xs text-slate-500">
+        {branding.footer_text || `${branding.company_name} · ${certificate.certificate_number}`}
+      </footer>
+    </div>
+  );
+}
+
+function InfoBlock({ title, lines }: { title: string; lines: string[] }) {
+  return (
+    <div className="rounded border border-slate-200 p-3">
+      <h2 className="mb-2 font-bold">{title}</h2>
+      <div className="space-y-1 whitespace-pre-wrap text-xs">
+        {lines.filter((line) => line && line.trim()).map((line, idx) => <p key={idx}>{line}</p>)}
+      </div>
     </div>
   );
 }

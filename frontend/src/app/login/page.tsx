@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [fieldWebNotice, setFieldWebNotice] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const router = useRouter();
 
@@ -34,6 +35,13 @@ export default function LoginPage() {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams(window.location.search);
     if (p.get('reason') === 'field') setFieldWebNotice(true);
+    const err = p.get('error');
+    if (err) {
+      setError(err);
+      const u = new URL(window.location.href);
+      u.searchParams.delete('error');
+      window.history.replaceState(null, '', `${u.pathname}${u.search}`);
+    }
   }, []);
 
   const containerVariants: Variants = {
@@ -59,6 +67,7 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSubmitting(true);
 
     try {
       const data = await postJson<LoginResponse>('/auth/login', { email, password });
@@ -83,8 +92,17 @@ export default function LoginPage() {
 
       router.push('/dashboard');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to sign in. Please try again.';
+      let message = 'Unable to sign in. Please try again.';
+      if (err instanceof Error) {
+        message = err.message;
+        if (message === 'Failed to fetch' || err.name === 'TypeError') {
+          message =
+            'Cannot reach the API server. Start the backend (npm run dev in backend/) and confirm BACKEND_DEV_ORIGIN in frontend/.env matches its port.';
+        }
+      }
       setError(message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -217,11 +235,12 @@ export default function LoginPage() {
               whileTap={{ scale: 0.98 }}
             >
               <button 
-                type="submit" 
-              className="relative flex w-full justify-center overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-3 py-3 text-sm font-semibold leading-6 text-slate-950 shadow-[0_18px_45px_rgba(34,197,94,0.65)] transition-all duration-200 mt-3 hover:shadow-[0_22px_70px_rgba(34,197,94,0.8)] focus-visible:outline-none active:scale-[0.99]"
+                type="submit"
+                disabled={submitting}
+              className="relative flex w-full justify-center overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-3 py-3 text-sm font-semibold leading-6 text-slate-950 shadow-[0_18px_45px_rgba(34,197,94,0.65)] transition-all duration-200 mt-3 hover:shadow-[0_22px_70px_rgba(34,197,94,0.8)] focus-visible:outline-none active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
               <span className="absolute inset-0 bg-gradient-to-r from-white/20/30 via-transparent to-white/10 opacity-0 transition-opacity duration-200 hover:opacity-100" />
-              <span className="relative">Sign in</span>
+              <span className="relative">{submitting ? 'Signing in…' : 'Sign in'}</span>
               </button>
             </motion.div>
           </motion.form>

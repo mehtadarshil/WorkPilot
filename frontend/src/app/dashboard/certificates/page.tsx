@@ -17,6 +17,12 @@ import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificate
 
 const PAGE_SIZE = 15;
 
+function certificateEditorHref(cert: ElectricalCertificate) {
+  return cert.type_slug === 'portable_appliance_test'
+    ? `/dashboard/certificates/${cert.id}/pat`
+    : `/dashboard/certificates/${cert.id}/installation-details`;
+}
+
 export default function ElectricalCertificatesPage() {
   const router = useRouter();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -166,7 +172,7 @@ export default function ElectricalCertificatesPage() {
       setRowMenuId(null);
       setConvertOpen(false);
       setConvertSource(null);
-      router.push(`/dashboard/certificates/${res.certificate.id}/installation-details`);
+      router.push(certificateEditorHref(res.certificate));
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to create certificate');
     } finally {
@@ -207,7 +213,7 @@ export default function ElectricalCertificatesPage() {
         token,
       );
       setCreateOpen(false);
-      router.push(`/dashboard/certificates/${res.certificate.id}/installation-details`);
+      router.push(certificateEditorHref(res.certificate));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create certificate');
     } finally {
@@ -271,13 +277,18 @@ export default function ElectricalCertificatesPage() {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
-                  No certificates yet. Create your first EICR.
+                  No certificates yet. Create your first certificate.
                 </td>
               </tr>
             ) : (
               rows.map((c) => (
                 <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/80">
-                  <td className="px-4 py-3 font-mono font-semibold text-slate-900">{c.certificate_number}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-mono font-semibold text-slate-900">{c.certificate_number}</p>
+                    <p className="text-xs text-slate-500">
+                      {CERTIFICATE_TYPE_CATALOG.find((t) => t.slug === c.type_slug)?.shortLabel ?? c.type_slug}
+                    </p>
+                  </td>
                   <td className="px-4 py-3">{c.customer_full_name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{c.installation_label ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{c.job_number ?? '—'}</td>
@@ -293,7 +304,7 @@ export default function ElectricalCertificatesPage() {
                   <td className="px-4 py-3 text-right">
                     <div className="relative inline-flex items-center gap-2">
                       <Link
-                        href={`/dashboard/certificates/${c.id}/installation-details`}
+                        href={certificateEditorHref(c)}
                         className="font-semibold text-[#14B8A6] hover:underline"
                       >
                         Open

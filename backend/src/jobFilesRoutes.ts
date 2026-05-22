@@ -406,6 +406,45 @@ export function mountJobFilesRoutes(app: Application, deps: JobFilesRouteDeps): 
       }
 
       if (customerId != null) {
+        const reportRows = await pool.query<{
+          id: number;
+          report_title: string | null;
+          certificate_number: string | null;
+          updated_at: Date;
+          template_name: string | null;
+        }>(
+          `SELECT r.id, r.report_title, r.certificate_number, r.updated_at, t.name AS template_name
+           FROM customer_site_reports r
+           LEFT JOIN site_report_templates t ON t.id = r.template_id
+           WHERE r.customer_id = $1
+             AND (
+               r.job_id = $2
+               OR (
+                 r.job_id IS NULL
+                 AND (r.work_address_id IS NULL OR r.work_address_id IS NOT DISTINCT FROM $3::integer)
+               )
+             )
+           ORDER BY r.updated_at DESC`,
+          [customerId, jobId, workAddressId],
+        );
+        for (const r of reportRows.rows) {
+          const title = String(r.report_title || r.template_name || `Site report #${r.id}`).trim();
+          files.push({
+            id: `site_report_${r.id}`,
+            source: 'Reports',
+            source_detail: r.certificate_number ? `Certificate ${r.certificate_number}` : 'Generated report PDF',
+            label: `${title.replace(/[/\\]/g, '_') || `site-report-${r.id}`}.pdf`,
+            kind: 'pdf',
+            content_type: 'application/pdf',
+            byte_size: null,
+            created_at: (r.updated_at as Date).toISOString(),
+            access: 'bearer',
+            href: `/customers/${customerId}/site-report/${r.id}/pdf`,
+          });
+        }
+      }
+
+      if (customerId != null) {
         const cf = await pool.query<{
           id: number;
           original_filename: string;

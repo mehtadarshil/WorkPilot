@@ -11,7 +11,7 @@ export default function DashboardPage() {
     if (typeof window === 'undefined') return;
     const userJson = window.localStorage.getItem('wp_user');
     if (!userJson) {
-      router.replace('/login');
+      router.replace('/login?error=Your+session+has+expired.+Please+sign+in+again.');
       return;
     }
     try {
@@ -19,7 +19,7 @@ export default function DashboardPage() {
       setReady(true);
       router.replace(user.role === 'SUPER_ADMIN' ? '/dashboard/clients' : '/dashboard/jobs');
     } catch {
-      router.replace('/login');
+      router.replace('/login?error=Saved+session+data+was+invalid.+Please+sign+in+again.');
     }
   }, [router]);
 

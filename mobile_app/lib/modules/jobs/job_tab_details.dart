@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -101,7 +100,7 @@ class JobTabDetails extends StatelessWidget {
           Obx(() {
             return DropdownButtonFormField<String>(
               isExpanded: true,
-              value: _str(j, 'state').isEmpty ? 'draft' : _str(j, 'state'),
+              initialValue: _str(j, 'state').isEmpty ? 'draft' : _str(j, 'state'),
               dropdownColor: const Color(0xFF1e293b),
               style: GoogleFonts.inter(color: Colors.white),
               decoration: const InputDecoration(
@@ -230,8 +229,17 @@ class JobTabDetails extends StatelessWidget {
 
   Future<void> _showAddVisit(BuildContext context, JobDetailController c) async {
     DateTime start = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
     int? officerId;
+    final durationC = TextEditingController(text: '60');
     final notesC = TextEditingController();
+    final officers = <Map<String, dynamic>>[];
+    final seenOfficerIds = <int>{};
+    for (final o in c.officers) {
+      final id = (o['id'] as num?)?.toInt();
+      if (id == null || !seenOfficerIds.add(id)) continue;
+      officers.add(o);
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -243,7 +251,7 @@ class JobTabDetails extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
-                    title: const Text('Start'),
+                    title: const Text('Date'),
                     subtitle: Text(start.toIso8601String().split('T').first),
                     onTap: () async {
                       final d = await showDatePicker(
@@ -252,15 +260,31 @@ class JobTabDetails extends StatelessWidget {
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
                       );
-                      if (d != null) setS(() => start = DateTime(d.year, d.month, d.day, 9));
+                      if (d != null) setS(() => start = DateTime(d.year, d.month, d.day));
                     },
                   ),
+                  ListTile(
+                    title: const Text('Start time'),
+                    subtitle: Text(startTime.format(ctx)),
+                    onTap: () async {
+                      final t = await showTimePicker(
+                        context: ctx,
+                        initialTime: startTime,
+                      );
+                      if (t != null) setS(() => startTime = t);
+                    },
+                  ),
+                  TextField(
+                    controller: durationC,
+                    decoration: const InputDecoration(labelText: 'Duration (minutes)'),
+                    keyboardType: TextInputType.number,
+                  ),
                   DropdownButtonFormField<int?>(
-                    value: officerId,
+                    initialValue: officerId,
                     decoration: const InputDecoration(labelText: 'Officer'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('Unassigned')),
-                      for (final o in c.officers)
+                      for (final o in officers)
                         DropdownMenuItem(
                           value: (o['id'] as num?)?.toInt(),
                           child: Text((o['full_name'] as String?) ?? ''),
@@ -282,13 +306,27 @@ class JobTabDetails extends StatelessWidget {
     );
     if (ok == true) {
       try {
-        await c.postDiaryVisit(officerId: officerId, start: start, notes: notesC.text.trim().isEmpty ? null : notesC.text.trim());
+        final duration = int.tryParse(durationC.text.trim()) ?? 60;
+        final startDateTime = DateTime(
+          start.year,
+          start.month,
+          start.day,
+          startTime.hour,
+          startTime.minute,
+        );
+        await c.postDiaryVisit(
+          officerId: officerId,
+          start: startDateTime,
+          durationMinutes: duration.clamp(1, 1440),
+          notes: notesC.text.trim().isEmpty ? null : notesC.text.trim(),
+        );
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
         }
       }
     }
+    durationC.dispose();
     notesC.dispose();
   }
 
@@ -325,7 +363,7 @@ class JobTabDetails extends StatelessWidget {
                         ],
                       ),
                     );
-                    if (ok == true && id != null) {
+                    if (ok == true) {
                       try {
                         await c.deleteDiaryVisit(id);
                       } catch (err) {

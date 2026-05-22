@@ -50,6 +50,9 @@ function photosHtml(photos: { caption: string; dataUrl: string }[], title: strin
 
 export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
   const { document: doc, branding: b } = input;
+  if (doc.typeSlug === 'portable_appliance_test') {
+    return buildPatCertificatePdfHtml(input);
+  }
   const inst = doc.installation;
   const sup = doc.supply;
   const accent = b.accent_color;
@@ -208,6 +211,90 @@ export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
   <div class="footer">
     ${b.footer_text ? esc(b.footer_text) : `${esc(b.company_name)} · ${esc(input.certificateNumber)}`}
   </div>
+</body>
+</html>`;
+}
+
+function buildPatCertificatePdfHtml(input: CertificatePdfInput): string {
+  const { document: doc, branding: b } = input;
+  const pat = doc.pat;
+  if (!pat) throw new Error('PAT_DOCUMENT_MISSING');
+  const accent = b.accent_color;
+  const applianceRows = pat.appliances
+    .map((a) => {
+      const status = a.status ? a.status[0].toUpperCase() + a.status.slice(1) : '—';
+      return `<tr><td>${esc(a.applianceId)}</td><td>${esc(a.brand || 'N/A')}</td><td>${esc(a.description)}</td><td>${esc(a.location)}</td><td>${esc(a.serialNo || 'N/A')}</td><td>${esc(a.retestPeriod)}</td><td class="status">${esc(status)}</td></tr>`;
+    })
+    .join('');
+  const block = (title: string, lines: string[]) => `
+    <div class="info-block">
+      <h2>${esc(title)}</h2>
+      ${lines.filter((line) => line.trim()).map((line) => `<p>${esc(line).replace(/\n/g, '<br/>')}</p>`).join('')}
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>${esc(input.certificateNumber)} — PAT</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 9pt; color: #0f172a; margin: 0; }
+  .header { display: flex; gap: 16px; border-bottom: 3px solid ${accent}; padding-bottom: 12px; margin-bottom: 16px; }
+  .logo { width: 72px; height: 72px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .company h1 { margin: 0; font-size: 14pt; color: ${accent}; }
+  .company p { margin: 2px 0 0; font-size: 9pt; color: #475569; }
+  .cert-meta { margin-left: auto; text-align: right; font-size: 9pt; }
+  .cert-meta strong { display: block; font-size: 12pt; color: #0f172a; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .info-block { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; page-break-inside: avoid; }
+  h2 { font-size: 10pt; margin: 0 0 6px; color: #0f172a; }
+  p { margin: 2px 0; color: #334155; }
+  table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+  th, td { border: 1px solid #cbd5e1; padding: 3px 4px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; color: #475569; }
+  .status { font-weight: 700; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 8pt; color: #64748b; text-align: center; }
+</style>
+</head>
+<body>
+  <header class="header">
+    ${b.company_logo ? `<div class="logo"><img src="${b.company_logo}" alt="Logo"/></div>` : ''}
+    <div class="company">
+      <h1>${esc(b.company_name)}</h1>
+      ${b.company_address ? `<p>${esc(b.company_address).replace(/\n/g, '<br/>')}</p>` : ''}
+      <p>${[b.company_phone, b.company_email, b.company_website].filter((s): s is string => Boolean(s)).map(esc).join(' · ')}</p>
+    </div>
+    <div class="cert-meta">
+      <strong>Portable Appliance Test Certificate</strong>
+      <span>${esc(input.certificateNumber)}</span>
+    </div>
+  </header>
+  <section class="grid">
+    ${block('Registered Business', [pat.registeredBusiness.name, pat.registeredBusiness.address, pat.registeredBusiness.phone])}
+    ${block('Job Address', [pat.jobAddress.customerName || input.customerName || '', pat.jobAddress.address || input.installationLabel || '', pat.jobAddress.landlordAgent])}
+    ${block('Certificate Information', [
+      `Date: ${pat.certificateInfo.date || '—'}`,
+      `Number: ${pat.certificateInfo.number || input.certificateNumber}`,
+      `Total appliance tested: ${pat.certificateInfo.totalTested || '0'}`,
+      `Total appliance passed: ${pat.certificateInfo.totalPassed || '0'}`,
+      `Total appliance failed: ${pat.certificateInfo.totalFailed || '0'}`,
+    ])}
+  </section>
+  <section>
+    <h2>Appliance details and test results</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Brand</th><th>Description</th><th>Location</th><th>Serial no</th><th>Retest period</th><th>Status</th></tr></thead>
+      <tbody>${applianceRows}</tbody>
+    </table>
+  </section>
+  <section class="grid" style="grid-template-columns: repeat(2, 1fr); margin-top: 14px;">
+    ${block('Test equipment used', [pat.testEquipment.make, `Serial no: ${pat.testEquipment.serialNo}`, pat.testEquipment.notes])}
+    ${block('Engineer declaration', [pat.engineer.name, pat.engineer.notes])}
+  </section>
+  <div class="footer">${b.footer_text ? esc(b.footer_text) : `${esc(b.company_name)} · ${esc(input.certificateNumber)}`}</div>
 </body>
 </html>`;
 }

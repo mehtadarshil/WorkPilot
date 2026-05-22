@@ -3,6 +3,7 @@ export type CertificateStatus = 'in_progress' | 'completed' | 'archived';
 export type BoardStatus = 'in_progress' | 'done';
 
 export type InspectionOutcome = '' | 'pass' | 'c1' | 'c2' | 'c3' | 'fi' | 'lim' | 'nv' | 'na' | 'x';
+export type ElectricalCertificateTypeSlug = 'eicr_18e_a3' | 'portable_appliance_test';
 
 export interface CertificatePhoto {
   id: string;
@@ -90,9 +91,50 @@ export interface BoardRecord {
   photos: CertificatePhoto[];
 }
 
+export interface PatApplianceRow {
+  id: string;
+  applianceId: string;
+  brand: string;
+  description: string;
+  location: string;
+  serialNo: string;
+  retestPeriod: string;
+  status: '' | 'pass' | 'fail';
+}
+
+export interface PatCertificateData {
+  registeredBusiness: {
+    name: string;
+    address: string;
+    phone: string;
+  };
+  jobAddress: {
+    customerName: string;
+    address: string;
+    landlordAgent: string;
+  };
+  certificateInfo: {
+    date: string;
+    number: string;
+    totalTested: string;
+    totalPassed: string;
+    totalFailed: string;
+  };
+  appliances: PatApplianceRow[];
+  testEquipment: {
+    make: string;
+    serialNo: string;
+    notes: string;
+  };
+  engineer: {
+    name: string;
+    notes: string;
+  };
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
-  typeSlug: 'eicr_18e_a3';
+  typeSlug: ElectricalCertificateTypeSlug;
   installation: {
     hideClientOnReport: boolean;
     reason: string;
@@ -162,6 +204,7 @@ export interface ElectricalCertificateDocument {
   inspectionSchedule: Record<string, InspectionOutcome>;
   boards: BoardRecord[];
   appendix: { content: string; photos: CertificatePhoto[] };
+  pat?: PatCertificateData;
 }
 
 export interface ValidationIssue {
@@ -194,6 +237,12 @@ export const CERTIFICATE_TYPE_CATALOG = [
     title: 'Electrical Installation Condition Report',
     subtitle: 'BS 7671 — 18th Edition Amendment 3',
     shortLabel: 'EICR',
+  },
+  {
+    slug: 'portable_appliance_test',
+    title: 'Portable Appliance Test Certificate',
+    subtitle: 'PAT certificate with appliance Pass/Fail results',
+    shortLabel: 'PAT',
   },
 ] as const;
 

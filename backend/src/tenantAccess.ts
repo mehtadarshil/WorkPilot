@@ -36,14 +36,56 @@ export function isTenantOwner(user: TenantAuthUser): boolean {
 
 /**
  * Returns whether the user may perform actions keyed by `permission`.
- * SUPER_ADMIN and tenant owner ADMIN: always true. STAFF: must have flag. OFFICER: false here (use officer routes).
+ * SUPER_ADMIN always true. ADMIN defaults to true unless a permissions map exists.
+ * STAFF must have the flag. OFFICER: false here (use officer routes).
  */
 export function staffHasPermission(user: TenantAuthUser, permission: TenantPermissionKey): boolean {
   if (user.role === 'SUPER_ADMIN') return true;
-  if (user.role === 'ADMIN') return isTenantOwner(user);
+  if (user.role === 'ADMIN') {
+    if (!isTenantOwner(user)) return false;
+    const p = user.permissions;
+    if (p == null) return true;
+    if (typeof p !== 'object') return false;
+    if (p[permission] === true) return true;
+    if (
+      (permission === 'settings_invoice' || permission === 'settings_quotation' || permission === 'settings_email') &&
+      p.settings_company === true
+    ) {
+      return true;
+    }
+    if (
+      permission.startsWith('settings_') &&
+      permission !== 'settings_company' &&
+      permission !== 'settings_invoice' &&
+      permission !== 'settings_quotation' &&
+      permission !== 'settings_email' &&
+      p.settings_master_data === true
+    ) {
+      return true;
+    }
+    return false;
+  }
   if (user.role === 'STAFF') {
     const p = user.permissions;
     if (p && typeof p === 'object' && p[permission] === true) return true;
+    if (p && typeof p === 'object') {
+      if (
+        (permission === 'settings_invoice' || permission === 'settings_quotation' || permission === 'settings_email') &&
+        p.settings_company === true
+      ) {
+        return true;
+      }
+      if (
+        permission.startsWith('settings_') &&
+        permission !== 'settings_company' &&
+        permission !== 'settings_invoice' &&
+        permission !== 'settings_quotation' &&
+        permission !== 'settings_email' &&
+        p.settings_master_data === true
+      ) {
+        return true;
+      }
+    }
     return false;
   }
   return false;
@@ -72,7 +114,8 @@ export function tenantCrmAccessAllowed(
 ): boolean {
   if (!user) return false;
   const m = (method || 'GET').toUpperCase();
-  if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (user.role === 'ADMIN') return staffHasPermission(user, permission);
   if (user.role === 'STAFF') return staffHasPermission(user, permission);
   if (user.role === 'OFFICER') {
     if (m !== 'GET' && m !== 'HEAD') return false;

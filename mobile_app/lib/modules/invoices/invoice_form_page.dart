@@ -7,6 +7,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/invoices_repository.dart';
+import '../../widgets/searchable_select_field.dart';
 import 'invoice_helpers.dart';
 
 class _LineRow {
@@ -69,6 +70,42 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
   double _loadedTotalPaid = 0;
 
   static const _currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
+
+  List<SelectOption<int>> _uniqueOptions(
+    List<Map<String, dynamic>> rows, {
+    required String fallbackPrefix,
+    required String Function(Map<String, dynamic>) labelFor,
+  }) {
+    final seen = <int>{};
+    final options = <SelectOption<int>>[];
+    for (final row in rows) {
+      final id = (row['id'] as num?)?.toInt();
+      if (id == null || !seen.add(id)) continue;
+      final label = labelFor(row).trim();
+      options.add(SelectOption<int>(
+        value: id,
+        label: label.isEmpty ? '$fallbackPrefix #$id' : label,
+      ));
+    }
+    return options;
+  }
+
+  List<SelectOption<int>> get _jobOptions => _uniqueOptions(
+        _jobs,
+        fallbackPrefix: 'Job',
+        labelFor: (j) => (j['title'] as String?) ?? '',
+      );
+
+  List<SelectOption<int>> get _workAddressOptions => _uniqueOptions(
+        _workAddresses,
+        fallbackPrefix: 'Site',
+        labelFor: (w) {
+          final name = (w['name'] as String?)?.trim();
+          final line1 = (w['address_line_1'] as String?)?.trim();
+          final title = name?.isNotEmpty == true ? name! : 'Site';
+          return line1?.isNotEmpty == true ? '$title — $line1' : title;
+        },
+      );
 
   @override
   void initState() {
@@ -356,35 +393,31 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         ),
                       ),
                     if (_editId != null) const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      isExpanded: true,
-                      initialValue: _customerId,
-                      dropdownColor: const Color(0xFF1e293b),
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Customer *',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        floatingLabelBehavior: FloatingLabelBehavior.always,
-                      ),
-                      items: [
+                    SearchableSelectField<int>(
+                      label: 'Customer *',
+                      hint: 'Choose customer',
+                      sheetTitle: 'Customer',
+                      value: _customerId,
+                      enabled: !_workSiteLocked && !_saving,
+                      options: [
                         for (final c in _customers)
-                          DropdownMenuItem<int>(
-                            value: (c['id'] as num?)?.toInt(),
-                            child: Text(
-                              (c['full_name'] as String?) ?? 'Customer',
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                          if ((c['id'] as num?) != null)
+                            SelectOption<int>(
+                              value: (c['id'] as num).toInt(),
+                              label: (c['full_name'] as String?)?.trim().isNotEmpty == true
+                                  ? c['full_name'] as String
+                                  : 'Customer #${c['id']}',
                             ),
-                          ),
                       ],
                       onChanged: _workSiteLocked
                           ? null
                           : (v) async {
+                              if (v == null) return;
                               setState(() {
                                 _customerId = v;
                                 _workAddressId = null;
                               });
-                              if (v != null) await _loadWorkAddresses(v);
+                              await _loadWorkAddresses(v);
                             },
                     ),
                     if (_workSiteLocked)
@@ -396,54 +429,28 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         ),
                       ),
                     const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      isExpanded: true,
-                      initialValue: _jobId,
-                      dropdownColor: const Color(0xFF1e293b),
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
-                        labelText: 'Related job (optional)',
-                        labelStyle: TextStyle(color: Colors.white70),
-                        floatingLabelBehavior: FloatingLabelBehavior.always,
-                      ),
-                      items: [
-                        const DropdownMenuItem<int>(value: null, child: Text('None')),
-                        for (final j in _jobs)
-                          DropdownMenuItem<int>(
-                            value: (j['id'] as num?)?.toInt(),
-                            child: Text(
-                              (j['title'] as String?) ?? 'Job',
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                      ],
+                    SearchableSelectField<int>(
+                      label: 'Related job (optional)',
+                      hint: 'None',
+                      sheetTitle: 'Related job',
+                      value: _jobOptions.any((o) => o.value == _jobId) ? _jobId : null,
+                      allowClear: true,
+                      clearLabel: 'None',
+                      options: _jobOptions,
                       onChanged: (v) => setState(() => _jobId = v),
                     ),
                     const SizedBox(height: 16),
                     if (_customerId != null && !_workSiteLocked) ...[
-                      DropdownButtonFormField<int>(
-                        isExpanded: true,
-                        initialValue: _workAddressId,
-                        dropdownColor: const Color(0xFF1e293b),
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: const InputDecoration(
-                          labelText: 'Work / site on invoice (optional)',
-                          labelStyle: TextStyle(color: Colors.white70),
-                          floatingLabelBehavior: FloatingLabelBehavior.always,
-                        ),
-                        items: [
-                          const DropdownMenuItem<int>(value: null, child: Text('Default billing address')),
-                          for (final w in _workAddresses)
-                            DropdownMenuItem<int>(
-                              value: (w['id'] as num?)?.toInt(),
-                              child: Text(
-                                '${(w['name'] as String?)?.trim().isNotEmpty == true ? w['name'] : 'Site'} — ${(w['address_line_1'] as String?) ?? ''}',
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ),
-                        ],
+                      SearchableSelectField<int>(
+                        label: 'Work / site on invoice (optional)',
+                        hint: 'Default billing address',
+                        sheetTitle: 'Work / site',
+                        value: _workAddressOptions.any((o) => o.value == _workAddressId)
+                            ? _workAddressId
+                            : null,
+                        allowClear: true,
+                        clearLabel: 'Default billing address',
+                        options: _workAddressOptions,
                         onChanged: (v) => setState(() => _workAddressId = v),
                       ),
                       const SizedBox(height: 16),

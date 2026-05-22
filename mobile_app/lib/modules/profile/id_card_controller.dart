@@ -6,6 +6,9 @@ import '../../data/models/mobile_profile.dart';
 class IdCardController extends GetxController {
   UserProfileCache get _cache => Get.find<UserProfileCache>();
 
+  /// `true` = front (portrait / identity), `false` = back (contact details).
+  final RxBool showFront = true.obs;
+
   MobileProfile? get profile => _cache.profile.value;
 
   String get companyName => _cache.companyName ?? 'WorkPilot';
@@ -32,4 +35,10 @@ class IdCardController extends GetxController {
   }
 
   Future<void> reload() => _cache.refresh();
+
+  @override
+  void onClose() {
+    showFront.value = true;
+    super.onClose();
+  }
 }

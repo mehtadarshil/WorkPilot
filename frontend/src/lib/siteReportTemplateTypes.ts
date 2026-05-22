@@ -1,4 +1,12 @@
-export type SiteReportFieldType = 'text' | 'textarea' | 'date' | 'yes_no_na' | 'static_text' | 'image' | 'signature';
+export type SiteReportFieldType =
+  | 'text'
+  | 'textarea'
+  | 'date'
+  | 'yes_no_na'
+  | 'pass_fail'
+  | 'static_text'
+  | 'image'
+  | 'signature';
 
 export type SiteReportTemplateField = {
   id: string;
@@ -51,6 +59,7 @@ export const SITE_REPORT_FIELD_TYPE_OPTIONS: { value: SiteReportFieldType; label
   { value: 'textarea', label: 'Long text / notes', hint: 'Multiple lines' },
   { value: 'date', label: 'Date', hint: 'Date picker' },
   { value: 'yes_no_na', label: 'Yes / No / N/A', hint: 'Radio choices including Not determined' },
+  { value: 'pass_fail', label: 'Pass / Fail', hint: 'Dropdown choices for test result status' },
   { value: 'static_text', label: 'Read-only text', hint: 'Instructions or legal wording shown to staff' },
   { value: 'image', label: 'Image (field)', hint: 'Upload one or more photos tied to this question' },
   { value: 'signature', label: 'Signature', hint: 'Sign on screen; stored as an image on the report' },
@@ -62,6 +71,35 @@ export const YES_NO_NA_OPTIONS: { value: string; label: string }[] = [
   { value: 'na', label: 'N/A' },
   { value: 'not_determined', label: 'Not determined' },
 ];
+
+export const PASS_FAIL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'pass', label: 'Pass' },
+  { value: 'fail', label: 'Fail' },
+];
+
+export function applyApplianceResultTotals(values: Record<string, string>): Record<string, string> {
+  let hasApplianceStatus = false;
+  let passed = 0;
+  let failed = 0;
+
+  for (const [key, raw] of Object.entries(values)) {
+    if (!/^appliance_\d{3}_status$/.test(key)) continue;
+    hasApplianceStatus = true;
+    const status = String(raw || '').trim().toLowerCase();
+    if (status === 'pass') passed += 1;
+    if (status === 'fail') failed += 1;
+  }
+
+  if (!hasApplianceStatus && values.total_appliance_passed === undefined && values.total_appliance_failed === undefined) {
+    return values;
+  }
+
+  return {
+    ...values,
+    total_appliance_passed: String(passed),
+    total_appliance_failed: String(failed),
+  };
+}
 
 function newKey(prefix: string): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -106,7 +144,7 @@ export function coerceSiteReportDefinition(raw: unknown): SiteReportTemplateDefi
     const id = typeof f.id === 'string' && f.id.trim() ? f.id.trim() : `field_${idx}`;
     const label = typeof f.label === 'string' ? f.label : '';
     const t = typeof f.type === 'string' ? f.type : 'text';
-    const allowed: SiteReportFieldType[] = ['text', 'textarea', 'date', 'yes_no_na', 'static_text', 'image', 'signature'];
+    const allowed: SiteReportFieldType[] = ['text', 'textarea', 'date', 'yes_no_na', 'pass_fail', 'static_text', 'image', 'signature'];
     const type = (allowed.includes(t as SiteReportFieldType) ? t : 'text') as SiteReportFieldType;
     const content = typeof f.content === 'string' ? f.content : undefined;
     const rows = typeof f.rows === 'number' && Number.isFinite(f.rows) ? Math.min(40, Math.max(1, Math.round(f.rows))) : undefined;

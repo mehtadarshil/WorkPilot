@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks, Bell } from 'lucide-react';
+import { FileCheck2, FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getJson, patchJson } from '../../apiClient';
+import type { TenantPermissionKey } from '../../../lib/tenantPermissions';
 import CustomerTypesSettings from './CustomerTypesSettings';
 import PriceBooksSettings from './PriceBooksSettings';
 import JobDescriptionsSettings from './JobDescriptionsSettings';
@@ -16,6 +17,7 @@ import ImportSettings from './ImportSettings';
 import JobReportTemplateSettings from './JobReportTemplateSettings';
 import SiteReportTemplatesSettings from './SiteReportTemplatesSettings';
 import AbortReasonsSettings from './AbortReasonsSettings';
+import CertificateNumberingSettings from './CertificateNumberingSettings';
 import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
 interface InvoiceSettings {
@@ -75,6 +77,7 @@ type SettingsTab =
   | 'company'
   | 'invoice'
   | 'quotation'
+  | 'certificates'
   | 'email'
   | 'service-reminders'
   | 'customer-types'
@@ -92,6 +95,7 @@ const SETTINGS_TAB_VALUES: SettingsTab[] = [
   'company',
   'invoice',
   'quotation',
+  'certificates',
   'email',
   'service-reminders',
   'customer-types',
@@ -106,6 +110,42 @@ const SETTINGS_TAB_VALUES: SettingsTab[] = [
   'import',
 ];
 
+const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, TenantPermissionKey> = {
+  company: 'settings_company',
+  invoice: 'settings_invoice',
+  quotation: 'settings_quotation',
+  certificates: 'settings_company',
+  email: 'settings_email',
+  'service-reminders': 'settings_service_reminders',
+  'customer-types': 'settings_customer_types',
+  'price-books': 'settings_price_books',
+  'job-descriptions': 'settings_job_descriptions',
+  'job-report-template': 'settings_job_report_template',
+  'site-report-templates': 'settings_site_report_templates',
+  'diary-abort-reasons': 'settings_diary_abort_reasons',
+  'business-units': 'settings_business_units',
+  'user-groups': 'settings_user_groups',
+  users: 'settings_users',
+  import: 'settings_import',
+};
+
+const LEGACY_MASTER_DATA_TABS: readonly SettingsTab[] = [
+  'customer-types',
+  'price-books',
+  'job-descriptions',
+  'job-report-template',
+  'site-report-templates',
+  'diary-abort-reasons',
+  'business-units',
+  'user-groups',
+  'import',
+];
+
+interface SettingsUser {
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
+  permissions?: Partial<Record<TenantPermissionKey, boolean>> | null;
+}
+
 function parseSettingsTabParam(raw: string | null): SettingsTab | null {
   if (!raw) return null;
   return SETTINGS_TAB_VALUES.includes(raw as SettingsTab) ? (raw as SettingsTab) : null;
@@ -113,6 +153,7 @@ function parseSettingsTabParam(raw: string | null): SettingsTab | null {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('company');
+  const [settingsUser, setSettingsUser] = useState<SettingsUser | null>(null);
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings | null>(null);
   const [quotationSettings, setQuotationSettings] = useState<QuotationSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -205,6 +246,32 @@ export default function SettingsPage() {
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
+  const canUseSettingsTab = useCallback((tab: SettingsTab): boolean => {
+    if (!settingsUser) return false;
+    if (settingsUser.role === 'SUPER_ADMIN' || settingsUser.role === 'OFFICER') return true;
+    if (settingsUser.role === 'ADMIN' && settingsUser.permissions == null) return true;
+    const key = SETTINGS_TAB_PERMISSIONS[tab];
+    if (settingsUser.permissions?.[key] === true) return true;
+    if (
+      (key === 'settings_invoice' || key === 'settings_quotation' || key === 'settings_email') &&
+      settingsUser.permissions?.settings_company === true
+    ) {
+      return true;
+    }
+    return settingsUser.permissions?.settings_master_data === true && LEGACY_MASTER_DATA_TABS.includes(tab);
+  }, [settingsUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.localStorage.getItem('wp_user');
+    if (!raw) return;
+    try {
+      setSettingsUser(JSON.parse(raw) as SettingsUser);
+    } catch {
+      setSettingsUser(null);
+    }
+  }, []);
+
   const fetchInvoiceSettings = useCallback(async () => {
     if (!token) return;
     try {
@@ -279,14 +346,22 @@ export default function SettingsPage() {
     if (t) setActiveTab(t);
   }, []);
 
+  useEffect(() => {
+    if (!settingsUser) return;
+    if (canUseSettingsTab(activeTab)) return;
+    const firstAllowed = SETTINGS_TAB_VALUES.find((tab) => canUseSettingsTab(tab));
+    if (firstAllowed) setActiveTab(firstAllowed);
+  }, [activeTab, canUseSettingsTab, settingsUser]);
+
   const goSettingsTab = useCallback((tab: SettingsTab) => {
+    if (!canUseSettingsTab(tab)) return;
     setActiveTab(tab);
     if (typeof window !== 'undefined') {
       const u = new URL(window.location.href);
       u.searchParams.set('tab', tab);
       window.history.replaceState(null, '', `${u.pathname}${u.search}`);
     }
-  }, []);
+  }, [canUseSettingsTab]);
 
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -426,6 +501,14 @@ export default function SettingsPage() {
             </button>
             <button
               type="button"
+              onClick={() => goSettingsTab('certificates')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'certificates' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <FileCheck2 className="size-4" />
+              Certificate Settings
+            </button>
+            <button
+              type="button"
               onClick={() => goSettingsTab('email')}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'email' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
@@ -524,6 +607,12 @@ export default function SettingsPage() {
 
           {/* Content Area */}
           <div className="flex-1 min-w-0">
+        {!canUseSettingsTab(activeTab) ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+            You do not have permission to open this Settings tab. Ask an admin to enable its separate Settings permission.
+          </div>
+        ) : (
+          <>
 
         {activeTab === 'company' && (
           <div className="mt-0">
@@ -1345,6 +1434,16 @@ export default function SettingsPage() {
           </motion.div>
         )}
 
+        {activeTab === 'certificates' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-b-xl border border-slate-200 bg-white overflow-hidden"
+          >
+            <CertificateNumberingSettings token={token} />
+          </motion.div>
+        )}
+
         {activeTab === 'service-reminders' && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -1465,6 +1564,8 @@ export default function SettingsPage() {
           >
             <ImportSettings />
           </motion.div>
+        )}
+          </>
         )}
           </div>
         </div>

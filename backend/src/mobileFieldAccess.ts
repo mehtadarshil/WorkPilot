@@ -38,7 +38,9 @@ export function fieldEffectivePerms(u: FieldMobileJwtUser): Record<TenantPermiss
     if (!Object.values(base).some(Boolean)) return presetFieldOfficerPermissions();
     return base;
   }
-  if (u.role === 'ADMIN') return presetManagerPermissions();
+  if (u.role === 'ADMIN') {
+    return u.permissions == null ? presetManagerPermissions() : normalizePermissionsJson(u.permissions);
+  }
   if (u.role === 'STAFF') return normalizePermissionsJson(u.permissions ?? {});
   return emptyPermissions();
 }

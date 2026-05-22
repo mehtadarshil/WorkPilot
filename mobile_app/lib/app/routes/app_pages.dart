@@ -45,6 +45,7 @@ import '../../modules/profile/id_card_binding.dart';
 import '../../modules/profile/id_card_view.dart';
 import '../../modules/profile/profile_edit_binding.dart';
 import '../../modules/profile/profile_edit_view.dart';
+import '../../modules/settings/settings_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -171,5 +172,6 @@ class AppPages {
       page: () => const CustomerAssetFormView(),
       binding: CustomerAssetFormBinding(),
     ),
+    GetPage<void>(name: AppRoutes.settings, page: () => const SettingsView()),
   ];
 }

@@ -25,6 +25,7 @@ abstract class AppRoutes {
   static const String customerWorkAddressForm = '/customers/work-address-form';
   static const String customerNewInvoice = '/customers/invoice-new';
   static const String customerAssetForm = '/customers/asset-form';
+  static const String settings = '/settings';
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
 }

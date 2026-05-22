@@ -9,6 +9,7 @@ import type {
   SiteReportTemplateSection,
 } from './siteReportTemplates/types';
 import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
+import { normalizeTemplateSiteReportDocument } from './siteReportTemplates/documentNormalize';
 
 type SectionImages = NonNullable<TemplateSiteReportDocument['section_images']>;
 type FieldImages = NonNullable<TemplateSiteReportDocument['field_images']>;
@@ -50,8 +51,17 @@ function yesNoLabel(raw: string): string {
   return m[raw] ?? raw;
 }
 
+function passFailLabel(raw: string): string {
+  const m: Record<string, string> = {
+    pass: 'Pass',
+    fail: 'Fail',
+  };
+  return m[raw] ?? raw;
+}
+
 function formatFieldValue(field: SiteReportTemplateField, value: string): string {
   if (field.type === 'yes_no_na') return value ? yesNoLabel(value) : '—';
+  if (field.type === 'pass_fail') return value ? passFailLabel(value) : '—';
   if (field.type === 'date') return value ? escapeHtml(value) : '—';
   if (field.type === 'textarea') return value ? nl2br(value) : '—';
   if (field.type === 'text') return value ? escapeHtml(value) : '—';
@@ -153,7 +163,7 @@ function fieldHasUserEntry(
   }
   const override = overrides[field.id];
   const rawVal = override !== undefined ? override : (values[field.id] ?? '');
-  if (field.type === 'yes_no_na') return rawVal.trim().length > 0;
+  if (field.type === 'yes_no_na' || field.type === 'pass_fail') return rawVal.trim().length > 0;
   if (field.type === 'text' || field.type === 'textarea' || field.type === 'date') return rawVal.trim().length > 0;
   return false;
 }
@@ -212,7 +222,7 @@ function renderFieldBlock(
   }
   const override = overrides[field.id];
   const rawVal = override !== undefined ? override : (values[field.id] ?? '');
-  if (field.type === 'yes_no_na' || field.type === 'text' || field.type === 'date' || field.type === 'textarea') {
+  if (field.type === 'yes_no_na' || field.type === 'pass_fail' || field.type === 'text' || field.type === 'date' || field.type === 'textarea') {
     const body = formatFieldValue(field, rawVal);
     return `<div class="field">${labelHtml}<div class="value">${body}</div></div>`;
   }
@@ -376,8 +386,11 @@ export async function getCustomerSiteReportPrintHtml(
 
   const row = rep.rows[0];
   const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, row.id);
-  const doc = row.document as TemplateSiteReportDocument;
-  if (!doc || doc.mode !== 'template_v1') throw new Error('INVALID_DOCUMENT');
+  const rawDoc = row.document as Partial<TemplateSiteReportDocument> | null;
+  if (!rawDoc || rawDoc.mode !== 'template_v1' || !Number.isFinite(Number(rawDoc.template_id))) {
+    throw new Error('INVALID_DOCUMENT');
+  }
+  const doc = normalizeTemplateSiteReportDocument(row.document, Number(rawDoc.template_id));
 
   const tpl = await pool.query<{ definition: unknown }>(
     'SELECT definition FROM site_report_templates WHERE id = $1 AND created_by = $2',

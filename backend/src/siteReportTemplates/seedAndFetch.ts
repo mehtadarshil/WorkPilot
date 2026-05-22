@@ -1,8 +1,10 @@
 import type { Pool } from 'pg';
+import { getDrainBlockingReportDefinition } from './drainBlockingReportDefinition';
 import { getFraTemplateDefinition } from './fraTemplateDefinition';
 import type { SiteReportTemplateDefinition } from './types';
 
 const FRA_SLUG = 'fra';
+const DRAIN_BLOCKING_SLUG = 'drain-blocking-report';
 
 export async function ensureFireRiskAssessmentTemplate(pool: Pool, userId: number): Promise<number> {
   const existing = await pool.query<{ id: number }>(
@@ -17,6 +19,23 @@ export async function ensureFireRiskAssessmentTemplate(pool: Pool, userId: numbe
      VALUES ($1, $2, $3::jsonb, $4, $4, NOW())
      RETURNING id`,
     ['Fire Risk Assessment', FRA_SLUG, JSON.stringify(def), userId],
+  );
+  return Number(ins.rows[0].id);
+}
+
+export async function ensureDrainBlockingReportTemplate(pool: Pool, userId: number): Promise<number> {
+  const existing = await pool.query<{ id: number }>(
+    `SELECT id FROM site_report_templates WHERE created_by = $1 AND slug = $2`,
+    [userId, DRAIN_BLOCKING_SLUG],
+  );
+  if ((existing.rowCount ?? 0) > 0) return Number(existing.rows[0].id);
+
+  const def = getDrainBlockingReportDefinition();
+  const ins = await pool.query<{ id: number }>(
+    `INSERT INTO site_report_templates (name, slug, definition, created_by, updated_by, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4, $4, NOW())
+     RETURNING id`,
+    ['Drain Blocking Report', DRAIN_BLOCKING_SLUG, JSON.stringify(def), userId],
   );
   return Number(ins.rows[0].id);
 }

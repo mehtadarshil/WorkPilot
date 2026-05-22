@@ -19,18 +19,60 @@ interface StoredUser {
 function hasNavPermission(user: StoredUser, key: TenantPermissionKey): boolean {
   if (user.role === 'OFFICER') return true;
   if (user.role === 'SUPER_ADMIN') return true;
-  if (user.role === 'ADMIN') return true;
-  if (user.role === 'STAFF') return user.permissions?.[key] === true;
+  if (user.role === 'ADMIN' && user.permissions == null) return true;
+  if (user.role === 'ADMIN' || user.role === 'STAFF') {
+    if (user.permissions?.[key] === true) return true;
+    if (
+      (key === 'settings_invoice' || key === 'settings_quotation' || key === 'settings_email') &&
+      user.permissions?.settings_company === true
+    ) {
+      return true;
+    }
+    if (
+      key.startsWith('settings_') &&
+      key !== 'settings_company' &&
+      key !== 'settings_invoice' &&
+      key !== 'settings_quotation' &&
+      key !== 'settings_email' &&
+      user.permissions?.settings_master_data === true
+    ) {
+      return true;
+    }
+    return false;
+  }
   return false;
 }
 
 function showSettingsNav(user: StoredUser): boolean {
   if (user.role === 'SUPER_ADMIN' || user.role === 'OFFICER') return true;
-  return (
-    hasNavPermission(user, 'settings_company') ||
-    hasNavPermission(user, 'settings_master_data') ||
-    hasNavPermission(user, 'field_users')
-  );
+  const settingsKeys: TenantPermissionKey[] = [
+    'settings_company',
+    'settings_invoice',
+    'settings_quotation',
+    'settings_email',
+    'settings_service_reminders',
+    'settings_customer_types',
+    'settings_price_books',
+    'settings_job_descriptions',
+    'settings_job_report_template',
+    'settings_site_report_templates',
+    'settings_diary_abort_reasons',
+    'settings_business_units',
+    'settings_user_groups',
+    'settings_users',
+    'settings_import',
+    'settings_master_data',
+  ];
+  return hasNavPermission(user, 'field_users') || settingsKeys.some((key) => hasNavPermission(user, key));
+}
+
+function redirectToLogin(router: ReturnType<typeof useRouter>, message: string) {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem('wp_token');
+    window.localStorage.removeItem('wp_user');
+  }
+  const q = new URLSearchParams({ error: message });
+  router.replace(`/login?${q.toString()}`);
 }
 
 export default function DashboardLayout({
@@ -40,46 +82,55 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Always null on first render so server HTML matches client hydration (no localStorage on SSR).
   const [user, setUser] = useState<StoredUser | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const token = window.localStorage.getItem('wp_token');
     const userJson = window.localStorage.getItem('wp_user');
     if (!token || !userJson) {
-      router.replace('/login');
+      redirectToLogin(router, 'Your session has expired. Please sign in again.');
       return;
     }
+    let parsed: StoredUser;
     try {
-      const parsed = JSON.parse(userJson) as StoredUser;
-      if (parsed.role === 'OFFICER') {
-        window.localStorage.removeItem('wp_token');
-        window.localStorage.removeItem('wp_user');
-        router.replace('/login?reason=field');
-        return;
-      }
-      setUser(parsed);
-      if (parsed.role === 'ADMIN' || parsed.role === 'STAFF') {
-        getJson<{ user: Record<string, unknown> }>('/auth/me', token)
-          .then((d) => {
-            const u = d.user as StoredUser & Record<string, unknown>;
-            const merged: StoredUser = {
-              ...parsed,
-              ...u,
-              id: (u.id as number) ?? parsed.id,
-              email: (u.email as string) ?? parsed.email,
-              role: (u.role as StoredUser['role']) ?? parsed.role,
-              permissions: (u.permissions as StoredUser['permissions']) ?? parsed.permissions,
-              is_tenant_owner: (u.is_tenant_owner as boolean | undefined) ?? parsed.is_tenant_owner,
-            };
-            window.localStorage.setItem('wp_user', JSON.stringify(merged));
-            setUser(merged);
-          })
-          .catch(() => {});
-      }
+      parsed = JSON.parse(userJson) as StoredUser;
     } catch {
-      router.replace('/login');
+      redirectToLogin(router, 'Saved session data was invalid. Please sign in again.');
+      return;
     }
+    if (parsed.role === 'OFFICER') {
+      window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_user');
+      router.replace('/login?reason=field&error=Field+accounts+must+use+the+WorkPilot+mobile+app.');
+      return;
+    }
+
+    // Restore session after hydration; localStorage is unavailable during SSR.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only auth bootstrap
+    setUser(parsed);
+    if (parsed.role !== 'ADMIN' && parsed.role !== 'STAFF') return;
+
+    getJson<{ user: Record<string, unknown> }>('/auth/me', token)
+      .then((d) => {
+        const u = d.user as StoredUser & Record<string, unknown>;
+        const merged: StoredUser = {
+          ...parsed,
+          ...u,
+          id: (u.id as number) ?? parsed.id,
+          email: (u.email as string) ?? parsed.email,
+          role: (u.role as StoredUser['role']) ?? parsed.role,
+          permissions: (u.permissions as StoredUser['permissions']) ?? parsed.permissions,
+          is_tenant_owner: (u.is_tenant_owner as boolean | undefined) ?? parsed.is_tenant_owner,
+        };
+        window.localStorage.setItem('wp_user', JSON.stringify(merged));
+        setUser(merged);
+      })
+      .catch((err) => {
+        const message =
+          err instanceof Error ? err.message : 'Could not verify your session. Please sign in again.';
+        redirectToLogin(router, message);
+      });
   }, [router]);
 
   const handleLogout = () => {

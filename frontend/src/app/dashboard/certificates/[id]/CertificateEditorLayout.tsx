@@ -8,6 +8,7 @@ import { getJson } from '../../../apiClient';
 import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
 import { CertificateEditorProvider } from '../CertificateEditorContext';
 import { CertificateEditorShell } from '../components/CertificateEditorShell';
+import { PatCertificateEditor } from '../components/PatCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -62,7 +63,11 @@ export default function CertificateEditorLayout({ children }: { children: React.
 
   return (
     <CertificateEditorProvider initial={certificate}>
-      <CertificateEditorShell>{children}</CertificateEditorShell>
+      {certificate.type_slug === 'portable_appliance_test' ? (
+        <PatCertificateEditor />
+      ) : (
+        <CertificateEditorShell>{children}</CertificateEditorShell>
+      )}
     </CertificateEditorProvider>
   );
 }

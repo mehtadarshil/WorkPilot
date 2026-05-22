@@ -126,10 +126,12 @@ class MobileHomeResponse {
   bool get showWorkHubTab {
     final roleUp = role.toUpperCase();
 
-    final hasPipeline = _perm('customers') ||
-        _perm('quotations') ||
-        _perm('invoices') ||
-        _perm('parts_catalog');
+    final hasPipeline =
+        _perm('customers') || _perm('quotations') || _perm('invoices');
+
+    final hasSettings = mobilePermissions.entries.any(
+      (e) => e.key.startsWith('settings_') && e.value,
+    );
 
     if (roleUp == 'OFFICER') {
       if (!officerFeatures) return false;
@@ -139,7 +141,7 @@ class MobileHomeResponse {
 
     // STAFF / ADMIN / SUPER_ADMIN: CRM hub from tenant permissions alone.
     if (hasPipeline) return true;
-    if (_perm('jobs') || _perm('certifications')) return true;
+    if (_perm('jobs') || hasSettings) return true;
     return false;
   }
 
@@ -158,7 +160,8 @@ class MobileHomeResponse {
       nextDiaryEvent: nextDiaryEvent,
       activeTimesheet: activeTimesheet,
       myOfficeTasksOpen: myOfficeTasksOpen ?? this.myOfficeTasksOpen,
-      myOfficeTasksCompleted: myOfficeTasksCompleted ?? this.myOfficeTasksCompleted,
+      myOfficeTasksCompleted:
+          myOfficeTasksCompleted ?? this.myOfficeTasksCompleted,
       mobilePermissions: mobilePermissions ?? this.mobilePermissions,
     );
   }

@@ -45,47 +45,46 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.invoices);
       return;
     }
+    if (module == 'settings') {
+      Get.toNamed(AppRoutes.settings);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
-  static const _tilesMeta = <String, ({String label, String subtitle, IconData icon, Color accent})>{
-    'customers': (
-      label: 'Customers',
-      subtitle: 'Accounts & contacts',
-      icon: Icons.people_alt_rounded,
-      accent: Color(0xFF5EEAD4),
-    ),
-    'quotations': (
-      label: 'Quotations',
-      subtitle: 'Quotes & pipeline',
-      icon: Icons.request_quote_rounded,
-      accent: Color(0xFF7DD3FC),
-    ),
-    'invoices': (
-      label: 'Invoices',
-      subtitle: 'Billing & payments',
-      icon: Icons.receipt_long_rounded,
-      accent: Color(0xFFC4B5FD),
-    ),
-    'parts_catalog': (
-      label: 'Part catalog',
-      subtitle: 'Parts & kits',
-      icon: Icons.inventory_2_rounded,
-      accent: Color(0xFF94A3B8),
-    ),
-    'certifications': (
-      label: 'Certifications',
-      subtitle: 'Types & compliance',
-      icon: Icons.verified_rounded,
-      accent: Color(0xFFFCD34D),
-    ),
-    'jobs': (
-      label: 'Jobs',
-      subtitle: 'Team job board',
-      icon: Icons.work_history_rounded,
-      accent: Color(0xFF6EE7B7),
-    ),
-  };
+  static const _tilesMeta =
+      <String, ({String label, String subtitle, IconData icon, Color accent})>{
+        'customers': (
+          label: 'Customers',
+          subtitle: 'Accounts & contacts',
+          icon: Icons.people_alt_rounded,
+          accent: Color(0xFF5EEAD4),
+        ),
+        'quotations': (
+          label: 'Quotations',
+          subtitle: 'Quotes & pipeline',
+          icon: Icons.request_quote_rounded,
+          accent: Color(0xFF7DD3FC),
+        ),
+        'invoices': (
+          label: 'Invoices',
+          subtitle: 'Billing & payments',
+          icon: Icons.receipt_long_rounded,
+          accent: Color(0xFFC4B5FD),
+        ),
+        'jobs': (
+          label: 'Jobs',
+          subtitle: 'Team job board',
+          icon: Icons.work_history_rounded,
+          accent: Color(0xFF6EE7B7),
+        ),
+        'settings': (
+          label: 'Settings',
+          subtitle: 'Company, users & templates',
+          icon: Icons.tune_rounded,
+          accent: Color(0xFFFCD34D),
+        ),
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -113,12 +112,15 @@ class WorkHubTab extends StatelessWidget {
         );
       }
 
+      final hasSettings = h.mobilePermissions.entries.any(
+        (e) => e.key.startsWith('settings_') && e.value,
+      );
+
       if (p('customers')) add('customers');
       if (p('quotations')) add('quotations');
       if (p('invoices')) add('invoices');
-      if (p('parts_catalog')) add('parts_catalog');
-      if (p('certifications')) add('certifications');
       if (p('jobs') && roleUp != 'OFFICER') add('jobs');
+      if (hasSettings && roleUp != 'OFFICER') add('settings');
 
       return CustomScrollView(
         physics: const BouncingScrollPhysics(),
@@ -187,10 +189,15 @@ class WorkHubTab extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: AppColors.whiteOverlay(0.2)),
+                                border: Border.all(
+                                  color: AppColors.whiteOverlay(0.2),
+                                ),
                                 color: AppColors.whiteOverlay(0.06),
                               ),
                               child: Text(
@@ -271,7 +278,10 @@ class WorkHubTab extends StatelessWidget {
           if (tiles.isEmpty)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 24,
+                ),
                 child: LayoutBuilder(
                   builder: (context, c) {
                     return GlassContainer.frostedGlass(
@@ -319,105 +329,119 @@ class WorkHubTab extends StatelessWidget {
                   crossAxisSpacing: 14,
                   childAspectRatio: 0.92,
                 ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final t = tiles[i];
-                    return LayoutBuilder(
-                      builder: (context, constraints) {
-                        return GlassContainer.frostedGlass(
-                          height: constraints.maxHeight,
-                          width: constraints.maxWidth,
-                          blur: 24,
-                          frostedOpacity: 0.1,
-                          borderRadius: BorderRadius.circular(22),
-                          borderWidth: 1,
-                          borderGradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color.lerp(Colors.white, t.accent, 0.35)!.withValues(alpha: 0.45),
-                              AppColors.whiteOverlay(0.06),
-                            ],
-                          ),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              AppColors.whiteOverlay(0.14),
-                              AppColors.blackOverlay(0.28),
-                              Color.lerp(const Color(0xFF0f172a), t.accent, 0.12)!,
-                            ],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.blackOverlay(0.4),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                            BoxShadow(
-                              color: t.accent.withValues(alpha: 0.08),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final t = tiles[i];
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      return GlassContainer.frostedGlass(
+                        height: constraints.maxHeight,
+                        width: constraints.maxWidth,
+                        blur: 24,
+                        frostedOpacity: 0.1,
+                        borderRadius: BorderRadius.circular(22),
+                        borderWidth: 1,
+                        borderGradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color.lerp(
+                              Colors.white,
+                              t.accent,
+                              0.35,
+                            )!.withValues(alpha: 0.45),
+                            AppColors.whiteOverlay(0.06),
                           ],
-                          padding: EdgeInsets.zero,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(22),
-                              onTap: () => _open(t.module),
-                              splashColor: t.accent.withValues(alpha: 0.12),
-                              highlightColor: t.accent.withValues(alpha: 0.06),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        _GlassIconOrb(icon: t.icon, accent: t.accent),
-                                        const Spacer(),
-                                        Icon(
-                                          Icons.arrow_outward_rounded,
-                                          size: 18,
-                                          color: AppColors.whiteOverlay(0.35),
-                                        ),
-                                      ],
-                                    ),
-                                    const Spacer(),
-                                    Text(
-                                      t.label,
-                                      style: GoogleFonts.inter(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                        letterSpacing: -0.2,
+                        ),
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.whiteOverlay(0.14),
+                            AppColors.blackOverlay(0.28),
+                            Color.lerp(
+                              const Color(0xFF0f172a),
+                              t.accent,
+                              0.12,
+                            )!,
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.blackOverlay(0.4),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                          BoxShadow(
+                            color: t.accent.withValues(alpha: 0.08),
+                            blurRadius: 24,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                        padding: EdgeInsets.zero,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(22),
+                            onTap: () => _open(t.module),
+                            splashColor: t.accent.withValues(alpha: 0.12),
+                            highlightColor: t.accent.withValues(alpha: 0.06),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                14,
+                                14,
+                                12,
+                                14,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _GlassIconOrb(
+                                        icon: t.icon,
+                                        accent: t.accent,
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      t.subtitle,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                        color: AppColors.whiteOverlay(0.52),
-                                        fontSize: 12,
-                                        height: 1.25,
-                                        fontWeight: FontWeight.w500,
+                                      const Spacer(),
+                                      Icon(
+                                        Icons.arrow_outward_rounded,
+                                        size: 18,
+                                        color: AppColors.whiteOverlay(0.35),
                                       ),
+                                    ],
+                                  ),
+                                  const Spacer(),
+                                  Text(
+                                    t.label,
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                      letterSpacing: -0.2,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    t.subtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      color: AppColors.whiteOverlay(0.52),
+                                      fontSize: 12,
+                                      height: 1.25,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                        );
-                      },
-                    );
-                  },
-                  childCount: tiles.length,
-                ),
+                        ),
+                      );
+                    },
+                  );
+                }, childCount: tiles.length),
               ),
             ),
         ],

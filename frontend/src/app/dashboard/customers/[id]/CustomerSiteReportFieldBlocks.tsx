@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- blob previews */
 import { ImagePlus, Loader2 } from 'lucide-react';
 import type { SiteReportTemplateField, SiteReportSectionImageRow } from '@/lib/siteReportTemplateTypes';
-import { YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
+import { PASS_FAIL_OPTIONS, YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
 import CustomerSiteReportSignaturePad from './CustomerSiteReportSignaturePad';
 
 export function SiteReportFieldImageList({
@@ -160,6 +160,22 @@ export function renderSiteReportFieldInput(
           Clear
         </label>
       </div>
+    );
+  }
+  if (f.type === 'pass_fail') {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+      >
+        <option value="">Select status</option>
+        {PASS_FAIL_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
     );
   }
   if (f.type === 'textarea') {

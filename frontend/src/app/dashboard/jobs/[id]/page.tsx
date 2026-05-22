@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } fro
 import { useRouter, useParams } from 'next/navigation';
 import { deleteRequest, getJson, patchJson, postJson } from '../../../apiClient';
 import JobOfficeTasksTab from './JobOfficeTasksTab';
-import JobPartsTab from './JobPartsTab';
 import JobReportTab from './JobReportTab';
 import JobClientPanelTab from './JobClientPanelTab';
 import JobFilesTab from './JobFilesTab';
@@ -696,8 +695,6 @@ export default function JobDetailsPage() {
     'Reports',
     'Client panel',
     'Reminders',
-    'Parts',
-    'Certificates',
     'Notes',
     'Files',
     'Invoices',
@@ -1027,8 +1024,6 @@ export default function JobDetailsPage() {
               officers={officers}
               onRefresh={fetchJobDetails}
             />
-          ) : activeTab === 'Parts' ? (
-            <JobPartsTab jobId={id} />
           ) : activeTab === 'Files' ? (
             token ? (
               <JobFilesTab jobId={id} token={token} />

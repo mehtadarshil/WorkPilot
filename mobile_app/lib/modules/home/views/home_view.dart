@@ -7,10 +7,10 @@ import '../../../app/routes/app_routes.dart';
 import '../../../core/offline/connectivity_service.dart';
 import '../../../core/offline/offline_queue_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/user_profile_cache.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
-import '../../../data/repositories/mobile_profile_repository.dart';
 import '../../diary_event/diary_event_detail_controller.dart';
 import '../../profile/widgets/profile_avatar_button.dart';
 import '../../legal/legal_document_view.dart';
@@ -751,7 +751,7 @@ class _HomeGlassCard extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-            child: child,
+            child: SizedBox(width: double.infinity, child: child),
           ),
         ),
       ),
@@ -2004,9 +2004,11 @@ class _ProfileTab extends GetView<HomeController> {
                 ],
               ),
             ),
-            Obx(() => _ProfileContactSummary(
-                  key: ValueKey('contact-${controller.profileRevision.value}'),
-                )),
+            Obx(
+              () => _ProfileContactSummary(
+                key: ValueKey('contact-${controller.profileRevision.value}'),
+              ),
+            ),
             const SizedBox(height: 14),
             _HomeGlassCard(
               child: Obx(() {
@@ -2331,60 +2333,90 @@ class _ProfileCardEditButton extends StatelessWidget {
   }
 }
 
-class _ProfileContactSummary extends StatefulWidget {
+class _ProfileContactSummary extends StatelessWidget {
   const _ProfileContactSummary({super.key});
 
   @override
-  State<_ProfileContactSummary> createState() => _ProfileContactSummaryState();
-}
-
-class _ProfileContactSummaryState extends State<_ProfileContactSummary> {
-  String? _mobile;
-  String? _kin;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final p = await Get.find<MobileProfileRepository>().getProfile();
-      if (!mounted) return;
-      setState(() {
-        _mobile = p.mobilePhone ?? p.phone;
-        _kin = p.nextOfKinName;
-      });
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if ((_mobile == null || _mobile!.isEmpty) && (_kin == null || _kin!.isEmpty)) {
+    if (!Get.isRegistered<UserProfileCache>()) {
       return const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: _HomeGlassCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your details',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+    final cache = Get.find<UserProfileCache>();
+
+    return Obx(() {
+      final p = cache.profile.value;
+      final mobile = p?.mobilePhone?.trim() ?? p?.phone?.trim();
+      final landline = p?.landlinePhone?.trim();
+      final email = p?.email?.trim();
+      final address = p?.profileAddress?.trim();
+      final kinName = p?.nextOfKinName?.trim();
+      final kinPhone = p?.nextOfKinPhone?.trim();
+
+      final hasContent = [
+        mobile,
+        landline,
+        email,
+        address,
+        kinName,
+        kinPhone,
+      ].any((v) => v != null && v.isNotEmpty);
+
+      if (!hasContent) return const SizedBox.shrink();
+
+      return Column(
+        children: [
+          const SizedBox(height: 14),
+          _HomeGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline_rounded,
+                      size: 20,
+                      color: AppColors.primary.withValues(alpha: 0.95),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Your details',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (mobile != null && mobile.isNotEmpty)
+                  _ProfileLine(label: 'Mobile', value: mobile),
+                if (landline != null && landline.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _ProfileLine(label: 'Landline', value: landline),
+                ],
+                if (email != null && email.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _ProfileLine(label: 'Email', value: email),
+                ],
+                if (address != null && address.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _ProfileLine(label: 'Address', value: address),
+                ],
+                if (kinName != null && kinName.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _ProfileLine(label: 'Next of kin', value: kinName),
+                ],
+                if (kinPhone != null && kinPhone.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _ProfileLine(label: 'Kin contact', value: kinPhone),
+                ],
+              ],
             ),
-            const SizedBox(height: 12),
-            if (_mobile != null && _mobile!.isNotEmpty)
-              _ProfileLine(label: 'Mobile', value: _mobile!),
-            if (_kin != null && _kin!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _ProfileLine(label: 'Next of kin', value: _kin!),
-            ],
-          ],
-        ),
-      ),
-    );
+          ),
+        ],
+      );
+    });
   }
 }
 

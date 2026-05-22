@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import type { SiteReportTemplateDefinition, SiteReportTemplateField, SiteReportTemplateSection } from '@/lib/siteReportTemplateTypes';
-import { YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
+import { PASS_FAIL_OPTIONS, YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
 import { X } from 'lucide-react';
 
 const SAMPLE_CLIENT = 'Sample Client Ltd';
@@ -41,6 +41,23 @@ function PreviewField({
           </span>
         ))}
       </div>
+    );
+  }
+
+  if (field.type === 'pass_fail') {
+    return (
+      <select
+        disabled
+        className="max-w-xs cursor-default rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-500"
+        value=""
+      >
+        <option value="">Select status</option>
+        {PASS_FAIL_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
     );
   }
 

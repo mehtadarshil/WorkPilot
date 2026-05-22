@@ -9,6 +9,20 @@ export const TENANT_PERMISSION_KEYS = [
   'parts_catalog',
   'field_users',
   'settings_company',
+  'settings_invoice',
+  'settings_quotation',
+  'settings_email',
+  'settings_service_reminders',
+  'settings_customer_types',
+  'settings_price_books',
+  'settings_job_descriptions',
+  'settings_job_report_template',
+  'settings_site_report_templates',
+  'settings_diary_abort_reasons',
+  'settings_business_units',
+  'settings_user_groups',
+  'settings_users',
+  'settings_import',
   'settings_master_data',
 ] as const;
 
@@ -44,11 +58,9 @@ export function presetDeskOfficerPermissions(): Record<TenantPermissionKey, bool
 export const FIELD_MOBILE_PERMISSION_KEYS: readonly TenantPermissionKey[] = [
   'jobs',
   'scheduling',
-  'certifications',
   'customers',
   'quotations',
   'invoices',
-  'parts_catalog',
 ] as const;
 
 export function pickFieldPermissionsFromStaff(
@@ -61,12 +73,11 @@ export function pickFieldPermissionsFromStaff(
   return o;
 }
 
-/** Field-only mobile accounts: visits, jobs, certs; expand as mobile modules grow. */
+/** Field-only mobile accounts: visits and jobs. */
 export function presetFieldOfficerPermissions(): Record<TenantPermissionKey, boolean> {
   const o = emptyPermissions();
   o.jobs = true;
   o.scheduling = true;
-  o.certifications = true;
   return o;
 }
 

@@ -1,9 +1,8 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getJson, postJson, putJson, deleteRequest, getBlob } from '../../../apiClient';
-import { Save, Printer, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Printer, Download, Loader2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import type {
   SiteReportTemplateDefinition,
@@ -11,6 +10,7 @@ import type {
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
 } from '@/lib/siteReportTemplateTypes';
+import { applyApplianceResultTotals } from '@/lib/siteReportTemplateTypes';
 import {
   IMAGE_MAX_BYTES,
   collectImageIds,
@@ -21,6 +21,7 @@ import {
 } from './customerSiteReportShared';
 import CustomerSiteReportRenewalCard, { type SiteReportRenewalState } from './CustomerSiteReportRenewalCard';
 import { CustomerSiteReportSectionView } from './CustomerSiteReportSectionView';
+import CustomerSiteReportsList from './CustomerSiteReportsList';
 
 interface ReportPayload {
   id: number;
@@ -36,6 +37,22 @@ interface ReportPayload {
   renewal_interval_years: number;
   renewal_early_days: number;
   renewal_job_id: number | null;
+}
+
+interface ReportListRow {
+  id: number;
+  template_id: number | null;
+  template_name: string | null;
+  report_title: string | null;
+  updated_at: string;
+  created_at: string;
+  certificate_number: string | null;
+}
+
+interface TemplateRow {
+  id: number;
+  name: string;
+  slug: string | null;
 }
 
 interface Props {
@@ -56,6 +73,11 @@ export default function CustomerSiteReportTab({
 }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [report, setReport] = useState<ReportPayload | null>(null);
+  const [reports, setReports] = useState<ReportListRow[]>([]);
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [creatingReport, setCreatingReport] = useState(false);
+  const [mode, setMode] = useState<'list' | 'editor'>('list');
   const [template, setTemplate] = useState<{ id: number; definition: SiteReportTemplateDefinition } | null>(null);
   const [reportTitle, setReportTitle] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
@@ -107,14 +129,38 @@ export default function CustomerSiteReportTab({
     [urlTick],
   );
 
-  const loadReport = useCallback(async () => {
+  const loadReports = useCallback(async () => {
+    if (!token || !customerId) return [];
+    const qs = new URLSearchParams();
+    if (workAddressId) qs.set('work_address_id', workAddressId);
+    if (jobId) qs.set('job_id', jobId);
+    const res = await getJson<{ reports: ReportListRow[] }>(
+      `/customers/${customerId}/site-reports${qs.toString() ? `?${qs.toString()}` : ''}`,
+      token,
+    );
+    const list = res.reports || [];
+    setReports(list);
+    return list;
+  }, [customerId, workAddressId, jobId, token]);
+
+  const loadTemplates = useCallback(async () => {
+    if (!token) return;
+    const res = await getJson<{ templates: TemplateRow[] }>('/settings/site-report-templates', token);
+    const list = res.templates || [];
+    setTemplates(list);
+    setNewTemplateId((prev) => prev || String(list[0]?.id ?? ''));
+  }, [token]);
+
+  const loadReport = useCallback(async (reportId?: number | null) => {
     if (!token || !customerId) return;
     setLoading(true);
     setError(null);
     try {
-      const qs = workAddressId ? `?work_address_id=${encodeURIComponent(workAddressId)}` : '';
+      const qs = new URLSearchParams();
+      if (workAddressId) qs.set('work_address_id', workAddressId);
+      if (reportId) qs.set('report_id', String(reportId));
       const res = await getJson<{ report: ReportPayload; template: { id: number; definition: SiteReportTemplateDefinition } }>(
-        `/customers/${customerId}/site-report${qs}`,
+        `/customers/${customerId}/site-report${qs.toString() ? `?${qs.toString()}` : ''}`,
         token,
       );
       const rp = res.report as ReportPayload;
@@ -144,9 +190,47 @@ export default function CustomerSiteReportTab({
   }, [customerId, workAddressId, token, hydrateImageUrls]);
 
   useEffect(() => {
-    void loadReport();
+    void (async () => {
+      try {
+        await loadTemplates();
+        await loadReports();
+        setLoading(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load report');
+        setLoading(false);
+      }
+    })();
     return () => revokeAllImageUrls();
-  }, [loadReport, revokeAllImageUrls]);
+  }, [loadReport, loadReports, loadTemplates, revokeAllImageUrls]);
+
+  const handleCreateReport = async () => {
+    if (!token || !newTemplateId) return;
+    setCreatingReport(true);
+    setError(null);
+    try {
+      const res = await postJson<{ report: ReportPayload }>(
+        `/customers/${customerId}/site-reports`,
+        {
+          template_id: Number(newTemplateId),
+          work_address_id: workAddressId ? Number(workAddressId) : null,
+          job_id: jobId ? Number(jobId) : null,
+        },
+        token,
+      );
+      await loadReports();
+      await loadReport(res.report.id);
+      setMode('editor');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create report');
+    } finally {
+      setCreatingReport(false);
+    }
+  };
+
+  const openReport = async (id: number) => {
+    await loadReport(id);
+    setMode('editor');
+  };
 
   const persist = useCallback(
     async (
@@ -157,10 +241,11 @@ export default function CustomerSiteReportTab({
     ) => {
       if (!token || !report) throw new Error('Not ready');
       const title = titleOverride !== undefined ? titleOverride : reportTitle;
+      const valuesToPersist = applyApplianceResultTotals(nextValues);
       const doc: TemplateSiteReportDocument = {
         mode: 'template_v1',
         template_id: report.template_id,
-        values: nextValues,
+        values: valuesToPersist,
         section_images: nextSectionImages,
         field_images: nextFieldImages,
       };
@@ -200,6 +285,7 @@ export default function CustomerSiteReportTab({
     setError(null);
     try {
       await persist(values, sectionImages, fieldImages);
+      await loadReports();
       setSaveOk(true);
       window.setTimeout(() => setSaveOk(false), 2500);
     } catch (e) {
@@ -210,7 +296,7 @@ export default function CustomerSiteReportTab({
   };
 
   const setFieldValue = (id: string, v: string) => {
-    setValues((prev) => ({ ...prev, [id]: v }));
+    setValues((prev) => applyApplianceResultTotals({ ...prev, [id]: v }));
   };
 
   const uploadSectionImage = async (sectionKey: string, file: File) => {
@@ -495,8 +581,22 @@ export default function CustomerSiteReportTab({
     return (
       <div className="flex items-center justify-center gap-2 py-12 text-sm font-medium text-slate-500">
         <Loader2 className="size-5 animate-spin" />
-        Loading report…
+        Loading reports…
       </div>
+    );
+  }
+
+  if (mode === 'list') {
+    return (
+      <CustomerSiteReportsList
+        reports={reports}
+        templates={templates}
+        newTemplateId={newTemplateId}
+        onTemplateChange={setNewTemplateId}
+        creatingReport={creatingReport}
+        onCreate={() => void handleCreateReport()}
+        onOpen={(id) => void openReport(id)}
+      />
     );
   }
 
@@ -532,6 +632,14 @@ export default function CustomerSiteReportTab({
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
+          <button
+            type="button"
+            onClick={() => setMode('list')}
+            className="mb-3 inline-flex items-center gap-1.5 text-sm font-bold text-[#14B8A6] hover:text-[#119f8e]"
+          >
+            <ArrowLeft className="size-4" />
+            Back to reports
+          </button>
           <h2 className="text-lg font-bold text-slate-900">{def.report_title_default || 'Report'}</h2>
           {report.certificate_number ? (
             <p className="mt-0.5 text-sm font-medium text-slate-700">

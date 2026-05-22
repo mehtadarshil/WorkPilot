@@ -1,5 +1,13 @@
 /** Stored in site_report_templates.definition (JSONB) */
-export type SiteReportFieldType = 'text' | 'textarea' | 'date' | 'yes_no_na' | 'static_text' | 'image' | 'signature';
+export type SiteReportFieldType =
+  | 'text'
+  | 'textarea'
+  | 'date'
+  | 'yes_no_na'
+  | 'pass_fail'
+  | 'static_text'
+  | 'image'
+  | 'signature';
 
 export type SiteReportTemplateField = {
   id: string;
@@ -56,6 +64,7 @@ export const SITE_REPORT_FIELD_TYPES: SiteReportFieldType[] = [
   'textarea',
   'date',
   'yes_no_na',
+  'pass_fail',
   'static_text',
   'image',
   'signature',

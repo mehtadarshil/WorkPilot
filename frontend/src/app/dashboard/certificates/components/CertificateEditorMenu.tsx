@@ -207,7 +207,11 @@ export function CertificateEditorMenu() {
             token,
           );
           setConvertOpen(false);
-          router.push(`/dashboard/certificates/${res.certificate.id}/installation-details`);
+          router.push(
+            res.certificate.type_slug === 'portable_appliance_test'
+              ? `/dashboard/certificates/${res.certificate.id}/pat`
+              : `/dashboard/certificates/${res.certificate.id}/installation-details`,
+          );
         }}
       />
     </div>

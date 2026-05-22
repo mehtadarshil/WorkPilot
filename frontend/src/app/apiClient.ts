@@ -29,12 +29,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== 'undefined') {
+    const message = (data && (data.message as string)) || 'Unexpected error occurred';
+    const isLoginRequest = path === '/auth/login' || path.endsWith('/auth/login');
+
+    if (response.status === 401 && typeof window !== 'undefined' && !isLoginRequest) {
       window.localStorage.removeItem('wp_token');
       window.localStorage.removeItem('wp_user');
-      window.location.href = '/login';
+      if (!window.location.pathname.startsWith('/login')) {
+        const q = new URLSearchParams({ error: message });
+        window.location.href = `/login?${q.toString()}`;
+      }
     }
-    const message = (data && (data.message as string)) || 'Unexpected error occurred';
+
     throw new Error(message);
   }
 
@@ -86,17 +92,20 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
   if (authToken) (headers as Record<string, string>).Authorization = `Bearer ${authToken}`;
   const response = await fetch(url, { method: 'GET', headers });
   if (!response.ok) {
-    if (response.status === 401 && typeof window !== 'undefined') {
-      window.localStorage.removeItem('wp_token');
-      window.localStorage.removeItem('wp_user');
-      window.location.href = '/login';
-    }
     let message = 'Unexpected error occurred';
     try {
       const data = await response.json();
       if (data && typeof data.message === 'string') message = data.message;
     } catch {
       /* ignore */
+    }
+    if (response.status === 401 && typeof window !== 'undefined') {
+      window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_user');
+      if (!window.location.pathname.startsWith('/login')) {
+        const q = new URLSearchParams({ error: message });
+        window.location.href = `/login?${q.toString()}`;
+      }
     }
     throw new Error(message);
   }

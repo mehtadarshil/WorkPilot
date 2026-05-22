@@ -73,55 +73,13 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
     if (result == true && mounted) await _reloadLists();
   }
 
-  Future<void> _showJobSheet(Map<String, dynamic> j) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF0f172a),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              ctStr(j, 'title'),
-              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                statusPill(ctStr(j, 'state'), compact: true),
-                metaChip(ctStr(j, 'priority').isEmpty ? 'Priority' : ctStr(j, 'priority')),
-              ],
-            ),
-            const SizedBox(height: 16),
-            infoRow(
-              'Record',
-              '#${((j['id'] as num?)?.toInt() ?? 0).toString().padLeft(4, '0')}',
-              icon: Icons.tag_rounded,
-            ),
-            infoRow('Created', formatIsoDateShort(ctStr(j, 'created_at')), icon: Icons.calendar_today_outlined),
-            if (ctStr(j, 'expected_completion').isNotEmpty)
-              infoRow('Next visit', formatIsoDateShort(ctStr(j, 'expected_completion')), icon: Icons.event_available_outlined),
-            const SizedBox(height: 12),
-            Text(
-              'Full job workflow is on the web dashboard.',
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _openJobDetail(Map<String, dynamic> j) async {
+    final id = (j['id'] as num?)?.toInt();
+    if (id == null || id <= 0) {
+      Get.snackbar('Job', 'Unable to open this job.');
+      return;
+    }
+    await Get.toNamed(AppRoutes.jobDetail, arguments: id);
   }
 
   Future<void> _noteDialog({Map<String, dynamic>? existing}) async {
@@ -248,7 +206,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: customerPanel(
                     child: InkWell(
-                      onTap: () => _showJobSheet(j),
+                      onTap: () => _openJobDetail(j),
                       borderRadius: BorderRadius.circular(12),
                       child: Row(
                         children: [
@@ -399,7 +357,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                   child: customerPanel(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: InkWell(
-                      onTap: () => _showJobSheet(j),
+                      onTap: () => _openJobDetail(j),
                       borderRadius: BorderRadius.circular(12),
                       child: Row(
                         children: [
@@ -428,7 +386,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                             ),
                           ),
                           TextButton(
-                            onPressed: () => _showJobSheet(j),
+                            onPressed: () => _openJobDetail(j),
                             child: Text('View', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
                           ),
                         ],

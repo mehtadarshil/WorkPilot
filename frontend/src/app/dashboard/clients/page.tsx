@@ -9,6 +9,11 @@ import {
 } from 'lucide-react';
 import { getJson, postJson, patchJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
+import ClientPermissionsEditor, {
+  fullClientPermissions,
+  normalizeClientPermissions,
+} from './ClientPermissionsEditor';
+import type { TenantPermissionsMap } from '../../../lib/tenantPermissions';
 
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
@@ -31,6 +36,7 @@ interface Client {
   status: string;
   address: string | null;
   notes: string | null;
+  permissions: Partial<TenantPermissionsMap> | null;
 }
 
 interface ClientsResponse {
@@ -75,6 +81,7 @@ export default function ClientsPage() {
   const [formStatus, setFormStatus] = useState<ClientStatus>('PENDING_SETUP');
   const [formAddress, setFormAddress] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formPermissions, setFormPermissions] = useState<TenantPermissionsMap>(() => fullClientPermissions());
 
   const token =
     typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -130,8 +137,6 @@ export default function ClientsPage() {
     fetchServicePlans();
   }, [fetchServicePlans]);
 
-  const start = (page - 1) * PAGE_SIZE;
-
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
@@ -156,6 +161,7 @@ export default function ClientsPage() {
           status: formStatus,
           address: formAddress.trim() || undefined,
           notes: formNotes.trim() || undefined,
+          permissions: formPermissions,
         },
         token,
       );
@@ -177,6 +183,7 @@ export default function ClientsPage() {
     setFormStatus('PENDING_SETUP');
     setFormAddress('');
     setFormNotes('');
+    setFormPermissions(fullClientPermissions());
   }
 
   const openModal = () => {
@@ -190,6 +197,7 @@ export default function ClientsPage() {
     setFormStatus('PENDING_SETUP');
     setFormAddress('');
     setFormNotes('');
+    setFormPermissions(fullClientPermissions());
     setAddModalOpen(true);
   };
 
@@ -203,6 +211,7 @@ export default function ClientsPage() {
     setFormStatus((client.status as ClientStatus) || 'ACTIVE');
     setFormAddress(client.address ?? '');
     setFormNotes(client.notes ?? '');
+    setFormPermissions(normalizeClientPermissions(client.permissions));
     setEditModalOpen(true);
   };
 
@@ -221,6 +230,7 @@ export default function ClientsPage() {
           status: formStatus,
           address: formAddress.trim() || null,
           notes: formNotes.trim() || null,
+          permissions: formPermissions,
         },
         token,
       );
@@ -567,6 +577,7 @@ export default function ClientsPage() {
                   />
                 </div>
               </div>
+              <ClientPermissionsEditor value={formPermissions} onChange={setFormPermissions} />
               {addError && <p className="text-sm text-red-600">{addError}</p>}
               <div className="flex gap-3 pt-2">
                 <button
@@ -689,6 +700,7 @@ export default function ClientsPage() {
                   />
                 </div>
               </div>
+              <ClientPermissionsEditor value={formPermissions} onChange={setFormPermissions} />
               {addError && <p className="text-sm text-red-600">{addError}</p>}
               <div className="flex gap-3 pt-2">
                 <button
