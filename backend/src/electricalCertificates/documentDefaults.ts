@@ -1,4 +1,13 @@
-import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument, PatApplianceRow, PatCertificateData } from './types';
+import type {
+  BoardRecord,
+  CertificatePhoto,
+  CircuitRow,
+  ElectricalCertificateDocument,
+  FireAlarmCertificateData,
+  FireAlarmVariation,
+  PatApplianceRow,
+  PatCertificateData,
+} from './types';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -169,6 +178,98 @@ function coercePatAppliance(raw: unknown, index: number): PatApplianceRow {
   };
 }
 
+export function createDefaultFireAlarmData(occupierName = ''): FireAlarmCertificateData {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    installation: {
+      occupierName,
+      detailsOfSystem: '',
+      extentOfSystem: '',
+      previousServiceDate: '',
+      previousServiceUnknown: false,
+    },
+    limitations: {
+      limitationsText: '',
+      relatedDocuments: '',
+      essentialReferenceDocs: '',
+    },
+    condition: {
+      generalCondition: '',
+      inspectionDate: today,
+      outstandingDefectsReported: '',
+      logBookUpdated: '',
+      falseAlarmsCount: '',
+      falseAlarmsNa: false,
+      falseAlarmsLim: false,
+      falseAlarmsEquates: '',
+      falseAlarmsEquatesNa: false,
+      falseAlarmsEquatesLim: false,
+    },
+    summary: {
+      overallAssessment: '',
+      nextInspectionDate: '',
+      nextInspectionPreset: '',
+    },
+    declaration: {
+      inspectedBy: '',
+      inspectionDate: today,
+      authorisedBy: '',
+      authorisedDate: today,
+    },
+    variations: [],
+    remedialActions: '',
+    inspectionSchedule: {},
+  };
+}
+
+function coerceFireAlarmVariation(raw: unknown): FireAlarmVariation {
+  const base: FireAlarmVariation = {
+    id: newId('fav'),
+    details: '',
+    code: '',
+    location: '',
+    photos: [],
+  };
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<FireAlarmVariation>;
+  const code = o.code === 'c1' || o.code === 'c2' || o.code === 'fi' || o.code === 'c3' ? o.code : '';
+  return {
+    ...base,
+    ...o,
+    id: typeof o.id === 'string' && o.id ? o.id : base.id,
+    code,
+    photos: Array.isArray(o.photos)
+      ? o.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+      : [],
+  };
+}
+
+export function coerceFireAlarmData(raw: unknown, occupierName = ''): FireAlarmCertificateData {
+  const base = createDefaultFireAlarmData(occupierName);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<FireAlarmCertificateData>;
+  const schedule =
+    o.inspectionSchedule && typeof o.inspectionSchedule === 'object' ? o.inspectionSchedule : {};
+  return {
+    installation: { ...base.installation, ...(o.installation ?? {}) },
+    limitations: { ...base.limitations, ...(o.limitations ?? {}) },
+    condition: { ...base.condition, ...(o.condition ?? {}) },
+    summary: { ...base.summary, ...(o.summary ?? {}) },
+    declaration: { ...base.declaration, ...(o.declaration ?? {}) },
+    variations: Array.isArray(o.variations) ? o.variations.map(coerceFireAlarmVariation) : [],
+    remedialActions: typeof o.remedialActions === 'string' ? o.remedialActions : '',
+    inspectionSchedule: schedule as FireAlarmCertificateData['inspectionSchedule'],
+  };
+}
+
+function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
+  if (raw && typeof raw === 'object') {
+    const s = (raw as Partial<ElectricalCertificateDocument>).typeSlug;
+    if (s === 'portable_appliance_test' || s === 'fi_insp_2025') return s;
+  }
+  return 'eicr_18e_a3';
+}
+
 export function coercePatData(raw: unknown, customerName = ''): PatCertificateData {
   const base = createDefaultPatData(customerName);
   if (!raw || typeof raw !== 'object') return base;
@@ -259,17 +360,15 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       bondLightning: '',
     },
     inspectionSchedule: {},
-    boards: [emptyBoard()],
+    boards: typeSlug === 'fi_insp_2025' ? [] : [emptyBoard()],
     appendix: { content: '', photos: [] },
     ...(typeSlug === 'portable_appliance_test' ? { pat: createDefaultPatData(customerName) } : {}),
+    ...(typeSlug === 'fi_insp_2025' ? { fireAlarm: createDefaultFireAlarmData(customerName) } : {}),
   };
 }
 
 export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
-  const rawType =
-    raw && typeof raw === 'object' && (raw as Partial<ElectricalCertificateDocument>).typeSlug === 'portable_appliance_test'
-      ? 'portable_appliance_test'
-      : 'eicr_18e_a3';
+  const rawType = resolveDocumentTypeSlug(raw);
   const base = createDefaultDocument(rawType);
   if (!raw || typeof raw !== 'object') return base;
   const o = raw as Partial<ElectricalCertificateDocument>;
@@ -287,7 +386,11 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
     inspectionSchedule:
       o.inspectionSchedule && typeof o.inspectionSchedule === 'object' ? o.inspectionSchedule : {},
     boards:
-      Array.isArray(o.boards) && o.boards.length > 0 ? o.boards.map(coerceBoard) : [emptyBoard()],
+      rawType === 'fi_insp_2025'
+        ? []
+        : Array.isArray(o.boards) && o.boards.length > 0
+          ? o.boards.map(coerceBoard)
+          : [emptyBoard()],
     appendix: {
       content: o.appendix?.content ?? base.appendix.content,
       photos: Array.isArray(o.appendix?.photos)
@@ -295,5 +398,8 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
         : [],
     },
     ...(rawType === 'portable_appliance_test' ? { pat: coercePatData(o.pat) } : {}),
+    ...(rawType === 'fi_insp_2025'
+      ? { fireAlarm: coerceFireAlarmData(o.fireAlarm, base.installation.occupierName) }
+      : {}),
   };
 }

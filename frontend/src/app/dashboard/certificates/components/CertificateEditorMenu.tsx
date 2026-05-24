@@ -207,11 +207,13 @@ export function CertificateEditorMenu() {
             token,
           );
           setConvertOpen(false);
-          router.push(
+          const href =
             res.certificate.type_slug === 'portable_appliance_test'
               ? `/dashboard/certificates/${res.certificate.id}/pat`
-              : `/dashboard/certificates/${res.certificate.id}/installation-details`,
-          );
+              : res.certificate.type_slug === 'fi_insp_2025'
+                ? `/dashboard/certificates/${res.certificate.id}/fire-alarm`
+                : `/dashboard/certificates/${res.certificate.id}/installation-details`;
+          router.push(href);
         }}
       />
     </div>

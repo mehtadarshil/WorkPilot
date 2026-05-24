@@ -27,7 +27,7 @@ export function clonePhoto(photo: CertificatePhoto): CertificatePhoto {
 }
 
 export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCertificateDocument {
-  return {
+  const base = {
     ...doc,
     boards: doc.boards.map((b) => cloneBoard(b, '')),
     observations: {
@@ -40,6 +40,21 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
       photos: doc.appendix.photos.map(clonePhoto),
     },
   };
+  if (doc.fireAlarm) {
+    return {
+      ...base,
+      fireAlarm: {
+        ...doc.fireAlarm,
+        variations: doc.fireAlarm.variations.map((v) => ({
+          ...v,
+          id: newId('fav'),
+          photos: v.photos.map(clonePhoto),
+        })),
+        inspectionSchedule: { ...doc.fireAlarm.inspectionSchedule },
+      },
+    };
+  }
+  return base;
 }
 
 export function moveItem<T>(items: T[], from: number, to: number): T[] {

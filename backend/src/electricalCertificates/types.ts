@@ -5,7 +5,62 @@ export type CertificateStatus = 'in_progress' | 'completed' | 'archived';
 export type BoardStatus = 'in_progress' | 'done';
 
 export type InspectionOutcome = '' | 'pass' | 'c1' | 'c2' | 'c3' | 'fi' | 'lim' | 'nv' | 'na' | 'x';
-export type ElectricalCertificateTypeSlug = 'eicr_18e_a3' | 'portable_appliance_test';
+export type ElectricalCertificateTypeSlug = 'eicr_18e_a3' | 'portable_appliance_test' | 'fi_insp_2025';
+
+export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
+export type FireAlarmYesNa = '' | 'yes' | 'na';
+export type FireAlarmVariationCode = '' | 'c1' | 'c2' | 'fi' | 'c3';
+export type FireAlarmOverallAssessment = '' | 'satisfactory' | 'unsatisfactory';
+export type FireAlarmNextInspectionPreset = '' | '6months' | '1year' | '5years' | '10years' | 'other';
+
+export interface FireAlarmVariation {
+  id: string;
+  details: string;
+  code: FireAlarmVariationCode;
+  location: string;
+  photos: CertificatePhoto[];
+}
+
+export interface FireAlarmCertificateData {
+  installation: {
+    occupierName: string;
+    detailsOfSystem: string;
+    extentOfSystem: string;
+    previousServiceDate: string;
+    previousServiceUnknown: boolean;
+  };
+  limitations: {
+    limitationsText: string;
+    relatedDocuments: string;
+    essentialReferenceDocs: string;
+  };
+  condition: {
+    generalCondition: string;
+    inspectionDate: string;
+    outstandingDefectsReported: FireAlarmYesNa;
+    logBookUpdated: FireAlarmYesNa;
+    falseAlarmsCount: string;
+    falseAlarmsNa: boolean;
+    falseAlarmsLim: boolean;
+    falseAlarmsEquates: string;
+    falseAlarmsEquatesNa: boolean;
+    falseAlarmsEquatesLim: boolean;
+  };
+  summary: {
+    overallAssessment: FireAlarmOverallAssessment;
+    nextInspectionDate: string;
+    nextInspectionPreset: FireAlarmNextInspectionPreset;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectionDate: string;
+    authorisedBy: string;
+    authorisedDate: string;
+  };
+  variations: FireAlarmVariation[];
+  remedialActions: string;
+  inspectionSchedule: Record<string, FireAlarmInspectionOutcome>;
+}
 
 export type OutcomeButton = 'pass' | 'fail' | 'lim' | 'na' | 'yes' | 'no';
 
@@ -209,6 +264,7 @@ export interface ElectricalCertificateDocument {
     photos: CertificatePhoto[];
   };
   pat?: PatCertificateData;
+  fireAlarm?: FireAlarmCertificateData;
 }
 
 export interface ValidationIssue {

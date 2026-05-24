@@ -18,9 +18,13 @@ import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificate
 const PAGE_SIZE = 15;
 
 function certificateEditorHref(cert: ElectricalCertificate) {
-  return cert.type_slug === 'portable_appliance_test'
-    ? `/dashboard/certificates/${cert.id}/pat`
-    : `/dashboard/certificates/${cert.id}/installation-details`;
+  if (cert.type_slug === 'portable_appliance_test') {
+    return `/dashboard/certificates/${cert.id}/pat`;
+  }
+  if (cert.type_slug === 'fi_insp_2025') {
+    return `/dashboard/certificates/${cert.id}/fire-alarm`;
+  }
+  return `/dashboard/certificates/${cert.id}/installation-details`;
 }
 
 export default function ElectricalCertificatesPage() {

@@ -9,6 +9,7 @@ import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
 import { CertificateEditorProvider } from '../CertificateEditorContext';
 import { CertificateEditorShell } from '../components/CertificateEditorShell';
 import { PatCertificateEditor } from '../components/PatCertificateEditor';
+import { FireAlarmCertificateEditor } from '../components/FireAlarmCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -65,6 +66,8 @@ export default function CertificateEditorLayout({ children }: { children: React.
     <CertificateEditorProvider initial={certificate}>
       {certificate.type_slug === 'portable_appliance_test' ? (
         <PatCertificateEditor />
+      ) : certificate.type_slug === 'fi_insp_2025' ? (
+        <FireAlarmCertificateEditor />
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}

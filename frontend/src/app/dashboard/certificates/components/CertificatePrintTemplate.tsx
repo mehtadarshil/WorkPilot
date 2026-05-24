@@ -3,6 +3,11 @@
 import type { ElectricalCertificate, InspectionOutcome } from '@/lib/electricalCertificates/types';
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
 import {
+  FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS,
+  FIRE_ALARM_OUTCOME_LABELS,
+  FIRE_ALARM_SECTION_LABELS,
+} from '@/lib/electricalCertificates/fireAlarmInspectionScheduleItems';
+import {
   INSPECTION_SCHEDULE_ITEMS,
   INSPECTION_SECTION_LABELS,
 } from '@/lib/electricalCertificates/inspectionScheduleItems';
@@ -31,6 +36,9 @@ export function CertificatePrintTemplate({
   const doc = certificate.document;
   if (doc.typeSlug === 'portable_appliance_test') {
     return <PatPrintTemplate certificate={certificate} branding={branding} />;
+  }
+  if (doc.typeSlug === 'fi_insp_2025') {
+    return <FireAlarmPrintTemplate certificate={certificate} branding={branding} />;
   }
   const inst = doc.installation;
   const sup = doc.supply;
@@ -165,6 +173,116 @@ export function CertificatePrintTemplate({
         </section>
       )}
 
+      <footer className="mt-8 border-t border-slate-200 pt-3 text-center text-xs text-slate-500">
+        {branding.footer_text || `${branding.company_name} · ${certificate.certificate_number}`}
+      </footer>
+    </div>
+  );
+}
+
+function FireAlarmPrintTemplate({
+  certificate,
+  branding,
+}: {
+  certificate: ElectricalCertificate;
+  branding: CompanyBranding;
+}) {
+  const fa = certificate.document.fireAlarm;
+  if (!fa) return null;
+  const sections = [...new Set(FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))];
+
+  return (
+    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
+      <CertificateBrandedHeader
+        branding={branding}
+        title="Fire Alarm Inspection & Servicing Report"
+        subtitle="BS 5839-1:2025"
+        certificateNumber={certificate.certificate_number}
+      />
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Client &amp; installation</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Client" value={certificate.customer_full_name ?? '—'} />
+            <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
+            <PrintRow label="Occupier" value={fa.installation.occupierName} />
+            <PrintRow label="Details of system" value={fa.installation.detailsOfSystem} />
+            <PrintRow label="Extent" value={fa.installation.extentOfSystem} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Summary</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Overall assessment" value={fa.summary.overallAssessment} />
+            <PrintRow label="Next inspection" value={fa.summary.nextInspectionDate || fa.summary.nextInspectionPreset} />
+            <PrintRow label="Inspected by" value={fa.declaration.inspectedBy} />
+            <PrintRow label="Authorised by" value={fa.declaration.authorisedBy} />
+          </tbody>
+        </table>
+      </section>
+      {fa.variations.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Variations</h2>
+          <ul className="list-disc pl-5 text-sm">
+            {fa.variations.map((v) => (
+              <li key={v.id}>
+                <strong>{v.code || '—'}</strong> {v.location}: {v.details}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {sections.map((sec) => {
+        const items = FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
+        return (
+          <section key={sec} className="mb-4 break-inside-avoid">
+            <h3 className="mb-1 font-bold">
+              {sec}. {FIRE_ALARM_SECTION_LABELS[sec]}
+            </h3>
+            <table className="w-full border-collapse text-[9px]">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 px-1 py-0.5">Ref</th>
+                  <th className="border border-slate-300 px-1 py-0.5">Item</th>
+                  <th className="border border-slate-300 px-1 py-0.5">Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border border-slate-200 px-1 font-mono">{item.id}</td>
+                    <td className="border border-slate-200 px-1">{item.label}</td>
+                    <td className="border border-slate-200 px-1 text-center font-bold">
+                      {FIRE_ALARM_OUTCOME_LABELS[fa.inspectionSchedule[item.id] ?? '']}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        );
+      })}
+      {certificate.document.appendix.content.trim() && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
+          <p className="whitespace-pre-wrap text-sm">{certificate.document.appendix.content}</p>
+        </section>
+      )}
+      {certificate.document.appendix.photos.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix photographs</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {certificate.document.appendix.photos.map((p) => (
+              <figure key={p.id}>
+                <img src={p.dataUrl} alt={p.caption} className="max-h-48 w-full object-contain" />
+                {p.caption && <figcaption className="mt-1 text-xs text-slate-600">{p.caption}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
       <footer className="mt-8 border-t border-slate-200 pt-3 text-center text-xs text-slate-500">
         {branding.footer_text || `${branding.company_name} · ${certificate.certificate_number}`}
       </footer>

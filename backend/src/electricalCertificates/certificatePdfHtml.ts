@@ -1,4 +1,9 @@
 import type { CompanyBranding } from './companyBranding';
+import {
+  FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS,
+  FIRE_ALARM_OUTCOME_LABELS,
+  FIRE_ALARM_SECTION_LABELS,
+} from './fireAlarmInspectionScheduleItems';
 import { INSPECTION_SCHEDULE_ITEMS, INSPECTION_SECTION_LABELS } from './inspectionScheduleItems';
 import type { ElectricalCertificateDocument, InspectionOutcome } from './types';
 
@@ -52,6 +57,9 @@ export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
   const { document: doc, branding: b } = input;
   if (doc.typeSlug === 'portable_appliance_test') {
     return buildPatCertificatePdfHtml(input);
+  }
+  if (doc.typeSlug === 'fi_insp_2025') {
+    return buildFireAlarmCertificatePdfHtml(input);
   }
   const inst = doc.installation;
   const sup = doc.supply;
@@ -294,6 +302,137 @@ function buildPatCertificatePdfHtml(input: CertificatePdfInput): string {
     ${block('Test equipment used', [pat.testEquipment.make, `Serial no: ${pat.testEquipment.serialNo}`, pat.testEquipment.notes])}
     ${block('Engineer declaration', [pat.engineer.name, pat.engineer.notes])}
   </section>
+  <div class="footer">${b.footer_text ? esc(b.footer_text) : `${esc(b.company_name)} · ${esc(input.certificateNumber)}`}</div>
+</body>
+</html>`;
+}
+
+function buildFireAlarmCertificatePdfHtml(input: CertificatePdfInput): string {
+  const { document: doc, branding: b } = input;
+  const fa = doc.fireAlarm;
+  if (!fa) throw new Error('FIRE_ALARM_DOCUMENT_MISSING');
+  const accent = b.accent_color;
+
+  const scheduleSections = [...new Set(FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))]
+    .map((sec) => {
+      const items = FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
+      const rows = items
+        .map((item) => {
+          const outcome = fa.inspectionSchedule[item.id] ?? '';
+          return `<tr><td class="mono">${esc(item.id)}</td><td>${esc(item.label)}</td><td class="outcome">${esc(FIRE_ALARM_OUTCOME_LABELS[outcome] ?? outcome)}</td></tr>`;
+        })
+        .join('');
+      return `<h3>${esc(sec)}. ${esc(FIRE_ALARM_SECTION_LABELS[sec] ?? sec)}</h3><table class="sched"><thead><tr><th>Ref</th><th>Item</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table>`;
+    })
+    .join('');
+
+  const variationsHtml =
+    fa.variations.length > 0
+      ? `<ul>${fa.variations
+          .map(
+            (v) =>
+              `<li><strong>${esc(v.code || '—')}</strong> ${esc(v.location)}: ${esc(v.details)}</li>`,
+          )
+          .join('')}</ul>`
+      : '<p class="muted">No variations recorded</p>';
+
+  const appendixPhotos = doc.appendix.photos ?? [];
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>${esc(input.certificateNumber)} — Fire Alarm</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: system-ui, sans-serif; font-size: 9pt; color: #0f172a; margin: 0; }
+  .header { border-bottom: 3px solid ${accent}; padding-bottom: 12px; margin-bottom: 16px; }
+  .header h1 { margin: 0; font-size: 14pt; color: ${accent}; }
+  .header p { margin: 4px 0 0; color: #475569; font-size: 9pt; }
+  .block { margin-bottom: 14px; page-break-inside: avoid; }
+  h2 { font-size: 11pt; margin: 0 0 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  h3 { font-size: 10pt; margin: 12px 0 6px; }
+  table.kv { width: 100%; border-collapse: collapse; }
+  table.kv td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  table.kv .lbl { width: 38%; font-weight: 600; color: #475569; }
+  table.sched { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 10px; }
+  table.sched th, table.sched td { border: 1px solid #cbd5e1; padding: 3px 5px; }
+  table.sched th { background: #f8fafc; }
+  .mono { font-family: ui-monospace, monospace; width: 48px; }
+  .outcome { text-align: center; font-weight: 700; width: 48px; }
+  .muted { color: #94a3b8; font-style: italic; }
+  .footer { margin-top: 24px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 8pt; color: #64748b; text-align: center; }
+</style>
+</head>
+<body>
+  <header class="header">
+    <h1>${esc(b.company_name)}</h1>
+    <p>Fire Alarm Inspection &amp; Servicing Report · BS 5839-1:2025</p>
+    <p><strong>${esc(input.certificateNumber)}</strong>${input.jobNumber ? ` · Job ${esc(input.jobNumber)}` : ''}</p>
+    <p>Client: ${esc(input.customerName ?? '—')}${input.installationLabel ? ` · ${esc(input.installationLabel)}` : ''}</p>
+  </header>
+
+  <section class="block">
+    <h2>Installation</h2>
+    <table class="kv">
+      ${row('Occupier', fa.installation.occupierName)}
+      ${row('Details of system', fa.installation.detailsOfSystem)}
+      ${row('Extent covered', fa.installation.extentOfSystem)}
+      ${row('Previous service', fa.installation.previousServiceUnknown ? 'Unknown' : fa.installation.previousServiceDate)}
+    </table>
+  </section>
+
+  <section class="block">
+    <h2>Limitations &amp; documentation</h2>
+    <table class="kv">
+      ${row('Limitations', fa.limitations.limitationsText)}
+      ${row('Related documents', fa.limitations.relatedDocuments)}
+      ${row('Essential references', fa.limitations.essentialReferenceDocs)}
+    </table>
+  </section>
+
+  <section class="block">
+    <h2>Condition &amp; summary</h2>
+    <table class="kv">
+      ${row('General condition', fa.condition.generalCondition)}
+      ${row('Inspection date', fa.condition.inspectionDate)}
+      ${row('Outstanding defects reported', fa.condition.outstandingDefectsReported || '—')}
+      ${row('Log book updated', fa.condition.logBookUpdated || '—')}
+      ${row('False alarms (12 months)', fa.condition.falseAlarmsNa ? 'N/A' : fa.condition.falseAlarmsCount)}
+      ${row('False alarms rate', fa.condition.falseAlarmsEquatesNa ? 'N/A' : fa.condition.falseAlarmsEquates)}
+      ${row('Overall assessment', fa.summary.overallAssessment || '—')}
+      ${row('Next inspection', fa.summary.nextInspectionDate || fa.summary.nextInspectionPreset || '—')}
+    </table>
+  </section>
+
+  <section class="block">
+    <h2>Declaration</h2>
+    <table class="kv">
+      ${row('Inspected by', fa.declaration.inspectedBy)}
+      ${row('Inspection date', fa.declaration.inspectionDate)}
+      ${row('Authorised by', fa.declaration.authorisedBy)}
+      ${row('Authorised date', fa.declaration.authorisedDate)}
+    </table>
+  </section>
+
+  <section class="block">
+    <h2>Variations</h2>
+    ${variationsHtml}
+    ${fa.remedialActions.trim() ? `<h3>Remedial actions</h3><p style="white-space:pre-wrap">${esc(fa.remedialActions)}</p>` : ''}
+  </section>
+
+  <section class="block">
+    <h2>Inspection schedule</h2>
+    ${scheduleSections}
+  </section>
+
+  ${
+    doc.appendix.content.trim()
+      ? `<section class="block"><h2>Appendix</h2><p style="white-space:pre-wrap">${esc(doc.appendix.content)}</p></section>`
+      : ''
+  }
+  ${appendixPhotos.length ? photosHtml(appendixPhotos, 'Appendix photographs') : ''}
+
   <div class="footer">${b.footer_text ? esc(b.footer_text) : `${esc(b.company_name)} · ${esc(input.certificateNumber)}`}</div>
 </body>
 </html>`;

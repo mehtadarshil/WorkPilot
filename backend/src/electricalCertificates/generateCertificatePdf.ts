@@ -27,7 +27,12 @@ export async function generateElectricalCertificatePdfBuffer(
     branding,
   });
   const pdf = await renderHtmlReportToPdf(html);
-  const fallbackPrefix = document.typeSlug === 'portable_appliance_test' ? 'PAT' : 'EICR';
+  const fallbackPrefix =
+    document.typeSlug === 'portable_appliance_test'
+      ? 'PAT'
+      : document.typeSlug === 'fi_insp_2025'
+        ? 'FI-INSP'
+        : 'EICR';
   const filenameBase = params.certificateNumber.replace(/[^\w.-]+/g, '_') || `${fallbackPrefix}-${params.certificateId}`;
   return { pdf, filenameBase };
 }

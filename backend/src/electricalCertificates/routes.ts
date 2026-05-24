@@ -57,11 +57,15 @@ export async function ensureElectricalCertificateSchema(pool: Pool): Promise<voi
 }
 
 function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
-  return raw === 'portable_appliance_test' ? 'portable_appliance_test' : 'eicr_18e_a3';
+  if (raw === 'portable_appliance_test') return 'portable_appliance_test';
+  if (raw === 'fi_insp_2025') return 'fi_insp_2025';
+  return 'eicr_18e_a3';
 }
 
 function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeSlug']): string {
-  return typeSlug === 'portable_appliance_test' ? 'PAT' : 'EICR';
+  if (typeSlug === 'portable_appliance_test') return 'PAT';
+  if (typeSlug === 'fi_insp_2025') return 'FI-INSP';
+  return 'EICR';
 }
 
 function formatCertificateNumber(prefix: string, seq: number): string {
@@ -232,7 +236,11 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
 
   app.get('/api/electrical-certificates/numbering-settings', ...guard, async (req: Request, res: Response) => {
     const userId = getTenantScopeUserId((req as AuthReq).user!);
-    const types: ElectricalCertificateDocument['typeSlug'][] = ['eicr_18e_a3', 'portable_appliance_test'];
+    const types: ElectricalCertificateDocument['typeSlug'][] = [
+      'eicr_18e_a3',
+      'portable_appliance_test',
+      'fi_insp_2025',
+    ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
       const rows = await pool.query<{ type_slug: string; prefix: string; next_number: number }>(
@@ -389,6 +397,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       doc.installation.occupierName = customerName;
       if (typeSlug === 'portable_appliance_test' && doc.pat) {
         doc.pat.jobAddress.customerName = customerName;
+      }
+      if (typeSlug === 'fi_insp_2025' && doc.fireAlarm) {
+        doc.fireAlarm.installation.occupierName = customerName;
       }
     }
 
