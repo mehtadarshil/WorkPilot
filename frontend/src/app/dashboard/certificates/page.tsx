@@ -24,6 +24,9 @@ function certificateEditorHref(cert: ElectricalCertificate) {
   if (cert.type_slug === 'fi_insp_2025') {
     return `/dashboard/certificates/${cert.id}/fire-alarm`;
   }
+  if (cert.type_slug === 'dfi_insp_2019_a1') {
+    return `/dashboard/certificates/${cert.id}/domestic-fire-alarm`;
+  }
   return `/dashboard/certificates/${cert.id}/installation-details`;
 }
 
@@ -42,6 +45,17 @@ export default function ElectricalCertificatesPage() {
   const [selectedType, setSelectedType] = useState('eicr_18e_a3');
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [workAddressId, setWorkAddressId] = useState<number | null>(null);
+  const [addingWorkAddress, setAddingWorkAddress] = useState(false);
+  const [workAddressForm, setWorkAddressForm] = useState({
+    name: '',
+    address_line_1: '',
+    address_line_2: '',
+    town: '',
+    county: '',
+    postcode: '',
+  });
+  const [savingWorkAddress, setSavingWorkAddress] = useState(false);
+  const [workAddressError, setWorkAddressError] = useState<string | null>(null);
   const [jobNumber, setJobNumber] = useState('');
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [customers, setCustomers] = useState<{ id: number; full_name: string }[]>([]);
@@ -144,6 +158,9 @@ export default function ElectricalCertificatesPage() {
     setSelectedType('eicr_18e_a3');
     setCustomerId(null);
     setWorkAddressId(null);
+    setAddingWorkAddress(false);
+    setWorkAddressForm({ name: '', address_line_1: '', address_line_2: '', town: '', county: '', postcode: '' });
+    setWorkAddressError(null);
     setJobNumber('');
     setError(null);
     setCreateOpen(true);
@@ -226,6 +243,45 @@ export default function ElectricalCertificatesPage() {
     }
   };
 
+  const handleAddWorkAddress = async () => {
+    if (!token || !customerId) return;
+    const name = workAddressForm.name.trim();
+    const addressLine1 = workAddressForm.address_line_1.trim();
+    if (!name || !addressLine1) {
+      setWorkAddressError('Site name and address line 1 are required');
+      return;
+    }
+    setSavingWorkAddress(true);
+    setWorkAddressError(null);
+    try {
+      const res = await postJson<{ work_address: { id: number } }>(
+        `/customers/${customerId}/work-addresses`,
+        {
+          name,
+          address_line_1: addressLine1,
+          address_line_2: workAddressForm.address_line_2.trim() || null,
+          town: workAddressForm.town.trim() || null,
+          county: workAddressForm.county.trim() || null,
+          postcode: workAddressForm.postcode.trim() || null,
+          is_active: true,
+        },
+        token,
+      );
+      const id = res.work_address.id;
+      const addr = [addressLine1, workAddressForm.town.trim(), workAddressForm.postcode.trim()].filter(Boolean).join(', ');
+      const label = [name, addr].filter(Boolean).join(' — ');
+      setWorkAddressOptions((prev) => [...prev.filter((option) => option.id !== id), { id, label }]);
+      setWorkAddressId(id);
+      setAddingWorkAddress(false);
+      setWorkAddressForm({ name: '', address_line_1: '', address_line_2: '', town: '', county: '', postcode: '' });
+      void fetchWorkAddresses(customerId);
+    } catch (e) {
+      setWorkAddressError(e instanceof Error ? e.message : 'Failed to add site address');
+    } finally {
+      setSavingWorkAddress(false);
+    }
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4 md:p-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -290,9 +346,16 @@ export default function ElectricalCertificatesPage() {
                 <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/80">
                   <td className="px-4 py-3">
                     <p className="font-mono font-semibold text-slate-900">{c.certificate_number}</p>
-                    <p className="text-xs text-slate-500">
-                      {CERTIFICATE_TYPE_CATALOG.find((t) => t.slug === c.type_slug)?.shortLabel ?? c.type_slug}
-                    </p>
+                    {(() => {
+                      const type = CERTIFICATE_TYPE_CATALOG.find((t) => t.slug === c.type_slug);
+                      return (
+                        <p className="text-xs text-slate-500">
+                          {type?.shortLabel ?? c.type_slug}
+                          {type?.standard ? ` · Standard: ${type.standard}` : ''}
+                          {type?.revision ? ` · Revision: ${type.revision}` : ''}
+                        </p>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3">{c.customer_full_name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{c.installation_label ?? '—'}</td>
@@ -438,6 +501,11 @@ export default function ElectricalCertificatesPage() {
                               <p className="font-bold text-slate-900">{t.shortLabel}</p>
                               <p className="text-sm text-slate-700">{t.title}</p>
                               <p className="text-xs text-slate-500">{t.subtitle}</p>
+                              {'standard' in t && t.standard && (
+                                <p className="mt-1 text-xs font-semibold text-slate-600">
+                                  Standard: {t.standard} · Revision: {t.revision}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </button>
@@ -463,7 +531,19 @@ export default function ElectricalCertificatesPage() {
                     />
                     {customerId && (
                       <div>
-                        <label className="block text-sm font-medium text-slate-700">Work address</label>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="block text-sm font-medium text-slate-700">Work address</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddingWorkAddress((open) => !open);
+                              setWorkAddressError(null);
+                            }}
+                            className="text-xs font-semibold text-[#14B8A6] hover:underline"
+                          >
+                            {addingWorkAddress ? 'Cancel add site' : '+ Add site address'}
+                          </button>
+                        </div>
                         <WorkAddressSelect
                           options={workAddressOptions}
                           value={workAddressId}
@@ -471,6 +551,71 @@ export default function ElectricalCertificatesPage() {
                           className="mt-1 w-full"
                           emptyButtonLabel="Default installation address"
                         />
+                        {addingWorkAddress && (
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="text-xs font-medium text-slate-700">
+                                Site name
+                                <input
+                                  value={workAddressForm.name}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, name: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                  placeholder="e.g. 206 Willesden Lane"
+                                />
+                              </label>
+                              <label className="text-xs font-medium text-slate-700">
+                                Address line 1
+                                <input
+                                  value={workAddressForm.address_line_1}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, address_line_1: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                  placeholder="Street address"
+                                />
+                              </label>
+                              <label className="text-xs font-medium text-slate-700">
+                                Address line 2
+                                <input
+                                  value={workAddressForm.address_line_2}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, address_line_2: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                />
+                              </label>
+                              <label className="text-xs font-medium text-slate-700">
+                                Town
+                                <input
+                                  value={workAddressForm.town}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, town: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                />
+                              </label>
+                              <label className="text-xs font-medium text-slate-700">
+                                County
+                                <input
+                                  value={workAddressForm.county}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, county: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                />
+                              </label>
+                              <label className="text-xs font-medium text-slate-700">
+                                Postcode
+                                <input
+                                  value={workAddressForm.postcode}
+                                  onChange={(e) => setWorkAddressForm((f) => ({ ...f, postcode: e.target.value }))}
+                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                                />
+                              </label>
+                            </div>
+                            {workAddressError && <p className="mt-2 text-xs text-rose-600">{workAddressError}</p>}
+                            <button
+                              type="button"
+                              disabled={savingWorkAddress}
+                              onClick={() => void handleAddWorkAddress()}
+                              className="mt-3 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                            >
+                              {savingWorkAddress ? 'Adding site...' : 'Add site and select'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                     <div>

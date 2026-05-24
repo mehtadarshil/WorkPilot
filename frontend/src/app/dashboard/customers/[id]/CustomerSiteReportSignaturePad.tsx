@@ -19,9 +19,10 @@ type Props = {
   /** Called with PNG blob when user clicks Save */
   onSave: (blob: Blob) => void | Promise<void>;
   busy?: boolean;
+  saveLabel?: string;
 };
 
-export default function CustomerSiteReportSignaturePad({ disabled, onSave, busy }: Props) {
+export default function CustomerSiteReportSignaturePad({ disabled, onSave, busy, saveLabel = 'Save signature to report' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
@@ -149,7 +150,7 @@ export default function CustomerSiteReportSignaturePad({ disabled, onSave, busy 
           onClick={() => void savePad()}
           className="rounded-md bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#119f8e] disabled:opacity-50"
         >
-          Save signature to report
+          {saveLabel}
         </button>
       </div>
     </div>

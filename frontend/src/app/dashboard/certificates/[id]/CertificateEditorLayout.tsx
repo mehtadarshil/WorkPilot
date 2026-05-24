@@ -10,6 +10,7 @@ import { CertificateEditorProvider } from '../CertificateEditorContext';
 import { CertificateEditorShell } from '../components/CertificateEditorShell';
 import { PatCertificateEditor } from '../components/PatCertificateEditor';
 import { FireAlarmCertificateEditor } from '../components/FireAlarmCertificateEditor';
+import { DomesticFireAlarmCertificateEditor } from '../components/DomesticFireAlarmCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -68,6 +69,8 @@ export default function CertificateEditorLayout({ children }: { children: React.
         <PatCertificateEditor />
       ) : certificate.type_slug === 'fi_insp_2025' ? (
         <FireAlarmCertificateEditor />
+      ) : certificate.type_slug === 'dfi_insp_2019_a1' ? (
+        <DomesticFireAlarmCertificateEditor />
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}

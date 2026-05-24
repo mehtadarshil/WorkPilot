@@ -11,7 +11,7 @@ export interface CompanyBranding {
 }
 
 export const DEFAULT_COMPANY_BRANDING: CompanyBranding = {
-  company_name: 'WorkPilot',
+  company_name: '',
   company_address: null,
   company_phone: null,
   company_email: null,

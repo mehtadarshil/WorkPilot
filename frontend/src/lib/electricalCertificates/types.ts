@@ -3,7 +3,11 @@ export type CertificateStatus = 'in_progress' | 'completed' | 'archived';
 export type BoardStatus = 'in_progress' | 'done';
 
 export type InspectionOutcome = '' | 'pass' | 'c1' | 'c2' | 'c3' | 'fi' | 'lim' | 'nv' | 'na' | 'x';
-export type ElectricalCertificateTypeSlug = 'eicr_18e_a3' | 'portable_appliance_test' | 'fi_insp_2025';
+export type ElectricalCertificateTypeSlug =
+  | 'eicr_18e_a3'
+  | 'portable_appliance_test'
+  | 'fi_insp_2025'
+  | 'dfi_insp_2019_a1';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -51,13 +55,65 @@ export interface FireAlarmCertificateData {
   };
   declaration: {
     inspectedBy: string;
+    inspectedPosition: string;
     inspectionDate: string;
     authorisedBy: string;
+    authorisedPosition: string;
     authorisedDate: string;
   };
   variations: FireAlarmVariation[];
   remedialActions: string;
   inspectionSchedule: Record<string, FireAlarmInspectionOutcome>;
+}
+
+export type DomesticFireAlarmChecklistOutcome = '' | 'pass' | 'fail' | 'na';
+export type DomesticFireAlarmGrade = '' | 'A' | 'B' | 'C' | 'D1' | 'D2' | 'E' | 'F1' | 'F2';
+export type DomesticFireAlarmCategory = '' | 'LD1' | 'LD2' | 'LD3' | 'PD1' | 'PD2';
+export type DomesticFireAlarmFitForService = '' | 'yes' | 'no' | 'na';
+
+export interface DomesticFireAlarmDetector {
+  id: string;
+  reference: string;
+  location: string;
+  make: string;
+  model: string;
+  detectorTypes: string[];
+  powerSource: string;
+  interlink: string;
+  expiryDate: string;
+  fitForContinuedService: DomesticFireAlarmFitForService;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface DomesticFireAlarmCertificateData {
+  installation: {
+    occupierName: string;
+    systemGrade: DomesticFireAlarmGrade;
+    systemCategory: DomesticFireAlarmCategory;
+    extentOfSystem: string;
+    limitations: string;
+    generalCondition: string;
+  };
+  summary: {
+    overallAssessment: FireAlarmOverallAssessment;
+    nextInspectionDate: string;
+    nextInspectionPreset: FireAlarmNextInspectionPreset;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectionDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  variations: FireAlarmVariation[];
+  remedialActions: string;
+  checklist: Record<string, DomesticFireAlarmChecklistOutcome>;
+  soundLevelInstrumentModel: string;
+  soundLevelInstrumentSerial: string;
+  detectors: DomesticFireAlarmDetector[];
 }
 
 export interface CertificatePhoto {
@@ -182,8 +238,14 @@ export interface PatCertificateData {
     notes: string;
   };
   engineer: {
+    officerId: number | null;
+    userId: number | null;
     name: string;
     notes: string;
+    signatureDataUrl: string;
+    signedAt: string;
+    signedByUserId: number | null;
+    signedByOfficerId: number | null;
   };
 }
 
@@ -209,8 +271,10 @@ export interface ElectricalCertificateDocument {
     generalCondition: string;
     overallAssessment: string;
     inspectedBy: string;
+    inspectedPosition: string;
     inspectedDate: string;
     authorisedBy: string;
+    authorisedPosition: string;
     authorisedDate: string;
     reinspectionPeriod: string;
   };
@@ -261,6 +325,7 @@ export interface ElectricalCertificateDocument {
   appendix: { content: string; photos: CertificatePhoto[] };
   pat?: PatCertificateData;
   fireAlarm?: FireAlarmCertificateData;
+  domesticFireAlarm?: DomesticFireAlarmCertificateData;
 }
 
 export interface ValidationIssue {
@@ -293,18 +358,32 @@ export const CERTIFICATE_TYPE_CATALOG = [
     title: 'Electrical Installation Condition Report',
     subtitle: 'BS 7671 — 18th Edition Amendment 3',
     shortLabel: 'EICR',
+    standard: 'BS 7671',
+    revision: '18th Edition Amendment 3',
   },
   {
     slug: 'portable_appliance_test',
     title: 'Portable Appliance Test Certificate',
     subtitle: 'PAT certificate with appliance Pass/Fail results',
     shortLabel: 'PAT',
+    standard: 'IET Code of Practice',
+    revision: '',
   },
   {
     slug: 'fi_insp_2025',
     title: 'Fire Alarm Inspection and Servicing Report',
     subtitle: 'BS 5839-1:2025',
     shortLabel: 'FI-INSP',
+    standard: 'BS 5839-1',
+    revision: '2025',
+  },
+  {
+    slug: 'dfi_insp_2019_a1',
+    title: 'Domestic Fire Alarm Inspection and Servicing Report',
+    subtitle: 'Standard: BS 5839-6 | Revision: 2019:A1',
+    shortLabel: 'DFI-INSP',
+    standard: 'BS 5839-6',
+    revision: '2019:A1',
   },
 ] as const;
 
@@ -316,6 +395,16 @@ export const FIRE_ALARM_EDITOR_SECTIONS = [
 ] as const;
 
 export type FireAlarmEditorSectionKey = (typeof FIRE_ALARM_EDITOR_SECTIONS)[number]['key'];
+
+export const DOMESTIC_FIRE_ALARM_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'variations', label: 'Variations' },
+  { key: 'checklist', label: 'Checklist' },
+  { key: 'detectors', label: 'Detectors' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type DomesticFireAlarmEditorSectionKey = (typeof DOMESTIC_FIRE_ALARM_EDITOR_SECTIONS)[number]['key'];
 
 export const EDITOR_SECTIONS = [
   { key: 'installation-details', label: 'Installation details', icon: 'building' },

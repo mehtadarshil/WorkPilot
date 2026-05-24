@@ -10,7 +10,11 @@ function req(section: string, label: string, field?: string, boardId?: string): 
 }
 
 export function validateElectricalCertificate(doc: ElectricalCertificateDocument): ValidationIssue[] {
-  if (doc.typeSlug === 'portable_appliance_test' || doc.typeSlug === 'fi_insp_2025') {
+  if (
+    doc.typeSlug === 'portable_appliance_test' ||
+    doc.typeSlug === 'fi_insp_2025' ||
+    doc.typeSlug === 'dfi_insp_2019_a1'
+  ) {
     return [];
   }
   const issues: ValidationIssue[] = [];

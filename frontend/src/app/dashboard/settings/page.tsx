@@ -18,6 +18,7 @@ import JobReportTemplateSettings from './JobReportTemplateSettings';
 import SiteReportTemplatesSettings from './SiteReportTemplatesSettings';
 import AbortReasonsSettings from './AbortReasonsSettings';
 import CertificateNumberingSettings from './CertificateNumberingSettings';
+import PatTestEquipmentSettings from './PatTestEquipmentSettings';
 import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
 interface InvoiceSettings {
@@ -1440,6 +1441,8 @@ export default function SettingsPage() {
             animate={{ opacity: 1, y: 0 }}
             className="rounded-b-xl border border-slate-200 bg-white overflow-hidden"
           >
+            <PatTestEquipmentSettings token={token} />
+            <div className="mx-4 border-t border-slate-200 sm:mx-6" />
             <CertificateNumberingSettings token={token} />
           </motion.div>
         )}

@@ -27,7 +27,7 @@ export async function loadCompanyBranding(pool: Pool, userId: number): Promise<C
   );
   if ((r.rowCount ?? 0) === 0) {
     return {
-      company_name: 'WorkPilot',
+      company_name: '',
       company_address: null,
       company_phone: null,
       company_email: null,
@@ -40,7 +40,7 @@ export async function loadCompanyBranding(pool: Pool, userId: number): Promise<C
   }
   const row = r.rows[0] as Record<string, unknown>;
   return {
-    company_name: (row.company_name as string) ?? 'WorkPilot',
+    company_name: (row.company_name as string | null)?.trim() ?? '',
     company_address: (row.company_address as string | null) ?? null,
     company_phone: (row.company_phone as string | null) ?? null,
     company_email: (row.company_email as string | null) ?? null,

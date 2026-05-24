@@ -2,6 +2,8 @@ import type {
   BoardRecord,
   CertificatePhoto,
   CircuitRow,
+  DomesticFireAlarmCertificateData,
+  DomesticFireAlarmDetector,
   ElectricalCertificateDocument,
   FireAlarmCertificateData,
   FireAlarmVariation,
@@ -131,7 +133,7 @@ export function createDefaultPatData(customerName = ''): PatCertificateData {
       location: '',
       serialNo: '',
       retestPeriod: '12 Months',
-      status: '',
+      status: 'pass',
     };
   });
   return applyPatTotals({
@@ -140,7 +142,16 @@ export function createDefaultPatData(customerName = ''): PatCertificateData {
     certificateInfo: { date: today, number: '', totalTested: '', totalPassed: '', totalFailed: '' },
     appliances,
     testEquipment: { make: '', serialNo: '', notes: '' },
-    engineer: { name: '', notes: '' },
+    engineer: {
+      officerId: null,
+      userId: null,
+      name: '',
+      notes: '',
+      signatureDataUrl: '',
+      signedAt: '',
+      signedByUserId: null,
+      signedByOfficerId: null,
+    },
   });
 }
 
@@ -162,10 +173,10 @@ export function applyPatTotals(pat: PatCertificateData): PatCertificateData {
 function coercePatAppliance(raw: unknown, index: number): PatApplianceRow {
   const n = String(index + 1).padStart(3, '0');
   if (!raw || typeof raw !== 'object') {
-    return { id: newId('pat'), applianceId: n, brand: '', description: '', location: '', serialNo: '', retestPeriod: '12 Months', status: '' };
+    return { id: newId('pat'), applianceId: n, brand: '', description: '', location: '', serialNo: '', retestPeriod: '12 Months', status: 'pass' };
   }
   const o = raw as Partial<PatApplianceRow>;
-  const status = o.status === 'pass' || o.status === 'fail' ? o.status : '';
+  const status = o.status === 'fail' ? 'fail' : 'pass';
   return {
     id: typeof o.id === 'string' && o.id ? o.id : newId('pat'),
     applianceId: typeof o.applianceId === 'string' ? o.applianceId : n,
@@ -212,8 +223,10 @@ export function createDefaultFireAlarmData(occupierName = ''): FireAlarmCertific
     },
     declaration: {
       inspectedBy: '',
+      inspectedPosition: '',
       inspectionDate: today,
       authorisedBy: '',
+      authorisedPosition: '',
       authorisedDate: today,
     },
     variations: [],
@@ -262,10 +275,100 @@ export function coerceFireAlarmData(raw: unknown, occupierName = ''): FireAlarmC
   };
 }
 
+export function createDefaultDomesticFireAlarmData(occupierName = ''): DomesticFireAlarmCertificateData {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    installation: {
+      occupierName,
+      systemGrade: '',
+      systemCategory: '',
+      extentOfSystem: '',
+      limitations: '',
+      generalCondition: '',
+    },
+    summary: {
+      overallAssessment: '',
+      nextInspectionDate: '',
+      nextInspectionPreset: '',
+    },
+    declaration: {
+      inspectedBy: '',
+      inspectedPosition: '',
+      inspectionDate: today,
+      authorisedBy: '',
+      authorisedPosition: '',
+      authorisedDate: today,
+    },
+    variations: [],
+    remedialActions: '',
+    checklist: {},
+    soundLevelInstrumentModel: '',
+    soundLevelInstrumentSerial: '',
+    detectors: [],
+  };
+}
+
+export function emptyDomesticDetector(): DomesticFireAlarmDetector {
+  return {
+    id: newId('dfdet'),
+    reference: '',
+    location: '',
+    make: '',
+    model: '',
+    detectorTypes: [],
+    powerSource: '',
+    interlink: '',
+    expiryDate: '',
+    fitForContinuedService: '',
+    notes: '',
+    photos: [],
+  };
+}
+
+function coerceDomesticDetector(raw: unknown): DomesticFireAlarmDetector {
+  const base = emptyDomesticDetector();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<DomesticFireAlarmDetector>;
+  const fit =
+    o.fitForContinuedService === 'yes' || o.fitForContinuedService === 'no' || o.fitForContinuedService === 'na'
+      ? o.fitForContinuedService
+      : '';
+  return {
+    ...base,
+    ...o,
+    id: typeof o.id === 'string' && o.id ? o.id : base.id,
+    detectorTypes: Array.isArray(o.detectorTypes) ? o.detectorTypes.filter((v): v is string => typeof v === 'string') : [],
+    fitForContinuedService: fit,
+    photos: Array.isArray(o.photos)
+      ? o.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+      : [],
+  };
+}
+
+export function coerceDomesticFireAlarmData(raw: unknown, occupierName = ''): DomesticFireAlarmCertificateData {
+  const base = createDefaultDomesticFireAlarmData(occupierName);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<DomesticFireAlarmCertificateData>;
+  const checklist = o.checklist && typeof o.checklist === 'object' ? o.checklist : {};
+  return {
+    installation: { ...base.installation, ...(o.installation ?? {}) },
+    summary: { ...base.summary, ...(o.summary ?? {}) },
+    declaration: { ...base.declaration, ...(o.declaration ?? {}) },
+    variations: Array.isArray(o.variations) ? o.variations.map(coerceFireAlarmVariation) : [],
+    remedialActions: typeof o.remedialActions === 'string' ? o.remedialActions : '',
+    checklist: checklist as DomesticFireAlarmCertificateData['checklist'],
+    soundLevelInstrumentModel:
+      typeof o.soundLevelInstrumentModel === 'string' ? o.soundLevelInstrumentModel : '',
+    soundLevelInstrumentSerial:
+      typeof o.soundLevelInstrumentSerial === 'string' ? o.soundLevelInstrumentSerial : '',
+    detectors: Array.isArray(o.detectors) ? o.detectors.map(coerceDomesticDetector) : [],
+  };
+}
+
 function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
   if (raw && typeof raw === 'object') {
     const s = (raw as Partial<ElectricalCertificateDocument>).typeSlug;
-    if (s === 'portable_appliance_test' || s === 'fi_insp_2025') return s;
+    if (s === 'portable_appliance_test' || s === 'fi_insp_2025' || s === 'dfi_insp_2019_a1') return s;
   }
   return 'eicr_18e_a3';
 }
@@ -278,13 +381,22 @@ export function coercePatData(raw: unknown, customerName = ''): PatCertificateDa
   const appliances = appliancesRaw.length > 0
     ? appliancesRaw.map((item, idx) => coercePatAppliance(item, idx))
     : base.appliances;
+  const engineerRaw: Partial<PatCertificateData['engineer']> = o.engineer ?? {};
+  const engineer = {
+    ...base.engineer,
+    ...engineerRaw,
+    officerId: typeof engineerRaw.officerId === 'number' && Number.isFinite(engineerRaw.officerId) ? engineerRaw.officerId : null,
+    userId: typeof engineerRaw.userId === 'number' && Number.isFinite(engineerRaw.userId) ? engineerRaw.userId : null,
+    signedByUserId: typeof engineerRaw.signedByUserId === 'number' && Number.isFinite(engineerRaw.signedByUserId) ? engineerRaw.signedByUserId : null,
+    signedByOfficerId: typeof engineerRaw.signedByOfficerId === 'number' && Number.isFinite(engineerRaw.signedByOfficerId) ? engineerRaw.signedByOfficerId : null,
+  };
   return applyPatTotals({
     registeredBusiness: { ...base.registeredBusiness, ...(o.registeredBusiness ?? {}) },
     jobAddress: { ...base.jobAddress, ...(o.jobAddress ?? {}) },
     certificateInfo: { ...base.certificateInfo, ...(o.certificateInfo ?? {}) },
     appliances,
     testEquipment: { ...base.testEquipment, ...(o.testEquipment ?? {}) },
-    engineer: { ...base.engineer, ...(o.engineer ?? {}) },
+    engineer,
   });
 }
 
@@ -312,8 +424,10 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       generalCondition: '',
       overallAssessment: '',
       inspectedBy: '',
+      inspectedPosition: '',
       inspectedDate: today,
       authorisedBy: '',
+      authorisedPosition: '',
       authorisedDate: today,
       reinspectionPeriod: '5 years',
     },
@@ -357,10 +471,13 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       bondLightning: '',
     },
     inspectionSchedule: {},
-    boards: typeSlug === 'fi_insp_2025' ? [] : [emptyBoard()],
+    boards: typeSlug === 'fi_insp_2025' || typeSlug === 'dfi_insp_2019_a1' ? [] : [emptyBoard()],
     appendix: { content: '', photos: [] },
     ...(typeSlug === 'portable_appliance_test' ? { pat: createDefaultPatData(customerName) } : {}),
     ...(typeSlug === 'fi_insp_2025' ? { fireAlarm: createDefaultFireAlarmData(customerName) } : {}),
+    ...(typeSlug === 'dfi_insp_2019_a1'
+      ? { domesticFireAlarm: createDefaultDomesticFireAlarmData(customerName) }
+      : {}),
   };
 }
 
@@ -383,7 +500,7 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
     inspectionSchedule:
       o.inspectionSchedule && typeof o.inspectionSchedule === 'object' ? o.inspectionSchedule : {},
     boards:
-      rawType === 'fi_insp_2025'
+      rawType === 'fi_insp_2025' || rawType === 'dfi_insp_2019_a1'
         ? []
         : Array.isArray(o.boards) && o.boards.length > 0
           ? o.boards.map(coerceBoard)
@@ -397,6 +514,9 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
     ...(rawType === 'portable_appliance_test' ? { pat: coercePatData(o.pat) } : {}),
     ...(rawType === 'fi_insp_2025'
       ? { fireAlarm: coerceFireAlarmData(o.fireAlarm, base.installation.occupierName) }
+      : {}),
+    ...(rawType === 'dfi_insp_2019_a1'
+      ? { domesticFireAlarm: coerceDomesticFireAlarmData(o.domesticFireAlarm, base.installation.occupierName) }
       : {}),
   };
 }

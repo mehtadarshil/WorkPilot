@@ -14,13 +14,13 @@ import {
 } from 'lucide-react';
 import { deleteRequest, getJson, postJson } from '../../../apiClient';
 import { cloneDocument } from '@/lib/electricalCertificates/documentHelpers';
-import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
+import { downloadCertificatePdf, openCertificatePdfPreviewWindow, previewCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import { ConvertCertificateModal } from './ConvertCertificateModal';
 
 export function CertificateEditorMenu() {
   const router = useRouter();
-  const { certificate, patchMeta, runValidate, setValidateOpen } = useCertificateEditor();
+  const { certificate, patchMeta, runValidate, setValidateOpen, saveDocument } = useCertificateEditor();
   const [open, setOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
@@ -105,11 +105,19 @@ export function CertificateEditorMenu() {
               type="button"
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
               onClick={() => {
-                window.open(`/dashboard/certificates/${certificate.id}/print`, '_blank');
-                setOpen(false);
+                if (!token) return;
+                const previewWindow = openCertificatePdfPreviewWindow();
+                setPdfBusy(true);
+                void saveDocument()
+                  .then(() => previewCertificatePdf(certificate.id, token, previewWindow))
+                  .catch((e) => alert(e instanceof Error ? e.message : 'PDF preview failed'))
+                  .finally(() => {
+                    setPdfBusy(false);
+                    setOpen(false);
+                  });
               }}
             >
-              <FileDown className="size-4" /> Print preview
+              <FileDown className="size-4" /> {pdfBusy ? 'Generating preview…' : 'Print preview'}
             </button>
           </li>
           <li>
@@ -120,7 +128,8 @@ export function CertificateEditorMenu() {
               onClick={() => {
                 if (!token) return;
                 setPdfBusy(true);
-                void downloadCertificatePdf(certificate.id, certificate.certificate_number, token)
+                void saveDocument()
+                  .then(() => downloadCertificatePdf(certificate.id, certificate.certificate_number, token))
                   .catch((e) => alert(e instanceof Error ? e.message : 'PDF download failed'))
                   .finally(() => {
                     setPdfBusy(false);
@@ -212,6 +221,8 @@ export function CertificateEditorMenu() {
               ? `/dashboard/certificates/${res.certificate.id}/pat`
               : res.certificate.type_slug === 'fi_insp_2025'
                 ? `/dashboard/certificates/${res.certificate.id}/fire-alarm`
+                : res.certificate.type_slug === 'dfi_insp_2019_a1'
+                  ? `/dashboard/certificates/${res.certificate.id}/domestic-fire-alarm`
                 : `/dashboard/certificates/${res.certificate.id}/installation-details`;
           router.push(href);
         }}

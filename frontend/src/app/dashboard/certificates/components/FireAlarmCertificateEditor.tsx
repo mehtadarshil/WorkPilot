@@ -21,7 +21,7 @@ import type {
   FireAlarmYesNa,
 } from '@/lib/electricalCertificates/types';
 import { FIRE_ALARM_EDITOR_SECTIONS } from '@/lib/electricalCertificates/types';
-import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
+import { downloadCertificatePdf, openCertificatePdfPreviewWindow, previewCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
 import { useCertificateEditor } from '../CertificateEditorContext';
 
@@ -52,7 +52,15 @@ export function FireAlarmCertificateEditor() {
 
   const downloadPdf = async () => {
     if (!token) return;
+    await saveDocument();
     await downloadCertificatePdf(certificate.id, certificate.certificate_number, token);
+  };
+
+  const previewPdf = async () => {
+    if (!token) return;
+    const previewWindow = openCertificatePdfPreviewWindow();
+    await saveDocument();
+    await previewCertificatePdf(certificate.id, token, previewWindow);
   };
 
   const markCompleted = async () => {
@@ -109,7 +117,7 @@ export function FireAlarmCertificateEditor() {
             </button>
             <button
               type="button"
-              onClick={() => window.open(`/dashboard/certificates/${certificate.id}/print`, '_blank')}
+              onClick={() => void previewPdf()}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               <Printer className="size-4" /> Preview
@@ -491,6 +499,16 @@ function InstallationDetailsSection({
           />
         </label>
         <label className={labelClass}>
+          Position
+          <input
+            className={inputClass}
+            value={fa.declaration.inspectedPosition}
+            onChange={(e) =>
+              updateFa((p) => ({ ...p, declaration: { ...p.declaration, inspectedPosition: e.target.value } }))
+            }
+          />
+        </label>
+        <label className={labelClass}>
           Date (inspection &amp; servicing)
           <input
             type="date"
@@ -508,6 +526,16 @@ function InstallationDetailsSection({
             value={fa.declaration.authorisedBy}
             onChange={(e) =>
               updateFa((p) => ({ ...p, declaration: { ...p.declaration, authorisedBy: e.target.value } }))
+            }
+          />
+        </label>
+        <label className={labelClass}>
+          Authorised position
+          <input
+            className={inputClass}
+            value={fa.declaration.authorisedPosition}
+            onChange={(e) =>
+              updateFa((p) => ({ ...p, declaration: { ...p.declaration, authorisedPosition: e.target.value } }))
             }
           />
         </label>

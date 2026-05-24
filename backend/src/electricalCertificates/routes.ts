@@ -6,10 +6,33 @@ import { coerceDocument, createDefaultDocument } from './documentDefaults';
 import { validateElectricalCertificate } from './validation';
 import type { CertificateStatus, ElectricalCertificateDocument } from './types';
 import { loadCompanyBranding } from './companyBranding';
+import {
+  applyPatTestEquipmentDefaults,
+  ensurePatDefaultsSchema,
+  loadPatTestEquipmentDefaults,
+  savePatTestEquipmentDefaults,
+} from './patDefaults';
 import { generateElectricalCertificatePdfBuffer } from './generateCertificatePdf';
 import { PdfRenderUnavailableError } from '../jobClientReportPdf';
+import {
+  loadCertificateTeamMembers,
+  memberCanBeSignedBy,
+  type CertificateTeamMember,
+} from './certificateTeamMembers';
 
 type AuthReq = Request & { user?: TenantAuthUser };
+
+const EMPTY_PAT_SIGNATURE = {
+  signatureDataUrl: '',
+  signedAt: '',
+  signedByUserId: null,
+  signedByOfficerId: null,
+};
+
+type SignOffDefaults = {
+  name: string;
+  position: string;
+};
 
 export type ElectricalCertificateRouteDeps = {
   pool: Pool;
@@ -54,18 +77,116 @@ export async function ensureElectricalCertificateSchema(pool: Pool): Promise<voi
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_electrical_certificate_number_settings_owner ON electrical_certificate_number_settings(created_by)`,
   );
+  await ensurePatDefaultsSchema(pool);
 }
 
 function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
   if (raw === 'portable_appliance_test') return 'portable_appliance_test';
   if (raw === 'fi_insp_2025') return 'fi_insp_2025';
+  if (raw === 'dfi_insp_2019_a1') return 'dfi_insp_2019_a1';
   return 'eicr_18e_a3';
 }
 
 function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeSlug']): string {
   if (typeSlug === 'portable_appliance_test') return 'PAT';
   if (typeSlug === 'fi_insp_2025') return 'FI-INSP';
+  if (typeSlug === 'dfi_insp_2019_a1') return 'DFI-INSP';
   return 'EICR';
+}
+
+async function applyBusinessDetailsDefaults(
+  pool: Pool,
+  authUser: TenantAuthUser,
+  doc: ElectricalCertificateDocument,
+): Promise<ElectricalCertificateDocument> {
+  const userId = getTenantScopeUserId(authUser);
+  doc = await applySystemSignOffDefaults(pool, authUser, doc);
+  if (!doc.pat) return doc;
+  const branding = await loadCompanyBranding(pool, userId);
+  const address = [branding.company_address, branding.company_email, branding.company_website]
+    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+    .join('\n');
+  doc.pat.registeredBusiness = {
+    name: doc.pat.registeredBusiness.name.trim() || branding.company_name || '',
+    address: doc.pat.registeredBusiness.address.trim() || address,
+    phone: doc.pat.registeredBusiness.phone.trim() || branding.company_phone || '',
+  };
+  return applyPatTestEquipmentDefaults(pool, userId, doc);
+}
+
+async function loadSignOffDefaults(pool: Pool, authUser: TenantAuthUser): Promise<SignOffDefaults | null> {
+  const userId = getTenantScopeUserId(authUser);
+  if (authUser.officerId != null) {
+    const officer = await pool.query<{ full_name: string; role_position: string | null }>(
+      `SELECT full_name, role_position
+       FROM officers
+       WHERE id = $1 ${authUser.role === 'SUPER_ADMIN' ? '' : 'AND created_by = $2'}
+       LIMIT 1`,
+      authUser.role === 'SUPER_ADMIN' ? [authUser.officerId] : [authUser.officerId, userId],
+    );
+    if ((officer.rowCount ?? 0) > 0) {
+      return {
+        name: officer.rows[0].full_name,
+        position: officer.rows[0].role_position ?? '',
+      };
+    }
+  }
+
+  const account = await pool.query<{ full_name: string | null; role: string }>(
+    `SELECT full_name, role FROM users WHERE id = $1 LIMIT 1`,
+    [authUser.userId],
+  );
+  if ((account.rowCount ?? 0) === 0) return null;
+  return {
+    name: account.rows[0].full_name ?? authUser.email,
+    position: account.rows[0].role === 'ADMIN' ? 'Authorised person' : account.rows[0].role,
+  };
+}
+
+async function applySystemSignOffDefaults(
+  pool: Pool,
+  authUser: TenantAuthUser,
+  doc: ElectricalCertificateDocument,
+): Promise<ElectricalCertificateDocument> {
+  const defaults = await loadSignOffDefaults(pool, authUser);
+  if (!defaults) return doc;
+  const today = new Date().toISOString().slice(0, 10);
+
+  doc.installation = {
+    ...doc.installation,
+    inspectedBy: doc.installation.inspectedBy.trim() || defaults.name,
+    inspectedPosition: doc.installation.inspectedPosition.trim() || defaults.position,
+    authorisedBy: doc.installation.authorisedBy.trim() || defaults.name,
+    authorisedPosition: doc.installation.authorisedPosition.trim() || defaults.position,
+    inspectedDate: doc.installation.inspectedDate || today,
+    authorisedDate: doc.installation.authorisedDate || today,
+  };
+
+  if (doc.fireAlarm) {
+    doc.fireAlarm.declaration = {
+      ...doc.fireAlarm.declaration,
+      inspectedBy: doc.fireAlarm.declaration.inspectedBy.trim() || defaults.name,
+      inspectedPosition: doc.fireAlarm.declaration.inspectedPosition.trim() || defaults.position,
+      authorisedBy: doc.fireAlarm.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.fireAlarm.declaration.authorisedPosition.trim() || defaults.position,
+      inspectionDate: doc.fireAlarm.declaration.inspectionDate || today,
+      authorisedDate: doc.fireAlarm.declaration.authorisedDate || today,
+    };
+  }
+
+  if (doc.domesticFireAlarm) {
+    doc.domesticFireAlarm.declaration = {
+      ...doc.domesticFireAlarm.declaration,
+      inspectedBy: doc.domesticFireAlarm.declaration.inspectedBy.trim() || defaults.name,
+      inspectedPosition: doc.domesticFireAlarm.declaration.inspectedPosition.trim() || defaults.position,
+      authorisedBy: doc.domesticFireAlarm.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.domesticFireAlarm.declaration.authorisedPosition.trim() || defaults.position,
+      inspectionDate: doc.domesticFireAlarm.declaration.inspectionDate || today,
+      authorisedDate: doc.domesticFireAlarm.declaration.authorisedDate || today,
+    };
+  }
+
+  return doc;
 }
 
 function formatCertificateNumber(prefix: string, seq: number): string {
@@ -139,6 +260,44 @@ function mapRow(row: Record<string, unknown>) {
     created_at: (row.created_at as Date).toISOString(),
     updated_at: (row.updated_at as Date).toISOString(),
   };
+}
+
+function withProtectedPatSignatureFields(
+  incoming: ElectricalCertificateDocument,
+  existing: ElectricalCertificateDocument,
+): ElectricalCertificateDocument {
+  if (!incoming.pat || !existing.pat) return incoming;
+
+  const existingEngineer = existing.pat.engineer;
+  const incomingEngineer = incoming.pat.engineer;
+  const sameEngineerProfile =
+    (existingEngineer.signedByOfficerId != null &&
+      incomingEngineer.officerId === existingEngineer.signedByOfficerId) ||
+    (existingEngineer.signedByUserId != null && incomingEngineer.userId === existingEngineer.signedByUserId);
+  const canKeepExistingSignature =
+    Boolean(existingEngineer.signatureDataUrl) && sameEngineerProfile && incomingEngineer.name.trim() === existingEngineer.name.trim();
+
+  incoming.pat.engineer = {
+    ...incomingEngineer,
+    ...(canKeepExistingSignature
+      ? {
+          signatureDataUrl: existingEngineer.signatureDataUrl,
+          signedAt: existingEngineer.signedAt,
+          signedByUserId: existingEngineer.signedByUserId,
+          signedByOfficerId: existingEngineer.signedByOfficerId,
+        }
+      : EMPTY_PAT_SIGNATURE),
+  };
+  return incoming;
+}
+
+function withoutPatSignatureFields(doc: ElectricalCertificateDocument): ElectricalCertificateDocument {
+  if (!doc.pat) return doc;
+  doc.pat.engineer = {
+    ...doc.pat.engineer,
+    ...EMPTY_PAT_SIGNATURE,
+  };
+  return doc;
 }
 
 async function loadCertificate(
@@ -234,12 +393,24 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     }
   });
 
+  app.get('/api/electrical-certificates/engineers', ...guard, async (req: Request, res: Response) => {
+    const tenantOwnerUserId = getTenantScopeUserId((req as AuthReq).user!);
+    try {
+      const engineers = await loadCertificateTeamMembers(pool, tenantOwnerUserId);
+      return res.json({ engineers });
+    } catch (error) {
+      console.error('Certificate engineers error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
   app.get('/api/electrical-certificates/numbering-settings', ...guard, async (req: Request, res: Response) => {
     const userId = getTenantScopeUserId((req as AuthReq).user!);
     const types: ElectricalCertificateDocument['typeSlug'][] = [
       'eicr_18e_a3',
       'portable_appliance_test',
       'fi_insp_2025',
+      'dfi_insp_2019_a1',
     ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
@@ -305,6 +476,116 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       console.error('Update certificate numbering settings error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
+  });
+
+  app.get('/api/electrical-certificates/pat-defaults', ...guard, async (req: Request, res: Response) => {
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    try {
+      const testEquipment = await loadPatTestEquipmentDefaults(pool, userId);
+      return res.json({ testEquipment });
+    } catch (error) {
+      console.error('PAT defaults settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/electrical-certificates/pat-defaults', ...guard, async (req: Request, res: Response) => {
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const body = req.body as { testEquipment?: unknown };
+    const raw = body.testEquipment && typeof body.testEquipment === 'object'
+      ? (body.testEquipment as Record<string, unknown>)
+      : {};
+
+    try {
+      const testEquipment = await savePatTestEquipmentDefaults(pool, userId, {
+        make: typeof raw.make === 'string' ? raw.make : '',
+        serialNo: typeof raw.serialNo === 'string' ? raw.serialNo : '',
+        notes: typeof raw.notes === 'string' ? raw.notes : '',
+      });
+      return res.json({ testEquipment });
+    } catch (error) {
+      console.error('Update PAT defaults settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/electrical-certificates/:id/pat-engineer-signature', ...guard, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+
+    const authUser = (req as AuthReq).user!;
+    const userId = getTenantScopeUserId(authUser);
+    const isSuperAdmin = authUser.role === 'SUPER_ADMIN';
+    const body = req.body as { engineer_key?: unknown; officer_id?: unknown; user_id?: unknown; signature_data_url?: unknown };
+    const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url.trim() : '';
+    const engineerKey = typeof body.engineer_key === 'string' ? body.engineer_key.trim() : '';
+
+    if (!signatureDataUrl.startsWith('data:image/png;base64,')) {
+      return res.status(400).json({ message: 'A PNG signature is required' });
+    }
+    if (signatureDataUrl.length > 500_000) {
+      return res.status(400).json({ message: 'Signature image is too large' });
+    }
+
+    const existing = await loadCertificate(pool, id, userId, isSuperAdmin);
+    if (!existing) return res.status(404).json({ message: 'Certificate not found' });
+    if (existing.type_slug !== 'portable_appliance_test' || !existing.document.pat) {
+      return res.status(400).json({ message: 'Engineer signatures are only available for PAT certificates' });
+    }
+
+    const teamMembers = await loadCertificateTeamMembers(pool, userId);
+    let selected: CertificateTeamMember | undefined;
+    if (engineerKey) {
+      selected = teamMembers.find((member) => member.key === engineerKey);
+    } else {
+      const selectedOfficerId =
+        typeof body.officer_id === 'number' && Number.isFinite(body.officer_id)
+          ? Math.trunc(body.officer_id)
+          : typeof body.officer_id === 'string' && body.officer_id.trim()
+            ? parseInt(body.officer_id.trim(), 10)
+            : NaN;
+      const selectedUserId =
+        typeof body.user_id === 'number' && Number.isFinite(body.user_id)
+          ? Math.trunc(body.user_id)
+          : typeof body.user_id === 'string' && body.user_id.trim()
+            ? parseInt(body.user_id.trim(), 10)
+            : NaN;
+      if (Number.isFinite(selectedOfficerId)) {
+        selected = teamMembers.find((member) => member.officer_id === selectedOfficerId);
+      } else if (Number.isFinite(selectedUserId)) {
+        selected = teamMembers.find((member) => member.user_id === selectedUserId);
+      }
+    }
+    if (!selected) return res.status(400).json({ message: 'Engineer is required' });
+    if (!memberCanBeSignedBy(selected, authUser.userId, authUser.officerId)) {
+      return res.status(403).json({ message: 'You can only sign certificates as your own profile' });
+    }
+
+    const signedAt = new Date().toISOString();
+    const document = coerceDocument(existing.document);
+    document.pat = {
+      ...document.pat!,
+      engineer: {
+        ...document.pat!.engineer,
+        officerId: selected.officer_id,
+        userId: selected.user_id,
+        name: selected.full_name,
+        signatureDataUrl,
+        signedAt,
+        signedByUserId: authUser.userId,
+        signedByOfficerId: selected.officer_id,
+      },
+    };
+
+    await pool.query(
+      `UPDATE electrical_certificates
+       SET document = $2::jsonb, updated_at = NOW(), updated_by = $3
+       WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $4'}`,
+      isSuperAdmin ? [id, JSON.stringify(document), userId] : [id, JSON.stringify(document), userId, userId],
+    );
+
+    const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
+    return res.json({ certificate: cert });
   });
 
   app.get('/api/electrical-certificates/:id/pdf', ...guard, async (req: Request, res: Response) => {
@@ -375,31 +656,52 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
 
     const custCheck = await pool.query(
-      'SELECT id, full_name FROM customers WHERE id = $1' + (isSuperAdmin ? '' : ' AND created_by = $2'),
+      `SELECT id, full_name,
+              NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, town, county, postcode)), '') AS customer_address
+       FROM customers WHERE id = $1` + (isSuperAdmin ? '' : ' AND created_by = $2'),
       isSuperAdmin ? [customerId] : [customerId, userId],
     );
     if ((custCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid client' });
 
     let workAddressId: number | null =
       body.work_address_id != null && Number.isFinite(body.work_address_id) ? body.work_address_id : null;
+    let selectedInstallationAddress = '';
     if (workAddressId) {
-      const wa = await pool.query(
-        'SELECT id FROM customer_work_addresses WHERE id = $1 AND customer_id = $2',
+      const wa = await pool.query<{
+        id: number;
+        name: string | null;
+        address_label: string | null;
+      }>(
+        `SELECT id, name,
+                NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), '') AS address_label
+         FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
         [workAddressId, customerId],
       );
       if ((wa.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid installation' });
+      const selected = wa.rows[0];
+      selectedInstallationAddress = [selected.name, selected.address_label].filter(Boolean).join('\n');
     }
 
-    const customerName = (custCheck.rows[0] as { full_name: string }).full_name;
+    const customer = custCheck.rows[0] as { full_name: string; customer_address: string | null };
+    const customerName = customer.full_name;
+    if (!selectedInstallationAddress) selectedInstallationAddress = customer.customer_address ?? '';
     const typeSlug = normalizeCertificateTypeSlug(body.type_slug);
-    const doc = body.document ? coerceDocument({ ...body.document, typeSlug }) : createDefaultDocument(typeSlug, customerName);
+    const doc = await applyBusinessDetailsDefaults(
+      pool,
+      (req as AuthReq).user!,
+      withoutPatSignatureFields(body.document ? coerceDocument({ ...body.document, typeSlug }) : createDefaultDocument(typeSlug, customerName)),
+    );
     if (!body.document) {
       doc.installation.occupierName = customerName;
       if (typeSlug === 'portable_appliance_test' && doc.pat) {
         doc.pat.jobAddress.customerName = customerName;
+        doc.pat.jobAddress.address = selectedInstallationAddress;
       }
       if (typeSlug === 'fi_insp_2025' && doc.fireAlarm) {
         doc.fireAlarm.installation.occupierName = customerName;
+      }
+      if (typeSlug === 'dfi_insp_2019_a1' && doc.domesticFireAlarm) {
+        doc.domesticFireAlarm.installation.occupierName = customerName;
       }
     }
 
@@ -459,8 +761,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       values.push(body.status);
     }
     if (body.document) {
+      const nextDocument = withProtectedPatSignatureFields(coerceDocument(body.document), existing.document);
       updates.push(`document = $${idx++}::jsonb`);
-      values.push(JSON.stringify(coerceDocument(body.document)));
+      values.push(JSON.stringify(nextDocument));
     }
 
     values.push(id);

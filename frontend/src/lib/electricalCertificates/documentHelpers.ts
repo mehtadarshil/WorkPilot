@@ -41,17 +41,30 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
     },
   };
   if (doc.fireAlarm) {
-    return {
-      ...base,
-      fireAlarm: {
-        ...doc.fireAlarm,
-        variations: doc.fireAlarm.variations.map((v) => ({
-          ...v,
-          id: newId('fav'),
-          photos: v.photos.map(clonePhoto),
-        })),
-        inspectionSchedule: { ...doc.fireAlarm.inspectionSchedule },
-      },
+    base.fireAlarm = {
+      ...doc.fireAlarm,
+      variations: doc.fireAlarm.variations.map((v) => ({
+        ...v,
+        id: newId('fav'),
+        photos: v.photos.map(clonePhoto),
+      })),
+      inspectionSchedule: { ...doc.fireAlarm.inspectionSchedule },
+    };
+  }
+  if (doc.domesticFireAlarm) {
+    base.domesticFireAlarm = {
+      ...doc.domesticFireAlarm,
+      variations: doc.domesticFireAlarm.variations.map((v) => ({
+        ...v,
+        id: newId('dfv'),
+        photos: v.photos.map(clonePhoto),
+      })),
+      checklist: { ...doc.domesticFireAlarm.checklist },
+      detectors: doc.domesticFireAlarm.detectors.map((d) => ({
+        ...d,
+        id: newId('dfdet'),
+        photos: d.photos.map(clonePhoto),
+      })),
     };
   }
   return base;

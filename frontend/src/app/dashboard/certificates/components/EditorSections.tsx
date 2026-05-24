@@ -143,6 +143,7 @@ export function InstallationDetailsSection() {
           ]}
         />
         <TextField label="Inspected and tested by" value={inst.inspectedBy} onChange={(v) => patch({ inspectedBy: v })} />
+        <TextField label="Inspector position" value={inst.inspectedPosition} onChange={(v) => patch({ inspectedPosition: v })} />
         <TextField
           label="Inspected date"
           type="date"
@@ -150,6 +151,7 @@ export function InstallationDetailsSection() {
           onChange={(v) => patch({ inspectedDate: v })}
         />
         <TextField label="Authorised for issue by" value={inst.authorisedBy} onChange={(v) => patch({ authorisedBy: v })} />
+        <TextField label="Authorised position" value={inst.authorisedPosition} onChange={(v) => patch({ authorisedPosition: v })} />
         <TextField
           label="Authorised date"
           type="date"

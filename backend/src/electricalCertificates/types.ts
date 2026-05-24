@@ -5,7 +5,11 @@ export type CertificateStatus = 'in_progress' | 'completed' | 'archived';
 export type BoardStatus = 'in_progress' | 'done';
 
 export type InspectionOutcome = '' | 'pass' | 'c1' | 'c2' | 'c3' | 'fi' | 'lim' | 'nv' | 'na' | 'x';
-export type ElectricalCertificateTypeSlug = 'eicr_18e_a3' | 'portable_appliance_test' | 'fi_insp_2025';
+export type ElectricalCertificateTypeSlug =
+  | 'eicr_18e_a3'
+  | 'portable_appliance_test'
+  | 'fi_insp_2025'
+  | 'dfi_insp_2019_a1';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -53,13 +57,65 @@ export interface FireAlarmCertificateData {
   };
   declaration: {
     inspectedBy: string;
+    inspectedPosition: string;
     inspectionDate: string;
     authorisedBy: string;
+    authorisedPosition: string;
     authorisedDate: string;
   };
   variations: FireAlarmVariation[];
   remedialActions: string;
   inspectionSchedule: Record<string, FireAlarmInspectionOutcome>;
+}
+
+export type DomesticFireAlarmChecklistOutcome = '' | 'pass' | 'fail' | 'na';
+export type DomesticFireAlarmGrade = '' | 'A' | 'B' | 'C' | 'D1' | 'D2' | 'E' | 'F1' | 'F2';
+export type DomesticFireAlarmCategory = '' | 'LD1' | 'LD2' | 'LD3' | 'PD1' | 'PD2';
+export type DomesticFireAlarmFitForService = '' | 'yes' | 'no' | 'na';
+
+export interface DomesticFireAlarmDetector {
+  id: string;
+  reference: string;
+  location: string;
+  make: string;
+  model: string;
+  detectorTypes: string[];
+  powerSource: string;
+  interlink: string;
+  expiryDate: string;
+  fitForContinuedService: DomesticFireAlarmFitForService;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface DomesticFireAlarmCertificateData {
+  installation: {
+    occupierName: string;
+    systemGrade: DomesticFireAlarmGrade;
+    systemCategory: DomesticFireAlarmCategory;
+    extentOfSystem: string;
+    limitations: string;
+    generalCondition: string;
+  };
+  summary: {
+    overallAssessment: FireAlarmOverallAssessment;
+    nextInspectionDate: string;
+    nextInspectionPreset: FireAlarmNextInspectionPreset;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectionDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  variations: FireAlarmVariation[];
+  remedialActions: string;
+  checklist: Record<string, DomesticFireAlarmChecklistOutcome>;
+  soundLevelInstrumentModel: string;
+  soundLevelInstrumentSerial: string;
+  detectors: DomesticFireAlarmDetector[];
 }
 
 export type OutcomeButton = 'pass' | 'fail' | 'lim' | 'na' | 'yes' | 'no';
@@ -183,8 +239,14 @@ export interface PatCertificateData {
     notes: string;
   };
   engineer: {
+    officerId: number | null;
+    userId: number | null;
     name: string;
     notes: string;
+    signatureDataUrl: string;
+    signedAt: string;
+    signedByUserId: number | null;
+    signedByOfficerId: number | null;
   };
 }
 
@@ -210,8 +272,10 @@ export interface ElectricalCertificateDocument {
     generalCondition: string;
     overallAssessment: string;
     inspectedBy: string;
+    inspectedPosition: string;
     inspectedDate: string;
     authorisedBy: string;
+    authorisedPosition: string;
     authorisedDate: string;
     reinspectionPeriod: string;
   };
@@ -265,6 +329,7 @@ export interface ElectricalCertificateDocument {
   };
   pat?: PatCertificateData;
   fireAlarm?: FireAlarmCertificateData;
+  domesticFireAlarm?: DomesticFireAlarmCertificateData;
 }
 
 export interface ValidationIssue {
