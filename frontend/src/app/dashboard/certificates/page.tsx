@@ -48,6 +48,7 @@ export default function ElectricalCertificatesPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rowMenuId, setRowMenuId] = useState<number | null>(null);
+  const [rowMenuPosition, setRowMenuPosition] = useState({ top: 0, left: 0 });
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertSource, setConvertSource] = useState<ElectricalCertificate | null>(null);
@@ -315,14 +316,24 @@ export default function ElectricalCertificatesPage() {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => setRowMenuId((id) => (id === c.id ? null : c.id))}
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setRowMenuPosition({
+                            top: rect.bottom + 6,
+                            left: Math.max(8, rect.right - 180),
+                          });
+                          setRowMenuId((id) => (id === c.id ? null : c.id));
+                        }}
                         className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
                         aria-label="More actions"
                       >
                         <MoreVertical className="size-4" />
                       </button>
                       {rowMenuId === c.id && (
-                        <ul className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg">
+                        <ul
+                          className="fixed z-[100] min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg"
+                          style={{ top: rowMenuPosition.top, left: rowMenuPosition.left }}
+                        >
                           <li>
                             <button
                               type="button"
