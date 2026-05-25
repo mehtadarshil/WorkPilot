@@ -29,6 +29,13 @@ const EMPTY_PAT_SIGNATURE = {
   signedByOfficerId: null,
 };
 
+function normalizeDateOnly(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+}
+
 type SignOffDefaults = {
   name: string;
   position: string;
@@ -84,6 +91,8 @@ function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocume
   if (raw === 'portable_appliance_test') return 'portable_appliance_test';
   if (raw === 'fi_insp_2025') return 'fi_insp_2025';
   if (raw === 'dfi_insp_2019_a1') return 'dfi_insp_2019_a1';
+  if (raw === 'dfi_inst_2019_a1') return 'dfi_inst_2019_a1';
+  if (raw === 'fi_extinsp_5306') return 'fi_extinsp_5306';
   return 'eicr_18e_a3';
 }
 
@@ -91,6 +100,8 @@ function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeS
   if (typeSlug === 'portable_appliance_test') return 'PAT';
   if (typeSlug === 'fi_insp_2025') return 'FI-INSP';
   if (typeSlug === 'dfi_insp_2019_a1') return 'DFI-INSP';
+  if (typeSlug === 'dfi_inst_2019_a1') return 'DFI-INST';
+  if (typeSlug === 'fi_extinsp_5306') return 'FI-EXTINSP';
   return 'EICR';
 }
 
@@ -183,6 +194,30 @@ async function applySystemSignOffDefaults(
       authorisedPosition: doc.domesticFireAlarm.declaration.authorisedPosition.trim() || defaults.position,
       inspectionDate: doc.domesticFireAlarm.declaration.inspectionDate || today,
       authorisedDate: doc.domesticFireAlarm.declaration.authorisedDate || today,
+    };
+  }
+
+  if (doc.domesticFireAlarmInst) {
+    doc.domesticFireAlarmInst.declaration = {
+      ...doc.domesticFireAlarmInst.declaration,
+      installedBy: doc.domesticFireAlarmInst.declaration.installedBy.trim() || defaults.name,
+      installedPosition: doc.domesticFireAlarmInst.declaration.installedPosition.trim() || defaults.position,
+      installedDate: doc.domesticFireAlarmInst.declaration.installedDate || today,
+      authorisedBy: doc.domesticFireAlarmInst.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.domesticFireAlarmInst.declaration.authorisedPosition.trim() || defaults.position,
+      authorisedDate: doc.domesticFireAlarmInst.declaration.authorisedDate || today,
+    };
+  }
+
+  if (doc.fireExtinguisher) {
+    doc.fireExtinguisher.declaration = {
+      ...doc.fireExtinguisher.declaration,
+      inspectedBy: doc.fireExtinguisher.declaration.inspectedBy.trim() || defaults.name,
+      inspectedPosition: doc.fireExtinguisher.declaration.inspectedPosition.trim() || defaults.position,
+      inspectedDate: doc.fireExtinguisher.declaration.inspectedDate || today,
+      authorisedBy: doc.fireExtinguisher.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.fireExtinguisher.declaration.authorisedPosition.trim() || defaults.position,
+      authorisedDate: doc.fireExtinguisher.declaration.authorisedDate || today,
     };
   }
 
@@ -282,7 +317,7 @@ function withProtectedPatSignatureFields(
     ...(canKeepExistingSignature
       ? {
           signatureDataUrl: existingEngineer.signatureDataUrl,
-          signedAt: existingEngineer.signedAt,
+          signedAt: normalizeDateOnly(incomingEngineer.signedAt) || normalizeDateOnly(existingEngineer.signedAt),
           signedByUserId: existingEngineer.signedByUserId,
           signedByOfficerId: existingEngineer.signedByOfficerId,
         }
@@ -411,6 +446,8 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       'portable_appliance_test',
       'fi_insp_2025',
       'dfi_insp_2019_a1',
+      'dfi_inst_2019_a1',
+      'fi_extinsp_5306',
     ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
@@ -516,9 +553,10 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const authUser = (req as AuthReq).user!;
     const userId = getTenantScopeUserId(authUser);
     const isSuperAdmin = authUser.role === 'SUPER_ADMIN';
-    const body = req.body as { engineer_key?: unknown; officer_id?: unknown; user_id?: unknown; signature_data_url?: unknown };
+    const body = req.body as { engineer_key?: unknown; officer_id?: unknown; user_id?: unknown; signature_data_url?: unknown; signature_date?: unknown };
     const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url.trim() : '';
     const engineerKey = typeof body.engineer_key === 'string' ? body.engineer_key.trim() : '';
+    const signatureDate = normalizeDateOnly(body.signature_date) || new Date().toISOString().slice(0, 10);
 
     if (!signatureDataUrl.startsWith('data:image/png;base64,')) {
       return res.status(400).json({ message: 'A PNG signature is required' });
@@ -561,7 +599,6 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       return res.status(403).json({ message: 'You can only sign certificates as your own profile' });
     }
 
-    const signedAt = new Date().toISOString();
     const document = coerceDocument(existing.document);
     document.pat = {
       ...document.pat!,
@@ -571,7 +608,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
         userId: selected.user_id,
         name: selected.full_name,
         signatureDataUrl,
-        signedAt,
+        signedAt: signatureDate,
         signedByUserId: authUser.userId,
         signedByOfficerId: selected.officer_id,
       },
@@ -665,6 +702,31 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
 
     let workAddressId: number | null =
       body.work_address_id != null && Number.isFinite(body.work_address_id) ? body.work_address_id : null;
+    const requestedJobId = body.job_id != null && Number.isFinite(body.job_id) ? Number(body.job_id) : null;
+    let linkedJobId: number | null = null;
+    if (requestedJobId) {
+      const jobCheck = await pool.query<{
+        id: number;
+        customer_id: number | null;
+        work_address_id: number | null;
+      }>(
+        `SELECT id, customer_id, work_address_id
+         FROM jobs
+         WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+        isSuperAdmin ? [requestedJobId] : [requestedJobId, userId],
+      );
+      if ((jobCheck.rowCount ?? 0) === 0 || jobCheck.rows[0].customer_id !== customerId) {
+        return res.status(400).json({ message: 'Invalid linked job' });
+      }
+      const jobWorkAddressId = jobCheck.rows[0].work_address_id ?? null;
+      if (workAddressId != null && jobWorkAddressId != null && workAddressId !== jobWorkAddressId) {
+        return res.status(400).json({ message: 'Linked job does not match selected work address' });
+      }
+      if (workAddressId == null && jobWorkAddressId != null) {
+        workAddressId = jobWorkAddressId;
+      }
+      linkedJobId = requestedJobId;
+    }
     let selectedInstallationAddress = '';
     if (workAddressId) {
       const wa = await pool.query<{
@@ -703,6 +765,12 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       if (typeSlug === 'dfi_insp_2019_a1' && doc.domesticFireAlarm) {
         doc.domesticFireAlarm.installation.occupierName = customerName;
       }
+      if (typeSlug === 'dfi_inst_2019_a1' && doc.domesticFireAlarmInst) {
+        doc.domesticFireAlarmInst.installation.occupierName = customerName;
+      }
+      if (typeSlug === 'fi_extinsp_5306' && doc.fireExtinguisher) {
+        doc.fireExtinguisher.installation.occupierName = customerName;
+      }
     }
 
     const jobNumber = typeof body.job_number === 'string' ? body.job_number.trim() || null : null;
@@ -719,7 +787,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
           typeSlug,
           customerId,
           workAddressId,
-          body.job_id && Number.isFinite(body.job_id) ? body.job_id : null,
+          linkedJobId,
           JSON.stringify(doc),
           userId,
         ],

@@ -445,6 +445,38 @@ export function mountJobFilesRoutes(app: Application, deps: JobFilesRouteDeps): 
       }
 
       if (customerId != null) {
+        const certRows = await pool.query<{
+          id: number;
+          certificate_number: string;
+          type_slug: string;
+          status: string;
+          updated_at: Date;
+          job_id: number | null;
+        }>(
+          `SELECT id, certificate_number, type_slug, status, updated_at, job_id
+           FROM electrical_certificates
+           WHERE customer_id = $1
+             AND job_id = $2
+           ORDER BY updated_at DESC`,
+          [customerId, jobId],
+        );
+        for (const cert of certRows.rows) {
+          files.push({
+            id: `electrical_cert_${cert.id}`,
+            source: 'Electrical certificates',
+            source_detail: `${cert.type_slug.replace(/_/g, ' ')} · ${cert.status.replace(/_/g, ' ')}`,
+            label: `${cert.certificate_number}.pdf`,
+            kind: 'pdf',
+            content_type: 'application/pdf',
+            byte_size: null,
+            created_at: (cert.updated_at as Date).toISOString(),
+            access: 'bearer',
+            href: `/electrical-certificates/${cert.id}/pdf`,
+          });
+        }
+      }
+
+      if (customerId != null) {
         const cf = await pool.query<{
           id: number;
           original_filename: string;

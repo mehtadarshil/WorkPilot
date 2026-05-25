@@ -49,6 +49,10 @@ function memberCanSign(member: CertificateEngineer, userId: number | null, offic
   return false;
 }
 
+function dateOnly(raw: string): string {
+  return raw.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? '';
+}
+
 export function PatCertificateEditor() {
   const { certificate, document, setDocument, saveDocument, saving, saveError, lastSavedAt, patchMeta } = useCertificateEditor();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -221,7 +225,7 @@ export function PatCertificateEditor() {
       const signatureDataUrl = await blobToDataUrl(blob);
       const res = await postJson<{ certificate: ElectricalCertificate }>(
         `/electrical-certificates/${certificate.id}/pat-engineer-signature`,
-        { engineer_key: selectedEngineerKey, signature_data_url: signatureDataUrl },
+        { engineer_key: selectedEngineerKey, signature_data_url: signatureDataUrl, signature_date: signatureDate },
         token,
       );
       setDocument(() => res.certificate.document);
@@ -235,6 +239,7 @@ export function PatCertificateEditor() {
   const canSignSelectedEngineer = selectedEngineer
     ? memberCanSign(selectedEngineer, currentUserId, currentOfficerId)
     : false;
+  const signatureDate = dateOnly(pat.engineer.signedAt) || new Date().toISOString().slice(0, 10);
 
   const downloadPdf = async () => {
     if (!token) return;
@@ -395,6 +400,12 @@ export function PatCertificateEditor() {
                 </select>
               </label>
               <TextField label="Engineer name" value={pat.engineer.name} onChange={(v) => updatePat((p) => ({ ...p, engineer: { ...p.engineer, name: v } }))} />
+              <TextField
+                type="date"
+                label="Signature date"
+                value={signatureDate}
+                onChange={(v) => updatePat((p) => ({ ...p, engineer: { ...p.engineer, signedAt: v } }))}
+              />
               <TextArea label="Inspection notes / observations" value={pat.engineer.notes} onChange={(v) => updatePat((p) => ({ ...p, engineer: { ...p.engineer, notes: v } }))} rows={6} />
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -414,7 +425,7 @@ export function PatCertificateEditor() {
                   <div className="mb-3 rounded-lg border border-slate-200 bg-white p-3">
                     <img src={pat.engineer.signatureDataUrl} alt={`${pat.engineer.name} signature`} className="h-20 max-w-full object-contain" />
                     <p className="mt-2 text-xs text-slate-500">
-                      Signed by {pat.engineer.name || 'engineer'}{pat.engineer.signedAt ? ` on ${new Date(pat.engineer.signedAt).toLocaleString()}` : ''}
+                      Signed by {pat.engineer.name || 'engineer'}{signatureDate ? ` on ${signatureDate}` : ''}
                     </p>
                   </div>
                 ) : null}

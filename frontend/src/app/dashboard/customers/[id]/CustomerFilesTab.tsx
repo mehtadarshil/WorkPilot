@@ -7,15 +7,18 @@ import { Upload, FileText, Trash2, Download, AlertCircle, Eye } from 'lucide-rea
 import dayjs from 'dayjs';
 
 interface CustomerFileRow {
-  id: number;
+  id: number | string;
   customer_id: number;
   work_address_id: number | null;
   original_filename: string;
   content_type: string | null;
-  byte_size: number;
+  byte_size: number | null;
   created_at: string;
   created_by: number | null;
   created_by_name: string;
+  kind?: 'uploaded' | 'electrical_certificate';
+  href?: string;
+  source_label?: string;
 }
 
 interface FilesResponse {
@@ -29,10 +32,17 @@ interface Props {
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
-function formatBytes(n: number): string {
+function formatBytes(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return '—';
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileContentPath(customerId: string, file: CustomerFileRow): string {
+  return file.kind === 'electrical_certificate' && file.href
+    ? file.href
+    : `/customers/${customerId}/files/${file.id}/content`;
 }
 
 export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
@@ -96,7 +106,7 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
     if (!token) return;
     setError(null);
     try {
-      const blob = await getBlob(`/customers/${customerId}/files/${f.id}/content`, token);
+      const blob = await getBlob(fileContentPath(customerId, f), token);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -120,7 +130,7 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
     if (!token || !canPreviewInline(f)) return;
     setError(null);
     try {
-      const blob = await getBlob(`/customers/${customerId}/files/${f.id}/content`, token);
+      const blob = await getBlob(fileContentPath(customerId, f), token);
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (e) {
@@ -130,6 +140,7 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
 
   const removeFile = async (f: CustomerFileRow) => {
     if (!token) return;
+    if (f.kind === 'electrical_certificate') return;
     if (!window.confirm(`Delete "${f.original_filename}"?`)) return;
     setError(null);
     try {
@@ -188,7 +199,7 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3">
-          <span className="text-sm font-semibold text-slate-900">Uploaded files</span>
+          <span className="text-sm font-semibold text-slate-900">Files</span>
           <span className="rounded-full bg-[#14B8A6]/10 px-2.5 py-0.5 text-xs font-semibold text-[#14B8A6]">
             {files.length} file{files.length === 1 ? '' : 's'}
           </span>
@@ -208,7 +219,7 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
               {files.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
-                    No files yet. Upload documents, photos, or PDFs using the area above.
+                    No files yet. Upload documents, photos, PDFs, or create certificates for this customer/site.
                   </td>
                 </tr>
               ) : (
@@ -219,7 +230,11 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
                         <FileText className="size-4 shrink-0 text-[#14B8A6]" />
                         <span className="font-medium text-slate-900">{f.original_filename}</span>
                       </div>
-                      {f.content_type && <p className="mt-0.5 pl-6 text-xs text-slate-400">{f.content_type}</p>}
+                      <p className="mt-0.5 pl-6 text-xs text-slate-400">
+                        {f.kind === 'electrical_certificate'
+                          ? `Electrical certificate${f.source_label ? ` · ${f.source_label}` : ''}`
+                          : f.content_type}
+                      </p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{formatBytes(f.byte_size)}</td>
                     <td className="px-4 py-3 text-slate-600">{dayjs(f.created_at).format('D MMM YYYY, h:mm a')}</td>
@@ -243,14 +258,16 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
                         <Download className="size-3.5" />
                         Download
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void removeFile(f)}
-                        className="ml-4 inline-flex items-center gap-1 font-semibold text-rose-600 hover:underline"
-                      >
-                        <Trash2 className="size-3.5" />
-                        Delete
-                      </button>
+                      {f.kind !== 'electrical_certificate' && (
+                        <button
+                          type="button"
+                          onClick={() => void removeFile(f)}
+                          className="ml-4 inline-flex items-center gap-1 font-semibold text-rose-600 hover:underline"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

@@ -3,9 +3,18 @@ import type {
   CertificatePhoto,
   CircuitRow,
   DomesticFireAlarmCertificateData,
+  DomesticFireAlarmInstCertificateData,
+  DomesticFireAlarmInstAdditionalTest,
+  DomesticFireAlarmInstPassNa,
   DomesticFireAlarmDetector,
   ElectricalCertificateDocument,
+  FireBlanketRecord,
   FireAlarmCertificateData,
+  FireExtinguisherCertificateData,
+  FireExtinguisherBlanketOutcome,
+  FireExtinguisherChecklistOutcome,
+  FireExtinguisherNextInspectionPreset,
+  FireExtinguisherRecord,
   FireAlarmVariation,
   PatApplianceRow,
   PatCertificateData,
@@ -167,6 +176,203 @@ export function applyPatTotals(pat: PatCertificateData): PatCertificateData {
       totalPassed: String(totalPassed),
       totalFailed: String(totalFailed),
     },
+  };
+}
+
+export function emptyFireExtinguisher(index = 0): FireExtinguisherRecord {
+  return {
+    id: newId('fex'),
+    location: '',
+    reference: index > 0 ? `FE-${String(index).padStart(2, '0')}` : '',
+    serviceCode: 'inspected',
+    make: '',
+    extinguisherType: '',
+    capacity: '',
+    capacityUnit: 'kg',
+    measuredWeight: '',
+    nextDischargeDate: '',
+    endOfLifeDate: '',
+    notes: '',
+    photos: [],
+  };
+}
+
+export function emptyFireBlanket(index = 0): FireBlanketRecord {
+  return {
+    id: newId('fbl'),
+    location: '',
+    reference: index > 0 ? `FB-${String(index).padStart(2, '0')}` : '',
+    make: '',
+    installationDate: '',
+    installationDateUnknown: false,
+    expiryDate: '',
+    outcome: '',
+    notes: '',
+    photos: [],
+  };
+}
+
+export function createDefaultFireExtinguisherData(occupierName = ''): FireExtinguisherCertificateData {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    installation: {
+      occupierName,
+      occupierType: '',
+      premisesType: '',
+      nextInspectionDate: '',
+      nextInspectionPreset: '',
+    },
+    declaration: {
+      inspectedBy: '',
+      inspectedPosition: '',
+      inspectedDate: today,
+      authorisedBy: '',
+      authorisedPosition: '',
+      authorisedDate: today,
+    },
+    extinguishers: [],
+    blankets: [],
+    checklist: {},
+    checklistNotes: {},
+    hideChecklistFromReport: false,
+    remedialActions: '',
+  };
+}
+
+function cleanChecklistOutcome(value: unknown): FireExtinguisherChecklistOutcome {
+  if (value === 'yes' || value === 'no' || value === 'na') return value;
+  if (value === 'pass') return 'yes';
+  if (value === 'fail') return 'no';
+  return '';
+}
+
+function cleanBlanketOutcome(value: unknown): FireExtinguisherBlanketOutcome {
+  return value === 'pass' || value === 'fail' ? value : '';
+}
+
+function cleanNextInspectionPreset(value: unknown): FireExtinguisherNextInspectionPreset {
+  return value === '6months' || value === '1year' || value === '3years' || value === '5years' || value === 'other'
+    ? value
+    : '';
+}
+
+function coerceFireExtinguisher(raw: unknown, index: number): FireExtinguisherRecord {
+  const base = emptyFireExtinguisher(index + 1);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<FireExtinguisherRecord> & {
+    size?: string;
+    manufacturer?: string;
+    nextServiceDate?: string;
+    manufactureDate?: string;
+  };
+  const capacity = typeof o.capacity === 'string' ? o.capacity : typeof o.size === 'string' ? o.size : '';
+  const make = typeof o.make === 'string' ? o.make : typeof o.manufacturer === 'string' ? o.manufacturer : '';
+  return {
+    ...base,
+    ...o,
+    id: typeof o.id === 'string' && o.id ? o.id : base.id,
+    location: typeof o.location === 'string' ? o.location : '',
+    reference: typeof o.reference === 'string' ? o.reference : base.reference,
+    serviceCode: typeof o.serviceCode === 'string' ? o.serviceCode : base.serviceCode,
+    make,
+    extinguisherType: typeof o.extinguisherType === 'string' ? o.extinguisherType : '',
+    capacity,
+    capacityUnit: o.capacityUnit === 'litre' || o.capacityUnit === 'other' ? o.capacityUnit : o.capacityUnit === 'kg' ? 'kg' : base.capacityUnit,
+    measuredWeight: typeof o.measuredWeight === 'string' ? o.measuredWeight : '',
+    nextDischargeDate:
+      typeof o.nextDischargeDate === 'string'
+        ? o.nextDischargeDate
+        : typeof o.nextServiceDate === 'string'
+          ? o.nextServiceDate
+          : '',
+    endOfLifeDate:
+      typeof o.endOfLifeDate === 'string'
+        ? o.endOfLifeDate
+        : typeof o.manufactureDate === 'string'
+          ? o.manufactureDate
+          : '',
+    notes: typeof o.notes === 'string' ? o.notes : '',
+    photos: Array.isArray(o.photos)
+      ? o.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+      : [],
+  };
+}
+
+function coerceFireBlanket(raw: unknown, index: number): FireBlanketRecord {
+  const base = emptyFireBlanket(index + 1);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<FireBlanketRecord> & { manufacturer?: string };
+  const make = typeof o.make === 'string' ? o.make : typeof o.manufacturer === 'string' ? o.manufacturer : '';
+  return {
+    ...base,
+    ...o,
+    id: typeof o.id === 'string' && o.id ? o.id : base.id,
+    location: typeof o.location === 'string' ? o.location : '',
+    reference: typeof o.reference === 'string' ? o.reference : base.reference,
+    make,
+    installationDate: typeof o.installationDate === 'string' ? o.installationDate : '',
+    installationDateUnknown: Boolean(o.installationDateUnknown),
+    expiryDate: typeof o.expiryDate === 'string' ? o.expiryDate : '',
+    outcome: cleanBlanketOutcome(o.outcome),
+    notes: typeof o.notes === 'string' ? o.notes : '',
+    photos: Array.isArray(o.photos)
+      ? o.photos.map(coercePhoto).filter((p): p is CertificatePhoto => p != null)
+      : [],
+  };
+}
+
+export function coerceFireExtinguisherData(raw: unknown, occupierName = ''): FireExtinguisherCertificateData {
+  const base = createDefaultFireExtinguisherData(occupierName);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<FireExtinguisherCertificateData> & {
+    installation?: Partial<FireExtinguisherCertificateData['installation']> & {
+      premisesDescription?: string;
+      nextServiceDate?: string;
+      inspectionDate?: string;
+    };
+  };
+  const installationRaw: Partial<FireExtinguisherCertificateData['installation']> & {
+    premisesDescription?: string;
+    nextServiceDate?: string;
+    inspectionDate?: string;
+  } = o.installation ?? {};
+  const premisesType =
+    typeof installationRaw.premisesType === 'string'
+      ? installationRaw.premisesType
+      : typeof installationRaw.premisesDescription === 'string'
+        ? installationRaw.premisesDescription
+        : '';
+  const checklistRaw = o.checklist && typeof o.checklist === 'object' ? o.checklist : {};
+  const checklistNotesRaw = o.checklistNotes && typeof o.checklistNotes === 'object' ? o.checklistNotes : {};
+  const checklist: FireExtinguisherCertificateData['checklist'] = {};
+  const checklistNotes: FireExtinguisherCertificateData['checklistNotes'] = {};
+  for (const [key, value] of Object.entries(checklistRaw)) {
+    checklist[key] = cleanChecklistOutcome(value);
+  }
+  for (const [key, value] of Object.entries(checklistNotesRaw)) {
+    if (typeof value === 'string') checklistNotes[key] = value;
+  }
+  return {
+    installation: {
+      ...base.installation,
+      ...installationRaw,
+      occupierName: typeof installationRaw.occupierName === 'string' ? installationRaw.occupierName : occupierName,
+      premisesType,
+      nextInspectionDate:
+        typeof installationRaw.nextInspectionDate === 'string'
+          ? installationRaw.nextInspectionDate
+          : typeof installationRaw.nextServiceDate === 'string'
+            ? installationRaw.nextServiceDate
+            : '',
+      nextInspectionPreset: cleanNextInspectionPreset(installationRaw.nextInspectionPreset),
+    },
+    declaration: { ...base.declaration, ...(o.declaration ?? {}) },
+    extinguishers: Array.isArray(o.extinguishers) ? o.extinguishers.map(coerceFireExtinguisher) : [],
+    blankets: Array.isArray(o.blankets) ? o.blankets.map(coerceFireBlanket) : [],
+    checklist,
+    checklistNotes,
+    hideChecklistFromReport: Boolean(o.hideChecklistFromReport),
+    remedialActions: typeof o.remedialActions === 'string' ? o.remedialActions : '',
   };
 }
 
@@ -345,6 +551,97 @@ function coerceDomesticDetector(raw: unknown): DomesticFireAlarmDetector {
   };
 }
 
+export function createDefaultDomesticFireAlarmInstData(occupierName = ''): DomesticFireAlarmInstCertificateData {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    installation: {
+      occupierName,
+      systemIs: 'new',
+      systemGrade: '',
+      systemCategory: '',
+    },
+    documentation: { relatedReferenceDocuments: '' },
+    extent: { extentOfSystem: '' },
+    specification: { specificationText: '' },
+    variationsFromSpec: { variationsText: '' },
+    declaration: {
+      installedBy: '',
+      installedPosition: '',
+      installedDate: today,
+      authorisedBy: '',
+      authorisedPosition: '',
+      authorisedDate: today,
+    },
+    testSchedule: {
+      wiringTested: '',
+      testResultsRecorded: '',
+      insulationBetweenConductors: '',
+      insulationConductorsEarth: '',
+      insulationConductorsScreen: '',
+      earthContinuity: '',
+      earthFaultLoopImpedance: '',
+      maxCircuitResistance: '',
+      manufacturerOtherTests: '',
+      additionalTests: [],
+    },
+  };
+}
+
+function coerceDomesticFireAlarmInstAdditionalTest(raw: unknown): DomesticFireAlarmInstAdditionalTest {
+  const base: DomesticFireAlarmInstAdditionalTest = { id: newId('dfitest'), description: '', outcome: '' };
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<DomesticFireAlarmInstAdditionalTest>;
+  const outcome = o.outcome === 'pass' || o.outcome === 'na' ? o.outcome : '';
+  return {
+    ...base,
+    ...o,
+    id: typeof o.id === 'string' && o.id ? o.id : base.id,
+    outcome,
+  };
+}
+
+export function coerceDomesticFireAlarmInstData(raw: unknown, occupierName = ''): DomesticFireAlarmInstCertificateData {
+  const base = createDefaultDomesticFireAlarmInstData(occupierName);
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Partial<DomesticFireAlarmInstCertificateData>;
+  const systemIs =
+    o.installation?.systemIs === 'new' ||
+    o.installation?.systemIs === 'modification' ||
+    o.installation?.systemIs === 'alteration'
+      ? o.installation.systemIs
+      : base.installation.systemIs;
+  const testRaw: Partial<DomesticFireAlarmInstCertificateData['testSchedule']> = o.testSchedule ?? {};
+  const passNa = (v: unknown): DomesticFireAlarmInstPassNa => (v === 'pass' || v === 'na' ? v : '');
+  const recorded =
+    testRaw.testResultsRecorded === 'supplied_to_commissioning' ||
+    testRaw.testResultsRecorded === 'supplied_by_others' ||
+    testRaw.testResultsRecorded === 'na'
+      ? testRaw.testResultsRecorded
+      : '';
+  return {
+    installation: { ...base.installation, ...(o.installation ?? {}), systemIs },
+    documentation: { ...base.documentation, ...(o.documentation ?? {}) },
+    extent: { ...base.extent, ...(o.extent ?? {}) },
+    specification: { ...base.specification, ...(o.specification ?? {}) },
+    variationsFromSpec: { ...base.variationsFromSpec, ...(o.variationsFromSpec ?? {}) },
+    declaration: { ...base.declaration, ...(o.declaration ?? {}) },
+    testSchedule: {
+      wiringTested: passNa(testRaw.wiringTested),
+      testResultsRecorded: recorded,
+      insulationBetweenConductors: passNa(testRaw.insulationBetweenConductors),
+      insulationConductorsEarth: passNa(testRaw.insulationConductorsEarth),
+      insulationConductorsScreen: passNa(testRaw.insulationConductorsScreen),
+      earthContinuity: passNa(testRaw.earthContinuity),
+      earthFaultLoopImpedance: passNa(testRaw.earthFaultLoopImpedance),
+      maxCircuitResistance: passNa(testRaw.maxCircuitResistance),
+      manufacturerOtherTests: passNa(testRaw.manufacturerOtherTests),
+      additionalTests: Array.isArray(testRaw.additionalTests)
+        ? testRaw.additionalTests.map(coerceDomesticFireAlarmInstAdditionalTest)
+        : [],
+    },
+  };
+}
+
 export function coerceDomesticFireAlarmData(raw: unknown, occupierName = ''): DomesticFireAlarmCertificateData {
   const base = createDefaultDomesticFireAlarmData(occupierName);
   if (!raw || typeof raw !== 'object') return base;
@@ -368,7 +665,15 @@ export function coerceDomesticFireAlarmData(raw: unknown, occupierName = ''): Do
 function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['typeSlug'] {
   if (raw && typeof raw === 'object') {
     const s = (raw as Partial<ElectricalCertificateDocument>).typeSlug;
-    if (s === 'portable_appliance_test' || s === 'fi_insp_2025' || s === 'dfi_insp_2019_a1') return s;
+    if (
+      s === 'portable_appliance_test' ||
+      s === 'fi_insp_2025' ||
+      s === 'dfi_insp_2019_a1' ||
+      s === 'dfi_inst_2019_a1' ||
+      s === 'fi_extinsp_5306'
+    ) {
+      return s;
+    }
   }
   return 'eicr_18e_a3';
 }
@@ -471,12 +776,24 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       bondLightning: '',
     },
     inspectionSchedule: {},
-    boards: typeSlug === 'fi_insp_2025' || typeSlug === 'dfi_insp_2019_a1' ? [] : [emptyBoard()],
+    boards:
+      typeSlug === 'fi_insp_2025' ||
+      typeSlug === 'dfi_insp_2019_a1' ||
+      typeSlug === 'dfi_inst_2019_a1' ||
+      typeSlug === 'fi_extinsp_5306'
+        ? []
+        : [emptyBoard()],
     appendix: { content: '', photos: [] },
     ...(typeSlug === 'portable_appliance_test' ? { pat: createDefaultPatData(customerName) } : {}),
     ...(typeSlug === 'fi_insp_2025' ? { fireAlarm: createDefaultFireAlarmData(customerName) } : {}),
     ...(typeSlug === 'dfi_insp_2019_a1'
       ? { domesticFireAlarm: createDefaultDomesticFireAlarmData(customerName) }
+      : {}),
+    ...(typeSlug === 'dfi_inst_2019_a1'
+      ? { domesticFireAlarmInst: createDefaultDomesticFireAlarmInstData(customerName) }
+      : {}),
+    ...(typeSlug === 'fi_extinsp_5306'
+      ? { fireExtinguisher: createDefaultFireExtinguisherData(customerName) }
       : {}),
   };
 }
@@ -500,7 +817,10 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
     inspectionSchedule:
       o.inspectionSchedule && typeof o.inspectionSchedule === 'object' ? o.inspectionSchedule : {},
     boards:
-      rawType === 'fi_insp_2025' || rawType === 'dfi_insp_2019_a1'
+      rawType === 'fi_insp_2025' ||
+      rawType === 'dfi_insp_2019_a1' ||
+      rawType === 'dfi_inst_2019_a1' ||
+      rawType === 'fi_extinsp_5306'
         ? []
         : Array.isArray(o.boards) && o.boards.length > 0
           ? o.boards.map(coerceBoard)
@@ -517,6 +837,22 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
       : {}),
     ...(rawType === 'dfi_insp_2019_a1'
       ? { domesticFireAlarm: coerceDomesticFireAlarmData(o.domesticFireAlarm, base.installation.occupierName) }
+      : {}),
+    ...(rawType === 'dfi_inst_2019_a1'
+      ? {
+          domesticFireAlarmInst: coerceDomesticFireAlarmInstData(
+            o.domesticFireAlarmInst,
+            base.installation.occupierName,
+          ),
+        }
+      : {}),
+    ...(rawType === 'fi_extinsp_5306'
+      ? {
+          fireExtinguisher: coerceFireExtinguisherData(
+            o.fireExtinguisher,
+            base.installation.occupierName,
+          ),
+        }
       : {}),
   };
 }

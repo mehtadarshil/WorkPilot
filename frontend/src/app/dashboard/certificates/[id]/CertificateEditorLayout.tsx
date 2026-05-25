@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { getJson } from '../../../apiClient';
@@ -11,10 +11,11 @@ import { CertificateEditorShell } from '../components/CertificateEditorShell';
 import { PatCertificateEditor } from '../components/PatCertificateEditor';
 import { FireAlarmCertificateEditor } from '../components/FireAlarmCertificateEditor';
 import { DomesticFireAlarmCertificateEditor } from '../components/DomesticFireAlarmCertificateEditor';
+import { DomesticFireAlarmInstCertificateEditor } from '../components/DomesticFireAlarmInstCertificateEditor';
+import { FireExtinguisherCertificateEditor } from '../components/FireExtinguisherCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
-  const router = useRouter();
   const id = parseInt(String(params.id), 10);
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [certificate, setCertificate] = useState<ElectricalCertificate | null>(null);
@@ -71,6 +72,10 @@ export default function CertificateEditorLayout({ children }: { children: React.
         <FireAlarmCertificateEditor />
       ) : certificate.type_slug === 'dfi_insp_2019_a1' ? (
         <DomesticFireAlarmCertificateEditor />
+      ) : certificate.type_slug === 'dfi_inst_2019_a1' ? (
+        <DomesticFireAlarmInstCertificateEditor />
+      ) : certificate.type_slug === 'fi_extinsp_5306' ? (
+        <FireExtinguisherCertificateEditor />
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}

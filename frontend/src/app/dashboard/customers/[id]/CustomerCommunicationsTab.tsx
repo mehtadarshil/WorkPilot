@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Download, Mail, Phone, Plus, Printer, Search, X, Paperclip } from 'lucide-react';
 import dayjs from 'dayjs';
-import { getJson, postJson } from '../../../apiClient';
+import { getBlob, getJson, postJson } from '../../../apiClient';
 
 type RecordType = 'note' | 'email' | 'sms' | 'phone' | 'schedule';
 type ObjectType = 'customer' | 'job' | 'invoice' | 'property' | 'branch' | 'asset';
@@ -46,6 +46,33 @@ interface CustomerBasics {
   contact_mobile: string | null;
 }
 
+interface EmailComposeDraft {
+  signature_html: string | null;
+  from_display: string;
+  from_email: string;
+  smtp_ready: boolean;
+  default_to: string;
+  subject: string;
+  body_html: string;
+}
+
+interface CustomerFileOption {
+  id: number | string;
+  original_filename: string;
+  content_type: string | null;
+  byte_size: number | null;
+  kind?: 'uploaded' | 'electrical_certificate';
+  href?: string;
+}
+
+type EmailAttachment = {
+  key: string;
+  filename: string;
+  content_base64: string;
+  content_type: string;
+  byte_size: number;
+};
+
 interface Props {
   customerId: string;
   customer: CustomerBasics;
@@ -65,8 +92,46 @@ function getTypeIcon(type: RecordType) {
   return CalendarDays;
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      resolve(result.includes(',') ? result.slice(result.indexOf(',') + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      resolve(result.includes(',') ? result.slice(result.indexOf(',') + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read file'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes == null || !Number.isFinite(bytes)) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function customerFileContentPath(customerId: string, file: CustomerFileOption): string {
+  return file.kind === 'electrical_certificate' && file.href
+    ? file.href
+    : `/customers/${customerId}/files/${file.id}/content`;
+}
+
 export default function CustomerCommunicationsTab({ customerId, customer, workAddressId }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [records, setRecords] = useState<Communication[]>([]);
   const [createdByOptions, setCreatedByOptions] = useState<CreatedByOption[]>([]);
@@ -95,6 +160,12 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
   const [objectId, setObjectId] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
   const [scheduledFor, setScheduledFor] = useState('');
+  const [emailDraft, setEmailDraft] = useState<EmailComposeDraft | null>(null);
+  const [includeSignature, setIncludeSignature] = useState(true);
+  const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
+  const [customerFiles, setCustomerFiles] = useState<CustomerFileOption[]>([]);
+  const [selectedFileId, setSelectedFileId] = useState('');
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
 
   const fetchCommunications = useCallback(async () => {
     if (!token || !customerId) return;
@@ -147,6 +218,27 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
     setObjectId('');
     setAttachmentName('');
     setScheduledFor('');
+    setEmailDraft(null);
+    setIncludeSignature(true);
+    setAttachments([]);
+    setCustomerFiles([]);
+    setSelectedFileId('');
+    setAttachmentBusy(false);
+  };
+
+  const loadEmailComposeData = async () => {
+    if (!token) return;
+    const params = new URLSearchParams();
+    if (workAddressId) params.set('work_address_id', workAddressId);
+    const [draft, filesRes] = await Promise.all([
+      getJson<EmailComposeDraft>(`/customers/${customerId}/email-compose`, token),
+      getJson<{ files: CustomerFileOption[] }>(`/customers/${customerId}/files${params.toString() ? `?${params.toString()}` : ''}`, token),
+    ]);
+    setEmailDraft(draft);
+    setCustomerFiles(filesRes.files ?? []);
+    setToValue(draft.default_to || customer.contact_email || customer.email || '');
+    setSubject(draft.subject || `Regarding ${customer.full_name}`);
+    setFromValue(draft.from_display || draft.from_email || '');
   };
 
   const openComposer = (type: RecordType) => {
@@ -157,11 +249,67 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
       setSubject(`Regarding ${customer.full_name}`);
       setMessage(`Hi ${customer.full_name},\n\n`);
       setStatus('sent');
-      setFromValue('noreply@workpilotcrm.com');
+      void loadEmailComposeData().catch((err) => {
+        setError(err instanceof Error ? err.message : 'Could not load email settings');
+      });
     }
     if (type === 'schedule') {
       setStatus('scheduled');
     }
+  };
+
+  const addManualFiles = async (list: FileList | null) => {
+    if (!list?.length) return;
+    setAttachmentBusy(true);
+    setError(null);
+    try {
+      const next: EmailAttachment[] = [];
+      for (const file of Array.from(list)) {
+        next.push({
+          key: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`,
+          filename: file.name,
+          content_base64: await fileToBase64(file),
+          content_type: file.type || 'application/octet-stream',
+          byte_size: file.size,
+        });
+      }
+      setAttachments((prev) => [...prev, ...next]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not attach file');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  };
+
+  const attachSelectedCustomerFile = async () => {
+    if (!token || !selectedFileId) return;
+    const file = customerFiles.find((item) => String(item.id) === selectedFileId);
+    if (!file) return;
+    setAttachmentBusy(true);
+    setError(null);
+    try {
+      const blob = await getBlob(customerFileContentPath(customerId, file), token);
+      const contentBase64 = await blobToBase64(blob);
+      setAttachments((prev) => [
+        ...prev,
+        {
+          key: `customer-${Date.now()}-${Math.random().toString(36).slice(2)}-${file.original_filename}`,
+          filename: file.original_filename,
+          content_base64: contentBase64,
+          content_type: file.content_type || blob.type || 'application/octet-stream',
+          byte_size: blob.size,
+        },
+      ]);
+      setSelectedFileId('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not attach selected file');
+    } finally {
+      setAttachmentBusy(false);
+    }
+  };
+
+  const removeAttachment = (key: string) => {
+    setAttachments((prev) => prev.filter((item) => item.key !== key));
   };
 
   const submitRecord = async () => {
@@ -182,7 +330,9 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
           from_value: fromValue || null,
           object_type: objectType,
           object_id: objectId ? parseInt(objectId, 10) : null,
-          attachment_name: attachmentName || null,
+          attachment_name: attachmentName || attachments.map((a) => a.filename).join(', ') || null,
+          append_signature: includeSignature,
+          attachments: attachments.map(({ filename, content_base64, content_type }) => ({ filename, content_base64, content_type })),
           scheduled_for: scheduledFor || null,
           ...(workAddressId ? { work_address_id: Number(workAddressId) } : {}),
         },
@@ -393,6 +543,11 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
               <button onClick={() => setComposerType(null)} className="rounded p-1 hover:bg-white/10"><X className="size-4" /></button>
             </div>
             <div className="flex h-[calc(100%-40px)] flex-col">
+              {emailDraft && !emailDraft.smtp_ready && (
+                <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+                  Email connection is not configured. Open <strong>Settings → Email</strong> to connect your mailbox.
+                </div>
+              )}
               <div className="border-b border-slate-200 px-4 py-2">
                 <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 border-b border-slate-100 py-1.5">
                   <label className="text-xs font-medium text-slate-500">To</label>
@@ -426,9 +581,86 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
               />
 
               <div className="border-t border-slate-200 px-4 py-2">
-                <div className="mb-2 flex items-center gap-2">
-                  <Paperclip className="size-4 text-slate-400" />
-                  <input value={attachmentName} onChange={(e) => setAttachmentName(e.target.value)} placeholder="Attachment name (optional)" className="w-full rounded border border-slate-200 px-2 py-1 text-xs outline-none focus:border-[#14B8A6]" />
+                {emailDraft?.signature_html ? (
+                  <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={includeSignature}
+                        onChange={(e) => setIncludeSignature(e.target.checked)}
+                        className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                      />
+                      Insert signature
+                    </label>
+                    {includeSignature && (
+                      <div
+                        className="mt-2 max-h-28 overflow-y-auto rounded border border-slate-200 bg-white p-2 text-xs text-slate-600"
+                        dangerouslySetInnerHTML={{ __html: emailDraft.signature_html }}
+                      />
+                    )}
+                  </div>
+                ) : null}
+
+                <div className="mb-2 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      onChange={(e) => {
+                        void addManualFiles(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={attachmentBusy}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <Paperclip className="size-4 text-slate-400" />
+                      Attach files
+                    </button>
+                    <select
+                      value={selectedFileId}
+                      onChange={(e) => setSelectedFileId(e.target.value)}
+                      className="min-w-[220px] rounded border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                    >
+                      <option value="">Attach from customer/site files</option>
+                      {customerFiles.map((file) => (
+                        <option key={String(file.id)} value={String(file.id)}>
+                          {file.original_filename}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!selectedFileId || attachmentBusy}
+                      onClick={() => void attachSelectedCustomerFile()}
+                      className="rounded bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    >
+                      Add selected
+                    </button>
+                  </div>
+                  {attachments.length > 0 && (
+                    <ul className="space-y-1 text-xs text-slate-700">
+                      {attachments.map((attachment) => (
+                        <li key={attachment.key} className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
+                          <span className="truncate">{attachment.filename}</span>
+                          <span className="shrink-0 text-slate-500">{formatBytes(attachment.byte_size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeAttachment(attachment.key)}
+                            className="shrink-0 rounded p-0.5 text-rose-600 hover:bg-rose-50"
+                            aria-label={`Remove ${attachment.filename}`}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-xs text-slate-600">
@@ -437,7 +669,7 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
                   </label>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setComposerType(null)} className="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">Discard</button>
-                    <button onClick={submitRecord} disabled={submitting} className="rounded bg-[#14B8A6] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#119f90] disabled:opacity-50">
+                    <button onClick={submitRecord} disabled={submitting || attachmentBusy || (emailDraft ? !emailDraft.smtp_ready : false)} className="rounded bg-[#14B8A6] px-4 py-1.5 text-xs font-semibold text-white hover:bg-[#119f90] disabled:opacity-50">
                       {submitting ? 'Sending...' : 'Send'}
                     </button>
                   </div>

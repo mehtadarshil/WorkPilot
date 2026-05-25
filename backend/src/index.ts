@@ -41,6 +41,7 @@ import {
 import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderCustomerPreview';
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
+import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import {
   getTenantScopeUserId,
@@ -5009,6 +5010,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       ? req.query.state
       : '';
     const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
+    const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
     const priorityFilter = typeof req.query.priority === 'string' && JOB_PRIORITIES.includes(req.query.priority as typeof JOB_PRIORITIES[number])
       ? req.query.priority
       : '';
@@ -5041,6 +5043,11 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       countParams.push(customerId);
       listParams.push(customerId);
     }
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      conditions.push(`j.work_address_id IS NOT DISTINCT FROM $${p++}::integer`);
+      countParams.push(workAddressId);
+      listParams.push(workAddressId);
+    }
     if (priorityFilter) {
       conditions.push(`j.priority = $${p++}`);
       countParams.push(priorityFilter);
@@ -5058,7 +5065,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
     const offsetIdx = listParams.length;
     const listResult = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string }>(
       `SELECT j.id, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
-        j.customer_id, j.location, j.required_certifications, j.attachments, j.state,
+        j.customer_id, j.work_address_id, j.location, j.required_certifications, j.attachments, j.state,
         j.schedule_start, j.duration_minutes, j.scheduling_notes, j.dispatched_at,
         j.created_at, j.updated_at, j.created_by,
         c.full_name AS customer_full_name,
@@ -5096,6 +5103,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
       customer_id: r.customer_id ?? null,
+      work_address_id: r.work_address_id ?? null,
       customer_full_name: r.customer_full_name ?? null,
       location: r.location ?? null,
       required_certifications: r.required_certifications ?? null,
@@ -15565,8 +15573,29 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
       params,
     );
 
+    const certParams: unknown[] = [customerId];
+    let certWhere = 'WHERE customer_id = $1';
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      certWhere += ` AND work_address_id = $${certParams.length + 1}`;
+      certParams.push(workAddressId);
+    } else {
+      certWhere += ' AND work_address_id IS NULL';
+    }
+    if (!isSuperAdmin) {
+      certWhere += ` AND created_by = $${certParams.length + 1}`;
+      certParams.push(userId);
+    }
+    const certResult = await pool.query(
+      `SELECT id, customer_id, work_address_id, certificate_number, type_slug, updated_at, updated_by
+       FROM electrical_certificates
+       ${certWhere}
+       ORDER BY updated_at DESC`,
+      certParams,
+    );
+
     return res.json({
-      files: result.rows.map((r: Record<string, unknown>) => ({
+      files: [
+        ...result.rows.map((r: Record<string, unknown>) => ({
         id: Number(r.id),
         customer_id: Number(r.customer_id),
         work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
@@ -15576,7 +15605,23 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
         created_at: (r.created_at as Date).toISOString(),
         created_by: r.created_by != null ? Number(r.created_by) : null,
         created_by_name: (r.created_by_name as string) ?? 'User',
-      })),
+          kind: 'uploaded' as const,
+        })),
+        ...certResult.rows.map((r: Record<string, unknown>) => ({
+          id: `electrical_cert_${Number(r.id)}`,
+          customer_id: Number(r.customer_id),
+          work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
+          original_filename: `${String(r.certificate_number ?? `CERT-${r.id}`)}.pdf`,
+          content_type: 'application/pdf',
+          byte_size: null,
+          created_at: (r.updated_at as Date).toISOString(),
+          created_by: r.updated_by != null ? Number(r.updated_by) : null,
+          created_by_name: 'Generated certificate',
+          kind: 'electrical_certificate' as const,
+          href: `/electrical-certificates/${Number(r.id)}/pdf`,
+          source_label: String(r.type_slug ?? '').replace(/_/g, ' '),
+        })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     });
   } catch (error) {
     console.error('List customer files error:', error);
@@ -16819,6 +16864,29 @@ app.get('/api/customers/:customerId/communications', authenticate, requireTenant
   }
 });
 
+app.get('/api/customers/:customerId/email-compose', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<{ id: number; full_name: string; email: string | null; contact_email: string | null; created_by: number | null }>(
+      `SELECT id, full_name, email, contact_email, created_by FROM customers WHERE id = $1`,
+      [customerId],
+    );
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    const c = customer.rows[0];
+    if (!isSuperAdmin && c.created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const draft = await buildCustomerEmailComposeDraft({ pool, loadEmailSettingsPayload, sendUserEmail }, userId, c);
+    return res.json(draft);
+  } catch (error) {
+    console.error('Customer email compose draft error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.post('/api/customers/:customerId/communications', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
@@ -16841,6 +16909,8 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
   const objectId = typeof body.object_id === 'number' && Number.isFinite(body.object_id) ? body.object_id : null;
   const attachmentName = typeof body.attachment_name === 'string' ? body.attachment_name.trim() || null : null;
   const scheduledFor = typeof body.scheduled_for === 'string' && body.scheduled_for ? new Date(body.scheduled_for) : null;
+  const bodyHtml = typeof body.body_html === 'string' ? body.body_html.trim() : '';
+  const appendSignature = body.append_signature !== false;
 
   if (!message && !subject) return res.status(400).json({ message: 'Subject or message is required' });
   if (!['customer', 'job', 'invoice', 'property', 'branch', 'asset'].includes(objectType)) {
@@ -16854,12 +16924,35 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
     if (!isSuperAdmin && c.created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
 
     const workAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, body.work_address_id);
+    let sentAttachmentNames: string[] = [];
+
+    if (recordType === 'email') {
+      sentAttachmentNames = await sendCustomerCommunicationEmail(
+        { pool, loadEmailSettingsPayload, sendUserEmail },
+        userId,
+        {
+          toValue,
+          ccValue,
+          bccValue,
+          subject,
+          message,
+          bodyHtml,
+          appendSignature,
+          attachments: body.attachments,
+        },
+      ).catch((error) => {
+        const msg = error instanceof Error ? error.message : 'Could not send email';
+        const statusCode = msg.includes('Settings') || msg.includes('Recipient') || msg.includes('Subject') || msg.includes('Attachment') || msg.includes('Total attachments') ? 400 : 500;
+        throw Object.assign(new Error(msg), { statusCode });
+      });
+    }
+
     const result = await pool.query(
       `INSERT INTO customer_communications
         (customer_id, record_type, subject, message, status, to_value, cc_value, bcc_value, from_value, object_type, object_id, attachment_name, scheduled_for, work_address_id, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING id, created_at`,
-      [customerId, recordType, subject, message, status, toValue, ccValue, bccValue, fromValue, objectType, objectId, attachmentName, scheduledFor, workAddressId, userId],
+      [customerId, recordType, subject, message, recordType === 'email' ? 'sent' : status, toValue, ccValue, bccValue, fromValue, objectType, objectId, attachmentName || sentAttachmentNames.join(', ') || null, scheduledFor, workAddressId, userId],
     );
 
     return res.status(201).json({
@@ -16870,7 +16963,11 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
     });
   } catch (error) {
     console.error('Create customer communication error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as { statusCode: number }).statusCode
+      : 500;
+    const message = error instanceof Error && statusCode !== 500 ? error.message : 'Internal server error';
+    return res.status(statusCode).json({ message });
   }
 });
 

@@ -7,7 +7,9 @@ export type ElectricalCertificateTypeSlug =
   | 'eicr_18e_a3'
   | 'portable_appliance_test'
   | 'fi_insp_2025'
-  | 'dfi_insp_2019_a1';
+  | 'dfi_insp_2019_a1'
+  | 'dfi_inst_2019_a1'
+  | 'fi_extinsp_5306';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -84,6 +86,57 @@ export interface DomesticFireAlarmDetector {
   fitForContinuedService: DomesticFireAlarmFitForService;
   notes: string;
   photos: CertificatePhoto[];
+}
+
+export type DomesticFireAlarmInstSystemIs = '' | 'new' | 'modification' | 'alteration';
+export type DomesticFireAlarmInstPassNa = '' | 'pass' | 'na';
+export type DomesticFireAlarmInstTestResultsRecorded = '' | 'supplied_to_commissioning' | 'supplied_by_others' | 'na';
+
+export interface DomesticFireAlarmInstAdditionalTest {
+  id: string;
+  description: string;
+  outcome: DomesticFireAlarmInstPassNa;
+}
+
+export interface DomesticFireAlarmInstCertificateData {
+  installation: {
+    occupierName: string;
+    systemIs: DomesticFireAlarmInstSystemIs;
+    systemGrade: DomesticFireAlarmGrade;
+    systemCategory: DomesticFireAlarmCategory;
+  };
+  documentation: {
+    relatedReferenceDocuments: string;
+  };
+  extent: {
+    extentOfSystem: string;
+  };
+  specification: {
+    specificationText: string;
+  };
+  variationsFromSpec: {
+    variationsText: string;
+  };
+  declaration: {
+    installedBy: string;
+    installedPosition: string;
+    installedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  testSchedule: {
+    wiringTested: DomesticFireAlarmInstPassNa;
+    testResultsRecorded: DomesticFireAlarmInstTestResultsRecorded;
+    insulationBetweenConductors: DomesticFireAlarmInstPassNa;
+    insulationConductorsEarth: DomesticFireAlarmInstPassNa;
+    insulationConductorsScreen: DomesticFireAlarmInstPassNa;
+    earthContinuity: DomesticFireAlarmInstPassNa;
+    earthFaultLoopImpedance: DomesticFireAlarmInstPassNa;
+    maxCircuitResistance: DomesticFireAlarmInstPassNa;
+    manufacturerOtherTests: DomesticFireAlarmInstPassNa;
+    additionalTests: DomesticFireAlarmInstAdditionalTest[];
+  };
 }
 
 export interface DomesticFireAlarmCertificateData {
@@ -249,6 +302,63 @@ export interface PatCertificateData {
   };
 }
 
+export type FireExtinguisherChecklistOutcome = '' | 'yes' | 'no' | 'na';
+export type FireExtinguisherBlanketOutcome = '' | 'pass' | 'fail';
+export type FireExtinguisherNextInspectionPreset = '' | '6months' | '1year' | '3years' | '5years' | 'other';
+
+export interface FireExtinguisherRecord {
+  id: string;
+  location: string;
+  reference: string;
+  serviceCode: string;
+  make: string;
+  extinguisherType: string;
+  capacity: string;
+  capacityUnit: string;
+  measuredWeight: string;
+  nextDischargeDate: string;
+  endOfLifeDate: string;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface FireBlanketRecord {
+  id: string;
+  location: string;
+  reference: string;
+  make: string;
+  installationDate: string;
+  installationDateUnknown: boolean;
+  expiryDate: string;
+  outcome: FireExtinguisherBlanketOutcome;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface FireExtinguisherCertificateData {
+  installation: {
+    occupierName: string;
+    occupierType: string;
+    premisesType: string;
+    nextInspectionDate: string;
+    nextInspectionPreset: FireExtinguisherNextInspectionPreset;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  extinguishers: FireExtinguisherRecord[];
+  blankets: FireBlanketRecord[];
+  checklist: Record<string, FireExtinguisherChecklistOutcome>;
+  checklistNotes: Record<string, string>;
+  hideChecklistFromReport: boolean;
+  remedialActions: string;
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -326,6 +436,8 @@ export interface ElectricalCertificateDocument {
   pat?: PatCertificateData;
   fireAlarm?: FireAlarmCertificateData;
   domesticFireAlarm?: DomesticFireAlarmCertificateData;
+  domesticFireAlarmInst?: DomesticFireAlarmInstCertificateData;
+  fireExtinguisher?: FireExtinguisherCertificateData;
 }
 
 export interface ValidationIssue {
@@ -385,7 +497,42 @@ export const CERTIFICATE_TYPE_CATALOG = [
     standard: 'BS 5839-6',
     revision: '2019:A1',
   },
+  {
+    slug: 'dfi_inst_2019_a1',
+    title: 'Domestic Fire Alarm Installation Certificate',
+    subtitle: 'Standard: BS 5839-6 | Revision: 2019:A1',
+    shortLabel: 'DFI-INST',
+    standard: 'BS 5839-6',
+    revision: '2019:A1',
+  },
+  {
+    slug: 'fi_extinsp_5306',
+    title: 'Fire Extinguisher Inspection Certificate',
+    subtitle: 'Standard: BS 5306 | Revision: Parts 3, 8, 9',
+    shortLabel: 'FI-EXTINSP',
+    standard: 'BS 5306',
+    revision: 'Parts 3, 8, 9',
+  },
 ] as const;
+
+export const FIRE_EXTINGUISHER_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'observations', label: 'Observations' },
+  { key: 'fire-extinguishers', label: 'Fire extinguishers' },
+  { key: 'fire-blankets', label: 'Fire blankets' },
+  { key: 'checklist', label: 'Checklist' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type FireExtinguisherEditorSectionKey = (typeof FIRE_EXTINGUISHER_EDITOR_SECTIONS)[number]['key'];
+
+export const DOMESTIC_FIRE_ALARM_INST_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'test-schedule', label: 'Test schedule' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type DomesticFireAlarmInstEditorSectionKey = (typeof DOMESTIC_FIRE_ALARM_INST_EDITOR_SECTIONS)[number]['key'];
 
 export const FIRE_ALARM_EDITOR_SECTIONS = [
   { key: 'installation-details', label: 'Installation details' },

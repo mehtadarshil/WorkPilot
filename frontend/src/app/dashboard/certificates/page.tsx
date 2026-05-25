@@ -17,6 +17,14 @@ import { downloadCertificatePdf } from '@/lib/electricalCertificates/certificate
 
 const PAGE_SIZE = 15;
 
+type CertificateJobOption = {
+  id: number;
+  title: string;
+  state: string;
+  work_address_id: number | null;
+  updated_at: string;
+};
+
 function certificateEditorHref(cert: ElectricalCertificate) {
   if (cert.type_slug === 'portable_appliance_test') {
     return `/dashboard/certificates/${cert.id}/pat`;
@@ -26,6 +34,12 @@ function certificateEditorHref(cert: ElectricalCertificate) {
   }
   if (cert.type_slug === 'dfi_insp_2019_a1') {
     return `/dashboard/certificates/${cert.id}/domestic-fire-alarm`;
+  }
+  if (cert.type_slug === 'dfi_inst_2019_a1') {
+    return `/dashboard/certificates/${cert.id}/domestic-fire-alarm-install`;
+  }
+  if (cert.type_slug === 'fi_extinsp_5306') {
+    return `/dashboard/certificates/${cert.id}/fire-extinguisher`;
   }
   return `/dashboard/certificates/${cert.id}/installation-details`;
 }
@@ -57,6 +71,8 @@ export default function ElectricalCertificatesPage() {
   const [savingWorkAddress, setSavingWorkAddress] = useState(false);
   const [workAddressError, setWorkAddressError] = useState<string | null>(null);
   const [jobNumber, setJobNumber] = useState('');
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [jobOptions, setJobOptions] = useState<CertificateJobOption[]>([]);
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [customers, setCustomers] = useState<{ id: number; full_name: string }[]>([]);
   const [creating, setCreating] = useState(false);
@@ -139,6 +155,24 @@ export default function ElectricalCertificatesPage() {
     [token],
   );
 
+  const fetchJobOptions = useCallback(
+    async (cid: number, siteId: number | null) => {
+      if (!token) {
+        setJobOptions([]);
+        return;
+      }
+      try {
+        const q = new URLSearchParams({ customer_id: String(cid), limit: '100', page: '1' });
+        if (siteId) q.set('work_address_id', String(siteId));
+        const res = await getJson<{ jobs: CertificateJobOption[] }>(`/jobs?${q.toString()}`, token);
+        setJobOptions(res.jobs ?? []);
+      } catch {
+        setJobOptions([]);
+      }
+    },
+    [token],
+  );
+
   useEffect(() => {
     if (createOpen) void fetchCustomers();
   }, [createOpen, fetchCustomers]);
@@ -146,12 +180,22 @@ export default function ElectricalCertificatesPage() {
   useEffect(() => {
     if (customerId) {
       void fetchWorkAddresses(customerId);
+      void fetchJobOptions(customerId, null);
       setWorkAddressId(null);
+      setJobId(null);
     } else {
       setWorkAddressOptions([]);
+      setJobOptions([]);
       setWorkAddressId(null);
+      setJobId(null);
     }
-  }, [customerId, fetchWorkAddresses]);
+  }, [customerId, fetchJobOptions, fetchWorkAddresses]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    void fetchJobOptions(customerId, workAddressId);
+    setJobId(null);
+  }, [customerId, fetchJobOptions, workAddressId]);
 
   const openCreate = () => {
     setCreateStep('type');
@@ -162,6 +206,8 @@ export default function ElectricalCertificatesPage() {
     setWorkAddressForm({ name: '', address_line_1: '', address_line_2: '', town: '', county: '', postcode: '' });
     setWorkAddressError(null);
     setJobNumber('');
+    setJobId(null);
+    setJobOptions([]);
     setError(null);
     setCreateOpen(true);
   };
@@ -185,6 +231,7 @@ export default function ElectricalCertificatesPage() {
         {
           customer_id: full.certificate.customer_id,
           work_address_id: full.certificate.work_address_id,
+          job_id: full.certificate.job_id,
           job_number: full.certificate.job_number,
           type_slug: typeSlug,
           document: doc,
@@ -230,6 +277,7 @@ export default function ElectricalCertificatesPage() {
           type_slug: selectedType,
           customer_id: customerId,
           work_address_id: workAddressId,
+          job_id: jobId,
           job_number: jobNumber.trim() || null,
         },
         token,
@@ -616,6 +664,26 @@ export default function ElectricalCertificatesPage() {
                             </button>
                           </div>
                         )}
+                      </div>
+                    )}
+                    {customerId && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Linked job (optional)</label>
+                        <select
+                          value={jobId ?? ''}
+                          onChange={(e) => setJobId(e.target.value ? Number(e.target.value) : null)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                        >
+                          <option value="">No linked job</option>
+                          {jobOptions.map((job) => (
+                            <option key={job.id} value={job.id}>
+                              #{job.id} · {job.title || 'Untitled job'} · {job.state.replace(/_/g, ' ')}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Linked certificates will appear in that job&apos;s Files tab and email composer.
+                        </p>
                       </div>
                     )}
                     <div>

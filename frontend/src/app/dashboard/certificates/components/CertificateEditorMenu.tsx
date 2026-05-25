@@ -223,7 +223,11 @@ export function CertificateEditorMenu() {
                 ? `/dashboard/certificates/${res.certificate.id}/fire-alarm`
                 : res.certificate.type_slug === 'dfi_insp_2019_a1'
                   ? `/dashboard/certificates/${res.certificate.id}/domestic-fire-alarm`
-                : `/dashboard/certificates/${res.certificate.id}/installation-details`;
+                  : res.certificate.type_slug === 'dfi_inst_2019_a1'
+                    ? `/dashboard/certificates/${res.certificate.id}/domestic-fire-alarm-install`
+                    : res.certificate.type_slug === 'fi_extinsp_5306'
+                      ? `/dashboard/certificates/${res.certificate.id}/fire-extinguisher`
+                      : `/dashboard/certificates/${res.certificate.id}/installation-details`;
           router.push(href);
         }}
       />

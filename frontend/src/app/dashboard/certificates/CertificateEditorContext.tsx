@@ -156,6 +156,52 @@ export function CertificateEditorProvider({
               next.domesticFireAlarm.declaration.authorisedDate !== prev.domesticFireAlarm.declaration.authorisedDate;
           }
 
+          if (prev.domesticFireAlarmInst) {
+            next.domesticFireAlarmInst = {
+              ...prev.domesticFireAlarmInst,
+              declaration: {
+                ...prev.domesticFireAlarmInst.declaration,
+                installedBy: prev.domesticFireAlarmInst.declaration.installedBy.trim() || name,
+                installedPosition: prev.domesticFireAlarmInst.declaration.installedPosition.trim() || position,
+                installedDate: prev.domesticFireAlarmInst.declaration.installedDate || today,
+                authorisedBy: prev.domesticFireAlarmInst.declaration.authorisedBy.trim() || name,
+                authorisedPosition: prev.domesticFireAlarmInst.declaration.authorisedPosition.trim() || position,
+                authorisedDate: prev.domesticFireAlarmInst.declaration.authorisedDate || today,
+              },
+            };
+            changed =
+              changed ||
+              next.domesticFireAlarmInst.declaration.installedBy !== prev.domesticFireAlarmInst.declaration.installedBy ||
+              next.domesticFireAlarmInst.declaration.installedPosition !== prev.domesticFireAlarmInst.declaration.installedPosition ||
+              next.domesticFireAlarmInst.declaration.installedDate !== prev.domesticFireAlarmInst.declaration.installedDate ||
+              next.domesticFireAlarmInst.declaration.authorisedBy !== prev.domesticFireAlarmInst.declaration.authorisedBy ||
+              next.domesticFireAlarmInst.declaration.authorisedPosition !== prev.domesticFireAlarmInst.declaration.authorisedPosition ||
+              next.domesticFireAlarmInst.declaration.authorisedDate !== prev.domesticFireAlarmInst.declaration.authorisedDate;
+          }
+
+          if (prev.fireExtinguisher) {
+            next.fireExtinguisher = {
+              ...prev.fireExtinguisher,
+              declaration: {
+                ...prev.fireExtinguisher.declaration,
+                inspectedBy: prev.fireExtinguisher.declaration.inspectedBy.trim() || name,
+                inspectedPosition: prev.fireExtinguisher.declaration.inspectedPosition.trim() || position,
+                inspectedDate: prev.fireExtinguisher.declaration.inspectedDate || today,
+                authorisedBy: prev.fireExtinguisher.declaration.authorisedBy.trim() || name,
+                authorisedPosition: prev.fireExtinguisher.declaration.authorisedPosition.trim() || position,
+                authorisedDate: prev.fireExtinguisher.declaration.authorisedDate || today,
+              },
+            };
+            changed =
+              changed ||
+              next.fireExtinguisher.declaration.inspectedBy !== prev.fireExtinguisher.declaration.inspectedBy ||
+              next.fireExtinguisher.declaration.inspectedPosition !== prev.fireExtinguisher.declaration.inspectedPosition ||
+              next.fireExtinguisher.declaration.inspectedDate !== prev.fireExtinguisher.declaration.inspectedDate ||
+              next.fireExtinguisher.declaration.authorisedBy !== prev.fireExtinguisher.declaration.authorisedBy ||
+              next.fireExtinguisher.declaration.authorisedPosition !== prev.fireExtinguisher.declaration.authorisedPosition ||
+              next.fireExtinguisher.declaration.authorisedDate !== prev.fireExtinguisher.declaration.authorisedDate;
+          }
+
           return changed ? next : prev;
         });
       })

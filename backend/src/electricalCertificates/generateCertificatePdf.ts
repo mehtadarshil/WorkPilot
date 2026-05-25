@@ -34,7 +34,11 @@ export async function generateElectricalCertificatePdfBuffer(
         ? 'FI-INSP'
         : document.typeSlug === 'dfi_insp_2019_a1'
           ? 'DFI-INSP'
-        : 'EICR';
+          : document.typeSlug === 'dfi_inst_2019_a1'
+            ? 'DFI-INST'
+          : document.typeSlug === 'fi_extinsp_5306'
+            ? 'FI-EXTINSP'
+            : 'EICR';
   const filenameBase = params.certificateNumber.replace(/[^\w.-]+/g, '_') || `${fallbackPrefix}-${params.certificateId}`;
   return { pdf, filenameBase };
 }

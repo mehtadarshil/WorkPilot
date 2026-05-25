@@ -67,6 +67,35 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
       })),
     };
   }
+  if (doc.domesticFireAlarmInst) {
+    base.domesticFireAlarmInst = {
+      ...doc.domesticFireAlarmInst,
+      testSchedule: {
+        ...doc.domesticFireAlarmInst.testSchedule,
+        additionalTests: doc.domesticFireAlarmInst.testSchedule.additionalTests.map((t) => ({
+          ...t,
+          id: newId('dfitest'),
+        })),
+      },
+    };
+  }
+  if (doc.fireExtinguisher) {
+    base.fireExtinguisher = {
+      ...doc.fireExtinguisher,
+      checklist: { ...doc.fireExtinguisher.checklist },
+      checklistNotes: { ...doc.fireExtinguisher.checklistNotes },
+      extinguishers: doc.fireExtinguisher.extinguishers.map((item) => ({
+        ...item,
+        id: newId('fex'),
+        photos: item.photos.map(clonePhoto),
+      })),
+      blankets: doc.fireExtinguisher.blankets.map((item) => ({
+        ...item,
+        id: newId('fbl'),
+        photos: item.photos.map(clonePhoto),
+      })),
+    };
+  }
   return base;
 }
 

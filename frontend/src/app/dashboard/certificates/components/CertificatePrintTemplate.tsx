@@ -10,10 +10,24 @@ import {
   DOMESTIC_FIRE_ALARM_STANDARD,
 } from '@/lib/electricalCertificates/domesticFireAlarmItems';
 import {
+  DOMESTIC_FIRE_ALARM_INST_FIXED_TESTS,
+  DOMESTIC_FIRE_ALARM_INST_PASS_NA_LABELS,
+  DOMESTIC_FIRE_ALARM_INST_TEST_RESULTS_RECORDED,
+  DOMESTIC_FIRE_ALARM_SYSTEM_IS_OPTIONS,
+} from '@/lib/electricalCertificates/domesticFireAlarmInstItems';
+import {
   FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS,
   FIRE_ALARM_OUTCOME_LABELS,
   FIRE_ALARM_SECTION_LABELS,
 } from '@/lib/electricalCertificates/fireAlarmInspectionScheduleItems';
+import {
+  FIRE_EXTINGUISHER_BLANKET_OUTCOME_LABELS,
+  FIRE_EXTINGUISHER_CHECKLIST_ITEMS,
+  FIRE_EXTINGUISHER_CHECKLIST_OUTCOME_LABELS,
+  FIRE_EXTINGUISHER_PREMISES_LABELS,
+  FIRE_EXTINGUISHER_SERVICE_CODE_LABELS,
+  FIRE_EXTINGUISHER_TYPE_OPTIONS,
+} from '@/lib/electricalCertificates/fireExtinguisherItems';
 import {
   INSPECTION_SCHEDULE_ITEMS,
   INSPECTION_SECTION_LABELS,
@@ -61,6 +75,12 @@ export function CertificatePrintTemplate({
   }
   if (doc.typeSlug === 'dfi_insp_2019_a1') {
     return <DomesticFireAlarmPrintTemplate certificate={certificate} branding={branding} />;
+  }
+  if (doc.typeSlug === 'dfi_inst_2019_a1') {
+    return <DomesticFireAlarmInstPrintTemplate certificate={certificate} branding={branding} />;
+  }
+  if (doc.typeSlug === 'fi_extinsp_5306') {
+    return <FireExtinguisherPrintTemplate certificate={certificate} branding={branding} />;
   }
   const inst = doc.installation;
   const sup = doc.supply;
@@ -439,6 +459,112 @@ function DomesticFireAlarmPrintTemplate({
   );
 }
 
+function DomesticFireAlarmInstPrintTemplate({
+  certificate,
+  branding,
+}: {
+  certificate: ElectricalCertificate;
+  branding: CompanyBranding;
+}) {
+  const inst = certificate.document.domesticFireAlarmInst;
+  if (!inst) return null;
+  const passLabel = (v: string) => DOMESTIC_FIRE_ALARM_INST_PASS_NA_LABELS[v as keyof typeof DOMESTIC_FIRE_ALARM_INST_PASS_NA_LABELS] ?? '—';
+  const systemIsLabel = DOMESTIC_FIRE_ALARM_SYSTEM_IS_OPTIONS.find((o) => o.value === inst.installation.systemIs)?.label ?? '';
+  const recordedLabel = DOMESTIC_FIRE_ALARM_INST_TEST_RESULTS_RECORDED.find((o) => o.value === inst.testSchedule.testResultsRecorded)?.label ?? '';
+
+  return (
+    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
+      <CertificateBrandedHeader
+        branding={branding}
+        title="Domestic Fire Alarm Installation Certificate"
+        subtitle={`Standard: ${DOMESTIC_FIRE_ALARM_STANDARD} | Revision: ${DOMESTIC_FIRE_ALARM_REVISION}`}
+        certificateNumber={certificate.certificate_number}
+      />
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Installation details</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Client" value={certificate.customer_full_name ?? '-'} />
+            <PrintRow label="Installation" value={certificate.installation_label ?? '-'} />
+            <PrintRow label="Occupier" value={inst.installation.occupierName} />
+            <PrintRow label="System is" value={systemIsLabel} />
+            <PrintRow label="System grade" value={inst.installation.systemGrade} />
+            <PrintRow label="System category" value={inst.installation.systemCategory} />
+            <PrintRow label="Reference documents" value={inst.documentation.relatedReferenceDocuments} />
+            <PrintRow label="Extent" value={inst.extent.extentOfSystem} />
+            <PrintRow label="Specification" value={inst.specification.specificationText} />
+            <PrintRow label="Variations" value={inst.variationsFromSpec.variationsText} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Declaration</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Installed by" value={inst.declaration.installedBy} />
+            <PrintRow label="Installer position" value={inst.declaration.installedPosition} />
+            <PrintRow label="Installation date" value={inst.declaration.installedDate} />
+            <PrintRow label="Authorised by" value={inst.declaration.authorisedBy} />
+            <PrintRow label="Authorised position" value={inst.declaration.authorisedPosition} />
+            <PrintRow label="Authorised date" value={inst.declaration.authorisedDate} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Test schedule</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Wiring tested" value={passLabel(inst.testSchedule.wiringTested)} />
+            <PrintRow label="Results recorded" value={recordedLabel} />
+          </tbody>
+        </table>
+        <table className="mt-3 w-full border-collapse text-[9px]">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-slate-300 px-1 py-0.5 text-left">Test</th>
+              <th className="border border-slate-300 px-1 py-0.5 text-left">Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {DOMESTIC_FIRE_ALARM_INST_FIXED_TESTS.map((item) => (
+              <tr key={item.id}>
+                <td className="border border-slate-200 px-1">{item.label}</td>
+                <td className="border border-slate-200 px-1 font-bold">{passLabel(String(inst.testSchedule[item.id as keyof typeof inst.testSchedule] ?? ''))}</td>
+              </tr>
+            ))}
+            {inst.testSchedule.additionalTests.map((t) => (
+              <tr key={t.id}>
+                <td className="border border-slate-200 px-1">{t.description}</td>
+                <td className="border border-slate-200 px-1 font-bold">{passLabel(t.outcome)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      {certificate.document.appendix.content.trim() && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
+          <p className="whitespace-pre-wrap text-sm">{certificate.document.appendix.content}</p>
+        </section>
+      )}
+      {certificate.document.appendix.photos.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix photographs</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {certificate.document.appendix.photos.map((p) => (
+              <figure key={p.id}>
+                <img src={p.dataUrl} alt={p.caption} className="max-h-48 w-full object-contain" />
+                {p.caption && <figcaption className="mt-1 text-xs text-slate-600">{p.caption}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
+      <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
+    </div>
+  );
+}
+
 function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCertificate; branding: CompanyBranding }) {
   const pat = certificate.document.pat;
   if (!pat) return null;
@@ -497,7 +623,7 @@ function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCe
               <div className="pt-2">
                 <img src={pat.engineer.signatureDataUrl} alt={`${pat.engineer.name} signature`} className="h-16 max-w-full object-contain" />
                 <p className="text-slate-500">
-                  Signed{pat.engineer.signedAt ? `: ${new Date(pat.engineer.signedAt).toLocaleString()}` : ''}
+                  Signed{pat.engineer.signedAt ? `: ${pat.engineer.signedAt.slice(0, 10)}` : ''}
                 </p>
               </div>
             ) : null}
@@ -506,6 +632,118 @@ function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCe
       </section>
       <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
     </div>
+  );
+}
+
+function FireExtinguisherPrintTemplate({ certificate, branding }: { certificate: ElectricalCertificate; branding: CompanyBranding }) {
+  const fire = certificate.document.fireExtinguisher;
+  if (!fire) return null;
+  const checklistOutcome = (value: string) => FIRE_EXTINGUISHER_CHECKLIST_OUTCOME_LABELS[value] ?? '—';
+  const blanketOutcome = (value: string) => FIRE_EXTINGUISHER_BLANKET_OUTCOME_LABELS[value] ?? '—';
+  const typeLabel = (value: string) => FIRE_EXTINGUISHER_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
+  const capacityLabel = (item: (typeof fire.extinguishers)[number]) =>
+    [item.capacity, item.capacityUnit].filter(Boolean).join(' ') || '—';
+  return (
+    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
+      <CertificateBrandedHeader branding={branding} certificateNumber={certificate.certificate_number} />
+      <section className="mb-6">
+        <h1 className="text-lg font-bold">Fire Extinguisher Inspection Certificate</h1>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <InfoBlock
+            title="Installation details"
+            lines={[
+              fire.installation.occupierName,
+              fire.installation.occupierType,
+              FIRE_EXTINGUISHER_PREMISES_LABELS[fire.installation.premisesType] ?? fire.installation.premisesType,
+              `Next inspection: ${fire.installation.nextInspectionDate || '—'}`,
+            ]}
+          />
+          <InfoBlock
+            title="Declaration"
+            lines={[
+              `Inspected by: ${fire.declaration.inspectedBy}`,
+              fire.declaration.inspectedPosition,
+              `Date: ${fire.declaration.inspectedDate || '—'}`,
+              `Authorised by: ${fire.declaration.authorisedBy}`,
+              fire.declaration.authorisedPosition,
+            ]}
+          />
+        </div>
+      </section>
+      <FireEquipmentTable
+        title="Fire extinguishers"
+        headers={['Ref', 'Location', 'Service', 'Make', 'Type', 'Capacity', 'Weight', 'Next discharge', 'EOL', 'Notes']}
+        rows={fire.extinguishers.map((item) => [
+          item.reference,
+          item.location,
+          FIRE_EXTINGUISHER_SERVICE_CODE_LABELS[item.serviceCode] ?? item.serviceCode,
+          item.make,
+          typeLabel(item.extinguisherType),
+          capacityLabel(item),
+          item.measuredWeight,
+          item.nextDischargeDate,
+          item.endOfLifeDate,
+          item.notes,
+        ])}
+      />
+      <FireEquipmentTable
+        title="Fire blankets"
+        headers={['Ref', 'Location', 'Make', 'Installed', 'Expiry', 'Outcome', 'Notes']}
+        rows={fire.blankets.map((item) => [
+          item.reference,
+          item.location,
+          item.make,
+          item.installationDateUnknown ? 'Unknown' : item.installationDate,
+          item.expiryDate,
+          blanketOutcome(item.outcome),
+          item.notes,
+        ])}
+      />
+      {!fire.hideChecklistFromReport ? (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Checklist</h2>
+          <table className="w-full border-collapse text-[9px]">
+            <tbody>
+              {FIRE_EXTINGUISHER_CHECKLIST_ITEMS.map((item) => (
+                <tr key={item.id}>
+                  <td className="border border-slate-200 px-1 py-0.5">{item.label}</td>
+                  <td className="border border-slate-200 px-1 py-0.5 font-bold">{checklistOutcome(fire.checklist[item.id] ?? '')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+      {fire.remedialActions.trim() ? <InfoBlock title="Remedial actions" lines={[fire.remedialActions]} /> : null}
+      <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
+    </div>
+  );
+}
+
+function FireEquipmentTable({ title, headers, rows }: { title: string; headers: string[]; rows: string[][] }) {
+  if (!rows.length) return null;
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 border-b border-slate-300 font-bold">{title}</h2>
+      <table className="w-full border-collapse text-[9px]">
+        <thead>
+          <tr className="bg-slate-100">
+            {headers.map((header) => (
+              <th key={header} className="border border-slate-300 px-1 py-0.5 text-left">{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} className="border border-slate-200 px-1 py-0.5">{cell || '-'}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
