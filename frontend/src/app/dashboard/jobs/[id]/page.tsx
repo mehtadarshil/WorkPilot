@@ -7,9 +7,11 @@ import JobOfficeTasksTab from './JobOfficeTasksTab';
 import JobReportTab from './JobReportTab';
 import JobClientPanelTab from './JobClientPanelTab';
 import JobFilesTab from './JobFilesTab';
+import JobNotesTab from './JobNotesTab';
+import JobCostsTab from './JobCostsTab';
 import CustomerSiteReportTab from '../../customers/[id]/CustomerSiteReportTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
-import { ArrowLeft, Edit, Calendar, Clock, User, Clipboard, FileText, Info, Wrench, Package, ScrollText, Bell, Paperclip, Receipt, PoundSterling, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 
@@ -1024,11 +1026,23 @@ export default function JobDetailsPage() {
               officers={officers}
               onRefresh={fetchJobDetails}
             />
+          ) : activeTab === 'Notes' ? (
+            token ? (
+              <JobNotesTab jobId={id} token={token} jobNotes={job.job_notes} />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to manage job notes.</div>
+            )
           ) : activeTab === 'Files' ? (
             token ? (
               <JobFilesTab jobId={id} token={token} />
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to view job files.</div>
+            )
+          ) : activeTab === 'Costs' ? (
+            token ? (
+              <JobCostsTab jobId={id} token={token} />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to manage job costs.</div>
             )
           ) : (
             <>

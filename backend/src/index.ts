@@ -41,6 +41,8 @@ import {
 import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderCustomerPreview';
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
+import { mountJobNotesRoutes } from './jobNotesRoutes';
+import { mountJobCostsRoutes } from './jobCostsRoutes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import {
@@ -17194,6 +17196,8 @@ mountTenantTeamRoutes(app, { pool, authenticate });
 mountMobileProfileRoutes(app, { pool, authenticate });
 mountJobEmailRoutes(app, { pool, authenticate, loadEmailSettingsPayload, sendUserEmail });
 mountJobFilesRoutes(app, { pool, authenticate });
+mountJobNotesRoutes(app, { pool, authenticate });
+mountJobCostsRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
 
 mountJobClientPanelRoutes(app, {

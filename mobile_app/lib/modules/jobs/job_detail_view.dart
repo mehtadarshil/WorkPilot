@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/values/app_colors.dart';
 import 'job_detail_controller.dart';
 import 'job_tab_client_panel.dart';
+import 'job_tab_costs.dart';
 import 'job_tab_details.dart';
 import 'job_tab_files.dart';
 import 'job_tab_invoices.dart';
@@ -33,6 +34,7 @@ class _JobDetailViewState extends State<JobDetailView>
     JobTabOfficeTasks(),
     JobTabFiles(),
     JobTabInvoices(),
+    JobTabCosts(),
   ];
 
   @override
@@ -92,6 +94,7 @@ class _JobDetailViewState extends State<JobDetailView>
               Tab(text: 'Reminders'),
               Tab(text: 'Files'),
               Tab(text: 'Invoices'),
+              Tab(text: 'Costs'),
             ],
           ),
         ),

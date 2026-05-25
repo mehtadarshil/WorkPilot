@@ -1,0 +1,396 @@
+import type { Application, Request, Response } from 'express';
+import type { Pool } from 'pg';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs/promises';
+import { getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
+import type { TenantAuthUser } from './tenantAccess';
+
+type AuthReq = Request & { user?: TenantAuthUser };
+
+type JobCostsRouteDeps = {
+  pool: Pool;
+  authenticate: (req: Request, res: Response, next: () => void) => void;
+};
+
+type CostLine = {
+  id: string;
+  source: 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
+  label: string;
+  description: string | null;
+  quantity: number | null;
+  unit_amount: number | null;
+  amount: number;
+  currency: string;
+  created_at: string | null;
+  created_by_name: string | null;
+  proof_files?: ProofFile[];
+};
+
+type ProofFile = {
+  stored_filename: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  href: string;
+};
+
+function getJobCostProofRoot(): string {
+  const raw = process.env.JOB_COST_PROOF_FILES_DIR?.trim();
+  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'job-cost-proofs');
+}
+
+function parseId(raw: unknown): number | null {
+  const n = parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function n(v: unknown): number {
+  const out = typeof v === 'number' ? v : parseFloat(String(v ?? '0'));
+  return Number.isFinite(out) ? out : 0;
+}
+
+function iso(v: unknown): string | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function cleanFilename(name: string): string {
+  return (name || 'proof.bin').replace(/[/\\?%*:|"<>]/g, '_').slice(0, 180) || 'proof.bin';
+}
+
+function decodeProofFiles(raw: unknown): { buf: Buffer; original: string; contentType: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { buf: Buffer; original: string; contentType: string }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const m = item as Record<string, unknown>;
+    const original = cleanFilename(typeof m.filename === 'string' ? m.filename : 'proof.bin');
+    const contentType = typeof m.content_type === 'string' && m.content_type.trim() ? m.content_type.trim() : 'application/octet-stream';
+    const b64 = typeof m.content_base64 === 'string' ? m.content_base64 : '';
+    if (!b64.trim()) continue;
+    const buf = Buffer.from(b64, 'base64');
+    if (buf.length > 0) out.push({ buf, original, contentType });
+  }
+  return out;
+}
+
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_cost_entries (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      diary_event_id INTEGER REFERENCES diary_events(id) ON DELETE SET NULL,
+      cost_type VARCHAR(80) NOT NULL DEFAULT 'site_cost',
+      description TEXT NOT NULL,
+      amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+      currency VARCHAR(10) NOT NULL DEFAULT 'GBP',
+      notes TEXT,
+      proof_files JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_job_cost_entries_job_id ON job_cost_entries(job_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_job_cost_entries_diary_event_id ON job_cost_entries(diary_event_id) WHERE diary_event_id IS NOT NULL');
+}
+
+async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, write = false): Promise<boolean> {
+  if (user.role === 'SUPER_ADMIN') {
+    const r = await pool.query('SELECT id FROM jobs WHERE id = $1', [jobId]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  if (user.role === 'OFFICER') {
+    if (user.officerId == null) return false;
+    const r = await pool.query(
+      `SELECT j.id
+       FROM jobs j
+       LEFT JOIN diary_events d ON d.job_id = j.id AND d.officer_id = $2
+       WHERE j.id = $1 AND (j.officer_id = $2 OR d.id IS NOT NULL)
+       LIMIT 1`,
+      [jobId, user.officerId],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  const r = await pool.query('SELECT id FROM jobs WHERE id = $1 AND created_by = $2', [
+    jobId,
+    getTenantScopeUserId(user),
+  ]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+async function buildJobCostPayload(pool: Pool, jobId: number) {
+  const manual = await pool.query(
+    `SELECT e.id, e.cost_type, e.description, e.amount, e.currency, e.notes, e.proof_files, e.created_at,
+            COALESCE(u.full_name, u.email) AS created_by_name
+     FROM job_cost_entries e
+     LEFT JOIN users u ON u.id = e.created_by
+     WHERE e.job_id = $1
+     ORDER BY e.created_at DESC, e.id DESC`,
+    [jobId],
+  );
+
+  const timesheet = await pool.query(
+    `SELECT te.id, te.clock_in, te.clock_out, te.segment_type,
+            EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::numeric AS duration_seconds,
+            o.full_name AS officer_full_name,
+            COALESCE(lr.basic_rate_per_hr, 0)::numeric AS hourly_rate
+     FROM timesheet_entries te
+     INNER JOIN diary_events d ON d.id = te.diary_event_id
+     INNER JOIN jobs j ON j.id = d.job_id
+     LEFT JOIN officers o ON o.id = te.officer_id
+     LEFT JOIN customers c ON c.id = j.customer_id
+     LEFT JOIN LATERAL (
+       SELECT basic_rate_per_hr
+       FROM price_book_labour_rates
+       WHERE price_book_id = c.price_book_id
+       ORDER BY id ASC
+       LIMIT 1
+     ) lr ON true
+     WHERE d.job_id = $1
+     ORDER BY te.clock_in ASC`,
+    [jobId],
+  );
+
+  const jobPricing = await pool.query(
+    `SELECT id, item_name, time_included, unit_price, quantity, total, sort_order
+     FROM job_pricing_items
+     WHERE job_id = $1
+     ORDER BY sort_order ASC, id ASC`,
+    [jobId],
+  );
+
+  const quotations = await pool.query(
+    `SELECT q.id, q.quotation_number, q.state, li.id AS line_id, li.description, li.quantity, li.unit_price, li.amount
+     FROM quotations q
+     LEFT JOIN quotation_line_items li ON li.quotation_id = q.id
+     WHERE q.job_id = $1
+     ORDER BY q.created_at DESC, li.sort_order ASC, li.id ASC`,
+    [jobId],
+  );
+
+  const parts = await pool.query(
+    `SELECT id, part_name, quantity, unit_cost_price, status, created_at
+     FROM job_parts
+     WHERE job_id = $1
+     ORDER BY created_at DESC, id DESC`,
+    [jobId],
+  );
+
+  const lines: CostLine[] = [];
+
+  for (const row of manual.rows) {
+    const proof = Array.isArray(row.proof_files) ? row.proof_files : [];
+    lines.push({
+      id: `manual-${row.id}`,
+      source: 'manual',
+      label: String(row.cost_type || 'Site cost'),
+      description: row.notes ? `${row.description}\n${row.notes}` : row.description,
+      quantity: 1,
+      unit_amount: n(row.amount),
+      amount: n(row.amount),
+      currency: row.currency || 'GBP',
+      created_at: iso(row.created_at),
+      created_by_name: row.created_by_name ?? null,
+      proof_files: proof.map((p: Record<string, unknown>) => ({
+        stored_filename: String(p.stored_filename || ''),
+        original_filename: String(p.original_filename || 'proof'),
+        content_type: String(p.content_type || 'application/octet-stream'),
+        byte_size: n(p.byte_size),
+        href: `/jobs/${jobId}/costs/${row.id}/proof/${encodeURIComponent(String(p.stored_filename || ''))}`,
+      })),
+    });
+  }
+
+  for (const row of timesheet.rows) {
+    const seconds = n(row.duration_seconds);
+    const hours = seconds / 3600;
+    const rate = n(row.hourly_rate);
+    lines.push({
+      id: `timesheet-${row.id}`,
+      source: 'timesheet',
+      label: `${row.segment_type === 'travelling' ? 'Travel time' : 'On-site time'}${row.officer_full_name ? ` · ${row.officer_full_name}` : ''}`,
+      description: `${iso(row.clock_in) ?? ''}${row.clock_out ? ` to ${iso(row.clock_out) ?? ''}` : ' to open'}`,
+      quantity: hours,
+      unit_amount: rate,
+      amount: Math.round(hours * rate * 100) / 100,
+      currency: 'GBP',
+      created_at: iso(row.clock_in),
+      created_by_name: row.officer_full_name ?? null,
+    });
+  }
+
+  for (const row of jobPricing.rows) {
+    lines.push({
+      id: `job-pricing-${row.id}`,
+      source: 'job_pricing',
+      label: row.item_name,
+      description: row.time_included ? `${row.time_included} minutes included` : null,
+      quantity: n(row.quantity),
+      unit_amount: n(row.unit_price),
+      amount: n(row.total),
+      currency: 'GBP',
+      created_at: null,
+      created_by_name: null,
+    });
+  }
+
+  for (const row of quotations.rows) {
+    if (row.line_id == null) continue;
+    lines.push({
+      id: `quotation-${row.line_id}`,
+      source: 'quotation',
+      label: `${row.quotation_number} · ${row.description}`,
+      description: `Quotation state: ${row.state}`,
+      quantity: n(row.quantity),
+      unit_amount: n(row.unit_price),
+      amount: n(row.amount),
+      currency: 'GBP',
+      created_at: null,
+      created_by_name: null,
+    });
+  }
+
+  for (const row of parts.rows) {
+    const qty = n(row.quantity);
+    const unit = n(row.unit_cost_price);
+    lines.push({
+      id: `part-${row.id}`,
+      source: 'part',
+      label: row.part_name,
+      description: `Part status: ${row.status}`,
+      quantity: qty,
+      unit_amount: unit,
+      amount: Math.round(qty * unit * 100) / 100,
+      currency: 'GBP',
+      created_at: iso(row.created_at),
+      created_by_name: null,
+    });
+  }
+
+  const bySource = lines.reduce<Record<string, number>>((acc, line) => {
+    acc[line.source] = Math.round(((acc[line.source] ?? 0) + line.amount) * 100) / 100;
+    return acc;
+  }, {});
+
+  return {
+    summary: {
+      total: Math.round(lines.reduce((acc, line) => acc + line.amount, 0) * 100) / 100,
+      manual_total: bySource.manual ?? 0,
+      timesheet_total: bySource.timesheet ?? 0,
+      job_pricing_total: bySource.job_pricing ?? 0,
+      quotation_total: bySource.quotation ?? 0,
+      parts_total: bySource.part ?? 0,
+      currency: 'GBP',
+    },
+    lines,
+  };
+}
+
+export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): void {
+  const { pool, authenticate } = deps;
+  void ensureSchema(pool).catch((err) => console.error('Migration error (job_cost_entries):', err));
+
+  app.get('/api/jobs/:id/costs', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    if (jobId == null) return res.status(400).json({ message: 'Invalid job id' });
+    const user = (req as AuthReq).user!;
+    try {
+      if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'GET')) {
+        return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+      }
+      if (!(await canAccessJob(pool, jobId, user))) return res.status(404).json({ message: 'Job not found' });
+      return res.json(await buildJobCostPayload(pool, jobId));
+    } catch (error) {
+      console.error('Get job costs error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/jobs/:id/costs', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    if (jobId == null) return res.status(400).json({ message: 'Invalid job id' });
+    const user = (req as AuthReq).user!;
+    const body = req.body as Record<string, unknown>;
+    const amount = n(body.amount);
+    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const costType = typeof body.cost_type === 'string' && body.cost_type.trim() ? body.cost_type.trim() : 'site_cost';
+    const notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null;
+    const diaryEventId = body.diary_event_id == null ? null : parseId(body.diary_event_id);
+    const proof = decodeProofFiles(body.proof_files);
+
+    if (!description) return res.status(400).json({ message: 'Description is required' });
+    if (!(amount > 0)) return res.status(400).json({ message: 'Amount must be greater than zero' });
+    if (proof.length === 0) return res.status(400).json({ message: 'Proof is required for job costs' });
+    if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'POST')) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+
+    try {
+      if (!(await canAccessJob(pool, jobId, user, true))) return res.status(404).json({ message: 'Job not found' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const ins = await client.query<{ id: number }>(
+          `INSERT INTO job_cost_entries (job_id, diary_event_id, cost_type, description, amount, currency, notes, proof_files, created_by)
+           VALUES ($1, $2, $3, $4, $5, 'GBP', $6, '[]'::jsonb, $7)
+           RETURNING id`,
+          [jobId, diaryEventId, costType, description, amount, notes, user.userId],
+        );
+        const entryId = ins.rows[0].id;
+        const dir = path.join(getJobCostProofRoot(), String(jobId), String(entryId));
+        await fs.mkdir(dir, { recursive: true });
+        const proofJson = [];
+        for (const file of proof) {
+          const ext = path.extname(file.original).slice(0, 24) || '.bin';
+          const stored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+          await fs.writeFile(path.join(dir, stored), file.buf);
+          proofJson.push({
+            stored_filename: stored,
+            original_filename: file.original,
+            content_type: file.contentType,
+            byte_size: file.buf.length,
+          });
+        }
+        await client.query('UPDATE job_cost_entries SET proof_files = $1::jsonb WHERE id = $2', [JSON.stringify(proofJson), entryId]);
+        await client.query('COMMIT');
+        return res.status(201).json({ id: entryId, proof_files: proofJson });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Create job cost error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/jobs/:id/costs/:costId/proof/:filename', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    const costId = parseId(req.params.costId);
+    const filename = cleanFilename(String(req.params.filename || ''));
+    if (jobId == null || costId == null || !filename) return res.status(400).json({ message: 'Invalid id' });
+    const user = (req as AuthReq).user!;
+    try {
+      if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'GET')) {
+        return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+      }
+      if (!(await canAccessJob(pool, jobId, user, false))) return res.status(404).json({ message: 'Job not found' });
+      const r = await pool.query('SELECT proof_files FROM job_cost_entries WHERE id = $1 AND job_id = $2', [costId, jobId]);
+      if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Proof not found' });
+      const proof = Array.isArray(r.rows[0].proof_files) ? r.rows[0].proof_files : [];
+      const meta = proof.find((p: Record<string, unknown>) => String(p.stored_filename) === filename) as Record<string, unknown> | undefined;
+      if (!meta) return res.status(404).json({ message: 'Proof not found' });
+      res.setHeader('Content-Type', String(meta.content_type || 'application/octet-stream'));
+      res.setHeader('Content-Disposition', `inline; filename="${cleanFilename(String(meta.original_filename || 'proof'))}"`);
+      return res.sendFile(path.join(getJobCostProofRoot(), String(jobId), String(costId), filename));
+    } catch (error) {
+      console.error('Get job cost proof error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+}

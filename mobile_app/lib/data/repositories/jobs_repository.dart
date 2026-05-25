@@ -1,5 +1,4 @@
 import '../../core/network/api_exception.dart';
-import '../providers/api_provider.dart';
 import 'base_repository.dart';
 
 /// Dashboard job APIs — mirrors web `src/app/dashboard/jobs/**` and `/api/jobs/*`.
@@ -14,7 +13,7 @@ class JobsRepository extends BaseRepository {
 
   List<Map<String, dynamic>> _listOfMap(dynamic raw) {
     if (raw is! List) return [];
-    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{}).toList();
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
   }
 
   Future<Map<String, dynamic>> getJob(int id) async {
@@ -168,7 +167,7 @@ class JobsRepository extends BaseRepository {
     final d = _asMap(res.data);
     final kit = d['kit'];
     if (kit is Map) {
-      final raw = (kit as Map)['items'];
+      final raw = kit['items'];
       return _listOfMap(raw);
     }
     return [];
@@ -177,6 +176,15 @@ class JobsRepository extends BaseRepository {
   Future<Map<String, dynamic>> getJobFilesManifest(int jobId) async {
     final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/files');
     return _asMap(res.data);
+  }
+
+  Future<Map<String, dynamic>> getJobCosts(int jobId) async {
+    final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/costs');
+    return _asMap(res.data);
+  }
+
+  Future<void> postJobCost(int jobId, Map<String, dynamic> body) async {
+    await api.post<void>('/jobs/$jobId/costs', data: body);
   }
 
   Future<List<Map<String, dynamic>>> getJobReportQuestions(int jobId) async {
