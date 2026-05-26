@@ -42,6 +42,158 @@ const EARTHING_TYPES = [
   { value: 'IT', label: 'IT' },
 ];
 
+const AC_DC_OPTIONS = [
+  { value: 'ac', label: '~ AC' },
+  { value: 'dc', label: '⎓ DC' },
+];
+
+const LIVE_CONDUCTOR_OPTIONS = [
+  { value: '1-phase (2 wire)', label: '1-phase (2 wire)' },
+  { value: '1-phase (3 wire)', label: '1-phase (3 wire)' },
+  { value: '2-phase (3 wire)', label: '2-phase (3 wire)' },
+  { value: '3-phase (3 wire)', label: '3-phase (3 wire)' },
+  { value: '3-phase (4 wire)', label: '3-phase (4 wire)' },
+];
+
+const DC_CONDUCTOR_OPTIONS = [
+  { value: '2 pole', label: '2 pole' },
+  { value: '3 pole', label: '3 pole' },
+  { value: 'Other', label: 'Other...' },
+];
+
+const NUMBER_OF_SUPPLIES_OPTIONS = ['1', '2', '3', '4', '5', '6', 'N/A', 'Other'].map((value) => ({
+  value,
+  label: value === 'Other' ? 'Other...' : value,
+}));
+
+const NOMINAL_VOLTAGE_U_OPTIONS = [
+  { value: '230', label: '230 V' },
+  { value: '400', label: '400 V' },
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+  { value: 'Other', label: 'Other...' },
+];
+
+const NOMINAL_VOLTAGE_UO_OPTIONS = [
+  { value: '230', label: '230 V' },
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+  { value: 'Other', label: 'Other...' },
+];
+
+const SUPPLY_DEVICE_STANDARD_OPTIONS = [
+  '88',
+  '88-2',
+  '88-3',
+  '88-5',
+  '1361-I',
+  '1361-II',
+  '60898-B',
+  '60898-C',
+  '60898-D',
+  '61008-B',
+  '61008-C',
+  '61008-D',
+  '61009-B',
+  '61009-C',
+  '61009-D',
+  '60947-2',
+  'SEALED',
+  'lim',
+  'UNKNOWN',
+  'na',
+  'Other',
+].map((value) => ({ value, label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value }));
+
+const SHORT_CIRCUIT_CAPACITY_OPTIONS = ['1', '3', '6', '10', '16', '25', '33', '50', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} kA`,
+}));
+
+const SUPPLY_CURRENT_RATING_OPTIONS = ['60', '80', '100', '125', '160', '200', '300', '400', '500', '600', '800', '1000', '1200', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} A`,
+}));
+
+const MAIN_SWITCH_STANDARD_OPTIONS = [
+  '1362',
+  '60947-3',
+  '61008 RCD',
+  '60947-2 MCCB',
+  '3036 (S-E)',
+  '1361 type 1',
+  '4293 RCD',
+  '88 type gG',
+  '88 type mG',
+  '88 type aM',
+  '5419 isolator',
+  '1361 type 2',
+  '60947-2 ACB',
+  '60898 type B',
+  '61009 type B',
+  '3871 type 2',
+  '3871 type 3',
+  '3871 type B',
+  '3871 type C',
+  '60947 type B',
+  '60947 type C',
+  '60947-2 type D',
+  '3871 type 1',
+  '3871 type 4',
+  '3871 type D',
+  'lim',
+  'UNKNOWN',
+  'na',
+  'Other',
+].map((value) => ({ value, label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value }));
+
+const POLES_OPTIONS = ['1', '2', '3', '4', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value,
+}));
+
+const MAIN_SWITCH_VOLTAGE_OPTIONS = ['230', '240', '400', '415', '440', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} V`,
+}));
+
+const MAIN_SWITCH_CURRENT_OPTIONS = ['40', '63', '80', '100', '125', '160', '200', '250', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} A`,
+}));
+
+const CONDUCTOR_MATERIAL_OPTIONS = ['Copper', 'Aluminium', 'Steel', 'na', 'lim', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : value,
+}));
+
+const CONDUCTOR_CSA_OPTIONS = ['6', '10', '16', '25', '35', '50', '70', '95', '120', '150', '185', '240', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : `${value} mm²`,
+}));
+
+const EARTHING_CSA_OPTIONS = ['6', '10', '16', '25', '35', '50', '70', '95', '120', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : `${value} mm²`,
+}));
+
+const BONDING_CSA_OPTIONS = ['2.5', '4', '6', '10', '16', '25', '50', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : `${value} mm²`,
+}));
+
+const RCD_IDN_OPTIONS = ['10', '30', '100', '300', '500', '1000', 'na', 'nv', 'lim', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'nv' ? 'N/V' : value === 'lim' ? 'LIM' : value === 'Other' ? 'Other...' : `${value} mA`,
+}));
+
+const YES_NO_LIM_NA_OPTIONS = [
+  { value: 'yes', label: 'YES' },
+  { value: 'no', label: 'NO' },
+  { value: 'lim', label: 'LIM' },
+  { value: 'na', label: 'N/A' },
+];
+
 const OBS_CODES = [
   { value: 'c1', label: 'C1' },
   { value: 'c2', label: 'C2' },
@@ -271,48 +423,76 @@ export function SupplyCharacteristicsSection() {
           <TextField label="Ze (Ω)" value={sup.ze} onChange={(v) => patch({ ze: v })} />
           <TextField label="Ipf (kA)" value={sup.ipf} onChange={(v) => patch({ ipf: v })} />
         </div>
-        <TextField label="Number and type of live conductors" value={sup.phases} onChange={(v) => patch({ phases: v })} placeholder="e.g. 1-phase 2 wire" />
+        <OutcomeButtons label="Nature of supply" value={sup.acDc} onChange={(v) => patch({ acDc: v })} options={AC_DC_OPTIONS} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Nominal voltage U" value={sup.nominalU} onChange={(v) => patch({ nominalU: v })} />
-          <TextField label="Nominal voltage Uo" value={sup.nominalUo} onChange={(v) => patch({ nominalUo: v })} />
+          <SelectField
+            label="Number and type of live conductors"
+            value={sup.phases}
+            onChange={(v) => patch({ phases: v })}
+            options={sup.acDc === 'dc' ? DC_CONDUCTOR_OPTIONS : LIVE_CONDUCTOR_OPTIONS}
+          />
+          <SelectField label="Number of supplies" value={sup.numSupplies} onChange={(v) => patch({ numSupplies: v })} options={NUMBER_OF_SUPPLIES_OPTIONS} />
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Nominal voltage U" value={sup.nominalU} onChange={(v) => patch({ nominalU: v })} options={NOMINAL_VOLTAGE_U_OPTIONS} />
+          <SelectField label="Nominal voltage Uo" value={sup.nominalUo} onChange={(v) => patch({ nominalUo: v })} options={NOMINAL_VOLTAGE_UO_OPTIONS} />
+        </div>
+        <TextField label="Nominal frequency" value={sup.frequency} onChange={(v) => patch({ frequency: v })} />
+        <OutcomeButtons label="Nominal frequency quick set" value={sup.frequency} onChange={(v) => patch({ frequency: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
         <OutcomeButtons
           label="Supply polarity confirmed"
           value={sup.polarityConfirmed}
           onChange={(v) => patch({ polarityConfirmed: v })}
-          options={PASS_FAIL_OPTIONS}
+          options={YES_NO_LIM_NA_OPTIONS}
         />
       </SectionCard>
 
       <SectionCard title="Supply protective device">
-        <TextField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} />
-        <TextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} />
-          <TextField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} />
+          <SelectField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} options={SUPPLY_DEVICE_STANDARD_OPTIONS} />
+          <TextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} options={SHORT_CIRCUIT_CAPACITY_OPTIONS} />
+          <SelectField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} options={SUPPLY_CURRENT_RATING_OPTIONS} />
         </div>
       </SectionCard>
 
       <SectionCard title="Main switch / RCD">
-        <TextField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} />
-        <TextField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} />
-        <TextField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} />
-        <TextField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} />
-        <TextField label="Fuse device setting" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} />
+        <SelectField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} options={MAIN_SWITCH_STANDARD_OPTIONS} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} options={POLES_OPTIONS} />
+          <SelectField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} options={MAIN_SWITCH_VOLTAGE_OPTIONS} />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} options={MAIN_SWITCH_CURRENT_OPTIONS} />
+          <TextField label="Fuse device setting" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} />
+        </div>
+        <OutcomeButtons label="Fuse device setting quick set" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
         <TextField label="Location" value={sup.mainSwitchLocation} onChange={(v) => patch({ mainSwitchLocation: v })} />
-        <TextField label="Conductor material" value={sup.conductorMaterial} onChange={(v) => patch({ conductorMaterial: v })} />
-        <TextField label="Conductor CSA" value={sup.conductorCsa} onChange={(v) => patch({ conductorCsa: v })} />
-        <TextField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} />
-        <TextField label="RCD time delay" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} />
-        <TextField label="RCD operating time" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Conductor material" value={sup.conductorMaterial} onChange={(v) => patch({ conductorMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <SelectField label="Conductor CSA" value={sup.conductorCsa} onChange={(v) => patch({ conductorCsa: v })} options={CONDUCTOR_CSA_OPTIONS} />
+        </div>
+        <SelectField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} options={RCD_IDN_OPTIONS} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="RCD time delay" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} />
+          <TextField label="RCD operating time" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} />
+        </div>
+        <OutcomeButtons label="RCD time delay quick set" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
+        <OutcomeButtons label="RCD operating time quick set" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
       </SectionCard>
 
       <SectionCard title="Earthing & bonding">
-        <TextField label="Earthing conductor material" value={sup.earthMaterial} onChange={(v) => patch({ earthMaterial: v })} />
-        <TextField label="Earthing conductor CSA" value={sup.earthCsa} onChange={(v) => patch({ earthCsa: v })} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Earthing conductor material" value={sup.earthMaterial} onChange={(v) => patch({ earthMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <SelectField label="Earthing conductor CSA" value={sup.earthCsa} onChange={(v) => patch({ earthCsa: v })} options={EARTHING_CSA_OPTIONS} />
+        </div>
         <OutcomeButtons label="Earthing continuity" value={sup.earthContinuity} onChange={(v) => patch({ earthContinuity: v })} options={PASS_FAIL_OPTIONS} />
-        <TextField label="Bonding material" value={sup.bondMaterial} onChange={(v) => patch({ bondMaterial: v })} />
-        <TextField label="Bonding CSA" value={sup.bondCsa} onChange={(v) => patch({ bondCsa: v })} />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField label="Bonding material" value={sup.bondMaterial} onChange={(v) => patch({ bondMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <SelectField label="Bonding CSA" value={sup.bondCsa} onChange={(v) => patch({ bondCsa: v })} options={BONDING_CSA_OPTIONS} />
+        </div>
         <OutcomeButtons label="Bonding continuity" value={sup.bondContinuity} onChange={(v) => patch({ bondContinuity: v })} options={PASS_FAIL_OPTIONS} />
         <OutcomeButtons label="Water" value={sup.bondWater} onChange={(v) => patch({ bondWater: v })} options={PASS_FAIL_OPTIONS} />
         <OutcomeButtons label="Gas" value={sup.bondGas} onChange={(v) => patch({ bondGas: v })} options={PASS_FAIL_OPTIONS} />

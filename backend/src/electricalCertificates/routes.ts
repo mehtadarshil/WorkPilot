@@ -4,7 +4,7 @@ import { getTenantScopeUserId, requireTenantCrmAccess } from '../tenantAccess';
 import type { TenantAuthUser } from '../tenantAccess';
 import { coerceDocument, createDefaultDocument } from './documentDefaults';
 import { validateElectricalCertificate } from './validation';
-import type { CertificateStatus, ElectricalCertificateDocument } from './types';
+import type { CertificateStatus, ElectricalCertificateDocument, ElectricalInstallationSignatory } from './types';
 import { loadCompanyBranding } from './companyBranding';
 import {
   applyPatTestEquipmentDefaults,
@@ -116,8 +116,25 @@ async function applyBusinessDetailsDefaults(
 ): Promise<ElectricalCertificateDocument> {
   const userId = getTenantScopeUserId(authUser);
   doc = await applySystemSignOffDefaults(pool, authUser, doc);
-  if (!doc.pat) return doc;
+  if (!doc.pat && !doc.electricalInstallation) return doc;
   const branding = await loadCompanyBranding(pool, userId);
+  if (doc.electricalInstallation) {
+    const withCompanyDefaults = (value: ElectricalInstallationSignatory): ElectricalInstallationSignatory => ({
+      ...value,
+      company: value.company.trim() || branding.company_name || '',
+      phone: value.phone.trim() || branding.company_phone || '',
+      address: value.address.trim() || branding.company_address || '',
+    });
+    doc.electricalInstallation.design.designer1 = withCompanyDefaults(doc.electricalInstallation.design.designer1);
+    if (!doc.electricalInstallation.design.designer2NotApplicable) {
+      doc.electricalInstallation.design.designer2 = withCompanyDefaults(doc.electricalInstallation.design.designer2);
+    }
+    doc.electricalInstallation.construction.constructorSignatory = withCompanyDefaults(
+      doc.electricalInstallation.construction.constructorSignatory,
+    );
+    doc.electricalInstallation.inspection.inspector = withCompanyDefaults(doc.electricalInstallation.inspection.inspector);
+  }
+  if (!doc.pat) return doc;
   const address = [branding.company_address, branding.company_email, branding.company_website]
     .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
     .join('\n');
@@ -383,6 +400,8 @@ async function loadCertificate(
       COALESCE(
         NULLIF(TRIM(wa.name), ''),
         NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.town, wa.postcode)), ''),
+        NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), ''),
+        NULLIF(TRIM(c.address), ''),
         'Installation'
       ) AS installation_label
      FROM electrical_certificates ec
@@ -435,7 +454,13 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     params.push(limit, offset);
     const listR = await pool.query(
       `SELECT ec.*, c.full_name AS customer_full_name,
-        COALESCE(NULLIF(TRIM(wa.name), ''), NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.town, wa.postcode)), ''), 'Installation') AS installation_label
+        COALESCE(
+          NULLIF(TRIM(wa.name), ''),
+          NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.town, wa.postcode)), ''),
+          NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), ''),
+          NULLIF(TRIM(c.address), ''),
+          'Installation'
+        ) AS installation_label
        FROM electrical_certificates ec
        JOIN customers c ON c.id = ec.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = ec.work_address_id
@@ -733,7 +758,10 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
 
     const custCheck = await pool.query(
       `SELECT id, full_name,
-              NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, town, county, postcode)), '') AS customer_address
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), ''),
+                NULLIF(TRIM(address), '')
+              ) AS customer_address
        FROM customers WHERE id = $1` + (isSuperAdmin ? '' : ' AND created_by = $2'),
       isSuperAdmin ? [customerId] : [customerId, userId],
     );

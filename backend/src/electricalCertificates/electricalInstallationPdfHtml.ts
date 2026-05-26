@@ -169,7 +169,13 @@ export function buildElectricalInstallationCertificatePdfHtml(input: Certificate
   <section class="block">
     <h2>Particulars of signatories</h2>
     ${signatoryRows(h, 'Designer No. 1', eic.design.designer1)}
-    ${eic.design.designer2.name.trim() ? signatoryRows(h, 'Designer No. 2', eic.design.designer2) : ''}
+    ${
+      eic.design.designer2NotApplicable
+        ? '<h3>Designer No. 2</h3><table class="kv"><tr><td class="lbl">Status</td><td>N/A</td></tr></table>'
+        : eic.design.designer2.name.trim()
+          ? signatoryRows(h, 'Designer No. 2', eic.design.designer2)
+          : ''
+    }
     ${signatoryRows(h, 'Constructor', eic.construction.constructorSignatory)}
     ${signatoryRows(h, 'Inspector', eic.inspection.inspector)}
   </section>

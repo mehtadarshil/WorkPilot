@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, Download, Loader2, Printer, Save } from 'lucide-react';
+import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
 import { coerceElectricalInstallationData } from '@/lib/electricalCertificates/electricalInstallationDefaults';
 import {
   ELECTRICAL_INSTALLATION_EDITOR_SECTIONS,
@@ -48,12 +49,22 @@ const RISK_OPTIONS = [
   { value: 'na', label: 'N/A' },
 ];
 
+function withCompanyDefaults(value: ElectricalInstallationSignatory, branding: CompanyBranding) {
+  return {
+    ...value,
+    company: value.company.trim() || branding.company_name || '',
+    phone: value.phone.trim() || branding.company_phone || '',
+    address: value.address.trim() || branding.company_address || '',
+  };
+}
+
 export function ElectricalInstallationCertificateEditor() {
   const { certificate, document, setDocument, saveDocument, saving, saveError, lastSavedAt, patchMeta } =
     useCertificateEditor();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [section, setSection] = useState<ElectricalInstallationEditorSectionKey>('installation-details');
   const [engineers, setEngineers] = useState<Engineer[]>([]);
+  const [companyBranding, setCompanyBranding] = useState<CompanyBranding | null>(null);
 
   const eic = useMemo(
     () => document.electricalInstallation ?? coerceElectricalInstallationData(null, certificate.customer_full_name ?? ''),
@@ -66,6 +77,47 @@ export function ElectricalInstallationCertificateEditor() {
       .then((res) => setEngineers(res.engineers ?? []))
       .catch(() => setEngineers([]));
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void getJson<{ branding: CompanyBranding }>('/electrical-certificates/branding', token)
+      .then(({ branding }) => {
+        setCompanyBranding(branding);
+        setDocument((prev) => {
+          const current = prev.electricalInstallation ?? coerceElectricalInstallationData(null, certificate.customer_full_name ?? '');
+          const next: ElectricalInstallationCertificateData = {
+            ...current,
+            design: {
+              ...current.design,
+              designer1: withCompanyDefaults(current.design.designer1, branding),
+              designer2: current.design.designer2NotApplicable
+                ? current.design.designer2
+                : withCompanyDefaults(current.design.designer2, branding),
+            },
+            construction: {
+              ...current.construction,
+              constructorSignatory: withCompanyDefaults(current.construction.constructorSignatory, branding),
+            },
+            inspection: {
+              ...current.inspection,
+              inspector: withCompanyDefaults(current.inspection.inspector, branding),
+            },
+          };
+          if (
+            next.design.designer1 === current.design.designer1 &&
+            next.design.designer2 === current.design.designer2 &&
+            next.construction.constructorSignatory === current.construction.constructorSignatory &&
+            next.inspection.inspector === current.inspection.inspector
+          ) {
+            return prev;
+          }
+          return { ...prev, typeSlug: 'eic_18e_a3', electricalInstallation: next };
+        });
+      })
+      .catch(() => {
+        // Company details are a convenience; the form remains editable without them.
+      });
+  }, [certificate.customer_full_name, setDocument, token]);
 
   const updateEic: UpdateEic = (updater) => {
     setDocument((prev) => {
@@ -142,6 +194,7 @@ export function ElectricalInstallationCertificateEditor() {
           update={updateEic}
           certificate={certificate}
           engineers={engineers}
+          companyBranding={companyBranding}
         />
       </main>
     </div>
@@ -154,18 +207,20 @@ function EicSection({
   update,
   certificate,
   engineers,
+  companyBranding,
 }: {
   section: ElectricalInstallationEditorSectionKey;
   data: ElectricalInstallationCertificateData;
   update: UpdateEic;
   certificate: { customer_full_name: string | null; installation_label: string | null };
   engineers: Engineer[];
+  companyBranding: CompanyBranding | null;
 }) {
   if (section === 'installation-details') return <DetailsSection data={data} update={update} certificate={certificate} />;
   if (section === 'design') return <DesignSection data={data} update={update} engineers={engineers} />;
   if (section === 'construction') return <ConstructionSection data={data} update={update} engineers={engineers} />;
   if (section === 'inspection-testing') return <InspectionTestingSection data={data} update={update} engineers={engineers} />;
-  if (section === 'signatories') return <SignatoriesSection data={data} update={update} />;
+  if (section === 'signatories') return <SignatoriesSection data={data} update={update} companyBranding={companyBranding} />;
   if (section === 'supply-characteristics') return <SupplyCharacteristicsSection />;
   if (section === 'inspection-schedule') return <InspectionScheduleSection />;
   if (section === 'boards') return <BoardsListSection />;
@@ -228,6 +283,14 @@ function CheckField({ label, checked, onChange }: { label: string; checked: bool
 function DesignSection({ data, update, engineers }: { data: ElectricalInstallationCertificateData; update: UpdateEic; engineers: Engineer[] }) {
   const patch = (design: Partial<ElectricalInstallationCertificateData['design']>) =>
     update((prev) => ({ ...prev, design: { ...prev.design, ...design } }));
+  const setDesigner2NotApplicable = (designer2NotApplicable: boolean) => {
+    patch({
+      designer2NotApplicable,
+      ...(designer2NotApplicable
+        ? { designer2: { name: '', signature: '', date: '', company: '', phone: '', address: '', postcode: '' } }
+        : {}),
+    });
+  };
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <SectionCard title="For design">
@@ -237,7 +300,14 @@ function DesignSection({ data, update, engineers }: { data: ElectricalInstallati
         <OutcomeButtons label="Risk assessment attached" value={data.design.riskAssessment} onChange={(riskAssessment) => patch({ riskAssessment: riskAssessment as ElectricalInstallationCertificateData['design']['riskAssessment'] })} options={RISK_OPTIONS} />
       </SectionCard>
       <SignatoryCard title="Designer No. 1" value={data.design.designer1} engineers={engineers} onChange={(designer1) => patch({ designer1 })} />
-      <SignatoryCard title="Designer No. 2 (if applicable)" value={data.design.designer2} engineers={engineers} onChange={(designer2) => patch({ designer2 })} />
+      <SignatoryCard
+        title="Designer No. 2 (if applicable)"
+        value={data.design.designer2}
+        engineers={engineers}
+        onChange={(designer2) => patch({ designer2 })}
+        notApplicable={data.design.designer2NotApplicable}
+        onNotApplicableChange={setDesigner2NotApplicable}
+      />
     </div>
   );
 }
@@ -274,21 +344,51 @@ function InspectionTestingSection({ data, update, engineers }: { data: Electrica
   );
 }
 
-function SignatoriesSection({ data, update }: { data: ElectricalInstallationCertificateData; update: UpdateEic }) {
+function SignatoriesSection({
+  data,
+  update,
+  companyBranding,
+}: {
+  data: ElectricalInstallationCertificateData;
+  update: UpdateEic;
+  companyBranding: CompanyBranding | null;
+}) {
   const setDesignSignatory = (key: 'designer1' | 'designer2', value: ElectricalInstallationSignatory) =>
     update((prev) => ({ ...prev, design: { ...prev.design, [key]: value } }));
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <SignatoryContactCard title="Designer No. 1 contact details" value={data.design.designer1} onChange={(value) => setDesignSignatory('designer1', value)} />
-      <SignatoryContactCard title="Designer No. 2 contact details" value={data.design.designer2} onChange={(value) => setDesignSignatory('designer2', value)} />
       <SignatoryContactCard
-        title="Constructor contact details"
+        title="Designer No. 1 company details"
+        value={data.design.designer1}
+        companyBranding={companyBranding}
+        onChange={(value) => setDesignSignatory('designer1', value)}
+      />
+      {data.design.designer2NotApplicable ? (
+        <SectionCard title="Designer No. 2 company details">
+          <p className="text-sm text-slate-600">Designer No. 2 is marked N/A.</p>
+        </SectionCard>
+      ) : (
+        <SignatoryContactCard
+          title="Designer No. 2 company details"
+          value={data.design.designer2}
+          companyBranding={companyBranding}
+          onChange={(value) => setDesignSignatory('designer2', value)}
+        />
+      )}
+      <SignatoryContactCard
+        title="Constructor company details"
         value={data.construction.constructorSignatory}
+        companyBranding={companyBranding}
         onChange={(constructorSignatory) =>
           update((prev) => ({ ...prev, construction: { ...prev.construction, constructorSignatory } }))
         }
       />
-      <SignatoryContactCard title="Inspector contact details" value={data.inspection.inspector} onChange={(inspector) => update((prev) => ({ ...prev, inspection: { ...prev.inspection, inspector } }))} />
+      <SignatoryContactCard
+        title="Inspector company details"
+        value={data.inspection.inspector}
+        companyBranding={companyBranding}
+        onChange={(inspector) => update((prev) => ({ ...prev, inspection: { ...prev.inspection, inspector } }))}
+      />
     </div>
   );
 }
@@ -298,11 +398,15 @@ function SignatoryCard({
   value,
   engineers,
   onChange,
+  notApplicable,
+  onNotApplicableChange,
 }: {
   title: string;
   value: ElectricalInstallationSignatory;
   engineers: Engineer[];
   onChange: (value: ElectricalInstallationSignatory) => void;
+  notApplicable?: boolean;
+  onNotApplicableChange?: (value: boolean) => void;
 }) {
   const pickEngineer = (key: string) => {
     const engineer = engineers.find((item) => item.key === key);
@@ -311,30 +415,50 @@ function SignatoryCard({
   };
   return (
     <SectionCard title={title}>
-      <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value="" onChange={(e) => pickEngineer(e.target.value)}>
-        <option value="">Autofill from engineer...</option>
-        {engineers.map((engineer) => (
-          <option key={engineer.key} value={engineer.key}>{engineer.full_name}</option>
-        ))}
-      </select>
-      <div className="grid gap-4 md:grid-cols-3">
-        <TextField label="Name" value={value.name} onChange={(name) => onChange({ ...value, name })} />
-        <TextField label="Typed signature" value={value.signature} onChange={(signature) => onChange({ ...value, signature })} />
-        <TextField label="Date" type="date" value={value.date} onChange={(date) => onChange({ ...value, date })} />
-      </div>
+      {onNotApplicableChange && (
+        <CheckField label="N/A - no second designer" checked={Boolean(notApplicable)} onChange={onNotApplicableChange} />
+      )}
+      {notApplicable ? (
+        <p className="text-sm text-slate-600">No second designer applies to this certificate.</p>
+      ) : (
+        <>
+          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value="" onChange={(e) => pickEngineer(e.target.value)}>
+            <option value="">Autofill from engineer...</option>
+            {engineers.map((engineer) => (
+              <option key={engineer.key} value={engineer.key}>{engineer.full_name}</option>
+            ))}
+          </select>
+          <div className="grid gap-4 md:grid-cols-3">
+            <TextField label="Name" value={value.name} onChange={(name) => onChange({ ...value, name })} />
+            <TextField label="Typed signature" value={value.signature} onChange={(signature) => onChange({ ...value, signature })} />
+            <TextField label="Date" type="date" value={value.date} onChange={(date) => onChange({ ...value, date })} />
+          </div>
+        </>
+      )}
     </SectionCard>
   );
 }
 
-function SignatoryContactCard({ title, value, onChange }: { title: string; value: ElectricalInstallationSignatory; onChange: (value: ElectricalInstallationSignatory) => void }) {
+function SignatoryContactCard({
+  title,
+  value,
+  companyBranding,
+  onChange,
+}: {
+  title: string;
+  value: ElectricalInstallationSignatory;
+  companyBranding: CompanyBranding | null;
+  onChange: (value: ElectricalInstallationSignatory) => void;
+}) {
+  const displayValue = companyBranding ? withCompanyDefaults(value, companyBranding) : value;
   return (
     <SectionCard title={title}>
       <div className="grid gap-4 md:grid-cols-2">
-        <TextField label="Company" value={value.company} onChange={(company) => onChange({ ...value, company })} />
-        <TextField label="Phone" value={value.phone} onChange={(phone) => onChange({ ...value, phone })} />
+        <TextField label="Company" value={displayValue.company} onChange={(company) => onChange({ ...displayValue, company })} />
+        <TextField label="Phone" value={displayValue.phone} onChange={(phone) => onChange({ ...displayValue, phone })} />
       </div>
-      <TextAreaField label="Address" value={value.address} onChange={(address) => onChange({ ...value, address })} />
-      <TextField label="Postcode" value={value.postcode} onChange={(postcode) => onChange({ ...value, postcode })} />
+      <TextAreaField label="Address" value={displayValue.address} onChange={(address) => onChange({ ...displayValue, address })} />
+      <TextField label="Postcode" value={displayValue.postcode} onChange={(postcode) => onChange({ ...displayValue, postcode })} />
     </SectionCard>
   );
 }

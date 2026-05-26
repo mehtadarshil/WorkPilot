@@ -55,6 +55,7 @@ export function createDefaultElectricalInstallationData(customerName = ''): Elec
       riskAssessment: 'na',
       designer1: defaultSignatory(today),
       designer2: defaultSignatory(''),
+      designer2NotApplicable: false,
     },
     construction: {
       departures: 'None noted',
@@ -82,6 +83,8 @@ export function coerceElectricalInstallationData(
       ...(o.design ?? {}),
       designer1: coerceSignatory(o.design?.designer1, base.design.designer1.date),
       designer2: coerceSignatory(o.design?.designer2, ''),
+      designer2NotApplicable:
+        typeof o.design?.designer2NotApplicable === 'boolean' ? o.design.designer2NotApplicable : false,
     },
     construction: {
       ...base.construction,

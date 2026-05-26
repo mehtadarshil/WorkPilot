@@ -462,6 +462,7 @@ export interface ElectricalInstallationCertificateData {
     riskAssessment: ElectricalInstallationRiskAssessment;
     designer1: ElectricalInstallationSignatory;
     designer2: ElectricalInstallationSignatory;
+    designer2NotApplicable: boolean;
   };
   construction: {
     departures: string;
