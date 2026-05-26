@@ -19,6 +19,10 @@ import type {
   PatApplianceRow,
   PatCertificateData,
 } from './types';
+import {
+  coerceEmergencyLightingData,
+  createDefaultEmergencyLightingData,
+} from './emergencyLightingDefaults';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -668,7 +672,8 @@ function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['t
       s === 'fi_insp_2025' ||
       s === 'dfi_insp_2019_a1' ||
       s === 'dfi_inst_2019_a1' ||
-      s === 'fi_extinsp_5306'
+      s === 'fi_extinsp_5306' ||
+      s === 'em_pir_2025'
     ) {
       return s;
     }
@@ -781,7 +786,8 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       typeSlug === 'fi_insp_2025' ||
       typeSlug === 'dfi_insp_2019_a1' ||
       typeSlug === 'dfi_inst_2019_a1' ||
-      typeSlug === 'fi_extinsp_5306'
+      typeSlug === 'fi_extinsp_5306' ||
+      typeSlug === 'em_pir_2025'
         ? []
         : [emptyBoard()],
     appendix: { content: '', photos: [] },
@@ -795,6 +801,9 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       : {}),
     ...(typeSlug === 'fi_extinsp_5306'
       ? { fireExtinguisher: createDefaultFireExtinguisherData(customerName) }
+      : {}),
+    ...(typeSlug === 'em_pir_2025'
+      ? { emergencyLighting: createDefaultEmergencyLightingData(customerName) }
       : {}),
   };
 }
@@ -821,7 +830,8 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
       rawType === 'fi_insp_2025' ||
       rawType === 'dfi_insp_2019_a1' ||
       rawType === 'dfi_inst_2019_a1' ||
-      rawType === 'fi_extinsp_5306'
+      rawType === 'fi_extinsp_5306' ||
+      rawType === 'em_pir_2025'
         ? []
         : Array.isArray(o.boards) && o.boards.length > 0
           ? o.boards.map(coerceBoard)
@@ -851,6 +861,14 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
       ? {
           fireExtinguisher: coerceFireExtinguisherData(
             o.fireExtinguisher,
+            base.installation.occupierName,
+          ),
+        }
+      : {}),
+    ...(rawType === 'em_pir_2025'
+      ? {
+          emergencyLighting: coerceEmergencyLightingData(
+            o.emergencyLighting,
             base.installation.occupierName,
           ),
         }

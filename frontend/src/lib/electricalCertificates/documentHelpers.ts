@@ -96,6 +96,26 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
       })),
     };
   }
+  if (doc.emergencyLighting) {
+    base.emergencyLighting = {
+      ...doc.emergencyLighting,
+      modifications: doc.emergencyLighting.modifications.map((item) => ({
+        ...item,
+        id: newId('emmod'),
+        photos: item.photos.map(clonePhoto),
+      })),
+      testSchedule: doc.emergencyLighting.testSchedule.map((item) => ({
+        ...item,
+        id: newId('emtest'),
+        photos: item.photos.map(clonePhoto),
+      })),
+      faultsAndRepairs: doc.emergencyLighting.faultsAndRepairs.map((item) => ({
+        ...item,
+        id: newId('emfault'),
+        photos: item.photos.map(clonePhoto),
+      })),
+    };
+  }
   return base;
 }
 

@@ -202,6 +202,29 @@ export function CertificateEditorProvider({
               next.fireExtinguisher.declaration.authorisedDate !== prev.fireExtinguisher.declaration.authorisedDate;
           }
 
+          if (prev.emergencyLighting) {
+            next.emergencyLighting = {
+              ...prev.emergencyLighting,
+              declaration: {
+                ...prev.emergencyLighting.declaration,
+                inspectedBy: prev.emergencyLighting.declaration.inspectedBy.trim() || name,
+                inspectedPosition: prev.emergencyLighting.declaration.inspectedPosition.trim() || position,
+                inspectedDate: prev.emergencyLighting.declaration.inspectedDate || today,
+                authorisedBy: prev.emergencyLighting.declaration.authorisedBy.trim() || name,
+                authorisedPosition: prev.emergencyLighting.declaration.authorisedPosition.trim() || position,
+                authorisedDate: prev.emergencyLighting.declaration.authorisedDate || today,
+              },
+            };
+            changed =
+              changed ||
+              next.emergencyLighting.declaration.inspectedBy !== prev.emergencyLighting.declaration.inspectedBy ||
+              next.emergencyLighting.declaration.inspectedPosition !== prev.emergencyLighting.declaration.inspectedPosition ||
+              next.emergencyLighting.declaration.inspectedDate !== prev.emergencyLighting.declaration.inspectedDate ||
+              next.emergencyLighting.declaration.authorisedBy !== prev.emergencyLighting.declaration.authorisedBy ||
+              next.emergencyLighting.declaration.authorisedPosition !== prev.emergencyLighting.declaration.authorisedPosition ||
+              next.emergencyLighting.declaration.authorisedDate !== prev.emergencyLighting.declaration.authorisedDate;
+          }
+
           return changed ? next : prev;
         });
       })

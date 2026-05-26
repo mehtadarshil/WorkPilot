@@ -9,7 +9,8 @@ export type ElectricalCertificateTypeSlug =
   | 'fi_insp_2025'
   | 'dfi_insp_2019_a1'
   | 'dfi_inst_2019_a1'
-  | 'fi_extinsp_5306';
+  | 'fi_extinsp_5306'
+  | 'em_pir_2025';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -359,6 +360,73 @@ export interface FireExtinguisherCertificateData {
   remedialActions: string;
 }
 
+export type EmergencyLightingOutcome = '' | 'pass' | 'fail' | 'na';
+
+export interface EmergencyLightingModification {
+  id: string;
+  location: string;
+  details: string;
+  date: string;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingTestItem {
+  id: string;
+  reference: string;
+  location: string;
+  luminaireType: string;
+  supplyMode: string;
+  batteryType: string;
+  lampType: string;
+  durationMinutes: string;
+  chargeIndicator: EmergencyLightingOutcome;
+  functionalTest: EmergencyLightingOutcome;
+  durationTest: EmergencyLightingOutcome;
+  result: EmergencyLightingOutcome;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingFaultRepair {
+  id: string;
+  reference: string;
+  location: string;
+  fault: string;
+  repair: string;
+  repairedBy: string;
+  repairedDate: string;
+  result: EmergencyLightingOutcome;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingCertificateData {
+  installation: {
+    occupierName: string;
+    premisesType: string;
+    systemDescription: string;
+    manufacturer: string;
+    manufacturerPhone: string;
+    installer: string;
+    installerPhone: string;
+    inspectionDate: string;
+    nextInspectionDate: string;
+    overallAssessment: '' | 'satisfactory' | 'unsatisfactory';
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  modifications: EmergencyLightingModification[];
+  testSchedule: EmergencyLightingTestItem[];
+  faultsAndRepairs: EmergencyLightingFaultRepair[];
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -438,6 +506,7 @@ export interface ElectricalCertificateDocument {
   domesticFireAlarm?: DomesticFireAlarmCertificateData;
   domesticFireAlarmInst?: DomesticFireAlarmInstCertificateData;
   fireExtinguisher?: FireExtinguisherCertificateData;
+  emergencyLighting?: EmergencyLightingCertificateData;
 }
 
 export interface ValidationIssue {
@@ -513,7 +582,25 @@ export const CERTIFICATE_TYPE_CATALOG = [
     standard: 'BS 5306',
     revision: 'Parts 3, 8, 9',
   },
+  {
+    slug: 'em_pir_2025',
+    title: 'Emergency Lighting - Periodic Inspection Report',
+    subtitle: 'Standard: BS 5266-1:2025 | BS EN 50172 / BS 5266-8',
+    shortLabel: 'EM-PIR',
+    standard: 'BS 5266-1',
+    revision: '2025',
+  },
 ] as const;
+
+export const EMERGENCY_LIGHTING_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'modifications', label: 'Modifications' },
+  { key: 'test-schedule', label: 'Test schedule' },
+  { key: 'faults-repairs', label: 'Faults and repairs' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type EmergencyLightingEditorSectionKey = (typeof EMERGENCY_LIGHTING_EDITOR_SECTIONS)[number]['key'];
 
 export const FIRE_EXTINGUISHER_EDITOR_SECTIONS = [
   { key: 'installation-details', label: 'Installation details' },

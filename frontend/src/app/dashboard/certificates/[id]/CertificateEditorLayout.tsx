@@ -13,6 +13,7 @@ import { FireAlarmCertificateEditor } from '../components/FireAlarmCertificateEd
 import { DomesticFireAlarmCertificateEditor } from '../components/DomesticFireAlarmCertificateEditor';
 import { DomesticFireAlarmInstCertificateEditor } from '../components/DomesticFireAlarmInstCertificateEditor';
 import { FireExtinguisherCertificateEditor } from '../components/FireExtinguisherCertificateEditor';
+import { EmergencyLightingCertificateEditor } from '../components/EmergencyLightingCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -76,6 +77,8 @@ export default function CertificateEditorLayout({ children }: { children: React.
         <DomesticFireAlarmInstCertificateEditor />
       ) : certificate.type_slug === 'fi_extinsp_5306' ? (
         <FireExtinguisherCertificateEditor />
+      ) : certificate.type_slug === 'em_pir_2025' ? (
+        <EmergencyLightingCertificateEditor />
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}

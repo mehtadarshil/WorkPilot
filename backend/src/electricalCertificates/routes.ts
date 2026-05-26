@@ -93,6 +93,7 @@ function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocume
   if (raw === 'dfi_insp_2019_a1') return 'dfi_insp_2019_a1';
   if (raw === 'dfi_inst_2019_a1') return 'dfi_inst_2019_a1';
   if (raw === 'fi_extinsp_5306') return 'fi_extinsp_5306';
+  if (raw === 'em_pir_2025') return 'em_pir_2025';
   return 'eicr_18e_a3';
 }
 
@@ -102,6 +103,7 @@ function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeS
   if (typeSlug === 'dfi_insp_2019_a1') return 'DFI-INSP';
   if (typeSlug === 'dfi_inst_2019_a1') return 'DFI-INST';
   if (typeSlug === 'fi_extinsp_5306') return 'FI-EXTINSP';
+  if (typeSlug === 'em_pir_2025') return 'EM-PIR';
   return 'EICR';
 }
 
@@ -218,6 +220,18 @@ async function applySystemSignOffDefaults(
       authorisedBy: doc.fireExtinguisher.declaration.authorisedBy.trim() || defaults.name,
       authorisedPosition: doc.fireExtinguisher.declaration.authorisedPosition.trim() || defaults.position,
       authorisedDate: doc.fireExtinguisher.declaration.authorisedDate || today,
+    };
+  }
+
+  if (doc.emergencyLighting) {
+    doc.emergencyLighting.declaration = {
+      ...doc.emergencyLighting.declaration,
+      inspectedBy: doc.emergencyLighting.declaration.inspectedBy.trim() || defaults.name,
+      inspectedPosition: doc.emergencyLighting.declaration.inspectedPosition.trim() || defaults.position,
+      inspectedDate: doc.emergencyLighting.declaration.inspectedDate || today,
+      authorisedBy: doc.emergencyLighting.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.emergencyLighting.declaration.authorisedPosition.trim() || defaults.position,
+      authorisedDate: doc.emergencyLighting.declaration.authorisedDate || today,
     };
   }
 
@@ -448,6 +462,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       'dfi_insp_2019_a1',
       'dfi_inst_2019_a1',
       'fi_extinsp_5306',
+      'em_pir_2025',
     ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
@@ -770,6 +785,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       }
       if (typeSlug === 'fi_extinsp_5306' && doc.fireExtinguisher) {
         doc.fireExtinguisher.installation.occupierName = customerName;
+      }
+      if (typeSlug === 'em_pir_2025' && doc.emergencyLighting) {
+        doc.emergencyLighting.installation.occupierName = customerName;
       }
     }
 

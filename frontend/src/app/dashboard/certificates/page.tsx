@@ -41,6 +41,9 @@ function certificateEditorHref(cert: ElectricalCertificate) {
   if (cert.type_slug === 'fi_extinsp_5306') {
     return `/dashboard/certificates/${cert.id}/fire-extinguisher`;
   }
+  if (cert.type_slug === 'em_pir_2025') {
+    return `/dashboard/certificates/${cert.id}/emergency-lighting`;
+  }
   return `/dashboard/certificates/${cert.id}/installation-details`;
 }
 

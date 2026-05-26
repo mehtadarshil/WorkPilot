@@ -11,7 +11,8 @@ export type ElectricalCertificateTypeSlug =
   | 'fi_insp_2025'
   | 'dfi_insp_2019_a1'
   | 'dfi_inst_2019_a1'
-  | 'fi_extinsp_5306';
+  | 'fi_extinsp_5306'
+  | 'em_pir_2025';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -360,6 +361,73 @@ export interface FireExtinguisherCertificateData {
   remedialActions: string;
 }
 
+export type EmergencyLightingOutcome = '' | 'pass' | 'fail' | 'na';
+
+export interface EmergencyLightingModification {
+  id: string;
+  location: string;
+  details: string;
+  date: string;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingTestItem {
+  id: string;
+  reference: string;
+  location: string;
+  luminaireType: string;
+  supplyMode: string;
+  batteryType: string;
+  lampType: string;
+  durationMinutes: string;
+  chargeIndicator: EmergencyLightingOutcome;
+  functionalTest: EmergencyLightingOutcome;
+  durationTest: EmergencyLightingOutcome;
+  result: EmergencyLightingOutcome;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingFaultRepair {
+  id: string;
+  reference: string;
+  location: string;
+  fault: string;
+  repair: string;
+  repairedBy: string;
+  repairedDate: string;
+  result: EmergencyLightingOutcome;
+  notes: string;
+  photos: CertificatePhoto[];
+}
+
+export interface EmergencyLightingCertificateData {
+  installation: {
+    occupierName: string;
+    premisesType: string;
+    systemDescription: string;
+    manufacturer: string;
+    manufacturerPhone: string;
+    installer: string;
+    installerPhone: string;
+    inspectionDate: string;
+    nextInspectionDate: string;
+    overallAssessment: '' | 'satisfactory' | 'unsatisfactory';
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+  modifications: EmergencyLightingModification[];
+  testSchedule: EmergencyLightingTestItem[];
+  faultsAndRepairs: EmergencyLightingFaultRepair[];
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -442,6 +510,7 @@ export interface ElectricalCertificateDocument {
   domesticFireAlarm?: DomesticFireAlarmCertificateData;
   domesticFireAlarmInst?: DomesticFireAlarmInstCertificateData;
   fireExtinguisher?: FireExtinguisherCertificateData;
+  emergencyLighting?: EmergencyLightingCertificateData;
 }
 
 export interface ValidationIssue {

@@ -227,6 +227,8 @@ export function CertificateEditorMenu() {
                     ? `/dashboard/certificates/${res.certificate.id}/domestic-fire-alarm-install`
                     : res.certificate.type_slug === 'fi_extinsp_5306'
                       ? `/dashboard/certificates/${res.certificate.id}/fire-extinguisher`
+                      : res.certificate.type_slug === 'em_pir_2025'
+                        ? `/dashboard/certificates/${res.certificate.id}/emergency-lighting`
                       : `/dashboard/certificates/${res.certificate.id}/installation-details`;
           router.push(href);
         }}

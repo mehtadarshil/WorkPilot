@@ -15,7 +15,8 @@ export function validateElectricalCertificate(doc: ElectricalCertificateDocument
     doc.typeSlug === 'fi_insp_2025' ||
     doc.typeSlug === 'dfi_insp_2019_a1' ||
     doc.typeSlug === 'dfi_inst_2019_a1' ||
-    doc.typeSlug === 'fi_extinsp_5306'
+    doc.typeSlug === 'fi_extinsp_5306' ||
+    doc.typeSlug === 'em_pir_2025'
   ) {
     return [];
   }
