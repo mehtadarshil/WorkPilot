@@ -1,6 +1,6 @@
 'use client';
 
-import type { ElectricalCertificate, InspectionOutcome } from '@/lib/electricalCertificates/types';
+import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
 import {
   DOMESTIC_FIRE_ALARM_CHECKLIST_ITEMS,
@@ -28,24 +28,8 @@ import {
   FIRE_EXTINGUISHER_SERVICE_CODE_LABELS,
   FIRE_EXTINGUISHER_TYPE_OPTIONS,
 } from '@/lib/electricalCertificates/fireExtinguisherItems';
-import {
-  INSPECTION_SCHEDULE_ITEMS,
-  INSPECTION_SECTION_LABELS,
-} from '@/lib/electricalCertificates/inspectionScheduleItems';
 import { CertificateBrandedHeader } from './CertificateBrandedHeader';
-
-const OUTCOME_LABELS: Record<InspectionOutcome, string> = {
-  '': '—',
-  pass: '✓',
-  c1: 'C1',
-  c2: 'C2',
-  c3: 'C3',
-  fi: 'FI',
-  lim: 'LIM',
-  nv: 'N/V',
-  na: 'N/A',
-  x: 'X',
-};
+import { EicrPrintTemplate } from './EicrPrintTemplate';
 
 function CertificateFooter({ branding, certificateNumber }: { branding: CompanyBranding; certificateNumber: string }) {
   const primary = branding.footer_text?.trim()
@@ -82,9 +66,11 @@ export function CertificatePrintTemplate({
   if (doc.typeSlug === 'fi_extinsp_5306') {
     return <FireExtinguisherPrintTemplate certificate={certificate} branding={branding} />;
   }
+  if (doc.typeSlug === 'eicr_18e_a3') {
+    return <EicrPrintTemplate certificate={certificate} branding={branding} />;
+  }
   const inst = doc.installation;
   const sup = doc.supply;
-  const sections = [...new Set(INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))];
 
   return (
     <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
@@ -135,40 +121,6 @@ export function CertificatePrintTemplate({
             <PrintRow label="U / Uo" value={`${sup.nominalU} / ${sup.nominalUo}`} />
           </tbody>
         </table>
-      </section>
-
-      <section className="mb-6 break-inside-avoid">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Inspection schedule</h2>
-        {sections.map((sec) => {
-          const items = INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
-          return (
-            <div key={sec} className="mb-4">
-              <h3 className="text-xs font-bold text-slate-700">
-                {sec}. {INSPECTION_SECTION_LABELS[sec]}
-              </h3>
-              <table className="mt-1 w-full border-collapse text-[9px]">
-                <thead>
-                  <tr className="bg-slate-100">
-                    <th className="border border-slate-300 px-1 py-0.5 w-10">Ref</th>
-                    <th className="border border-slate-300 px-1 py-0.5 text-left">Item</th>
-                    <th className="border border-slate-300 px-1 py-0.5 w-10">Out</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td className="border border-slate-200 px-1 font-mono text-slate-500">{item.id}</td>
-                      <td className="border border-slate-200 px-1">{item.label}</td>
-                      <td className="border border-slate-200 px-1 text-center font-bold">
-                        {OUTCOME_LABELS[doc.inspectionSchedule[item.id] ?? '']}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
       </section>
 
       <section className="mb-6">

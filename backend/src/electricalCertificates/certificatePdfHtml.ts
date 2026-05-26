@@ -27,8 +27,8 @@ import {
   FIRE_EXTINGUISHER_TYPE_LABELS,
 } from './fireExtinguisherItems';
 import { buildEmergencyLightingCertificatePdfHtml } from './emergencyLightingPdfHtml';
+import { buildEicrCertificatePdfHtml } from './eicrPdfHtml';
 import { buildElectricalInstallationCertificatePdfHtml } from './electricalInstallationPdfHtml';
-import { INSPECTION_SCHEDULE_ITEMS, INSPECTION_SECTION_LABELS } from './inspectionScheduleItems';
 import type { ElectricalCertificateDocument, InspectionOutcome } from './types';
 
 export type CertificatePdfInput = {
@@ -152,7 +152,7 @@ function certificateHeaderHtml(input: CertificatePdfInput, title: string, subtit
 }
 
 export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
-  const { document: doc, branding: b } = input;
+  const { document: doc } = input;
   if (doc.typeSlug === 'portable_appliance_test') {
     return buildPatCertificatePdfHtml(input);
   }
@@ -188,134 +188,14 @@ export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
       certificateFooterHtml,
     });
   }
-  const inst = doc.installation;
-  const sup = doc.supply;
-  const accent = b.accent_color;
-  const accentEnd = b.accent_end_color;
-
-  const clientLine = inst.hideClientOnReport
-    ? 'Client withheld on report'
-    : esc(input.customerName ?? '—');
-
-  const inspectionRows = [...new Set(INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))]
-    .map((sec) => {
-      const items = INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
-      const rows = items
-        .map((item) => {
-          const outcome = doc.inspectionSchedule[item.id] ?? '';
-          return `<tr><td class="mono">${esc(item.id)}</td><td>${esc(item.label)}</td><td class="outcome">${esc(OUTCOME_LABELS[outcome] ?? outcome)}</td></tr>`;
-        })
-        .join('');
-      return `<h3>${esc(sec)}. ${esc(INSPECTION_SECTION_LABELS[sec] ?? sec)}</h3><table class="sched"><thead><tr><th>Ref</th><th>Item</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table>`;
-    })
-    .join('');
-
-  const obsHtml =
-    doc.observations.items.length > 0
-      ? `<ul>${doc.observations.items
-          .map(
-            (o) =>
-              `<li><strong>${esc(o.code.toUpperCase())}</strong> ${esc(o.location)}: ${esc(o.details)}</li>`,
-          )
-          .join('')}</ul>`
-      : '<p class="muted">None recorded</p>';
-
-  const boardsHtml = doc.boards
-    .map((board) => {
-      const boardPhotos =
-        board.photos?.length > 0
-          ? `<div class="photos">${board.photos
-              .map(
-                (p) =>
-                  `<figure class="photo"><img src="${p.dataUrl}" alt=""/><figcaption>${esc(p.caption)}</figcaption></figure>`,
-              )
-              .join('')}</div>`
-          : '';
-      return `<div class="board"><h3>${esc(board.name)}</h3>
-        <p class="muted">${board.circuits.length} circuits · ${board.status === 'done' ? 'Complete' : 'In progress'}${board.zsAtDb ? ` · Zdb ${esc(board.zsAtDb)} Ω` : ''}</p>
-        ${boardPhotos}
-      </div>`;
-    })
-    .join('');
-
-  const appendixPhotos = doc.appendix.photos ?? [];
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<title>${esc(input.certificateNumber)} — EICR</title>
-<style>
-${certificatePdfStyles(accent, accentEnd, '9pt')}
-</style>
-</head>
-<body>
-  ${certificateHeaderHtml(input, 'Electrical Installation Condition Report', 'BS 7671 - 18th Edition Amd 3')}
-
-  <section class="block">
-    <h2>Certificate details</h2>
-    <table class="kv">
-      ${row('Client', clientLine)}
-      ${row('Installation', input.installationLabel ?? '—')}
-      ${row('Job number', input.jobNumber ?? '')}
-      ${row('Reason for report', inst.reason)}
-      ${row('Inspection date', inst.inspectionDate)}
-      ${row('Premises type', inst.premisesType)}
-      ${row('Overall assessment', inst.overallAssessment)}
-      ${row('General condition', inst.generalCondition)}
-      ${row('Extent covered', inst.extent)}
-      ${row('Reinspection period', inst.reinspectionPeriod)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Observations</h2>
-    ${obsHtml}
-  </section>
-
-  <section class="block">
-    <h2>Supply characteristics</h2>
-    <table class="kv">
-      ${row('Earthing arrangement', sup.earthing)}
-      ${row('Ze (Ω)', sup.ze)}
-      ${row('Prospective fault current', sup.ipf)}
-      ${row('Nominal voltage U / Uo', `${sup.nominalU} / ${sup.nominalUo}`)}
-      ${row('Number of phases', sup.phases)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Inspection schedule</h2>
-    ${inspectionRows}
-  </section>
-
-  <section class="block">
-    <h2>Distribution boards</h2>
-    ${boardsHtml || '<p class="muted">No boards</p>'}
-  </section>
-
-  ${
-    doc.appendix.content.trim()
-      ? `<section class="block"><h2>Appendix notes</h2><p style="white-space:pre-wrap">${esc(doc.appendix.content)}</p></section>`
-      : ''
-  }
-  ${appendixPhotos.length ? photosHtml(appendixPhotos, 'Appendix photographs') : ''}
-
-  <section class="block">
-    <h2>Declaration</h2>
-    <table class="kv">
-      ${row('Inspected and tested by', inst.inspectedBy)}
-      ${row('Inspector position', inst.inspectedPosition)}
-      ${row('Inspected date', inst.inspectedDate)}
-      ${row('Authorised for issue by', inst.authorisedBy)}
-      ${row('Authorised position', inst.authorisedPosition)}
-      ${row('Authorised date', inst.authorisedDate)}
-    </table>
-  </section>
-
-  ${certificateFooterHtml(b, input.certificateNumber)}
-</body>
-</html>`;
+  return buildEicrCertificatePdfHtml(input, {
+    esc,
+    row,
+    photosHtml,
+    certificatePdfStyles,
+    certificateHeaderHtml,
+    certificateFooterHtml,
+  });
 }
 
 function buildPatCertificatePdfHtml(input: CertificatePdfInput): string {
