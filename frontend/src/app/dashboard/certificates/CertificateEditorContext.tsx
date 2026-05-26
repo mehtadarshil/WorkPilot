@@ -32,7 +32,13 @@ type Ctx = {
   certificate: ElectricalCertificate;
   document: ElectricalCertificateDocument;
   setDocument: (updater: (prev: ElectricalCertificateDocument) => ElectricalCertificateDocument) => void;
-  patchMeta: (patch: { job_number?: string; status?: ElectricalCertificate['status'] }) => Promise<void>;
+  patchMeta: (patch: {
+    customer_id?: number;
+    work_address_id?: number | null;
+    job_id?: number | null;
+    job_number?: string;
+    status?: ElectricalCertificate['status'];
+  }) => Promise<void>;
   saveDocument: () => Promise<void>;
   saving: boolean;
   saveError: string | null;
@@ -298,7 +304,13 @@ export function CertificateEditorProvider({
   }, [document, saveDocument]);
 
   const patchMeta = useCallback(
-    async (patch: { job_number?: string; status?: ElectricalCertificate['status'] }) => {
+    async (patch: {
+      customer_id?: number;
+      work_address_id?: number | null;
+      job_id?: number | null;
+      job_number?: string;
+      status?: ElectricalCertificate['status'];
+    }) => {
       if (!token) return;
       const res = await patchJson<{ certificate: ElectricalCertificate }>(
         `/electrical-certificates/${certificate.id}`,

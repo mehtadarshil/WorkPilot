@@ -87,9 +87,10 @@ export function ConvertCertificateModal({ open, source, onClose, onConfirm }: Pr
           <div>
             <label className="block text-sm font-medium text-slate-700">Certificate type</label>
             <select
-              value={typeSlug}
+              value={mode === 'copy' ? source.type_slug : typeSlug}
+              disabled={mode === 'copy'}
               onChange={(e) => setTypeSlug(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
             >
               {CERTIFICATE_TYPE_CATALOG.map((t) => (
                 <option key={t.slug} value={t.slug}>

@@ -1,4 +1,4 @@
-import { emptyBoard, newId } from './documentDefaults';
+import { coerceDocument, emptyBoard, newId } from './documentDefaults';
 import type { BoardRecord, CertificatePhoto, CircuitRow, ElectricalCertificateDocument } from './types';
 
 export function cloneCircuit(circuit: CircuitRow): CircuitRow {
@@ -135,6 +135,14 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
     };
   }
   return base;
+}
+
+export function prepareCopiedCertificateDocument(
+  doc: ElectricalCertificateDocument,
+  typeSlug: ElectricalCertificateDocument['typeSlug'],
+): ElectricalCertificateDocument {
+  const copy = cloneDocument(doc);
+  return coerceDocument({ ...copy, typeSlug });
 }
 
 export function moveItem<T>(items: T[], from: number, to: number): T[] {

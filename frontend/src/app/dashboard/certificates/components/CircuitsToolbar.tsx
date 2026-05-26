@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Calculator, Hash, Plus, Replace, Rows3, Wand2 } from 'lucide-react';
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { CIRCUIT_COLUMNS } from '@/lib/electricalCertificates/circuitColumns';
+import { isCircuitTested } from './CircuitsGrid';
 
 type Props = {
   board: BoardRecord;
@@ -32,7 +33,7 @@ export function CircuitsToolbar({
 }: Props) {
   const [fillKey, setFillKey] = useState<keyof CircuitRow>('wiringType');
   const [fillValue, setFillValue] = useState('');
-  const tested = board.circuits.filter((c) => c.tested).length;
+  const tested = board.circuits.filter(isCircuitTested).length;
 
   const fillableCols = CIRCUIT_COLUMNS.filter(
     (c) => !c.calculated && c.key !== 'circuitNumber' && c.key !== 'id',

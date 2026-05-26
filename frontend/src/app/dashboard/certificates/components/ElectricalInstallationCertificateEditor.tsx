@@ -19,6 +19,7 @@ import {
 } from '@/lib/electricalCertificates/certificateExport';
 import { getJson } from '../../../apiClient';
 import { useCertificateEditor } from '../CertificateEditorContext';
+import { CertificateEditorMenu } from './CertificateEditorMenu';
 import {
   AppendixSection,
   BoardsListSection,
@@ -189,6 +190,7 @@ export function ElectricalInstallationCertificateEditor({ children }: { children
             <button type="button" onClick={markCompleted} className="rounded-lg bg-[#14B8A6] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0d9488]">
               {certificate.status === 'completed' ? 'Reopen' : 'Complete'}
             </button>
+            <CertificateEditorMenu />
           </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">

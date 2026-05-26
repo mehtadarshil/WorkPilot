@@ -899,6 +899,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
 
     const body = req.body as {
       job_number?: string;
+      customer_id?: number;
+      work_address_id?: number | null;
+      job_id?: number | null;
       status?: CertificateStatus;
       document?: ElectricalCertificateDocument;
     };
@@ -910,6 +913,63 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     if (typeof body.job_number === 'string') {
       updates.push(`job_number = $${idx++}`);
       values.push(body.job_number.trim() || null);
+    }
+    const hasCustomerUpdate = typeof body.customer_id === 'number';
+    const hasWorkAddressUpdate = body.work_address_id !== undefined;
+    const hasJobUpdate = body.job_id !== undefined;
+    if (hasCustomerUpdate || hasWorkAddressUpdate || hasJobUpdate) {
+      const nextCustomerId = hasCustomerUpdate ? Number(body.customer_id) : existing.customer_id;
+      if (!Number.isFinite(nextCustomerId)) return res.status(400).json({ message: 'Invalid client' });
+      const customerCheck = await pool.query(
+        `SELECT id FROM customers WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+        isSuperAdmin ? [nextCustomerId] : [nextCustomerId, userId],
+      );
+      if ((customerCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid client' });
+
+      let nextWorkAddressId =
+        hasWorkAddressUpdate
+          ? body.work_address_id != null && Number.isFinite(body.work_address_id)
+            ? Number(body.work_address_id)
+            : null
+          : existing.work_address_id;
+      const nextJobId =
+        hasJobUpdate
+          ? body.job_id != null && Number.isFinite(body.job_id)
+            ? Number(body.job_id)
+            : null
+          : existing.job_id;
+
+      if (nextJobId != null) {
+        const jobCheck = await pool.query<{ customer_id: number | null; work_address_id: number | null }>(
+          `SELECT customer_id, work_address_id
+           FROM jobs
+           WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+          isSuperAdmin ? [nextJobId] : [nextJobId, userId],
+        );
+        if ((jobCheck.rowCount ?? 0) === 0 || jobCheck.rows[0].customer_id !== nextCustomerId) {
+          return res.status(400).json({ message: 'Invalid linked job' });
+        }
+        const jobWorkAddressId = jobCheck.rows[0].work_address_id ?? null;
+        if (nextWorkAddressId != null && jobWorkAddressId != null && nextWorkAddressId !== jobWorkAddressId) {
+          return res.status(400).json({ message: 'Linked job does not match selected work address' });
+        }
+        if (nextWorkAddressId == null && jobWorkAddressId != null) nextWorkAddressId = jobWorkAddressId;
+      }
+
+      if (nextWorkAddressId != null) {
+        const waCheck = await pool.query(
+          `SELECT id FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
+          [nextWorkAddressId, nextCustomerId],
+        );
+        if ((waCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid installation' });
+      }
+
+      updates.push(`customer_id = $${idx++}`);
+      values.push(nextCustomerId);
+      updates.push(`work_address_id = $${idx++}`);
+      values.push(nextWorkAddressId);
+      updates.push(`job_id = $${idx++}`);
+      values.push(nextJobId);
     }
     if (body.status === 'in_progress' || body.status === 'completed' || body.status === 'archived') {
       updates.push(`status = $${idx++}`);

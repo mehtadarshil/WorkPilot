@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Copy, FileCheck2, MoreVertical, Plus, Search, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { deleteRequest, getJson, postJson } from '../../apiClient';
-import { cloneDocument } from '@/lib/electricalCertificates/documentHelpers';
+import { prepareCopiedCertificateDocument } from '@/lib/electricalCertificates/documentHelpers';
 import { Pagination } from '../Pagination';
 import ImportCustomerSelect from '../ImportCustomerSelect';
 import WorkAddressSelect from '../WorkAddressSelect';
@@ -221,7 +221,7 @@ export default function ElectricalCertificatesPage() {
   const handleCopyConvert = async (
     cert: ElectricalCertificate,
     typeSlug: string,
-    _mode: 'copy' | 'convert',
+    mode: 'copy' | 'convert',
   ) => {
     if (!token) return;
     setDuplicatingId(cert.id);
@@ -230,8 +230,8 @@ export default function ElectricalCertificatesPage() {
         `/electrical-certificates/${cert.id}`,
         token,
       );
-      const doc = cloneDocument(full.certificate.document);
-      doc.typeSlug = typeSlug as typeof doc.typeSlug;
+      const targetTypeSlug = (mode === 'copy' ? full.certificate.type_slug : typeSlug) as typeof full.certificate.document.typeSlug;
+      const doc = prepareCopiedCertificateDocument(full.certificate.document, targetTypeSlug);
       const res = await postJson<{ certificate: ElectricalCertificate }>(
         '/electrical-certificates',
         {
@@ -239,7 +239,7 @@ export default function ElectricalCertificatesPage() {
           work_address_id: full.certificate.work_address_id,
           job_id: full.certificate.job_id,
           job_number: full.certificate.job_number,
-          type_slug: typeSlug,
+          type_slug: targetTypeSlug,
           document: doc,
         },
         token,

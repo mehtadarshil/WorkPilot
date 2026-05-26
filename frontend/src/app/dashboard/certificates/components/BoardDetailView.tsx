@@ -9,11 +9,64 @@ import { emptyCircuit } from '@/lib/electricalCertificates/documentDefaults';
 import { cloneBoard, replaceInCircuits } from '@/lib/electricalCertificates/documentHelpers';
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalculations';
-import { OutcomeButtons, PASS_FAIL_OPTIONS, SectionCard, TextAreaField, TextField } from './FormFields';
+import { OutcomeButtons, PASS_FAIL_OPTIONS, SectionCard, SelectField, TextAreaField, TextField } from './FormFields';
 import { CircuitsGrid } from './CircuitsGrid';
 import { CircuitsToolbar } from './CircuitsToolbar';
 import { FindReplaceModal } from './FindReplaceModal';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
+
+const BOARD_PHASE_OPTIONS = ['1', '2', '3', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value,
+}));
+
+const BOARD_MAIN_SWITCH_BS_OPTIONS = [
+  '60947-1',
+  '60947-3',
+  '60204-1',
+  '61439-2',
+  '60439-1',
+  '60439-3',
+  '61009-1',
+  '62423',
+  '5419',
+  '4293',
+  '61008',
+  'lim',
+  'UNKNOWN',
+  'na',
+  'Other',
+].map((value) => ({ value, label: value === 'lim' ? 'LIM' : value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value }));
+
+const BOARD_VOLTAGE_OPTIONS = ['230', '400', '415', '690', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : `${value} V`,
+}));
+
+const BOARD_CURRENT_OPTIONS = ['40', '63', '80', '100', '125', '160', '200', '250', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'lim' ? 'LIM' : value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} A`,
+}));
+
+const BOARD_RCD_RATING_OPTIONS = ['30', '100', '300', '500', 'na', 'lim', 'UNKNOWN', 'Other'].map((value) => ({
+  value,
+  label: value === 'lim' ? 'LIM' : value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} mA`,
+}));
+
+const BOARD_SPD_TYPE_OPTIONS = ['Type T1', 'Type T2', 'Type T3', 'T1 + T2', 'T2 + T3', 'T1 + T2 + T3', 'N/A'].map((value) => ({
+  value,
+  label: value,
+}));
+
+const BOARD_OCPD_BS_OPTIONS = ['lim', 'UNKNOWN', '60898', '3036', '3871', '1361', '60947-2', '61009', '60269', '88-2', '88-3', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'lim' ? 'LIM' : value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value,
+}));
+
+const BOARD_OCPD_CURRENT_OPTIONS = ['5', '6', '10', '15', '16', '20', '25', '32', '40', '45', '50', '63', '80', '100', '125', '160', '200', '250', 'lim', 'UNKNOWN', 'na', 'Other'].map((value) => ({
+  value,
+  label: value === 'lim' ? 'LIM' : value === 'na' ? 'N/A' : value === 'Other' ? 'Other...' : value === 'UNKNOWN' ? 'UNKNOWN' : `${value} A`,
+}));
 
 export function BoardDetailView({ boardId }: { boardId: string }) {
   const router = useRouter();
@@ -176,18 +229,43 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             <TextField label="Manufacturer" value={board.manufacturer} onChange={(v) => patchBoard({ manufacturer: v })} />
             <TextField label="Location" value={board.location} onChange={(v) => patchBoard({ location: v })} />
             <TextField label="Supplied from" value={board.suppliedFrom} onChange={(v) => patchBoard({ suppliedFrom: v })} />
-            <TextField label="Number of phases" value={board.phases} onChange={(v) => patchBoard({ phases: v })} />
+            <SelectField label="Number of phases" value={board.phases} onChange={(v) => patchBoard({ phases: v })} options={BOARD_PHASE_OPTIONS} />
             <TextField label="Zs at DB (Ω)" value={board.zsAtDb} onChange={(v) => patchBoard({ zsAtDb: v })} />
             <TextField label="Ipf at DB (kA)" value={board.ipfAtDb} onChange={(v) => patchBoard({ ipfAtDb: v })} />
           </div>
-          <OutcomeButtons
-            label="Supply polarity confirmed"
-            value={board.polarityConfirmed}
-            onChange={(v) => patchBoard({ polarityConfirmed: v })}
-            options={PASS_FAIL_OPTIONS}
-          />
-          <TextField label="Main switch BS (EN)" value={board.mainSwitchBs} onChange={(v) => patchBoard({ mainSwitchBs: v })} />
-          <TextField label="Main switch rated current" value={board.mainSwitchRating} onChange={(v) => patchBoard({ mainSwitchRating: v })} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <OutcomeButtons
+              label="Supply polarity confirmed"
+              value={board.polarityConfirmed}
+              onChange={(v) => patchBoard({ polarityConfirmed: v })}
+              options={PASS_FAIL_OPTIONS}
+            />
+            <OutcomeButtons
+              label="Phase sequence confirmed"
+              value={board.phaseSequence}
+              onChange={(v) => patchBoard({ phaseSequence: v })}
+              options={PASS_FAIL_OPTIONS}
+            />
+          </div>
+          <SectionCard title="Main switch / fuse / circuit breaker / RCD">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField label="Type BS (EN)" value={board.mainSwitchBs} onChange={(v) => patchBoard({ mainSwitchBs: v })} options={BOARD_MAIN_SWITCH_BS_OPTIONS} />
+              <SelectField label="Voltage rating" value={board.mainSwitchVoltage} onChange={(v) => patchBoard({ mainSwitchVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} />
+              <SelectField label="Rated current" value={board.mainSwitchRating} onChange={(v) => patchBoard({ mainSwitchRating: v })} options={BOARD_CURRENT_OPTIONS} />
+              <TextField label="Ipf rating" value={board.mainSwitchIpf} onChange={(v) => patchBoard({ mainSwitchIpf: v })} />
+              <SelectField label="RCD rating" value={board.rcdRating} onChange={(v) => patchBoard({ rcdRating: v })} options={BOARD_RCD_RATING_OPTIONS} />
+              <TextField label="RCD trip time" value={board.rcdTripTime} onChange={(v) => patchBoard({ rcdTripTime: v })} />
+            </div>
+          </SectionCard>
+          <SectionCard title="SPD / overcurrent device">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField label="SPD type" value={board.spdType} onChange={(v) => patchBoard({ spdType: v })} options={BOARD_SPD_TYPE_OPTIONS} />
+              <OutcomeButtons label="SPD operation status confirmed" value={board.spdStatus} onChange={(v) => patchBoard({ spdStatus: v })} options={PASS_FAIL_OPTIONS} />
+              <SelectField label="Overcurrent device BS (EN)" value={board.ocpdBs} onChange={(v) => patchBoard({ ocpdBs: v })} options={BOARD_OCPD_BS_OPTIONS} />
+              <SelectField label="Overcurrent device voltage" value={board.ocpdVoltage} onChange={(v) => patchBoard({ ocpdVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} />
+              <SelectField label="Overcurrent device rated current" value={board.ocpdRating} onChange={(v) => patchBoard({ ocpdRating: v })} options={BOARD_OCPD_CURRENT_OPTIONS} />
+            </div>
+          </SectionCard>
           <TextAreaField label="Notes" value={board.notes} onChange={(v) => patchBoard({ notes: v })} rows={2} />
           <CertificatePhotoGallery
             label="Board photographs"
