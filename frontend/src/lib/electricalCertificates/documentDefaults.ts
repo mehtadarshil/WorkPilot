@@ -58,6 +58,9 @@ export function emptyCircuit(): CircuitRow {
     r1r2: '',
     r2: '',
     insulation: '',
+    insulationTestVoltage: '',
+    insulationLL: '',
+    insulationLE: '',
     polarity: '',
     zs: '',
     rcdTripMs: '',
@@ -77,6 +80,9 @@ function coerceCircuit(raw: unknown): CircuitRow {
     ...base,
     ...(o as Partial<CircuitRow>),
     rcdTripMs: (o.rcdTripMs as string) ?? legacyRcd ?? '',
+    insulationTestVoltage: (o.insulationTestVoltage as string) ?? '',
+    insulationLL: (o.insulationLL as string) ?? '',
+    insulationLE: (o.insulationLE as string) ?? ((o.insulation as string) ?? ''),
     calcOverrides: (o.calcOverrides as CircuitRow['calcOverrides']) ?? {},
   };
 }

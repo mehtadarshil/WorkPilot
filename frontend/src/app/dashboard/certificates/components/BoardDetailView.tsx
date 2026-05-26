@@ -94,7 +94,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
       boards: d.boards.map((b) => {
         if (b.id !== boardId) return b;
         const next = { ...b, ...patch };
-        if (patch.ipfAtDb !== undefined || patch.maxZsUse100Percent !== undefined) {
+        if (patch.ipfAtDb !== undefined || patch.zsAtDb !== undefined || patch.maxZsUse100Percent !== undefined) {
           next.circuits = recalculateAllCircuits(
             next.circuits,
             next,

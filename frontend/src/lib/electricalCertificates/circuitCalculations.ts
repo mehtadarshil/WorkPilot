@@ -9,6 +9,8 @@ const MCB_MULTIPLIER: Record<string, number> = {
   D: 20,
 };
 
+const UNTESTED_ZS_VALUES = new Set(['', '-', '--', '---', 'lim', 'n/v', 'n/a', 'na', 'x']);
+
 /** Live mm² → typical CPC mm² (Table 54.7 style defaults). */
 const CPC_FROM_LIVE: Record<string, string> = {
   '1': '1',
@@ -93,10 +95,28 @@ export function calcR1PlusR2(circuit: CircuitRow): string {
   const r1 = parseNum(circuit.ringR1);
   const r2 = parseNum(circuit.ringR2End);
   if (r1 == null || r2 == null) return '';
-  return formatOhms(r1 + r2);
+  return formatOhms((r1 + r2) / 4);
 }
 
-export type CalcFieldKey = 'maxDisconnectTime' | 'ocpdBreakingKa' | 'maxZs' | 'cpcMm2' | 'r1r2';
+export function calcR1PlusR2FromZs(circuit: CircuitRow, board: BoardRecord): string {
+  const zs = parseNum(circuit.zs);
+  const zdb = parseNum(board.zsAtDb);
+  if (zs == null || zdb == null) return '';
+  const value = zs - zdb;
+  return value >= 0 ? formatOhms(value) : '';
+}
+
+export function calcMeasuredZs(circuit: CircuitRow, board: BoardRecord): string {
+  const zdb = parseNum(board.zsAtDb);
+  if (zdb == null) return '';
+  const r1r2 = parseNum(circuit.r1r2);
+  const r2 = parseNum(circuit.r2);
+  const loop = r1r2 ?? r2;
+  if (loop == null) return '';
+  return formatOhms(zdb + loop);
+}
+
+export type CalcFieldKey = 'maxDisconnectTime' | 'ocpdBreakingKa' | 'maxZs' | 'cpcMm2' | 'r1r2' | 'zs';
 
 export function applyCircuitCalculations(
   circuit: CircuitRow,
@@ -119,9 +139,14 @@ export function applyCircuitCalculations(
     next.cpcMm2 = calcCpcFromLive(next.liveMm2);
   }
   if (!overrides.r1r2) {
-    const r = calcR1PlusR2(circuit);
+    const r = calcR1PlusR2(circuit) || calcR1PlusR2FromZs(circuit, board);
     if (r) next.r1r2 = r;
   }
+  if (!overrides.zs) {
+    const zs = calcMeasuredZs(next, board);
+    if (zs) next.zs = zs;
+  }
+  next.tested = !UNTESTED_ZS_VALUES.has(next.zs.trim().toLowerCase());
 
   return next;
 }

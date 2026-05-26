@@ -190,7 +190,8 @@ export type CircuitCalcOverrideKey =
   | 'ocpdBreakingKa'
   | 'maxZs'
   | 'cpcMm2'
-  | 'r1r2';
+  | 'r1r2'
+  | 'zs';
 
 export interface CircuitRow {
   id: string;
@@ -217,6 +218,9 @@ export interface CircuitRow {
   r1r2: string;
   r2: string;
   insulation: string;
+  insulationTestVoltage: string;
+  insulationLL: string;
+  insulationLE: string;
   polarity: string;
   zs: string;
   rcdTripMs: string;

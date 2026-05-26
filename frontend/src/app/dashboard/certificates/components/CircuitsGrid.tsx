@@ -16,6 +16,7 @@ const CALC_KEY_MAP: Partial<Record<keyof CircuitRow, CalcFieldKey>> = {
   maxZs: 'maxZs',
   cpcMm2: 'cpcMm2',
   r1r2: 'r1r2',
+  zs: 'zs',
 };
 
 const CIRCUIT_NA_FIELDS: (keyof CircuitRow)[] = [
@@ -40,6 +41,9 @@ const CIRCUIT_NA_FIELDS: (keyof CircuitRow)[] = [
   'r1r2',
   'r2',
   'insulation',
+  'insulationTestVoltage',
+  'insulationLL',
+  'insulationLE',
   'polarity',
   'zs',
   'rcdTripMs',
@@ -70,6 +74,9 @@ const CIRCUIT_OPTION_VALUES: Partial<Record<keyof CircuitRow, string[]>> = {
   r1r2: ['N/A', 'LIM', 'N/V', '---'],
   r2: ['N/A', 'LIM', 'N/V', '---'],
   insulation: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
+  insulationTestVoltage: ['250', '500', '1000', 'N/A', 'LIM'],
+  insulationLL: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
+  insulationLE: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
   polarity: ['PASS', 'FAIL', 'LIM', 'N/A'],
   zs: ['N/A', 'LIM', 'N/V', '---'],
   rcdTripMs: ['N/A', 'LIM', 'N/V', '---'],
@@ -139,10 +146,15 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
           key === 'ocpdRatingA' ||
           key === 'liveMm2' ||
           key === 'ringR1' ||
+          key === 'ringRn' ||
           key === 'ringR2End' ||
+          key === 'r1r2' ||
+          key === 'r2' ||
+          key === 'zs' ||
           key === 'maxDisconnectTime';
         if (triggersCalc && typeof value === 'string') {
-          return applyCircuitCalculations(updated, board, board.maxZsUse100Percent);
+          const calculated = applyCircuitCalculations(updated, board, board.maxZsUse100Percent);
+          return { ...calculated, tested: isCircuitTested(calculated) };
         }
         return updated;
       }),
@@ -192,6 +204,7 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
     ocpd: 'Overcurrent devices',
     rcd: 'RCD',
     ring: 'Ring final',
+    insulation: 'Insulation resistance',
   };
 
   return (
