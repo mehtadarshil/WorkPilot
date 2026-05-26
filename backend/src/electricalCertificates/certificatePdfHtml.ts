@@ -27,6 +27,7 @@ import {
   FIRE_EXTINGUISHER_TYPE_LABELS,
 } from './fireExtinguisherItems';
 import { buildEmergencyLightingCertificatePdfHtml } from './emergencyLightingPdfHtml';
+import { buildElectricalInstallationCertificatePdfHtml } from './electricalInstallationPdfHtml';
 import { INSPECTION_SCHEDULE_ITEMS, INSPECTION_SECTION_LABELS } from './inspectionScheduleItems';
 import type { ElectricalCertificateDocument, InspectionOutcome } from './types';
 
@@ -169,6 +170,16 @@ export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
   }
   if (doc.typeSlug === 'em_pir_2025') {
     return buildEmergencyLightingCertificatePdfHtml(input, {
+      esc,
+      row,
+      photosHtml,
+      certificatePdfStyles,
+      certificateHeaderHtml,
+      certificateFooterHtml,
+    });
+  }
+  if (doc.typeSlug === 'eic_18e_a3') {
+    return buildElectricalInstallationCertificatePdfHtml(input, {
       esc,
       row,
       photosHtml,

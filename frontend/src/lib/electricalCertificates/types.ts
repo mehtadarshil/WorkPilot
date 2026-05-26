@@ -10,7 +10,8 @@ export type ElectricalCertificateTypeSlug =
   | 'dfi_insp_2019_a1'
   | 'dfi_inst_2019_a1'
   | 'fi_extinsp_5306'
-  | 'em_pir_2025';
+  | 'em_pir_2025'
+  | 'eic_18e_a3';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -427,6 +428,52 @@ export interface EmergencyLightingCertificateData {
   faultsAndRepairs: EmergencyLightingFaultRepair[];
 }
 
+export type ElectricalInstallationWorkType = '' | 'new' | 'addition' | 'alteration';
+export type ElectricalInstallationRiskAssessment = '' | 'yes' | 'no' | 'na';
+
+export interface ElectricalInstallationSignatory {
+  name: string;
+  signature: string;
+  date: string;
+  company: string;
+  phone: string;
+  address: string;
+  postcode: string;
+}
+
+export interface ElectricalInstallationCertificateData {
+  details: {
+    workType: ElectricalInstallationWorkType;
+    newInstallation: boolean;
+    additionToExisting: boolean;
+    alterationToExisting: boolean;
+    replacementDistributionBoard: boolean;
+    premisesType: string;
+    description: string;
+    extent: string;
+    amendedTo: string;
+    commentsOnExistingInstallation: string;
+    circuitDetailsSchedules: string;
+    testResultSchedules: string;
+  };
+  design: {
+    departures: string;
+    permittedExceptions: string;
+    riskAssessment: ElectricalInstallationRiskAssessment;
+    designer1: ElectricalInstallationSignatory;
+    designer2: ElectricalInstallationSignatory;
+  };
+  construction: {
+    departures: string;
+    constructorSignatory: ElectricalInstallationSignatory;
+  };
+  inspection: {
+    departures: string;
+    inspector: ElectricalInstallationSignatory;
+    nextInspectionInterval: string;
+  };
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -507,6 +554,7 @@ export interface ElectricalCertificateDocument {
   domesticFireAlarmInst?: DomesticFireAlarmInstCertificateData;
   fireExtinguisher?: FireExtinguisherCertificateData;
   emergencyLighting?: EmergencyLightingCertificateData;
+  electricalInstallation?: ElectricalInstallationCertificateData;
 }
 
 export interface ValidationIssue {
@@ -534,6 +582,14 @@ export interface ElectricalCertificate {
 }
 
 export const CERTIFICATE_TYPE_CATALOG = [
+  {
+    slug: 'eic_18e_a3',
+    title: 'Electrical Installation Certificate',
+    subtitle: 'BS 7671 — 18th Edition Amendment 3',
+    shortLabel: 'EIC',
+    standard: 'BS 7671',
+    revision: '18th Edition Amendment 3',
+  },
   {
     slug: 'eicr_18e_a3',
     title: 'Electrical Installation Condition Report',
@@ -591,6 +647,20 @@ export const CERTIFICATE_TYPE_CATALOG = [
     revision: '2025',
   },
 ] as const;
+
+export const ELECTRICAL_INSTALLATION_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'design', label: 'Design' },
+  { key: 'construction', label: 'Construction' },
+  { key: 'inspection-testing', label: 'Inspection & testing' },
+  { key: 'signatories', label: 'Signatories' },
+  { key: 'supply-characteristics', label: 'Supply' },
+  { key: 'inspection-schedule', label: 'Inspection schedule' },
+  { key: 'boards', label: 'Boards & circuits' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type ElectricalInstallationEditorSectionKey = (typeof ELECTRICAL_INSTALLATION_EDITOR_SECTIONS)[number]['key'];
 
 export const EMERGENCY_LIGHTING_EDITOR_SECTIONS = [
   { key: 'installation-details', label: 'Installation details' },

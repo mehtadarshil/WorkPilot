@@ -229,7 +229,9 @@ export function CertificateEditorMenu() {
                       ? `/dashboard/certificates/${res.certificate.id}/fire-extinguisher`
                       : res.certificate.type_slug === 'em_pir_2025'
                         ? `/dashboard/certificates/${res.certificate.id}/emergency-lighting`
-                      : `/dashboard/certificates/${res.certificate.id}/installation-details`;
+                      : res.certificate.type_slug === 'eic_18e_a3'
+                        ? `/dashboard/certificates/${res.certificate.id}/eic`
+                        : `/dashboard/certificates/${res.certificate.id}/installation-details`;
           router.push(href);
         }}
       />

@@ -40,7 +40,9 @@ export async function generateElectricalCertificatePdfBuffer(
             ? 'FI-EXTINSP'
             : document.typeSlug === 'em_pir_2025'
               ? 'EM-PIR'
-              : 'EICR';
+              : document.typeSlug === 'eic_18e_a3'
+                ? 'EIC'
+                : 'EICR';
   const filenameBase = params.certificateNumber.replace(/[^\w.-]+/g, '_') || `${fallbackPrefix}-${params.certificateId}`;
   return { pdf, filenameBase };
 }

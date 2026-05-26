@@ -225,6 +225,40 @@ export function CertificateEditorProvider({
               next.emergencyLighting.declaration.authorisedDate !== prev.emergencyLighting.declaration.authorisedDate;
           }
 
+          if (prev.electricalInstallation) {
+            next.electricalInstallation = {
+              ...prev.electricalInstallation,
+              design: {
+                ...prev.electricalInstallation.design,
+                designer1: {
+                  ...prev.electricalInstallation.design.designer1,
+                  name: prev.electricalInstallation.design.designer1.name.trim() || name,
+                  signature: prev.electricalInstallation.design.designer1.signature.trim() || name,
+                  date: prev.electricalInstallation.design.designer1.date || today,
+                },
+              },
+              construction: {
+                ...prev.electricalInstallation.construction,
+                constructorSignatory: {
+                  ...prev.electricalInstallation.construction.constructorSignatory,
+                  name: prev.electricalInstallation.construction.constructorSignatory.name.trim() || name,
+                  signature: prev.electricalInstallation.construction.constructorSignatory.signature.trim() || name,
+                  date: prev.electricalInstallation.construction.constructorSignatory.date || today,
+                },
+              },
+              inspection: {
+                ...prev.electricalInstallation.inspection,
+                inspector: {
+                  ...prev.electricalInstallation.inspection.inspector,
+                  name: prev.electricalInstallation.inspection.inspector.name.trim() || name,
+                  signature: prev.electricalInstallation.inspection.inspector.signature.trim() || name,
+                  date: prev.electricalInstallation.inspection.inspector.date || today,
+                },
+              },
+            };
+            changed = true;
+          }
+
           return changed ? next : prev;
         });
       })

@@ -14,6 +14,7 @@ import { DomesticFireAlarmCertificateEditor } from '../components/DomesticFireAl
 import { DomesticFireAlarmInstCertificateEditor } from '../components/DomesticFireAlarmInstCertificateEditor';
 import { FireExtinguisherCertificateEditor } from '../components/FireExtinguisherCertificateEditor';
 import { EmergencyLightingCertificateEditor } from '../components/EmergencyLightingCertificateEditor';
+import { ElectricalInstallationCertificateEditor } from '../components/ElectricalInstallationCertificateEditor';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -79,6 +80,8 @@ export default function CertificateEditorLayout({ children }: { children: React.
         <FireExtinguisherCertificateEditor />
       ) : certificate.type_slug === 'em_pir_2025' ? (
         <EmergencyLightingCertificateEditor />
+      ) : certificate.type_slug === 'eic_18e_a3' ? (
+        <ElectricalInstallationCertificateEditor />
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}

@@ -116,6 +116,24 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
       })),
     };
   }
+  if (doc.electricalInstallation) {
+    base.electricalInstallation = {
+      ...doc.electricalInstallation,
+      design: {
+        ...doc.electricalInstallation.design,
+        designer1: { ...doc.electricalInstallation.design.designer1 },
+        designer2: { ...doc.electricalInstallation.design.designer2 },
+      },
+      construction: {
+        ...doc.electricalInstallation.construction,
+        constructorSignatory: { ...doc.electricalInstallation.construction.constructorSignatory },
+      },
+      inspection: {
+        ...doc.electricalInstallation.inspection,
+        inspector: { ...doc.electricalInstallation.inspection.inspector },
+      },
+    };
+  }
   return base;
 }
 

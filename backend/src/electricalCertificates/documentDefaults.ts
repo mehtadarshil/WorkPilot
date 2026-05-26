@@ -23,6 +23,10 @@ import {
   coerceEmergencyLightingData,
   createDefaultEmergencyLightingData,
 } from './emergencyLightingDefaults';
+import {
+  coerceElectricalInstallationData,
+  createDefaultElectricalInstallationData,
+} from './electricalInstallationDefaults';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -673,7 +677,8 @@ function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['t
       s === 'dfi_insp_2019_a1' ||
       s === 'dfi_inst_2019_a1' ||
       s === 'fi_extinsp_5306' ||
-      s === 'em_pir_2025'
+      s === 'em_pir_2025' ||
+      s === 'eic_18e_a3'
     ) {
       return s;
     }
@@ -805,6 +810,9 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
     ...(typeSlug === 'em_pir_2025'
       ? { emergencyLighting: createDefaultEmergencyLightingData(customerName) }
       : {}),
+    ...(typeSlug === 'eic_18e_a3'
+      ? { electricalInstallation: createDefaultElectricalInstallationData(customerName) }
+      : {}),
   };
 }
 
@@ -869,6 +877,14 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
       ? {
           emergencyLighting: coerceEmergencyLightingData(
             o.emergencyLighting,
+            base.installation.occupierName,
+          ),
+        }
+      : {}),
+    ...(rawType === 'eic_18e_a3'
+      ? {
+          electricalInstallation: coerceElectricalInstallationData(
+            o.electricalInstallation,
             base.installation.occupierName,
           ),
         }

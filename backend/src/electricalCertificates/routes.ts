@@ -94,6 +94,7 @@ function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocume
   if (raw === 'dfi_inst_2019_a1') return 'dfi_inst_2019_a1';
   if (raw === 'fi_extinsp_5306') return 'fi_extinsp_5306';
   if (raw === 'em_pir_2025') return 'em_pir_2025';
+  if (raw === 'eic_18e_a3') return 'eic_18e_a3';
   return 'eicr_18e_a3';
 }
 
@@ -104,6 +105,7 @@ function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeS
   if (typeSlug === 'dfi_inst_2019_a1') return 'DFI-INST';
   if (typeSlug === 'fi_extinsp_5306') return 'FI-EXTINSP';
   if (typeSlug === 'em_pir_2025') return 'EM-PIR';
+  if (typeSlug === 'eic_18e_a3') return 'EIC';
   return 'EICR';
 }
 
@@ -232,6 +234,27 @@ async function applySystemSignOffDefaults(
       authorisedBy: doc.emergencyLighting.declaration.authorisedBy.trim() || defaults.name,
       authorisedPosition: doc.emergencyLighting.declaration.authorisedPosition.trim() || defaults.position,
       authorisedDate: doc.emergencyLighting.declaration.authorisedDate || today,
+    };
+  }
+
+  if (doc.electricalInstallation) {
+    doc.electricalInstallation.design.designer1 = {
+      ...doc.electricalInstallation.design.designer1,
+      name: doc.electricalInstallation.design.designer1.name.trim() || defaults.name,
+      signature: doc.electricalInstallation.design.designer1.signature.trim() || defaults.name,
+      date: doc.electricalInstallation.design.designer1.date || today,
+    };
+    doc.electricalInstallation.construction.constructorSignatory = {
+      ...doc.electricalInstallation.construction.constructorSignatory,
+      name: doc.electricalInstallation.construction.constructorSignatory.name.trim() || defaults.name,
+      signature: doc.electricalInstallation.construction.constructorSignatory.signature.trim() || defaults.name,
+      date: doc.electricalInstallation.construction.constructorSignatory.date || today,
+    };
+    doc.electricalInstallation.inspection.inspector = {
+      ...doc.electricalInstallation.inspection.inspector,
+      name: doc.electricalInstallation.inspection.inspector.name.trim() || defaults.name,
+      signature: doc.electricalInstallation.inspection.inspector.signature.trim() || defaults.name,
+      date: doc.electricalInstallation.inspection.inspector.date || today,
     };
   }
 
@@ -463,6 +486,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       'dfi_inst_2019_a1',
       'fi_extinsp_5306',
       'em_pir_2025',
+      'eic_18e_a3',
     ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
@@ -788,6 +812,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       }
       if (typeSlug === 'em_pir_2025' && doc.emergencyLighting) {
         doc.emergencyLighting.installation.occupierName = customerName;
+      }
+      if (typeSlug === 'eic_18e_a3' && doc.electricalInstallation) {
+        doc.installation.occupierName = customerName;
       }
     }
 

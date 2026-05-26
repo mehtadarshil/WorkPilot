@@ -44,6 +44,9 @@ function certificateEditorHref(cert: ElectricalCertificate) {
   if (cert.type_slug === 'em_pir_2025') {
     return `/dashboard/certificates/${cert.id}/emergency-lighting`;
   }
+  if (cert.type_slug === 'eic_18e_a3') {
+    return `/dashboard/certificates/${cert.id}/eic`;
+  }
   return `/dashboard/certificates/${cert.id}/installation-details`;
 }
 

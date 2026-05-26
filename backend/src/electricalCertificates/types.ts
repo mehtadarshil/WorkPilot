@@ -12,7 +12,8 @@ export type ElectricalCertificateTypeSlug =
   | 'dfi_insp_2019_a1'
   | 'dfi_inst_2019_a1'
   | 'fi_extinsp_5306'
-  | 'em_pir_2025';
+  | 'em_pir_2025'
+  | 'eic_18e_a3';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -428,6 +429,52 @@ export interface EmergencyLightingCertificateData {
   faultsAndRepairs: EmergencyLightingFaultRepair[];
 }
 
+export type ElectricalInstallationWorkType = '' | 'new' | 'addition' | 'alteration';
+export type ElectricalInstallationRiskAssessment = '' | 'yes' | 'no' | 'na';
+
+export interface ElectricalInstallationSignatory {
+  name: string;
+  signature: string;
+  date: string;
+  company: string;
+  phone: string;
+  address: string;
+  postcode: string;
+}
+
+export interface ElectricalInstallationCertificateData {
+  details: {
+    workType: ElectricalInstallationWorkType;
+    newInstallation: boolean;
+    additionToExisting: boolean;
+    alterationToExisting: boolean;
+    replacementDistributionBoard: boolean;
+    premisesType: string;
+    description: string;
+    extent: string;
+    amendedTo: string;
+    commentsOnExistingInstallation: string;
+    circuitDetailsSchedules: string;
+    testResultSchedules: string;
+  };
+  design: {
+    departures: string;
+    permittedExceptions: string;
+    riskAssessment: ElectricalInstallationRiskAssessment;
+    designer1: ElectricalInstallationSignatory;
+    designer2: ElectricalInstallationSignatory;
+  };
+  construction: {
+    departures: string;
+    constructorSignatory: ElectricalInstallationSignatory;
+  };
+  inspection: {
+    departures: string;
+    inspector: ElectricalInstallationSignatory;
+    nextInspectionInterval: string;
+  };
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -511,6 +558,7 @@ export interface ElectricalCertificateDocument {
   domesticFireAlarmInst?: DomesticFireAlarmInstCertificateData;
   fireExtinguisher?: FireExtinguisherCertificateData;
   emergencyLighting?: EmergencyLightingCertificateData;
+  electricalInstallation?: ElectricalInstallationCertificateData;
 }
 
 export interface ValidationIssue {
