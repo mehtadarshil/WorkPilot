@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { ChevronLeft, Download, Loader2, Printer, Save } from 'lucide-react';
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
 import { coerceElectricalInstallationData } from '@/lib/electricalCertificates/electricalInstallationDefaults';
@@ -50,21 +51,41 @@ const RISK_OPTIONS = [
 ];
 
 function withCompanyDefaults(value: ElectricalInstallationSignatory, branding: CompanyBranding) {
+  const valueAddress = splitUkPostcode(value.address);
+  const brandingAddress = splitUkPostcode(branding.company_address ?? '');
+  const address = valueAddress.address || brandingAddress.address;
   return {
     ...value,
     company: value.company.trim() || branding.company_name || '',
     phone: value.phone.trim() || branding.company_phone || '',
-    address: value.address.trim() || branding.company_address || '',
+    address,
+    postcode: value.postcode.trim() || valueAddress.postcode || brandingAddress.postcode,
   };
 }
 
-export function ElectricalInstallationCertificateEditor() {
+function splitUkPostcode(raw: string) {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b$/i);
+  if (!match) return { address: trimmed, postcode: '' };
+  const postcode = match[1].toUpperCase().replace(/\s+/, ' ');
+  const address = trimmed.slice(0, match.index).replace(/[,\s]+$/, '');
+  return { address, postcode };
+}
+
+export function ElectricalInstallationCertificateEditor({ children }: { children?: ReactNode }) {
   const { certificate, document, setDocument, saveDocument, saving, saveError, lastSavedAt, patchMeta } =
     useCertificateEditor();
+  const pathname = usePathname();
+  const router = useRouter();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
-  const [section, setSection] = useState<ElectricalInstallationEditorSectionKey>('installation-details');
+  const routeSection = useMemo<ElectricalInstallationEditorSectionKey | null>(() => {
+    const match = ELECTRICAL_INSTALLATION_EDITOR_SECTIONS.find((item) => pathname.includes(`/${item.key}`));
+    return match?.key ?? null;
+  }, [pathname]);
+  const [section, setSection] = useState<ElectricalInstallationEditorSectionKey>(routeSection ?? 'installation-details');
   const [engineers, setEngineers] = useState<Engineer[]>([]);
   const [companyBranding, setCompanyBranding] = useState<CompanyBranding | null>(null);
+  const activeSection = routeSection ?? section;
 
   const eic = useMemo(
     () => document.electricalInstallation ?? coerceElectricalInstallationData(null, certificate.customer_full_name ?? ''),
@@ -175,8 +196,11 @@ export function ElectricalInstallationCertificateEditor() {
             <button
               key={item.key}
               type="button"
-              onClick={() => setSection(item.key)}
-              className={`rounded-full px-3 py-1.5 text-sm font-semibold ${section === item.key ? 'bg-[#14B8A6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              onClick={() => {
+                setSection(item.key);
+                if (routeSection) router.push(`/dashboard/certificates/${certificate.id}/eic`);
+              }}
+              className={`rounded-full px-3 py-1.5 text-sm font-semibold ${activeSection === item.key ? 'bg-[#14B8A6] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               {item.label}
             </button>
@@ -188,14 +212,18 @@ export function ElectricalInstallationCertificateEditor() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-auto px-4 py-5">
-        <EicSection
-          section={section}
-          data={eic}
-          update={updateEic}
-          certificate={certificate}
-          engineers={engineers}
-          companyBranding={companyBranding}
-        />
+        {children && routeSection ? (
+          children
+        ) : (
+          <EicSection
+            section={section}
+            data={eic}
+            update={updateEic}
+            certificate={certificate}
+            engineers={engineers}
+            companyBranding={companyBranding}
+          />
+        )}
       </main>
     </div>
   );

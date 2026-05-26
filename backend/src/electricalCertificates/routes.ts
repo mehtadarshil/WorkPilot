@@ -119,12 +119,17 @@ async function applyBusinessDetailsDefaults(
   if (!doc.pat && !doc.electricalInstallation) return doc;
   const branding = await loadCompanyBranding(pool, userId);
   if (doc.electricalInstallation) {
-    const withCompanyDefaults = (value: ElectricalInstallationSignatory): ElectricalInstallationSignatory => ({
-      ...value,
-      company: value.company.trim() || branding.company_name || '',
-      phone: value.phone.trim() || branding.company_phone || '',
-      address: value.address.trim() || branding.company_address || '',
-    });
+    const withCompanyDefaults = (value: ElectricalInstallationSignatory): ElectricalInstallationSignatory => {
+      const valueAddress = splitUkPostcode(value.address);
+      const brandingAddress = splitUkPostcode(branding.company_address ?? '');
+      return {
+        ...value,
+        company: value.company.trim() || branding.company_name || '',
+        phone: value.phone.trim() || branding.company_phone || '',
+        address: valueAddress.address || brandingAddress.address,
+        postcode: value.postcode.trim() || valueAddress.postcode || brandingAddress.postcode,
+      };
+    };
     doc.electricalInstallation.design.designer1 = withCompanyDefaults(doc.electricalInstallation.design.designer1);
     if (!doc.electricalInstallation.design.designer2NotApplicable) {
       doc.electricalInstallation.design.designer2 = withCompanyDefaults(doc.electricalInstallation.design.designer2);
@@ -144,6 +149,15 @@ async function applyBusinessDetailsDefaults(
     phone: doc.pat.registeredBusiness.phone.trim() || branding.company_phone || '',
   };
   return applyPatTestEquipmentDefaults(pool, userId, doc);
+}
+
+function splitUkPostcode(raw: string): { address: string; postcode: string } {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b$/i);
+  if (!match) return { address: trimmed, postcode: '' };
+  const postcode = match[1].toUpperCase().replace(/\s+/, ' ');
+  const address = trimmed.slice(0, match.index).replace(/[,\s]+$/, '');
+  return { address, postcode };
 }
 
 async function loadSignOffDefaults(pool: Pool, authUser: TenantAuthUser): Promise<SignOffDefaults | null> {

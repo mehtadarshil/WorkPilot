@@ -81,7 +81,7 @@ export default function CertificateEditorLayout({ children }: { children: React.
       ) : certificate.type_slug === 'em_pir_2025' ? (
         <EmergencyLightingCertificateEditor />
       ) : certificate.type_slug === 'eic_18e_a3' ? (
-        <ElectricalInstallationCertificateEditor />
+        <ElectricalInstallationCertificateEditor>{children}</ElectricalInstallationCertificateEditor>
       ) : (
         <CertificateEditorShell>{children}</CertificateEditorShell>
       )}
