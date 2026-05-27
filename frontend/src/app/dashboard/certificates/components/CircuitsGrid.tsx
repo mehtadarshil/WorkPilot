@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, type KeyboardEvent } from 'react';
 import { Calculator, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import type { BoardRecord, CircuitRow, CircuitCalcOverrideKey } from '@/lib/electricalCertificates/types';
@@ -113,6 +113,52 @@ type Props = {
 export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMoveCircuit }: Props) {
   const { setDocument } = useCertificateEditor();
 
+  const focusCircuitCell = (grid: HTMLElement, rowIndex: number, colIndex: number) => {
+    const row = Math.max(0, Math.min(rowIndex, circuits.length - 1));
+    const col = Math.max(0, Math.min(colIndex, CIRCUIT_COLUMNS.length - 1));
+    const next = grid.querySelector<HTMLInputElement>(
+      `input[data-circuit-row="${row}"][data-circuit-col="${col}"]`,
+    );
+    if (!next) return;
+    next.focus();
+    next.select();
+    next.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+
+  const handleCellKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+    rowIndex: number,
+    colIndex: number,
+  ) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+    const grid = event.currentTarget.closest<HTMLElement>('[data-circuit-grid]');
+    if (!grid) return;
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const nextCol = event.shiftKey ? colIndex - 1 : colIndex + 1;
+      if (nextCol >= CIRCUIT_COLUMNS.length) {
+        focusCircuitCell(grid, rowIndex + 1, 0);
+      } else if (nextCol < 0) {
+        focusCircuitCell(grid, rowIndex - 1, CIRCUIT_COLUMNS.length - 1);
+      } else {
+        focusCircuitCell(grid, rowIndex, nextCol);
+      }
+      return;
+    }
+
+    const moves: Partial<Record<string, [number, number]>> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    };
+    const move = moves[event.key];
+    if (!move) return;
+    event.preventDefault();
+    focusCircuitCell(grid, rowIndex + move[0], colIndex + move[1]);
+  };
+
   const updateBoardCircuits = useCallback(
     (updater: (circuits: CircuitRow[]) => CircuitRow[]) => {
       setDocument((d) => ({
@@ -208,7 +254,7 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
   };
 
   return (
-    <div className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-inner">
+    <div data-circuit-grid className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-inner">
       <table className="min-w-[2400px] border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-50">
           <tr className="border-b border-slate-200">
@@ -246,9 +292,9 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
           </tr>
         </thead>
         <tbody>
-          {circuits.map((c) => (
+          {circuits.map((c, rowIndex) => (
             <tr key={c.id} className="border-b border-slate-50 hover:bg-[#14B8A6]/5">
-              {CIRCUIT_COLUMNS.map((col) => {
+              {CIRCUIT_COLUMNS.map((col, colIndex) => {
                 const isCalc = col.calculated;
                 const calcField = CALC_KEY_MAP[col.key];
                 const overridden = calcField && c.calcOverrides?.[calcField];
@@ -272,6 +318,9 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
                         } ${overridden ? 'ring-1 ring-amber-200' : ''}`}
                         value={cellValue}
                         onChange={(e) => updateCircuit(c.id, col.key, e.target.value)}
+                        onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex)}
+                        data-circuit-row={rowIndex}
+                        data-circuit-col={colIndex}
                         title={isCalc ? 'Auto-calculated — edit to override' : undefined}
                       />
                       {isCalc && calcField && overridden && (

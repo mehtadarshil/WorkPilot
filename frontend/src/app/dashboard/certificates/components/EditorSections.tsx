@@ -13,10 +13,9 @@ import {
   INSPECTION_SCHEDULE_ITEMS,
   INSPECTION_SECTION_LABELS,
 } from '@/lib/electricalCertificates/inspectionScheduleItems';
-import { emptyBoard, emptyCircuit, newId } from '@/lib/electricalCertificates/documentDefaults';
+import { emptyBoard, newId } from '@/lib/electricalCertificates/documentDefaults';
 import type { InspectionOutcome, ObservationItem } from '@/lib/electricalCertificates/types';
 import {
-  FieldLabel,
   INSPECTION_OUTCOMES,
   OutcomeButtons,
   PASS_FAIL_OPTIONS,
@@ -194,12 +193,101 @@ const YES_NO_LIM_NA_OPTIONS = [
   { value: 'na', label: 'N/A' },
 ];
 
+const TEXT_QUICK_NA_LIM_OPTIONS = [
+  { value: 'N/A', label: 'N/A' },
+  { value: 'LIM', label: 'LIM' },
+];
+
+const SELECT_QUICK_NA_LIM_OPTIONS = [
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+];
+
+const SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS = [
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+  { value: 'UNKNOWN', label: 'UNKNOWN' },
+];
+
 const OBS_CODES = [
   { value: 'c1', label: 'C1' },
   { value: 'c2', label: 'C2' },
   { value: 'c3', label: 'C3' },
   { value: 'fi', label: 'FI' },
 ];
+
+function QuickSetButtons({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1 pt-1">
+      <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Quick set</span>
+      {options.map((option) => {
+        const selected = value.trim().toLowerCase() === option.value.trim().toLowerCase();
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+              selected
+                ? 'border-[#14B8A6] bg-[#14B8A6]/10 text-[#0d9488]'
+                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function QuickSetTextField({
+  label,
+  value,
+  onChange,
+  options = TEXT_QUICK_NA_LIM_OPTIONS,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <TextField label={label} value={value} onChange={onChange} />
+      <QuickSetButtons value={value} onChange={onChange} options={options} />
+    </div>
+  );
+}
+
+function QuickSetSelectField({
+  label,
+  value,
+  onChange,
+  options,
+  quickOptions = SELECT_QUICK_NA_LIM_OPTIONS,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  quickOptions?: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <SelectField label={label} value={value} onChange={onChange} options={options} />
+      <QuickSetButtons value={value} onChange={onChange} options={quickOptions} />
+    </div>
+  );
+}
 
 export function InstallationDetailsSection() {
   const { document, setDocument } = useCertificateEditor();
@@ -420,8 +508,8 @@ export function SupplyCharacteristicsSection() {
       <SectionCard title="Earthing & supply">
         <SelectField label="Earthing arrangement" value={sup.earthing} onChange={(v) => patch({ earthing: v })} options={EARTHING_TYPES} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Ze (Ω)" value={sup.ze} onChange={(v) => patch({ ze: v })} />
-          <TextField label="Ipf (kA)" value={sup.ipf} onChange={(v) => patch({ ipf: v })} />
+          <QuickSetTextField label="Ze (Ω)" value={sup.ze} onChange={(v) => patch({ ze: v })} />
+          <QuickSetTextField label="Ipf (kA)" value={sup.ipf} onChange={(v) => patch({ ipf: v })} />
         </div>
         <OutcomeButtons label="Nature of supply" value={sup.acDc} onChange={(v) => patch({ acDc: v })} options={AC_DC_OPTIONS} />
         <div className="grid gap-4 sm:grid-cols-2">
@@ -434,11 +522,10 @@ export function SupplyCharacteristicsSection() {
           <SelectField label="Number of supplies" value={sup.numSupplies} onChange={(v) => patch({ numSupplies: v })} options={NUMBER_OF_SUPPLIES_OPTIONS} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Nominal voltage U" value={sup.nominalU} onChange={(v) => patch({ nominalU: v })} options={NOMINAL_VOLTAGE_U_OPTIONS} />
-          <SelectField label="Nominal voltage Uo" value={sup.nominalUo} onChange={(v) => patch({ nominalUo: v })} options={NOMINAL_VOLTAGE_UO_OPTIONS} />
+          <QuickSetSelectField label="Nominal voltage U" value={sup.nominalU} onChange={(v) => patch({ nominalU: v })} options={NOMINAL_VOLTAGE_U_OPTIONS} />
+          <QuickSetSelectField label="Nominal voltage Uo" value={sup.nominalUo} onChange={(v) => patch({ nominalUo: v })} options={NOMINAL_VOLTAGE_UO_OPTIONS} />
         </div>
-        <TextField label="Nominal frequency" value={sup.frequency} onChange={(v) => patch({ frequency: v })} />
-        <OutcomeButtons label="Nominal frequency quick set" value={sup.frequency} onChange={(v) => patch({ frequency: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
+        <QuickSetTextField label="Nominal frequency" value={sup.frequency} onChange={(v) => patch({ frequency: v })} />
         <OutcomeButtons
           label="Supply polarity confirmed"
           value={sup.polarityConfirmed}
@@ -449,49 +536,46 @@ export function SupplyCharacteristicsSection() {
 
       <SectionCard title="Supply protective device">
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} options={SUPPLY_DEVICE_STANDARD_OPTIONS} />
-          <TextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} />
+          <QuickSetSelectField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} options={SUPPLY_DEVICE_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
+          <QuickSetTextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} options={[...TEXT_QUICK_NA_LIM_OPTIONS, { value: 'UNKNOWN', label: 'UNKNOWN' }]} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} options={SHORT_CIRCUIT_CAPACITY_OPTIONS} />
-          <SelectField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} options={SUPPLY_CURRENT_RATING_OPTIONS} />
+          <QuickSetSelectField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} options={SHORT_CIRCUIT_CAPACITY_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
+          <QuickSetSelectField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} options={SUPPLY_CURRENT_RATING_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
         </div>
       </SectionCard>
 
       <SectionCard title="Main switch / RCD">
-        <SelectField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} options={MAIN_SWITCH_STANDARD_OPTIONS} />
+        <QuickSetSelectField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} options={MAIN_SWITCH_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} options={POLES_OPTIONS} />
-          <SelectField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} options={MAIN_SWITCH_VOLTAGE_OPTIONS} />
+          <QuickSetSelectField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} options={POLES_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
+          <QuickSetSelectField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} options={MAIN_SWITCH_VOLTAGE_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} options={MAIN_SWITCH_CURRENT_OPTIONS} />
-          <TextField label="Fuse device setting" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} />
+          <QuickSetSelectField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} options={MAIN_SWITCH_CURRENT_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
+          <QuickSetTextField label="Fuse device setting" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} />
         </div>
-        <OutcomeButtons label="Fuse device setting quick set" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
         <TextField label="Location" value={sup.mainSwitchLocation} onChange={(v) => patch({ mainSwitchLocation: v })} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Conductor material" value={sup.conductorMaterial} onChange={(v) => patch({ conductorMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
-          <SelectField label="Conductor CSA" value={sup.conductorCsa} onChange={(v) => patch({ conductorCsa: v })} options={CONDUCTOR_CSA_OPTIONS} />
+          <QuickSetSelectField label="Conductor material" value={sup.conductorMaterial} onChange={(v) => patch({ conductorMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <QuickSetSelectField label="Conductor CSA" value={sup.conductorCsa} onChange={(v) => patch({ conductorCsa: v })} options={CONDUCTOR_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
         </div>
-        <SelectField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} options={RCD_IDN_OPTIONS} />
+        <QuickSetSelectField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} options={RCD_IDN_OPTIONS} quickOptions={[...SELECT_QUICK_NA_LIM_OPTIONS, { value: 'nv', label: 'N/V' }]} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="RCD time delay" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} />
-          <TextField label="RCD operating time" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} />
+          <QuickSetTextField label="RCD time delay" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} />
+          <QuickSetTextField label="RCD operating time" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} />
         </div>
-        <OutcomeButtons label="RCD time delay quick set" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
-        <OutcomeButtons label="RCD operating time quick set" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} options={[{ value: 'na', label: 'N/A' }, { value: 'lim', label: 'LIM' }]} />
       </SectionCard>
 
       <SectionCard title="Earthing & bonding">
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Earthing conductor material" value={sup.earthMaterial} onChange={(v) => patch({ earthMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
-          <SelectField label="Earthing conductor CSA" value={sup.earthCsa} onChange={(v) => patch({ earthCsa: v })} options={EARTHING_CSA_OPTIONS} />
+          <QuickSetSelectField label="Earthing conductor material" value={sup.earthMaterial} onChange={(v) => patch({ earthMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <QuickSetSelectField label="Earthing conductor CSA" value={sup.earthCsa} onChange={(v) => patch({ earthCsa: v })} options={EARTHING_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
         </div>
         <OutcomeButtons label="Earthing continuity" value={sup.earthContinuity} onChange={(v) => patch({ earthContinuity: v })} options={PASS_FAIL_OPTIONS} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Bonding material" value={sup.bondMaterial} onChange={(v) => patch({ bondMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
-          <SelectField label="Bonding CSA" value={sup.bondCsa} onChange={(v) => patch({ bondCsa: v })} options={BONDING_CSA_OPTIONS} />
+          <QuickSetSelectField label="Bonding material" value={sup.bondMaterial} onChange={(v) => patch({ bondMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
+          <QuickSetSelectField label="Bonding CSA" value={sup.bondCsa} onChange={(v) => patch({ bondCsa: v })} options={BONDING_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
         </div>
         <OutcomeButtons label="Bonding continuity" value={sup.bondContinuity} onChange={(v) => patch({ bondContinuity: v })} options={PASS_FAIL_OPTIONS} />
         <OutcomeButtons label="Water" value={sup.bondWater} onChange={(v) => patch({ bondWater: v })} options={PASS_FAIL_OPTIONS} />
