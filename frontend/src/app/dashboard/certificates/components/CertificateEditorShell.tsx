@@ -121,7 +121,7 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
           })}
         </nav>
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 pb-24">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5 pb-24">{children}</main>
       <EditorQuickNav />
       <ValidateSheet />
     </div>

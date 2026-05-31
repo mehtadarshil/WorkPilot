@@ -1,8 +1,142 @@
 'use client';
 
+import type { KeyboardEvent } from 'react';
+
 const inputClass =
-  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
-const labelClass = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
+  'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]/40';
+const labelClass = 'text-[11px] font-bold uppercase tracking-wide text-slate-600';
+
+export const TEXT_QUICK_NA_LIM = [
+  { value: 'N/A', label: 'N/A' },
+  { value: 'LIM', label: 'LIM' },
+];
+
+export const SELECT_QUICK_NA_LIM = [
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+];
+
+export const SELECT_QUICK_NA_LIM_UNKNOWN = [
+  { value: 'na', label: 'N/A' },
+  { value: 'lim', label: 'LIM' },
+  { value: 'UNKNOWN', label: 'UNKNOWN' },
+];
+
+export function QuickSetButtons({
+  value,
+  onChange,
+  options,
+  compact = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  compact?: boolean;
+}) {
+  return (
+    <div className={`flex flex-wrap items-center gap-1 ${compact ? 'pt-0.5' : 'pt-1'}`}>
+      {options.map((option) => {
+        const selected = value.trim().toLowerCase() === option.value.trim().toLowerCase();
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`rounded border px-2 py-0.5 font-semibold transition-colors ${
+              compact ? 'text-[10px]' : 'text-[11px]'
+            } ${
+              selected
+                ? 'border-[#14B8A6] bg-[#14B8A6]/15 text-[#0d9488]'
+                : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white'
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function QuickSetTextField({
+  label,
+  value,
+  onChange,
+  options = TEXT_QUICK_NA_LIM,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: { value: string; label: string }[];
+  type?: string;
+}) {
+  return (
+    <div>
+      <TextField label={label} value={value} onChange={onChange} type={type} />
+      <QuickSetButtons value={value} onChange={onChange} options={options} compact />
+    </div>
+  );
+}
+
+export function QuickSetSelectField({
+  label,
+  value,
+  onChange,
+  options,
+  quickOptions = SELECT_QUICK_NA_LIM,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  quickOptions?: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <SelectField label={label} value={value} onChange={onChange} options={options} />
+      <QuickSetButtons value={value} onChange={onChange} options={quickOptions} compact />
+    </div>
+  );
+}
+
+function handleFormFieldKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+  const grid = event.currentTarget.closest<HTMLElement>('[data-form-grid]');
+  if (!grid) return;
+  const fields = Array.from(
+    grid.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      'input:not([type="checkbox"]):not([disabled]), select:not([disabled]), textarea:not([disabled])',
+    ),
+  );
+  const index = fields.indexOf(event.currentTarget);
+  if (index < 0) return;
+
+  const focusField = (nextIndex: number) => {
+    const field = fields[Math.max(0, Math.min(nextIndex, fields.length - 1))];
+    if (!field) return;
+    field.focus();
+    if ('select' in field && typeof field.select === 'function') field.select();
+  };
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    focusField(event.shiftKey ? index - 1 : index + 1);
+    return;
+  }
+
+  const colStep = grid.dataset.formCols === '2' ? 2 : 1;
+  const moves: Partial<Record<string, number>> = {
+    ArrowUp: -colStep,
+    ArrowDown: colStep,
+    ArrowLeft: -1,
+    ArrowRight: 1,
+  };
+  const delta = moves[event.key];
+  if (delta === undefined) return;
+  event.preventDefault();
+  focusField(index + delta);
+}
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className={labelClass}>{children}</label>;
@@ -30,6 +164,7 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleFormFieldKeyDown}
       />
     </div>
   );
@@ -57,6 +192,7 @@ export function TextAreaField({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleFormFieldKeyDown}
       />
     </div>
   );
@@ -76,7 +212,12 @@ export function SelectField({
   return (
     <div className="space-y-1">
       <FieldLabel>{label}</FieldLabel>
-      <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={inputClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleFormFieldKeyDown}
+      >
         <option value="">Select…</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -93,22 +234,26 @@ export function OutcomeButtons({
   value,
   onChange,
   options,
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string; className?: string }[];
+  compact?: boolean;
 }) {
   return (
     <div className="space-y-1">
-      <FieldLabel>{label}</FieldLabel>
-      <div className="flex flex-wrap gap-1">
+      {label ? <FieldLabel>{label}</FieldLabel> : null}
+      <div className={`flex flex-wrap ${compact ? 'gap-0.5' : 'gap-1'}`}>
         {options.map((o) => (
           <button
             key={o.value}
             type="button"
             onClick={() => onChange(o.value)}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+            className={`rounded border font-semibold transition-colors ${
+              compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'
+            } ${
               value === o.value
                 ? o.className ?? 'border-[#14B8A6] bg-[#14B8A6]/10 text-[#0d9488]'
                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -120,6 +265,17 @@ export function OutcomeButtons({
       </div>
     </div>
   );
+}
+
+/** Compact outcome row for inspection schedule tables. */
+export function InspectionOutcomePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return <OutcomeButtons label="" value={value} onChange={onChange} options={INSPECTION_OUTCOMES} compact />;
 }
 
 export function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {

@@ -16,15 +16,21 @@ import {
 import { emptyBoard, newId } from '@/lib/electricalCertificates/documentDefaults';
 import type { InspectionOutcome, ObservationItem } from '@/lib/electricalCertificates/types';
 import {
-  INSPECTION_OUTCOMES,
+  InspectionOutcomePicker,
   OutcomeButtons,
   PASS_FAIL_OPTIONS,
+  QuickSetSelectField,
+  QuickSetTextField,
+  SELECT_QUICK_NA_LIM,
+  SELECT_QUICK_NA_LIM_UNKNOWN,
   SectionCard,
   SelectField,
+  TEXT_QUICK_NA_LIM,
   TextAreaField,
   TextField,
   YES_NO_OPTIONS,
 } from './FormFields';
+import { TradecertFieldGrid, TradecertFormLayout, TradecertPanel } from './TradecertFormLayout';
 
 const PREMISES_TYPES = [
   { value: 'domestic', label: 'Domestic' },
@@ -193,101 +199,12 @@ const YES_NO_LIM_NA_OPTIONS = [
   { value: 'na', label: 'N/A' },
 ];
 
-const TEXT_QUICK_NA_LIM_OPTIONS = [
-  { value: 'N/A', label: 'N/A' },
-  { value: 'LIM', label: 'LIM' },
-];
-
-const SELECT_QUICK_NA_LIM_OPTIONS = [
-  { value: 'na', label: 'N/A' },
-  { value: 'lim', label: 'LIM' },
-];
-
-const SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS = [
-  { value: 'na', label: 'N/A' },
-  { value: 'lim', label: 'LIM' },
-  { value: 'UNKNOWN', label: 'UNKNOWN' },
-];
-
 const OBS_CODES = [
   { value: 'c1', label: 'C1' },
   { value: 'c2', label: 'C2' },
   { value: 'c3', label: 'C3' },
   { value: 'fi', label: 'FI' },
 ];
-
-function QuickSetButtons({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1 pt-1">
-      <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Quick set</span>
-      {options.map((option) => {
-        const selected = value.trim().toLowerCase() === option.value.trim().toLowerCase();
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-              selected
-                ? 'border-[#14B8A6] bg-[#14B8A6]/10 text-[#0d9488]'
-                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function QuickSetTextField({
-  label,
-  value,
-  onChange,
-  options = TEXT_QUICK_NA_LIM_OPTIONS,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options?: { value: string; label: string }[];
-}) {
-  return (
-    <div>
-      <TextField label={label} value={value} onChange={onChange} />
-      <QuickSetButtons value={value} onChange={onChange} options={options} />
-    </div>
-  );
-}
-
-function QuickSetSelectField({
-  label,
-  value,
-  onChange,
-  options,
-  quickOptions = SELECT_QUICK_NA_LIM_OPTIONS,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  quickOptions?: { value: string; label: string }[];
-}) {
-  return (
-    <div>
-      <SelectField label={label} value={value} onChange={onChange} options={options} />
-      <QuickSetButtons value={value} onChange={onChange} options={quickOptions} />
-    </div>
-  );
-}
 
 export function InstallationDetailsSection() {
   const { document, setDocument } = useCertificateEditor();
@@ -296,8 +213,8 @@ export function InstallationDetailsSection() {
     setDocument((d) => ({ ...d, installation: { ...d.installation, ...p } }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <SectionCard title="Client & installation">
+    <TradecertFormLayout>
+      <TradecertPanel title="Client & installation">
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
@@ -326,9 +243,9 @@ export function InstallationDetailsSection() {
           onChange={(v) => patch({ recordsAvailable: v })}
           options={YES_NO_OPTIONS}
         />
-      </SectionCard>
+      </TradecertPanel>
 
-      <SectionCard title="Previous inspection">
+      <TradecertPanel title="Previous inspection">
         <TextField
           label="Date of previous inspection"
           type="date"
@@ -350,9 +267,9 @@ export function InstallationDetailsSection() {
           value={inst.alterationsEvidence}
           onChange={(v) => patch({ alterationsEvidence: v })}
         />
-      </SectionCard>
+      </TradecertPanel>
 
-      <SectionCard title="Extent & limitations">
+      <TradecertPanel title="Extent & limitations">
         <TextAreaField label="Extent of installation covered" value={inst.extent} onChange={(v) => patch({ extent: v })} />
         <TextAreaField
           label="Operational limitations"
@@ -365,9 +282,9 @@ export function InstallationDetailsSection() {
           onChange={(v) => patch({ agreedLimitations: v })}
         />
         <TextField label="Agreed with" value={inst.agreedWith} onChange={(v) => patch({ agreedWith: v })} />
-      </SectionCard>
+      </TradecertPanel>
 
-      <SectionCard title="Summary & sign-off">
+      <TradecertPanel title="Summary & sign-off">
         <TextAreaField
           label="General condition of the installation"
           value={inst.generalCondition}
@@ -404,8 +321,8 @@ export function InstallationDetailsSection() {
           onChange={(v) => patch({ reinspectionPeriod: v })}
           placeholder="e.g. 5 years"
         />
-      </SectionCard>
-    </div>
+      </TradecertPanel>
+    </TradecertFormLayout>
   );
 }
 
@@ -504,15 +421,13 @@ export function SupplyCharacteristicsSection() {
   const patch = (p: Partial<typeof sup>) => setDocument((d) => ({ ...d, supply: { ...d.supply, ...p } }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <SectionCard title="Earthing & supply">
-        <SelectField label="Earthing arrangement" value={sup.earthing} onChange={(v) => patch({ earthing: v })} options={EARTHING_TYPES} />
-        <div className="grid gap-4 sm:grid-cols-2">
+    <TradecertFormLayout>
+      <TradecertPanel title="Earthing & supply">
+        <TradecertFieldGrid>
+          <SelectField label="Earthing arrangement" value={sup.earthing} onChange={(v) => patch({ earthing: v })} options={EARTHING_TYPES} />
+          <OutcomeButtons label="Nature of supply" value={sup.acDc} onChange={(v) => patch({ acDc: v })} options={AC_DC_OPTIONS} />
           <QuickSetTextField label="Ze (Ω)" value={sup.ze} onChange={(v) => patch({ ze: v })} />
           <QuickSetTextField label="Ipf (kA)" value={sup.ipf} onChange={(v) => patch({ ipf: v })} />
-        </div>
-        <OutcomeButtons label="Nature of supply" value={sup.acDc} onChange={(v) => patch({ acDc: v })} options={AC_DC_OPTIONS} />
-        <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             label="Number and type of live conductors"
             value={sup.phases}
@@ -520,71 +435,59 @@ export function SupplyCharacteristicsSection() {
             options={sup.acDc === 'dc' ? DC_CONDUCTOR_OPTIONS : LIVE_CONDUCTOR_OPTIONS}
           />
           <SelectField label="Number of supplies" value={sup.numSupplies} onChange={(v) => patch({ numSupplies: v })} options={NUMBER_OF_SUPPLIES_OPTIONS} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
           <QuickSetSelectField label="Nominal voltage U" value={sup.nominalU} onChange={(v) => patch({ nominalU: v })} options={NOMINAL_VOLTAGE_U_OPTIONS} />
           <QuickSetSelectField label="Nominal voltage Uo" value={sup.nominalUo} onChange={(v) => patch({ nominalUo: v })} options={NOMINAL_VOLTAGE_UO_OPTIONS} />
-        </div>
-        <QuickSetTextField label="Nominal frequency" value={sup.frequency} onChange={(v) => patch({ frequency: v })} />
-        <OutcomeButtons
-          label="Supply polarity confirmed"
-          value={sup.polarityConfirmed}
-          onChange={(v) => patch({ polarityConfirmed: v })}
-          options={YES_NO_LIM_NA_OPTIONS}
-        />
-      </SectionCard>
+          <QuickSetTextField label="Nominal frequency" value={sup.frequency} onChange={(v) => patch({ frequency: v })} />
+          <OutcomeButtons
+            label="Supply polarity confirmed"
+            value={sup.polarityConfirmed}
+            onChange={(v) => patch({ polarityConfirmed: v })}
+            options={YES_NO_LIM_NA_OPTIONS}
+          />
+        </TradecertFieldGrid>
+      </TradecertPanel>
 
-      <SectionCard title="Supply protective device">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <QuickSetSelectField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} options={SUPPLY_DEVICE_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-          <QuickSetTextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} options={[...TEXT_QUICK_NA_LIM_OPTIONS, { value: 'UNKNOWN', label: 'UNKNOWN' }]} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <QuickSetSelectField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} options={SHORT_CIRCUIT_CAPACITY_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-          <QuickSetSelectField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} options={SUPPLY_CURRENT_RATING_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-        </div>
-      </SectionCard>
+      <TradecertPanel title="Supply protective device">
+        <TradecertFieldGrid>
+          <QuickSetSelectField label="BS (EN)" value={sup.supplyDeviceBs} onChange={(v) => patch({ supplyDeviceBs: v })} options={SUPPLY_DEVICE_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          <QuickSetTextField label="Type" value={sup.supplyDeviceType} onChange={(v) => patch({ supplyDeviceType: v })} options={[...TEXT_QUICK_NA_LIM, { value: 'UNKNOWN', label: 'UNKNOWN' }]} />
+          <QuickSetSelectField label="Short circuit capacity (kA)" value={sup.supplyDeviceKa} onChange={(v) => patch({ supplyDeviceKa: v })} options={SHORT_CIRCUIT_CAPACITY_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          <QuickSetSelectField label="Rated current (A)" value={sup.supplyDeviceA} onChange={(v) => patch({ supplyDeviceA: v })} options={SUPPLY_CURRENT_RATING_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+        </TradecertFieldGrid>
+      </TradecertPanel>
 
-      <SectionCard title="Main switch / RCD">
-        <QuickSetSelectField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} options={MAIN_SWITCH_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <QuickSetSelectField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} options={POLES_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-          <QuickSetSelectField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} options={MAIN_SWITCH_VOLTAGE_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <QuickSetSelectField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} options={MAIN_SWITCH_CURRENT_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN_OPTIONS} />
+      <TradecertPanel title="Main switch / fuse / circuit breaker / RCD">
+        <TradecertFieldGrid>
+          <QuickSetSelectField label="BS (EN)" value={sup.mainSwitchBs} onChange={(v) => patch({ mainSwitchBs: v })} options={MAIN_SWITCH_STANDARD_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          <QuickSetSelectField label="Number of poles" value={sup.mainSwitchPoles} onChange={(v) => patch({ mainSwitchPoles: v })} options={POLES_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          <QuickSetSelectField label="Voltage rating" value={sup.mainSwitchV} onChange={(v) => patch({ mainSwitchV: v })} options={MAIN_SWITCH_VOLTAGE_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          <QuickSetSelectField label="Rated current" value={sup.mainSwitchIn} onChange={(v) => patch({ mainSwitchIn: v })} options={MAIN_SWITCH_CURRENT_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
           <QuickSetTextField label="Fuse device setting" value={sup.fuseSetting} onChange={(v) => patch({ fuseSetting: v })} />
-        </div>
-        <TextField label="Location" value={sup.mainSwitchLocation} onChange={(v) => patch({ mainSwitchLocation: v })} />
-        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField label="Location" value={sup.mainSwitchLocation} onChange={(v) => patch({ mainSwitchLocation: v })} />
           <QuickSetSelectField label="Conductor material" value={sup.conductorMaterial} onChange={(v) => patch({ conductorMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
           <QuickSetSelectField label="Conductor CSA" value={sup.conductorCsa} onChange={(v) => patch({ conductorCsa: v })} options={CONDUCTOR_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
-        </div>
-        <QuickSetSelectField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} options={RCD_IDN_OPTIONS} quickOptions={[...SELECT_QUICK_NA_LIM_OPTIONS, { value: 'nv', label: 'N/V' }]} />
-        <div className="grid gap-4 sm:grid-cols-2">
+          <QuickSetSelectField label="RCD IΔn" value={sup.rcdIdn} onChange={(v) => patch({ rcdIdn: v })} options={RCD_IDN_OPTIONS} quickOptions={[...SELECT_QUICK_NA_LIM, { value: 'nv', label: 'N/V' }]} />
           <QuickSetTextField label="RCD time delay" value={sup.rcdDelay} onChange={(v) => patch({ rcdDelay: v })} />
           <QuickSetTextField label="RCD operating time" value={sup.rcdTime} onChange={(v) => patch({ rcdTime: v })} />
-        </div>
-      </SectionCard>
+        </TradecertFieldGrid>
+      </TradecertPanel>
 
-      <SectionCard title="Earthing & bonding">
-        <div className="grid gap-4 sm:grid-cols-2">
+      <TradecertPanel title="Earthing & bonding">
+        <TradecertFieldGrid>
           <QuickSetSelectField label="Earthing conductor material" value={sup.earthMaterial} onChange={(v) => patch({ earthMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
           <QuickSetSelectField label="Earthing conductor CSA" value={sup.earthCsa} onChange={(v) => patch({ earthCsa: v })} options={EARTHING_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
-        </div>
-        <OutcomeButtons label="Earthing continuity" value={sup.earthContinuity} onChange={(v) => patch({ earthContinuity: v })} options={PASS_FAIL_OPTIONS} />
-        <div className="grid gap-4 sm:grid-cols-2">
+          <OutcomeButtons label="Earthing continuity" value={sup.earthContinuity} onChange={(v) => patch({ earthContinuity: v })} options={PASS_FAIL_OPTIONS} />
           <QuickSetSelectField label="Bonding material" value={sup.bondMaterial} onChange={(v) => patch({ bondMaterial: v })} options={CONDUCTOR_MATERIAL_OPTIONS} />
           <QuickSetSelectField label="Bonding CSA" value={sup.bondCsa} onChange={(v) => patch({ bondCsa: v })} options={BONDING_CSA_OPTIONS} quickOptions={[{ value: 'na', label: 'N/A' }]} />
-        </div>
-        <OutcomeButtons label="Bonding continuity" value={sup.bondContinuity} onChange={(v) => patch({ bondContinuity: v })} options={PASS_FAIL_OPTIONS} />
-        <OutcomeButtons label="Water" value={sup.bondWater} onChange={(v) => patch({ bondWater: v })} options={PASS_FAIL_OPTIONS} />
-        <OutcomeButtons label="Gas" value={sup.bondGas} onChange={(v) => patch({ bondGas: v })} options={PASS_FAIL_OPTIONS} />
-        <OutcomeButtons label="Oil" value={sup.bondOil} onChange={(v) => patch({ bondOil: v })} options={PASS_FAIL_OPTIONS} />
-        <OutcomeButtons label="Structural steel" value={sup.bondSteel} onChange={(v) => patch({ bondSteel: v })} options={PASS_FAIL_OPTIONS} />
-        <OutcomeButtons label="Lightning" value={sup.bondLightning} onChange={(v) => patch({ bondLightning: v })} options={PASS_FAIL_OPTIONS} />
-      </SectionCard>
-    </div>
+          <OutcomeButtons label="Bonding continuity" value={sup.bondContinuity} onChange={(v) => patch({ bondContinuity: v })} options={PASS_FAIL_OPTIONS} />
+          <OutcomeButtons label="Water" value={sup.bondWater} onChange={(v) => patch({ bondWater: v })} options={PASS_FAIL_OPTIONS} />
+          <OutcomeButtons label="Gas" value={sup.bondGas} onChange={(v) => patch({ bondGas: v })} options={PASS_FAIL_OPTIONS} />
+          <OutcomeButtons label="Oil" value={sup.bondOil} onChange={(v) => patch({ bondOil: v })} options={PASS_FAIL_OPTIONS} />
+          <OutcomeButtons label="Structural steel" value={sup.bondSteel} onChange={(v) => patch({ bondSteel: v })} options={PASS_FAIL_OPTIONS} />
+          <OutcomeButtons label="Lightning" value={sup.bondLightning} onChange={(v) => patch({ bondLightning: v })} options={PASS_FAIL_OPTIONS} />
+        </TradecertFieldGrid>
+      </TradecertPanel>
+    </TradecertFormLayout>
   );
 }
 
@@ -620,19 +523,26 @@ export function InspectionScheduleSection() {
     setPresetId('');
   };
 
+  const filledCount = INSPECTION_SCHEDULE_ITEMS.filter((i) => schedule[i.id]).length;
+  const totalCount = INSPECTION_SCHEDULE_ITEMS.length;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
-      <SectionCard title="Schedule presets">
-        <p className="mb-3 text-sm text-slate-600">
-          Quickly fill the inspection schedule with a common outcome pattern (BS 7671 EICR).
-        </p>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="min-w-[200px] flex-1 text-sm font-medium text-slate-700">
+    <TradecertFormLayout>
+      <TradecertPanel
+        title="Inspection schedule"
+        toolbar={
+          <span className="text-xs font-semibold text-slate-600">
+            {filledCount}/{totalCount} completed
+          </span>
+        }
+      >
+        <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 pb-3">
+          <label className="min-w-[220px] flex-1 text-xs font-bold uppercase tracking-wide text-slate-600">
             Preset
             <select
               value={presetId}
               onChange={(e) => setPresetId(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className="mt-1 block w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-normal normal-case"
             >
               <option value="">Choose preset…</option>
               {INSPECTION_SCHEDULE_PRESETS.map((p) => (
@@ -646,57 +556,96 @@ export function InspectionScheduleSection() {
             type="button"
             disabled={!presetId}
             onClick={applyPreset}
-            className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            className="rounded-md bg-[#14B8A6] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
           >
             Apply preset
           </button>
         </div>
         {presetId && (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="text-xs text-slate-500">
             {INSPECTION_SCHEDULE_PRESETS.find((p) => p.id === presetId)?.description}
           </p>
         )}
-      </SectionCard>
+        <p className="text-[11px] text-slate-500">
+          Click an outcome button to set each item. Use section actions to bulk-fill a group.
+        </p>
+      </TradecertPanel>
+
       {sections.map((sec) => {
         const items = INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
+        const sectionFilled = items.filter((i) => schedule[i.id]).length;
         return (
-          <SectionCard key={sec} title={`${sec}. ${INSPECTION_SECTION_LABELS[sec] ?? sec}`}>
-            <div className="mb-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setSectionAll(sec, 'pass')}
-                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-              >
-                Set all to PASS
-              </button>
-              <button
-                type="button"
-                onClick={() => setSectionAll(sec, 'na')}
-                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Set all to N/A
-              </button>
+          <TradecertPanel
+            key={sec}
+            title={`${sec}. ${INSPECTION_SECTION_LABELS[sec] ?? sec}`}
+            toolbar={
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-2 text-[10px] font-semibold text-slate-500">
+                  {sectionFilled}/{items.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSectionAll(sec, 'pass')}
+                  className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100"
+                >
+                  All ✓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSectionAll(sec, 'na')}
+                  className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  All N/A
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSectionAll(sec, 'lim')}
+                  className="rounded border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-50"
+                >
+                  All LIM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSectionAll(sec, 'nv')}
+                  className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  All N/V
+                </button>
+              </div>
+            }
+          >
+            <div className="overflow-x-auto rounded-md border border-slate-200">
+              <table className="w-full min-w-[720px] border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-left text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                    <th className="w-14 border-b border-slate-200 px-2 py-1.5">Item</th>
+                    <th className="border-b border-slate-200 px-2 py-1.5">Description</th>
+                    <th className="w-[280px] border-b border-slate-200 px-2 py-1.5">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                      <td className="px-2 py-1.5 align-top font-mono text-[11px] font-semibold text-slate-600">
+                        {item.id}
+                      </td>
+                      <td className="px-2 py-1.5 align-top text-[11px] leading-snug text-slate-800">{item.label}</td>
+                      <td className="px-2 py-1 align-top">
+                        <InspectionOutcomePicker
+                          value={schedule[item.id] ?? ''}
+                          onChange={(v) => setOutcome(item.id, v as InspectionOutcome)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <ul className="divide-y divide-slate-100">
-              {items.map((item) => (
-                <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm text-slate-800">
-                    <span className="font-mono text-slate-500">{item.id}</span> {item.label}
-                  </span>
-                  <OutcomeButtons
-                    label=""
-                    value={schedule[item.id] ?? ''}
-                    onChange={(v) => setOutcome(item.id, v as InspectionOutcome)}
-                    options={INSPECTION_OUTCOMES}
-                  />
-                </li>
-              ))}
-            </ul>
-          </SectionCard>
+          </TradecertPanel>
         );
       })}
       <p className="text-center text-xs text-slate-400">{certificate.certificate_number}</p>
-    </div>
+    </TradecertFormLayout>
   );
 }
 
@@ -748,7 +697,7 @@ export function BoardsListSection() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <TradecertFormLayout>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold text-slate-900">Distribution boards</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -843,15 +792,15 @@ export function BoardsListSection() {
           </li>
         ))}
       </ul>
-    </div>
+    </TradecertFormLayout>
   );
 }
 
 export function AppendixSection() {
   const { document, setDocument } = useCertificateEditor();
   return (
-    <div className="mx-auto max-w-3xl">
-      <SectionCard title="Appendix notes & photos">
+    <TradecertFormLayout>
+      <TradecertPanel title="Appendix notes & photos">
         <TextAreaField
           label="Additional information"
           value={document.appendix.content}
@@ -861,15 +810,15 @@ export function AppendixSection() {
           rows={12}
           placeholder="Notes, test instrument details, limitations…"
         />
-      </SectionCard>
-      <SectionCard title="Appendix photographs">
+      </TradecertPanel>
+      <TradecertPanel title="Appendix photographs">
         <CertificatePhotoGallery
           photos={document.appendix.photos}
           onChange={(photos) =>
             setDocument((d) => ({ ...d, appendix: { ...d.appendix, photos } }))
           }
         />
-      </SectionCard>
-    </div>
+      </TradecertPanel>
+    </TradecertFormLayout>
   );
 }

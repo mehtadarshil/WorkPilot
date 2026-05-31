@@ -9,7 +9,18 @@ import { emptyCircuit } from '@/lib/electricalCertificates/documentDefaults';
 import { cloneBoard, replaceInCircuits } from '@/lib/electricalCertificates/documentHelpers';
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalculations';
-import { OutcomeButtons, PASS_FAIL_OPTIONS, SectionCard, SelectField, TextAreaField, TextField } from './FormFields';
+import {
+  OutcomeButtons,
+  PASS_FAIL_OPTIONS,
+  QuickSetSelectField,
+  QuickSetTextField,
+  SELECT_QUICK_NA_LIM,
+  SELECT_QUICK_NA_LIM_UNKNOWN,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from './FormFields';
+import { TradecertFieldGrid, TradecertFormLayout, TradecertPanel } from './TradecertFormLayout';
 import { CircuitsGrid } from './CircuitsGrid';
 import { CircuitsToolbar } from './CircuitsToolbar';
 import { FindReplaceModal } from './FindReplaceModal';
@@ -160,6 +171,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
   };
 
   return (
+    <TradecertFormLayout>
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href={`${base}/boards`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#14B8A6]">
@@ -224,16 +236,14 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
         Board details {detailsOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
       </button>
       {detailsOpen && (
-        <SectionCard title="Board details">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <TradecertPanel title="Board details">
+          <TradecertFieldGrid>
             <TextField label="Manufacturer" value={board.manufacturer} onChange={(v) => patchBoard({ manufacturer: v })} />
             <TextField label="Location" value={board.location} onChange={(v) => patchBoard({ location: v })} />
             <TextField label="Supplied from" value={board.suppliedFrom} onChange={(v) => patchBoard({ suppliedFrom: v })} />
-            <SelectField label="Number of phases" value={board.phases} onChange={(v) => patchBoard({ phases: v })} options={BOARD_PHASE_OPTIONS} />
-            <TextField label="Zs at DB (Ω)" value={board.zsAtDb} onChange={(v) => patchBoard({ zsAtDb: v })} />
-            <TextField label="Ipf at DB (kA)" value={board.ipfAtDb} onChange={(v) => patchBoard({ ipfAtDb: v })} />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+            <QuickSetSelectField label="Number of phases" value={board.phases} onChange={(v) => patchBoard({ phases: v })} options={BOARD_PHASE_OPTIONS} />
+            <QuickSetTextField label="Zs at DB (Ω)" value={board.zsAtDb} onChange={(v) => patchBoard({ zsAtDb: v })} />
+            <QuickSetTextField label="Ipf at DB (kA)" value={board.ipfAtDb} onChange={(v) => patchBoard({ ipfAtDb: v })} />
             <OutcomeButtons
               label="Supply polarity confirmed"
               value={board.polarityConfirmed}
@@ -246,26 +256,18 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
               onChange={(v) => patchBoard({ phaseSequence: v })}
               options={PASS_FAIL_OPTIONS}
             />
-          </div>
-          <SectionCard title="Main switch / fuse / circuit breaker / RCD">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="Type BS (EN)" value={board.mainSwitchBs} onChange={(v) => patchBoard({ mainSwitchBs: v })} options={BOARD_MAIN_SWITCH_BS_OPTIONS} />
-              <SelectField label="Voltage rating" value={board.mainSwitchVoltage} onChange={(v) => patchBoard({ mainSwitchVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} />
-              <SelectField label="Rated current" value={board.mainSwitchRating} onChange={(v) => patchBoard({ mainSwitchRating: v })} options={BOARD_CURRENT_OPTIONS} />
-              <TextField label="Ipf rating" value={board.mainSwitchIpf} onChange={(v) => patchBoard({ mainSwitchIpf: v })} />
-              <SelectField label="RCD rating" value={board.rcdRating} onChange={(v) => patchBoard({ rcdRating: v })} options={BOARD_RCD_RATING_OPTIONS} />
-              <TextField label="RCD trip time" value={board.rcdTripTime} onChange={(v) => patchBoard({ rcdTripTime: v })} />
-            </div>
-          </SectionCard>
-          <SectionCard title="SPD / overcurrent device">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="SPD type" value={board.spdType} onChange={(v) => patchBoard({ spdType: v })} options={BOARD_SPD_TYPE_OPTIONS} />
-              <OutcomeButtons label="SPD operation status confirmed" value={board.spdStatus} onChange={(v) => patchBoard({ spdStatus: v })} options={PASS_FAIL_OPTIONS} />
-              <SelectField label="Overcurrent device BS (EN)" value={board.ocpdBs} onChange={(v) => patchBoard({ ocpdBs: v })} options={BOARD_OCPD_BS_OPTIONS} />
-              <SelectField label="Overcurrent device voltage" value={board.ocpdVoltage} onChange={(v) => patchBoard({ ocpdVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} />
-              <SelectField label="Overcurrent device rated current" value={board.ocpdRating} onChange={(v) => patchBoard({ ocpdRating: v })} options={BOARD_OCPD_CURRENT_OPTIONS} />
-            </div>
-          </SectionCard>
+            <QuickSetSelectField label="Type BS (EN)" value={board.mainSwitchBs} onChange={(v) => patchBoard({ mainSwitchBs: v })} options={BOARD_MAIN_SWITCH_BS_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+            <QuickSetSelectField label="Voltage rating" value={board.mainSwitchVoltage} onChange={(v) => patchBoard({ mainSwitchVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM} />
+            <QuickSetSelectField label="Rated current" value={board.mainSwitchRating} onChange={(v) => patchBoard({ mainSwitchRating: v })} options={BOARD_CURRENT_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+            <QuickSetTextField label="Ipf rating" value={board.mainSwitchIpf} onChange={(v) => patchBoard({ mainSwitchIpf: v })} />
+            <QuickSetSelectField label="RCD rating" value={board.rcdRating} onChange={(v) => patchBoard({ rcdRating: v })} options={BOARD_RCD_RATING_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+            <QuickSetTextField label="RCD trip time" value={board.rcdTripTime} onChange={(v) => patchBoard({ rcdTripTime: v })} />
+            <SelectField label="SPD type" value={board.spdType} onChange={(v) => patchBoard({ spdType: v })} options={BOARD_SPD_TYPE_OPTIONS} />
+            <OutcomeButtons label="SPD operation status confirmed" value={board.spdStatus} onChange={(v) => patchBoard({ spdStatus: v })} options={PASS_FAIL_OPTIONS} />
+            <QuickSetSelectField label="Overcurrent device BS (EN)" value={board.ocpdBs} onChange={(v) => patchBoard({ ocpdBs: v })} options={BOARD_OCPD_BS_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM} />
+            <QuickSetSelectField label="Overcurrent device voltage" value={board.ocpdVoltage} onChange={(v) => patchBoard({ ocpdVoltage: v })} options={BOARD_VOLTAGE_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM} />
+            <QuickSetSelectField label="Overcurrent device rated current" value={board.ocpdRating} onChange={(v) => patchBoard({ ocpdRating: v })} options={BOARD_OCPD_CURRENT_OPTIONS} quickOptions={SELECT_QUICK_NA_LIM_UNKNOWN} />
+          </TradecertFieldGrid>
           <TextAreaField label="Notes" value={board.notes} onChange={(v) => patchBoard({ notes: v })} rows={2} />
           <CertificatePhotoGallery
             label="Board photographs"
@@ -273,10 +275,10 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             photos={board.photos}
             onChange={(photos) => patchBoard({ photos })}
           />
-        </SectionCard>
+        </TradecertPanel>
       )}
 
-      <SectionCard title="Circuit schedule">
+      <TradecertPanel title="Circuit schedule">
         <CircuitsToolbar
           board={board}
           readOnly={readOnly}
@@ -330,7 +332,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             onMoveCircuit={moveCircuit}
           />
         </div>
-      </SectionCard>
+      </TradecertPanel>
       <FindReplaceModal
         open={findReplaceOpen}
         onClose={() => setFindReplaceOpen(false)}
@@ -339,5 +341,6 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
         }}
       />
     </div>
+    </TradecertFormLayout>
   );
 }
