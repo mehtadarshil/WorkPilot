@@ -47,6 +47,9 @@ function certificateEditorHref(cert: ElectricalCertificate) {
   if (cert.type_slug === 'eic_18e_a3') {
     return `/dashboard/certificates/${cert.id}/eic`;
   }
+  if (cert.type_slug === 'mwc_18e_a3') {
+    return `/dashboard/certificates/${cert.id}/mwc`;
+  }
   return `/dashboard/certificates/${cert.id}/installation-details`;
 }
 

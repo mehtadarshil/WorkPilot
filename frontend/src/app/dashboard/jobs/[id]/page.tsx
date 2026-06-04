@@ -63,6 +63,7 @@ interface JobDetails {
   completed_service_items?: unknown;
   /** Set when the job is scoped to a customer work / site address. */
   work_address?: JobWorkAddress | null;
+  pricing_items?: { id: number; item_name: string; quantity: number; unit_price: number; total: number; vat_rate: number }[];
 }
 
 interface DiaryEvent {
@@ -1043,6 +1044,71 @@ export default function JobDetailsPage() {
               <JobCostsTab jobId={id} token={token} />
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to manage job costs.</div>
+            )
+          ) : activeTab === 'Items to invoice' ? (
+            token ? (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h2 className="text-[17px] font-black tracking-tight text-slate-800 uppercase flex items-center gap-2">
+                      <Clipboard className="size-5 text-[#14B8A6]" />
+                      Items to invoice
+                    </h2>
+                    {job.pricing_items && job.pricing_items.length > 0 && (
+                      <button
+                        onClick={() => router.push(`/dashboard/invoices/new?jobId=${job.id}`)}
+                        className="rounded bg-[#14B8A6] px-4 py-2 text-[13px] font-black uppercase text-white shadow-sm transition-colors hover:bg-[#13a89a]"
+                      >
+                        Create invoice from items
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="bg-[#FBFCFD] border-b border-slate-100 uppercase text-[11px] font-black text-slate-500">
+                        <tr>
+                          <th className="px-6 py-4">Item</th>
+                          <th className="px-6 py-4 text-right">Quantity</th>
+                          <th className="px-6 py-4 text-right">Unit price</th>
+                          <th className="px-6 py-4 text-right">VAT %</th>
+                          <th className="px-6 py-4 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {!job.pricing_items || job.pricing_items.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold italic tracking-tight">
+                              No pricing items found for this job.
+                            </td>
+                          </tr>
+                        ) : (
+                          job.pricing_items.map((pi) => (
+                            <tr key={pi.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-5 font-bold text-slate-700">{pi.item_name}</td>
+                              <td className="px-6 py-5 text-right font-medium text-slate-600">{pi.quantity}</td>
+                              <td className="px-6 py-5 text-right font-medium text-slate-600">£{Number(pi.unit_price).toFixed(2)}</td>
+                              <td className="px-6 py-5 text-right font-medium text-slate-600">{pi.vat_rate}%</td>
+                              <td className="px-6 py-5 text-right font-black text-slate-800">£{Number(pi.total).toFixed(2)}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {job.pricing_items && job.pricing_items.length > 0 && (
+                    <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                      <div className="text-right">
+                        <div className="text-[11px] font-black uppercase text-slate-500 tracking-wide">Total value</div>
+                        <div className="text-[20px] font-black text-slate-800">
+                          £{job.pricing_items.reduce((sum, pi) => sum + Number(pi.total), 0).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to view items to invoice.</div>
             )
           ) : (
             <>

@@ -27,6 +27,10 @@ import {
   coerceElectricalInstallationData,
   createDefaultElectricalInstallationData,
 } from './electricalInstallationDefaults';
+import {
+  coerceMinorWorksData,
+  createDefaultMinorWorksData,
+} from './mwcDefaults';
 
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -684,7 +688,8 @@ function resolveDocumentTypeSlug(raw: unknown): ElectricalCertificateDocument['t
       s === 'dfi_inst_2019_a1' ||
       s === 'fi_extinsp_5306' ||
       s === 'em_pir_2025' ||
-      s === 'eic_18e_a3'
+      s === 'eic_18e_a3' ||
+      s === 'mwc_18e_a3'
     ) {
       return s;
     }
@@ -819,6 +824,9 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
     ...(typeSlug === 'eic_18e_a3'
       ? { electricalInstallation: createDefaultElectricalInstallationData(customerName) }
       : {}),
+    ...(typeSlug === 'mwc_18e_a3'
+      ? { minorWorks: createDefaultMinorWorksData() }
+      : {}),
   };
 }
 
@@ -894,6 +902,9 @@ export function coerceDocument(raw: unknown): ElectricalCertificateDocument {
             base.installation.occupierName,
           ),
         }
+      : {}),
+    ...(rawType === 'mwc_18e_a3'
+      ? { minorWorks: coerceMinorWorksData(o.minorWorks) }
       : {}),
   };
 }

@@ -265,6 +265,29 @@ export function CertificateEditorProvider({
             changed = true;
           }
 
+          if (prev.minorWorks) {
+            next.minorWorks = {
+              ...prev.minorWorks,
+              declaration: {
+                ...prev.minorWorks.declaration,
+                inspectedBy: prev.minorWorks.declaration.inspectedBy.trim() || name,
+                inspectedPosition: prev.minorWorks.declaration.inspectedPosition.trim() || position,
+                inspectedDate: prev.minorWorks.declaration.inspectedDate || today,
+                authorisedBy: prev.minorWorks.declaration.authorisedBy.trim() || name,
+                authorisedPosition: prev.minorWorks.declaration.authorisedPosition.trim() || position,
+                authorisedDate: prev.minorWorks.declaration.authorisedDate || today,
+              },
+            };
+            changed =
+              changed ||
+              next.minorWorks.declaration.inspectedBy !== prev.minorWorks.declaration.inspectedBy ||
+              next.minorWorks.declaration.inspectedPosition !== prev.minorWorks.declaration.inspectedPosition ||
+              next.minorWorks.declaration.inspectedDate !== prev.minorWorks.declaration.inspectedDate ||
+              next.minorWorks.declaration.authorisedBy !== prev.minorWorks.declaration.authorisedBy ||
+              next.minorWorks.declaration.authorisedPosition !== prev.minorWorks.declaration.authorisedPosition ||
+              next.minorWorks.declaration.authorisedDate !== prev.minorWorks.declaration.authorisedDate;
+          }
+
           return changed ? next : prev;
         });
       })

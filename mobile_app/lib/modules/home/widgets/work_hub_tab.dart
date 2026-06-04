@@ -49,6 +49,10 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.settings);
       return;
     }
+    if (module == 'sites') {
+      Get.toNamed(AppRoutes.sitesList);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
@@ -84,6 +88,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.tune_rounded,
           accent: Color(0xFFFCD34D),
         ),
+        'sites': (
+          label: 'Sites',
+          subtitle: 'All addresses & properties',
+          icon: Icons.location_on_rounded,
+          accent: Color(0xFFFB923C),
+        ),
       };
 
   @override
@@ -116,7 +126,10 @@ class WorkHubTab extends StatelessWidget {
         (e) => e.key.startsWith('settings_') && e.value,
       );
 
-      if (p('customers')) add('customers');
+      if (p('customers')) {
+        add('customers');
+        add('sites');
+      }
       if (p('quotations')) add('quotations');
       if (p('invoices')) add('invoices');
       if (p('jobs') && roleUp != 'OFFICER') add('jobs');

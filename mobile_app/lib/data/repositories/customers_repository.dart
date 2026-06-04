@@ -300,6 +300,21 @@ class CustomersRepository extends GetxService {
     return {};
   }
 
+  /// `GET /work-addresses` — global sites list (work addresses + customer default addresses).
+  Future<List<Map<String, dynamic>>> listAllSites({String? search}) async {
+    final res = await _api.get<Map<String, dynamic>>(
+      '/work-addresses',
+      queryParameters: <String, dynamic>{
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+      },
+    );
+    final raw = res.data?['sites'];
+    if (raw is! List) return [];
+    return raw
+        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> getAssets(
     int customerId, {
     int? workAddressId,

@@ -84,4 +84,5 @@ abstract class AppConstants {
   /// GetStorage keys
   static const String storageAuthToken = 'auth_token';
   static const String storageUserJson = 'user_json';
+  static const String storageBiometricEnabled = 'biometric_enabled';
 }

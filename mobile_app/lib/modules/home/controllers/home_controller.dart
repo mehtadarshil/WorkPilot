@@ -9,6 +9,7 @@ import '../../../app/routes/app_routes.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/offline/diary_timesheet_sync.dart';
 import '../../../core/offline/offline_api_support.dart';
+import '../../../core/services/biometric_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/user_profile_cache.dart';
 import '../../../data/models/diary_event_row.dart';
@@ -19,7 +20,7 @@ import '../../../data/repositories/mobile_repository.dart';
 /// Diary list filter: personal field schedule vs tenant-wide (admin).
 enum DiaryListScope { mine, team }
 
-class HomeController extends GetxController {
+class HomeController extends GetxController with WidgetsBindingObserver {
   HomeController({StorageService? storage, MobileRepository? mobile})
     : _storage = storage ?? Get.find<StorageService>(),
       _mobile = mobile ?? Get.find<MobileRepository>();
@@ -65,6 +66,10 @@ class HomeController extends GetxController {
 
   Timer? _timesheetTicker;
 
+  DateTime? _pausedAt;
+
+  static const _lockAfterBackgroundDuration = Duration(seconds: 3);
+
   bool get officerFeatures => home.value?.officerFeatures ?? false;
 
   /// Personal diary + field actions (linked officer profile).
@@ -108,6 +113,7 @@ class HomeController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    WidgetsBinding.instance.addObserver(this);
     _loadGreetingName();
     _loadAppVersion();
     refreshHome();
@@ -484,7 +490,32 @@ class HomeController extends GetxController {
 
   @override
   void onClose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timesheetTicker?.cancel();
     super.onClose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _pausedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      _maybeLockOnResume();
+    }
+  }
+
+  Future<void> _maybeLockOnResume() async {
+    final paused = _pausedAt;
+    _pausedAt = null;
+    if (paused == null) return;
+    final inBackground = DateTime.now().difference(paused);
+    if (inBackground < _lockAfterBackgroundDuration) return;
+
+    final biometric = BiometricService();
+    final canAuth = await biometric.canAuthenticate();
+    final enabled = biometric.isBiometricEnabled;
+    if (canAuth && enabled && Get.currentRoute != AppRoutes.biometricLock) {
+      Get.offAllNamed(AppRoutes.biometricLock);
+    }
   }
 }

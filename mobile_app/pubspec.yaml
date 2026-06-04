@@ -53,6 +53,7 @@ dependencies:
   webview_flutter: ^4.13.1
   file_picker: ^11.0.2
   open_filex: ^4.7.0
+  local_auth: ^2.3.0
 
 dev_dependencies:
   flutter_test:

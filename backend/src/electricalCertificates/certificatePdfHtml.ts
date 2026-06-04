@@ -29,6 +29,7 @@ import {
 import { buildEmergencyLightingCertificatePdfHtml } from './emergencyLightingPdfHtml';
 import { buildEicrCertificatePdfHtml } from './eicrPdfHtml';
 import { buildElectricalInstallationCertificatePdfHtml } from './electricalInstallationPdfHtml';
+import { buildMinorWorksCertificatePdfHtml } from './mwcPdfHtml';
 import type { ElectricalCertificateDocument, InspectionOutcome } from './types';
 
 export type CertificatePdfInput = {
@@ -180,6 +181,16 @@ export function buildCertificatePdfHtml(input: CertificatePdfInput): string {
   }
   if (doc.typeSlug === 'eic_18e_a3') {
     return buildElectricalInstallationCertificatePdfHtml(input, {
+      esc,
+      row,
+      photosHtml,
+      certificatePdfStyles,
+      certificateHeaderHtml,
+      certificateFooterHtml,
+    });
+  }
+  if (doc.typeSlug === 'mwc_18e_a3') {
+    return buildMinorWorksCertificatePdfHtml(input, {
       esc,
       row,
       photosHtml,

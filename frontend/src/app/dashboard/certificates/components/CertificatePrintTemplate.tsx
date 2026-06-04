@@ -69,6 +69,9 @@ export function CertificatePrintTemplate({
   if (doc.typeSlug === 'eicr_18e_a3') {
     return <EicrPrintTemplate certificate={certificate} branding={branding} />;
   }
+  if (doc.typeSlug === 'mwc_18e_a3') {
+    return <MinorWorksPrintTemplate certificate={certificate} branding={branding} />;
+  }
   const inst = doc.installation;
   const sup = doc.supply;
 
@@ -582,6 +585,116 @@ function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCe
           </div>
         </div>
       </section>
+      <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
+    </div>
+  );
+}
+
+function MinorWorksPrintTemplate({ certificate, branding }: { certificate: ElectricalCertificate; branding: CompanyBranding }) {
+  const mwc = certificate.document.minorWorks;
+  if (!mwc) return null;
+  const bondingLabel = (v: string) => {
+    if (!v) return '—';
+    return v === 'pass' ? 'PASS' : v === 'fail' ? 'FAIL' : v === 'lim' ? 'LIM' : v.toUpperCase();
+  };
+  return (
+    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
+      <CertificateBrandedHeader
+        branding={branding}
+        title="Minor Works Certificate"
+        subtitle="BS 7671 — 18th Edition Amendment 3"
+        certificateNumber={certificate.certificate_number}
+      />
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Client &amp; installation</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Client" value={certificate.customer_full_name ?? '—'} />
+            <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
+            <PrintRow label="Job" value={certificate.job_number ?? ''} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Description of the minor works</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Description" value={mwc.description} />
+            <PrintRow label="Date completed" value={mwc.dateCompleted} />
+            <PrintRow label="Earthing arrangement" value={mwc.earthingArrangement} />
+            <PrintRow label="Method of protection" value={mwc.methodOfProtection} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Comments, departures and permitted exceptions</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Departures & exceptions" value={mwc.departuresAndExceptions} />
+            <PrintRow label="Risk assessment attached" value={mwc.riskAssessmentAttached === 'yes' ? 'YES' : mwc.riskAssessmentAttached === 'na' ? 'N/A' : ''} />
+            <PrintRow label="Comments on existing installation" value={mwc.commentsOnExistingInstallation} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Earthing details</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Earthing conductor" value={bondingLabel(mwc.earthingDetails.earthingConductor)} />
+            <PrintRow label="Water" value={bondingLabel(mwc.earthingDetails.water)} />
+            <PrintRow label="Gas" value={bondingLabel(mwc.earthingDetails.gas)} />
+            <PrintRow label="Oil" value={bondingLabel(mwc.earthingDetails.oil)} />
+            <PrintRow label="Structural steel" value={bondingLabel(mwc.earthingDetails.structuralSteel)} />
+            <PrintRow label="Other" value={mwc.earthingDetails.other} />
+          </tbody>
+        </table>
+      </section>
+      <section className="mb-6">
+        <h2 className="mb-2 border-b border-slate-300 font-bold">Declaration</h2>
+        <table className="w-full text-sm">
+          <tbody>
+            <PrintRow label="Inspected and tested by" value={mwc.declaration.inspectedBy} />
+            <PrintRow label="Inspector position" value={mwc.declaration.inspectedPosition} />
+            <PrintRow label="Inspected date" value={mwc.declaration.inspectedDate} />
+            <PrintRow label="Authorised by" value={mwc.declaration.authorisedBy} />
+            <PrintRow label="Authorised position" value={mwc.declaration.authorisedPosition} />
+            <PrintRow label="Authorised date" value={mwc.declaration.authorisedDate} />
+          </tbody>
+        </table>
+      </section>
+      {certificate.document.boards.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Distribution boards</h2>
+          {certificate.document.boards.map((b) => (
+            <div key={b.id} className="mb-4 rounded border border-slate-200 p-3">
+              <p className="font-bold">{b.name}</p>
+              <p className="text-xs text-slate-600">
+                {b.circuits.length} circuits · {b.status === 'done' ? 'Done' : 'In progress'}
+                {b.zsAtDb ? ` · Zdb ${b.zsAtDb} Ω` : ''}
+              </p>
+            </div>
+          ))}
+        </section>
+      )}
+      {certificate.document.appendix.content.trim() && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
+          <p className="whitespace-pre-wrap">{certificate.document.appendix.content}</p>
+        </section>
+      )}
+      {certificate.document.appendix.photos.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix photographs</h2>
+          <div className="flex flex-wrap gap-3">
+            {certificate.document.appendix.photos.map((p) => (
+              <figure key={p.id} className="w-40">
+                <img src={p.dataUrl} alt="" className="h-28 w-full border object-cover" />
+                {p.caption && <figcaption className="text-[9px] text-slate-500">{p.caption}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
       <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
     </div>
   );

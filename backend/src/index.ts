@@ -56,7 +56,7 @@ import {
 import { mountTenantStaffRoutes } from './tenantStaffRoutes';
 import { mountTenantTeamRoutes } from './tenantTeamRoutes';
 import { ensureMobileProfileColumns, mountMobileProfileRoutes } from './mobileProfileRoutes';
-import { presetFieldOfficerPermissions, presetManagerPermissions, type TenantPermissionKey } from './tenantPermissions';
+import { pickFieldPermissionsFromStaff, presetFieldOfficerPermissions, presetManagerPermissions, type TenantPermissionKey } from './tenantPermissions';
 import {
   canUseTeamDiaryScope,
   diaryActsAsFieldOfficer,
@@ -1901,6 +1901,28 @@ async function initDb() {
       console.log(`Seeded SUPER_ADMIN user with email ${seedEmail}`);
     }
   }
+
+  // Backfill: ensure every ADMIN user has a linked officer record so they can
+  // be assigned to diary events and jobs just like field officers.
+  const adminOfficerBackfill = await pool.query(`
+    INSERT INTO officers (full_name, email, state, created_by, linked_user_id, permissions)
+    SELECT
+      COALESCE(u.full_name, u.email),
+      u.email,
+      'active',
+      u.id,
+      u.id,
+      $1::jsonb
+    FROM users u
+    WHERE u.role = 'ADMIN'
+      AND NOT EXISTS (
+        SELECT 1 FROM officers o WHERE o.linked_user_id = u.id
+      )
+    ON CONFLICT DO NOTHING
+  `, [JSON.stringify(pickFieldPermissionsFromStaff(presetManagerPermissions()))]);
+  if ((adminOfficerBackfill.rowCount ?? 0) > 0) {
+    console.log(`Backfilled ${adminOfficerBackfill.rowCount} ADMIN users with linked officer records`);
+  }
 }
 
 function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -2518,6 +2540,20 @@ app.post('/api/clients', authenticate, requireSuperAdmin, async (req: Authentica
 
     const client = result.rows[0];
 
+    // Create a linked officer record so the admin can be assigned to jobs/diary events.
+    await pool.query(
+      `INSERT INTO officers (full_name, email, state, created_by, linked_user_id, permissions)
+       VALUES ($1, $2, 'active', $3, $4, $5::jsonb)
+       ON CONFLICT DO NOTHING`,
+      [
+        fullName ?? emailNorm,
+        emailNorm,
+        client.id,
+        client.id,
+        JSON.stringify(pickFieldPermissionsFromStaff(permissions)),
+      ],
+    );
+
     return res.status(201).json({
       client: {
         id: client.id,
@@ -2595,6 +2631,29 @@ app.patch('/api/clients/:id', authenticate, requireSuperAdmin, async (req: Authe
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Client not found' });
     const client = result.rows[0];
+
+    // Sync linked officer record when name or permissions change.
+    if (fullName !== undefined || permissions != null) {
+      const officerUpdates: string[] = [];
+      const officerVals: unknown[] = [];
+      let oi = 1;
+      if (fullName !== undefined) {
+        officerUpdates.push(`full_name = $${oi++}`);
+        officerVals.push(fullName);
+      }
+      if (permissions != null) {
+        officerUpdates.push(`permissions = $${oi++}::jsonb`);
+        officerVals.push(JSON.stringify(pickFieldPermissionsFromStaff(permissions)));
+      }
+      if (officerUpdates.length > 0) {
+        officerVals.push(client.id);
+        await pool.query(
+          `UPDATE officers SET ${officerUpdates.join(', ')}, updated_at = NOW() WHERE linked_user_id = $${oi}`,
+          officerVals,
+        );
+      }
+    }
+
     return res.json({
       client: {
         id: client.id,
@@ -15387,6 +15446,101 @@ app.delete('/api/customers/:customerId/work-addresses/:workAddressId', authentic
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer work address error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Global sites list: work addresses + customer default addresses (for mobile "Sites" module). */
+app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+  try {
+    const ownerClause = isSuperAdmin ? '' : 'AND c.created_by = $1';
+    const searchClause = search
+      ? `AND (
+        c.full_name ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.name,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.branch_name,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.company_name,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.address_line_1,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.address_line_2,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.town,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.county,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.postcode,'') ILIKE $${isSuperAdmin ? 1 : 2}
+      )`
+      : '';
+    const searchParam = search ? [`%${search}%`] : [];
+    const params = isSuperAdmin ? searchParam : [userId, ...searchParam];
+
+    const workAddressesSql = `
+      SELECT
+        cwa.id,
+        cwa.customer_id,
+        c.full_name AS customer_name,
+        cwa.name,
+        cwa.branch_name,
+        cwa.company_name,
+        cwa.address_line_1,
+        cwa.address_line_2,
+        cwa.address_line_3,
+        cwa.town,
+        cwa.county,
+        cwa.postcode,
+        cwa.landline,
+        cwa.mobile,
+        cwa.email,
+        cwa.is_active,
+        false AS is_default_address,
+        cwa.created_at
+      FROM customer_work_addresses cwa
+      JOIN customers c ON c.id = cwa.customer_id
+      WHERE 1=1 ${ownerClause} ${searchClause}
+    `;
+
+    const defaultAddressSearchClause = search
+      ? `AND (
+        c.full_name ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(c.address_line_1,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(c.address_line_2,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(c.town,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(c.county,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(c.postcode,'') ILIKE $${isSuperAdmin ? 1 : 2}
+      )`
+      : '';
+    const defaultAddressesSql = `
+      SELECT
+        NULL::int AS id,
+        c.id AS customer_id,
+        c.full_name AS customer_name,
+        'Default Address'::varchar AS name,
+        NULL::varchar AS branch_name,
+        c.company AS company_name,
+        c.address_line_1,
+        c.address_line_2,
+        c.address_line_3,
+        c.town,
+        c.county,
+        c.postcode,
+        c.landline,
+        c.phone AS mobile,
+        c.email,
+        true AS is_active,
+        true AS is_default_address,
+        c.created_at
+      FROM customers c
+      WHERE (c.address_line_1 IS NOT NULL AND c.address_line_1 != '') ${ownerClause} ${defaultAddressSearchClause}
+    `;
+
+    const result = await pool.query(
+      `${workAddressesSql} UNION ALL ${defaultAddressesSql} ORDER BY customer_name ASC, is_default_address ASC, name ASC`,
+      params,
+    );
+
+    return res.json({ sites: result.rows });
+  } catch (error) {
+    console.error('List global work addresses error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

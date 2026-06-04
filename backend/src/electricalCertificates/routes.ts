@@ -95,6 +95,7 @@ function normalizeCertificateTypeSlug(raw: unknown): ElectricalCertificateDocume
   if (raw === 'fi_extinsp_5306') return 'fi_extinsp_5306';
   if (raw === 'em_pir_2025') return 'em_pir_2025';
   if (raw === 'eic_18e_a3') return 'eic_18e_a3';
+  if (raw === 'mwc_18e_a3') return 'mwc_18e_a3';
   return 'eicr_18e_a3';
 }
 
@@ -106,6 +107,7 @@ function defaultCertificatePrefix(typeSlug: ElectricalCertificateDocument['typeS
   if (typeSlug === 'fi_extinsp_5306') return 'FI-EXTINSP';
   if (typeSlug === 'em_pir_2025') return 'EM-PIR';
   if (typeSlug === 'eic_18e_a3') return 'EIC';
+  if (typeSlug === 'mwc_18e_a3') return 'MWC';
   return 'EICR';
 }
 
@@ -286,6 +288,18 @@ async function applySystemSignOffDefaults(
       name: doc.electricalInstallation.inspection.inspector.name.trim() || defaults.name,
       signature: doc.electricalInstallation.inspection.inspector.signature.trim() || defaults.name,
       date: doc.electricalInstallation.inspection.inspector.date || today,
+    };
+  }
+
+  if (doc.minorWorks) {
+    doc.minorWorks.declaration = {
+      ...doc.minorWorks.declaration,
+      inspectedBy: doc.minorWorks.declaration.inspectedBy.trim() || defaults.name,
+      inspectedPosition: doc.minorWorks.declaration.inspectedPosition.trim() || defaults.position,
+      inspectedDate: doc.minorWorks.declaration.inspectedDate || today,
+      authorisedBy: doc.minorWorks.declaration.authorisedBy.trim() || defaults.name,
+      authorisedPosition: doc.minorWorks.declaration.authorisedPosition.trim() || defaults.position,
+      authorisedDate: doc.minorWorks.declaration.authorisedDate || today,
     };
   }
 
@@ -526,6 +540,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       'fi_extinsp_5306',
       'em_pir_2025',
       'eic_18e_a3',
+      'mwc_18e_a3',
     ];
     try {
       for (const typeSlug of types) await ensureNumberSetting(pool, userId, typeSlug);
@@ -856,6 +871,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
         doc.emergencyLighting.installation.occupierName = customerName;
       }
       if (typeSlug === 'eic_18e_a3' && doc.electricalInstallation) {
+        doc.installation.occupierName = customerName;
+      }
+      if (typeSlug === 'mwc_18e_a3' && doc.minorWorks) {
         doc.installation.occupierName = customerName;
       }
     }

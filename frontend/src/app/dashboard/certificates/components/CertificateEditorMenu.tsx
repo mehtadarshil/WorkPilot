@@ -255,7 +255,9 @@ export function CertificateEditorMenu() {
                         ? `/dashboard/certificates/${res.certificate.id}/emergency-lighting`
                       : res.certificate.type_slug === 'eic_18e_a3'
                         ? `/dashboard/certificates/${res.certificate.id}/eic`
-                        : `/dashboard/certificates/${res.certificate.id}/installation-details`;
+                        : res.certificate.type_slug === 'mwc_18e_a3'
+                          ? `/dashboard/certificates/${res.certificate.id}/mwc`
+                          : `/dashboard/certificates/${res.certificate.id}/installation-details`;
           router.push(href);
         }}
       />

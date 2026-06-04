@@ -42,7 +42,9 @@ export async function generateElectricalCertificatePdfBuffer(
               ? 'EM-PIR'
               : document.typeSlug === 'eic_18e_a3'
                 ? 'EIC'
-                : 'EICR';
+                : document.typeSlug === 'mwc_18e_a3'
+                  ? 'MWC'
+                  : 'EICR';
   const filenameBase = params.certificateNumber.replace(/[^\w.-]+/g, '_') || `${fallbackPrefix}-${params.certificateId}`;
   return { pdf, filenameBase };
 }

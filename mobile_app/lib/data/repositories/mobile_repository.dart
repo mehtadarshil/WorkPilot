@@ -442,6 +442,37 @@ class MobileRepository extends BaseRepository {
         .toList();
   }
 
+  /// Settings: invoice (includes company branding fields).
+  Future<Map<String, dynamic>> fetchInvoiceSettings() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/invoice');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+  }
+
+  /// Settings: patch invoice settings.
+  Future<void> patchInvoiceSettings(Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>(
+      '/settings/invoice',
+      data: payload,
+    );
+  }
+
+  /// Settings: quotation.
+  Future<Map<String, dynamic>> fetchQuotationSettings() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/quotation');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+  }
+
+  Future<void> patchQuotationSettings(Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>(
+      '/settings/quotation',
+      data: payload,
+    );
+  }
+
   /// Same list endpoints as the web CRM (`/customers`, `/jobs`, …). Server enforces permissions.
   Future<({List<Map<String, dynamic>> items, int page, int? totalPages})> fetchCrmListPage({
     required String module,
@@ -535,5 +566,232 @@ class MobileRepository extends BaseRepository {
       default:
         throw ApiException('Unknown CRM module: $module');
     }
+  }
+
+  // ─── Settings: Email ───
+  Future<Map<String, dynamic>> fetchEmailSettings() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/email');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+  }
+
+  Future<void> patchEmailSettings(Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/email', data: payload);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchEmailTemplates() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/email-templates');
+    final raw = res.data?['templates'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postEmailTemplate(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/email-templates', data: payload);
+  }
+
+  Future<void> patchEmailTemplate(String key, Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/email-templates/${Uri.encodeComponent(key)}', data: payload);
+  }
+
+  Future<void> deleteEmailTemplate(String key) async {
+    await api.delete<Map<String, dynamic>>('/settings/email-templates/${Uri.encodeComponent(key)}');
+  }
+
+  Future<void> postEmailTest(String to) async {
+    await api.post<Map<String, dynamic>>('/settings/email/test', data: {'to': to});
+  }
+
+  // ─── Settings: Service Reminders ───
+  Future<Map<String, dynamic>> fetchServiceReminders() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/service-reminders');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['settings'] as Map? ?? {});
+  }
+
+  Future<void> patchServiceReminders(Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/service-reminders', data: payload);
+  }
+
+  Future<Map<String, dynamic>> postRunServiceReminders() async {
+    final res = await api.post<Map<String, dynamic>>('/settings/service-reminders/run-now', data: {});
+    return Map<String, dynamic>.from(res.data ?? {});
+  }
+
+  // ─── Settings: Customer Types ───
+  Future<List<Map<String, dynamic>>> fetchCustomerTypes() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/customer-types');
+    final raw = res.data?['customerTypes'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postCustomerType(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/customer-types', data: payload);
+  }
+
+  Future<void> patchCustomerType(int id, Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/customer-types/$id', data: payload);
+  }
+
+  Future<void> deleteCustomerType(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/customer-types/$id');
+  }
+
+  // ─── Settings: Price Books ───
+  Future<List<Map<String, dynamic>>> fetchPriceBooks() async {
+    final res = await api.get<dynamic>('/settings/price-books');
+    final raw = res.data;
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postPriceBook(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/price-books', data: payload);
+  }
+
+  Future<void> patchPriceBook(int id, Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/price-books/$id', data: payload);
+  }
+
+  Future<void> deletePriceBook(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/price-books/$id');
+  }
+
+  // ─── Settings: Job Descriptions ───
+  Future<List<Map<String, dynamic>>> fetchJobDescriptions() async {
+    final res = await api.get<dynamic>('/settings/job-descriptions');
+    final raw = res.data;
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postJobDescription(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/job-descriptions', data: payload);
+  }
+
+  Future<void> patchJobDescription(int id, Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/job-descriptions/$id', data: payload);
+  }
+
+  Future<void> deleteJobDescription(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/job-descriptions/$id');
+  }
+
+  // ─── Settings: Job Report Template ───
+  Future<Map<String, dynamic>> fetchJobReportTemplate() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/job-report-template');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['template'] as Map? ?? {});
+  }
+
+  Future<void> patchJobReportTemplate(Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/settings/job-report-template', data: payload);
+  }
+
+  // ─── Settings: Site Report Templates ───
+  Future<List<Map<String, dynamic>>> fetchSiteReportTemplates() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/site-report-templates');
+    final raw = res.data?['templates'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<Map<String, dynamic>> fetchSiteReportTemplate(int id) async {
+    final res = await api.get<Map<String, dynamic>>('/settings/site-report-templates/$id');
+    final data = res.data;
+    if (data == null) throw Exception('Empty response');
+    return Map<String, dynamic>.from(data['template'] as Map? ?? {});
+  }
+
+  Future<void> postSiteReportTemplate(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/site-report-templates', data: payload);
+  }
+
+  Future<void> putSiteReportTemplate(int id, Map<String, dynamic> payload) async {
+    await api.put<Map<String, dynamic>>('/settings/site-report-templates/$id', data: payload);
+  }
+
+  Future<void> deleteSiteReportTemplate(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/site-report-templates/$id');
+  }
+
+  Future<Map<String, dynamic>> postResetFraTemplate() async {
+    final res = await api.post<Map<String, dynamic>>('/settings/site-report-templates/fra/reset', data: {});
+    return Map<String, dynamic>.from(res.data?['template'] as Map? ?? {});
+  }
+
+  // ─── Settings: Abort Reasons ───
+  Future<List<Map<String, dynamic>>> fetchAbortReasons() async {
+    final res = await api.get<Map<String, dynamic>>('/diary-abort-reasons');
+    final raw = res.data?['reasons'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> putAbortReasons(List<Map<String, dynamic>> reasons) async {
+    await api.put<Map<String, dynamic>>('/settings/diary-abort-reasons', data: {'reasons': reasons});
+  }
+
+  // ─── Settings: Business Units ───
+  Future<List<Map<String, dynamic>>> fetchBusinessUnits() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/business-units');
+    final raw = res.data?['units'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postBusinessUnit(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/business-units', data: payload);
+  }
+
+  Future<void> deleteBusinessUnit(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/business-units/$id');
+  }
+
+  // ─── Settings: User Groups ───
+  Future<List<Map<String, dynamic>>> fetchUserGroups() async {
+    final res = await api.get<Map<String, dynamic>>('/settings/user-groups');
+    final raw = res.data?['groups'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<void> postUserGroup(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/settings/user-groups', data: payload);
+  }
+
+  Future<void> deleteUserGroup(int id) async {
+    await api.delete<Map<String, dynamic>>('/settings/user-groups/$id');
+  }
+
+  // ─── Settings: Users (officers) ───
+  Future<Map<String, dynamic>> fetchOfficers({int page = 1, int limit = 50, String? search, String? state}) async {
+    final q = <String, dynamic>{'page': page, 'limit': limit};
+    if (search != null && search.isNotEmpty) q['search'] = search;
+    if (state != null && state.isNotEmpty) q['state'] = state;
+    final res = await api.get<Map<String, dynamic>>('/officers', queryParameters: q);
+    return Map<String, dynamic>.from(res.data ?? {});
+  }
+
+  Future<void> postOfficer(Map<String, dynamic> payload) async {
+    await api.post<Map<String, dynamic>>('/officers', data: payload);
+  }
+
+  Future<void> patchOfficer(int id, Map<String, dynamic> payload) async {
+    await api.patch<Map<String, dynamic>>('/officers/$id', data: payload);
+  }
+
+  Future<void> deleteOfficer(int id) async {
+    await api.delete<Map<String, dynamic>>('/officers/$id');
+  }
+
+  // ─── Settings: Import ───
+  Future<Map<String, dynamic>> postImportCustomersSites(List<Map<String, dynamic>> rows) async {
+    final res = await api.post<Map<String, dynamic>>('/import/customers-sites', data: {'rows': rows});
+    return Map<String, dynamic>.from(res.data ?? {});
   }
 }

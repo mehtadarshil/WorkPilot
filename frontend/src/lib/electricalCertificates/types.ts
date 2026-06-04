@@ -11,7 +11,8 @@ export type ElectricalCertificateTypeSlug =
   | 'dfi_inst_2019_a1'
   | 'fi_extinsp_5306'
   | 'em_pir_2025'
-  | 'eic_18e_a3';
+  | 'eic_18e_a3'
+  | 'mwc_18e_a3';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -479,6 +480,35 @@ export interface ElectricalInstallationCertificateData {
   };
 }
 
+export type MwcBondingOutcome = '' | 'pass' | 'fail' | 'lim' | 'na';
+export type MwcRiskAssessment = '' | 'yes' | 'na';
+
+export interface MinorWorksCertificateData {
+  description: string;
+  dateCompleted: string;
+  earthingArrangement: string;
+  methodOfProtection: string;
+  departuresAndExceptions: string;
+  riskAssessmentAttached: MwcRiskAssessment;
+  commentsOnExistingInstallation: string;
+  earthingDetails: {
+    earthingConductor: MwcBondingOutcome;
+    water: MwcBondingOutcome;
+    gas: MwcBondingOutcome;
+    oil: MwcBondingOutcome;
+    structuralSteel: MwcBondingOutcome;
+    other: string;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -560,6 +590,7 @@ export interface ElectricalCertificateDocument {
   fireExtinguisher?: FireExtinguisherCertificateData;
   emergencyLighting?: EmergencyLightingCertificateData;
   electricalInstallation?: ElectricalInstallationCertificateData;
+  minorWorks?: MinorWorksCertificateData;
 }
 
 export interface ValidationIssue {
@@ -651,6 +682,14 @@ export const CERTIFICATE_TYPE_CATALOG = [
     standard: 'BS 5266-1',
     revision: '2025',
   },
+  {
+    slug: 'mwc_18e_a3',
+    title: 'Minor Works Certificate',
+    subtitle: 'BS 7671 — 18th Edition Amendment 3',
+    shortLabel: 'MWC',
+    standard: 'BS 7671',
+    revision: '18th Edition Amendment 3',
+  },
 ] as const;
 
 export const ELECTRICAL_INSTALLATION_EDITOR_SECTIONS = [
@@ -714,6 +753,15 @@ export const DOMESTIC_FIRE_ALARM_EDITOR_SECTIONS = [
 ] as const;
 
 export type DomesticFireAlarmEditorSectionKey = (typeof DOMESTIC_FIRE_ALARM_EDITOR_SECTIONS)[number]['key'];
+
+export const MWC_EDITOR_SECTIONS = [
+  { key: 'installation-details', label: 'Installation details' },
+  { key: 'circuits', label: 'Circuits' },
+  { key: 'declaration', label: 'Declaration' },
+  { key: 'appendix', label: 'Appendix' },
+] as const;
+
+export type MwcEditorSectionKey = (typeof MWC_EDITOR_SECTIONS)[number]['key'];
 
 export const EDITOR_SECTIONS = [
   { key: 'installation-details', label: 'Installation details', icon: 'building' },

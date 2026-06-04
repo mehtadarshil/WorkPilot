@@ -43,6 +43,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
   int? _prefillCustomerId;
   int? _prefillWorkId;
   int? _prefillJobId;
+  List<Map<String, dynamic>> _prefillPricingItems = [];
 
   bool _loading = true;
   bool _saving = false;
@@ -119,6 +120,13 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
       _prefillCustomerId = (m['customerId'] as num?)?.toInt() ?? (m['customer_id'] as num?)?.toInt();
       _prefillWorkId = (m['work_address_id'] as num?)?.toInt() ?? (m['invoice_work_address_id'] as num?)?.toInt();
       _prefillJobId = (m['job_id'] as num?)?.toInt();
+      final rawPricing = m['pricing_items'];
+      if (rawPricing is List) {
+        _prefillPricingItems = rawPricing
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
     }
     _invoiceDate = DateTime.now();
     _dueDate = DateTime.now().add(const Duration(days: 30));
@@ -208,6 +216,24 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           _workAddressId = _prefillWorkId;
           _jobId = _prefillJobId;
           await _loadWorkAddresses(_prefillCustomerId!);
+        }
+        if (_prefillPricingItems.isNotEmpty) {
+          for (final l in _lines) {
+            l.dispose();
+          }
+          _lines.clear();
+          for (final pi in _prefillPricingItems) {
+            _lines.add(
+              _LineRow(
+                desc: (pi['item_name'] as String?)?.trim() ?? '',
+                qty: (pi['quantity'] as num?)?.toDouble() ?? 1,
+                price: (pi['unit_price'] as num?)?.toDouble() ?? 0,
+              ),
+            );
+          }
+          if (_lines.isEmpty) {
+            _lines.add(_LineRow());
+          }
         }
       }
       setState(() => _loading = false);

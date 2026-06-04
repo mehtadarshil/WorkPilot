@@ -3,6 +3,7 @@ abstract class AppRoutes {
   AppRoutes._();
 
   static const String login = '/login';
+  static const String biometricLock = '/biometric-lock';
   static const String home = '/home';
   static const String timesheetHistory = '/timesheet-history';
   static const String openJobs = '/open-jobs';
@@ -26,6 +27,7 @@ abstract class AppRoutes {
   static const String customerNewInvoice = '/customers/invoice-new';
   static const String customerAssetForm = '/customers/asset-form';
   static const String settings = '/settings';
+  static const String sitesList = '/sites';
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
 }

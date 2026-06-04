@@ -134,6 +134,13 @@ export function cloneDocument(doc: ElectricalCertificateDocument): ElectricalCer
       },
     };
   }
+  if (doc.minorWorks) {
+    base.minorWorks = {
+      ...doc.minorWorks,
+      earthingDetails: { ...doc.minorWorks.earthingDetails },
+      declaration: { ...doc.minorWorks.declaration },
+    };
+  }
   return base;
 }
 

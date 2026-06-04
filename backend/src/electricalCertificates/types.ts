@@ -13,7 +13,8 @@ export type ElectricalCertificateTypeSlug =
   | 'dfi_inst_2019_a1'
   | 'fi_extinsp_5306'
   | 'em_pir_2025'
-  | 'eic_18e_a3';
+  | 'eic_18e_a3'
+  | 'mwc_18e_a3';
 
 export type FireAlarmInspectionOutcome = '' | 'pass' | 'fail' | 'na' | 'lim';
 export type FireAlarmYesNa = '' | 'yes' | 'na';
@@ -480,6 +481,35 @@ export interface ElectricalInstallationCertificateData {
   };
 }
 
+export type MwcBondingOutcome = '' | 'pass' | 'fail' | 'lim' | 'na';
+export type MwcRiskAssessment = '' | 'yes' | 'na';
+
+export interface MinorWorksCertificateData {
+  description: string;
+  dateCompleted: string;
+  earthingArrangement: string;
+  methodOfProtection: string;
+  departuresAndExceptions: string;
+  riskAssessmentAttached: MwcRiskAssessment;
+  commentsOnExistingInstallation: string;
+  earthingDetails: {
+    earthingConductor: MwcBondingOutcome;
+    water: MwcBondingOutcome;
+    gas: MwcBondingOutcome;
+    oil: MwcBondingOutcome;
+    structuralSteel: MwcBondingOutcome;
+    other: string;
+  };
+  declaration: {
+    inspectedBy: string;
+    inspectedPosition: string;
+    inspectedDate: string;
+    authorisedBy: string;
+    authorisedPosition: string;
+    authorisedDate: string;
+  };
+}
+
 export interface ElectricalCertificateDocument {
   version: 1;
   typeSlug: ElectricalCertificateTypeSlug;
@@ -564,6 +594,7 @@ export interface ElectricalCertificateDocument {
   fireExtinguisher?: FireExtinguisherCertificateData;
   emergencyLighting?: EmergencyLightingCertificateData;
   electricalInstallation?: ElectricalInstallationCertificateData;
+  minorWorks?: MinorWorksCertificateData;
 }
 
 export interface ValidationIssue {

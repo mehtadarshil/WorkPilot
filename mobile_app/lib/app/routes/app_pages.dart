@@ -45,7 +45,11 @@ import '../../modules/profile/id_card_binding.dart';
 import '../../modules/profile/id_card_view.dart';
 import '../../modules/profile/profile_edit_binding.dart';
 import '../../modules/profile/profile_edit_view.dart';
+import '../../modules/biometric_lock/biometric_lock_binding.dart';
+import '../../modules/biometric_lock/biometric_lock_view.dart';
 import '../../modules/settings/settings_view.dart';
+import '../../modules/sites/sites_list_binding.dart';
+import '../../modules/sites/sites_list_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -56,6 +60,11 @@ class AppPages {
       name: AppRoutes.login,
       page: () => const LoginView(),
       binding: LoginBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.biometricLock,
+      page: () => const BiometricLockView(),
+      binding: BiometricLockBinding(),
     ),
     GetPage<void>(
       name: AppRoutes.home,
@@ -173,5 +182,10 @@ class AppPages {
       binding: CustomerAssetFormBinding(),
     ),
     GetPage<void>(name: AppRoutes.settings, page: () => const SettingsView()),
+    GetPage<void>(
+      name: AppRoutes.sitesList,
+      page: () => const SitesListView(),
+      binding: SitesListBinding(),
+    ),
   ];
 }

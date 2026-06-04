@@ -5,6 +5,21 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/values/app_colors.dart';
 import '../home/controllers/home_controller.dart';
+import 'sheets/abort_reasons_sheet.dart';
+import 'sheets/business_units_sheet.dart';
+import 'sheets/company_settings_sheet.dart';
+import 'sheets/customer_types_sheet.dart';
+import 'sheets/email_settings_sheet.dart';
+import 'sheets/import_sheet.dart';
+import 'sheets/invoice_settings_sheet.dart';
+import 'sheets/job_descriptions_sheet.dart';
+import 'sheets/job_report_template_sheet.dart';
+import 'sheets/price_books_sheet.dart';
+import 'sheets/quotation_settings_sheet.dart';
+import 'sheets/service_reminders_sheet.dart';
+import 'sheets/site_report_templates_sheet.dart';
+import 'sheets/user_groups_sheet.dart';
+import 'sheets/users_sheet.dart';
 
 class _SettingsTabMeta {
   const _SettingsTabMeta({
@@ -374,12 +389,26 @@ class _SettingsTabSheet extends StatelessWidget {
 
   final _SettingsTabMeta tab;
 
+  double get _initialSize {
+    switch (tab.permissionKey) {
+      case 'settings_company':
+      case 'settings_invoice':
+      case 'settings_quotation':
+      case 'settings_email':
+      case 'settings_job_descriptions':
+      case 'settings_users':
+        return 0.88;
+      default:
+        return 0.75;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.42,
-      minChildSize: 0.28,
-      maxChildSize: 0.75,
+      initialChildSize: _initialSize,
+      minChildSize: 0.35,
+      maxChildSize: 0.95,
       builder: (context, scrollController) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -387,8 +416,7 @@ class _SettingsTabSheet extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          child: ListView(
-            controller: scrollController,
+          child: Column(
             children: [
               Center(
                 child: Container(
@@ -427,26 +455,55 @@ class _SettingsTabSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: AppColors.slate50,
-                  border: Border.all(color: AppColors.slate300),
-                ),
-                child: Text(
-                  'This tab now has its own permission key: ${tab.permissionKey}. Mobile configuration forms can be wired here per tab without sharing broad Settings access.',
-                  style: GoogleFonts.inter(
-                    color: AppColors.slate500,
-                    fontSize: 13,
-                    height: 1.45,
-                  ),
-                ),
+              Expanded(
+                child: _tabContent(),
               ),
             ],
           ),
         );
       },
     );
+  }
+
+  Widget _tabContent() {
+    switch (tab.permissionKey) {
+      case 'settings_company':
+        return const CompanySettingsSheet();
+      case 'settings_invoice':
+        return const InvoiceSettingsSheet();
+      case 'settings_quotation':
+        return const QuotationSettingsSheet();
+      case 'settings_email':
+        return const EmailSettingsSheet();
+      case 'settings_service_reminders':
+        return const ServiceRemindersSheet();
+      case 'settings_customer_types':
+        return const CustomerTypesSheet();
+      case 'settings_price_books':
+        return const PriceBooksSheet();
+      case 'settings_job_descriptions':
+        return const JobDescriptionsSheet();
+      case 'settings_job_report_template':
+        return const JobReportTemplateSheet();
+      case 'settings_site_report_templates':
+        return const SiteReportTemplatesSheet();
+      case 'settings_diary_abort_reasons':
+        return const AbortReasonsSheet();
+      case 'settings_business_units':
+        return const BusinessUnitsSheet();
+      case 'settings_user_groups':
+        return const UserGroupsSheet();
+      case 'settings_users':
+        return const UsersSheet();
+      case 'settings_import':
+        return const ImportSheet();
+      default:
+        return Center(
+          child: Text(
+            'Not implemented yet.',
+            style: GoogleFonts.inter(color: AppColors.slate500),
+          ),
+        );
+    }
   }
 }
