@@ -4,7 +4,15 @@ import 'my_office_task_row.dart';
 import 'officer_profile.dart';
 
 class HomeStats {
-  HomeStats({required this.assignedJobsOpen, required this.diaryUpcomingWeek});
+  HomeStats({
+    required this.assignedJobsOpen,
+    required this.diaryUpcomingWeek,
+    this.customersTotal = 0,
+    this.jobsOpen = 0,
+    this.quotationsPending = 0,
+    this.invoicesUnpaid = 0,
+    this.sitesTotal = 0,
+  });
 
   factory HomeStats.fromJson(Map<String, dynamic>? json) {
     if (json == null) {
@@ -13,11 +21,21 @@ class HomeStats {
     return HomeStats(
       assignedJobsOpen: (json['assigned_jobs_open'] as num?)?.toInt() ?? 0,
       diaryUpcomingWeek: (json['diary_upcoming_week'] as num?)?.toInt() ?? 0,
+      customersTotal: (json['customers_total'] as num?)?.toInt() ?? 0,
+      jobsOpen: (json['jobs_open'] as num?)?.toInt() ?? 0,
+      quotationsPending: (json['quotations_pending'] as num?)?.toInt() ?? 0,
+      invoicesUnpaid: (json['invoices_unpaid'] as num?)?.toInt() ?? 0,
+      sitesTotal: (json['sites_total'] as num?)?.toInt() ?? 0,
     );
   }
 
   final int assignedJobsOpen;
   final int diaryUpcomingWeek;
+  final int customersTotal;
+  final int jobsOpen;
+  final int quotationsPending;
+  final int invoicesUnpaid;
+  final int sitesTotal;
 }
 
 class MobileHomeResponse {

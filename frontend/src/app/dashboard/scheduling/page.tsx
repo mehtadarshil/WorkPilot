@@ -46,6 +46,7 @@ interface ScheduledJob {
   responsible_person: string | null;
   officer_id: number | null;
   officer_full_name: string | null;
+  officers?: { id: number; full_name: string; is_primary?: boolean }[];
   start_date: string | null;
   deadline: string | null;
   customer_id: number | null;
@@ -121,9 +122,12 @@ function jobToEvent(j: ScheduledJob): { id: number; title: string; start: Date; 
   const start = j.schedule_start ? new Date(j.schedule_start) : (j.start_date ? new Date(j.start_date) : new Date());
   const duration = j.duration_minutes ?? 60;
   const end = new Date(start.getTime() + duration * 60 * 1000);
+  const officerLabel = j.officers && j.officers.length > 0
+    ? j.officers.map((o) => o.full_name).join(', ')
+    : j.officer_full_name;
   return {
     id: j.id,
-    title: `${j.title}${j.officer_full_name ? ` • ${j.officer_full_name}` : ''}`,
+    title: `${j.title}${officerLabel ? ` • ${officerLabel}` : ''}`,
     start,
     end,
     job: j,
@@ -153,14 +157,14 @@ export default function SchedulingPage() {
 
   const [formScheduleStart, setFormScheduleStart] = useState('');
   const [formDuration, setFormDuration] = useState('60');
-  const [formOfficerId, setFormOfficerId] = useState<string>('');
+  const [formOfficerIds, setFormOfficerIds] = useState<number[]>([]);
   const [formNotes, setFormNotes] = useState('');
 
   const [createTitle, setCreateTitle] = useState('');
   const [createDescription, setCreateDescription] = useState('');
   const [createPriority, setCreatePriority] = useState('medium');
   const [createCustomerId, setCreateCustomerId] = useState<string>('');
-  const [createOfficerId, setCreateOfficerId] = useState<string>('');
+  const [createOfficerIds, setCreateOfficerIds] = useState<number[]>([]);
   const [createLocation, setCreateLocation] = useState('');
   const [createScheduleStart, setCreateScheduleStart] = useState('');
   const [createDuration, setCreateDuration] = useState('60');
@@ -258,6 +262,7 @@ export default function SchedulingPage() {
         description: e.description,
         officer_id: e.officer_id,
         officer_full_name: e.officer_full_name,
+        officers: e.officers,
         customer_id: e.customer_id,
         customer_full_name: e.customer_full_name,
         location: e.location,
@@ -321,7 +326,9 @@ export default function SchedulingPage() {
     setSelectedJob(job);
     setFormScheduleStart(job.schedule_start ? job.schedule_start.slice(0, 16) : '');
     setFormDuration(String(job.duration_minutes ?? 60));
-    setFormOfficerId(job.officer_id ? String(job.officer_id) : '');
+    const existingIds = job.officers?.map((o) => o.id) ?? (job.officer_id ? [job.officer_id] : []);
+    const primaryId = job.officers?.find((o) => o.is_primary)?.id ?? existingIds[0];
+    setFormOfficerIds(primaryId ? [primaryId, ...existingIds.filter((id) => id !== primaryId)] : []);
     setFormNotes(job.scheduling_notes ?? '');
     setScheduleError(null);
     setActionMenu(null);
@@ -338,7 +345,7 @@ export default function SchedulingPage() {
         {
           start_time: formScheduleStart ? new Date(formScheduleStart).toISOString() : null,
           duration_minutes: parseInt(formDuration, 10) || 60,
-          officer_id: formOfficerId ? parseInt(formOfficerId, 10) : null,
+          officer_ids: formOfficerIds.length > 0 ? formOfficerIds : null,
           notes: formNotes.trim() || null,
         },
         token,
@@ -367,7 +374,7 @@ export default function SchedulingPage() {
     setCreateDescription('');
     setCreatePriority('medium');
     setCreateCustomerId('');
-    setCreateOfficerId('');
+    setCreateOfficerIds([]);
     setCreateLocation('');
     setCreateScheduleStart('');
     setCreateDuration('60');
@@ -403,7 +410,7 @@ export default function SchedulingPage() {
     
     setFormScheduleStart(localIso);
     setFormDuration('60');
-    setFormOfficerId(String(officer.id));
+    setFormOfficerIds([officer.id]);
     setFormNotes('');
     setScheduleError(null);
     setActionMenu(null);
@@ -425,7 +432,7 @@ export default function SchedulingPage() {
           title: createTitle.trim(),
           description: createDescription.trim() || undefined,
           priority: createPriority,
-          officer_id: createOfficerId ? parseInt(createOfficerId, 10) : undefined,
+          officer_ids: createOfficerIds.length > 0 ? createOfficerIds : undefined,
           customer_id: createCustomerId ? parseInt(createCustomerId, 10) : undefined,
           location: createLocation.trim() || undefined,
           state: 'unscheduled',
@@ -439,7 +446,7 @@ export default function SchedulingPage() {
           {
             start_time: new Date(createScheduleStart).toISOString(),
             duration_minutes: parseInt(createDuration, 10) || 60,
-            officer_id: createOfficerId ? parseInt(createOfficerId, 10) : null,
+            officer_ids: createOfficerIds.length > 0 ? createOfficerIds : null,
             notes: createNotes.trim() || null,
         },
           token,
@@ -474,9 +481,11 @@ export default function SchedulingPage() {
   const filteredJobs = jobs.filter((j) => {
     if (search) {
       const q = search.toLowerCase();
+      const officerNames = j.officers?.map((o) => o.full_name.toLowerCase()).join(' ') ?? '';
       if (
         !j.title.toLowerCase().includes(q) &&
         !(j.officer_full_name?.toLowerCase().includes(q)) &&
+        !officerNames.includes(q) &&
         !(j.customer_full_name?.toLowerCase().includes(q)) &&
         !(j.location?.toLowerCase().includes(q))
       )
@@ -905,7 +914,11 @@ export default function SchedulingPage() {
                             </td>
                             <td className="px-6 py-4">{stateBadge(j.state)}</td>
                             <td className="px-6 py-4">{priorityBadge(j.priority)}</td>
-                            <td className="px-6 py-4 text-sm text-slate-700">{j.officer_full_name || j.responsible_person || '—'}</td>
+                            <td className="px-6 py-4 text-sm text-slate-700">
+                              {j.officers && j.officers.length > 0
+                                ? j.officers.map((o) => o.full_name).join(', ')
+                                : j.officer_full_name || j.responsible_person || '—'}
+                            </td>
                             <td className="px-6 py-4 text-sm text-slate-700">{formatDateTime(j.schedule_start)}</td>
                             <td className="px-6 py-4 text-sm text-slate-700">{j.customer_full_name || '—'}</td>
                             <td className="relative px-6 py-4 text-right">
@@ -1002,17 +1015,57 @@ export default function SchedulingPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Assigned officer</label>
-                <select
-                  value={formOfficerId}
-                  onChange={(e) => setFormOfficerId(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                >
-                  <option value="">— Select —</option>
-                  {officers.map((o) => (
-                    <option key={o.id} value={String(o.id)}>{o.full_name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-slate-700">Assigned officers</label>
+                <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+                  {officers.length === 0 && (
+                    <p className="px-2 py-1 text-sm text-slate-400">No users</p>
+                  )}
+                  {officers.map((o) => {
+                    const checked = formOfficerIds.includes(o.id);
+                    const isPrimary = formOfficerIds[0] === o.id;
+                    return (
+                      <label
+                        key={o.id}
+                        className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormOfficerIds([...formOfficerIds, o.id]);
+                            } else {
+                              const next = formOfficerIds.filter((id) => id !== o.id);
+                              setFormOfficerIds(next);
+                            }
+                          }}
+                          className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                        />
+                        <span className="text-sm text-slate-700 flex-1">{o.full_name}</span>
+                        {checked && (
+                          <input
+                            type="radio"
+                            name="primary_officer"
+                            checked={isPrimary}
+                            onChange={() => {
+                              setFormOfficerIds([o.id, ...formOfficerIds.filter((id) => id !== o.id)]);
+                            }}
+                            title="Primary"
+                            className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          />
+                        )}
+                        {checked && isPrimary && (
+                          <span className="text-[10px] font-bold uppercase text-[#14B8A6]">Primary</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {formOfficerIds.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formOfficerIds.length} selected. The radio marks the primary assignee.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Notes</label>
@@ -1098,13 +1151,57 @@ export default function SchedulingPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Assigned officer</label>
-                <select value={createOfficerId} onChange={(e) => setCreateOfficerId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                  <option value="">— Unassigned —</option>
-                  {officers.filter((o) => o.state === 'active').map((o) => (
-                    <option key={o.id} value={String(o.id)}>{o.full_name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-slate-700">Assigned officers</label>
+                <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+                  {officers.filter((o) => o.state === 'active').length === 0 && (
+                    <p className="px-2 py-1 text-sm text-slate-400">No active users</p>
+                  )}
+                  {officers.filter((o) => o.state === 'active').map((o) => {
+                    const checked = createOfficerIds.includes(o.id);
+                    const isPrimary = createOfficerIds[0] === o.id;
+                    return (
+                      <label
+                        key={o.id}
+                        className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setCreateOfficerIds([...createOfficerIds, o.id]);
+                            } else {
+                              const next = createOfficerIds.filter((id) => id !== o.id);
+                              setCreateOfficerIds(next);
+                            }
+                          }}
+                          className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                        />
+                        <span className="text-sm text-slate-700 flex-1">{o.full_name}</span>
+                        {checked && (
+                          <input
+                            type="radio"
+                            name="create_primary_officer"
+                            checked={isPrimary}
+                            onChange={() => {
+                              setCreateOfficerIds([o.id, ...createOfficerIds.filter((id) => id !== o.id)]);
+                            }}
+                            title="Primary"
+                            className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          />
+                        )}
+                        {checked && isPrimary && (
+                          <span className="text-[10px] font-bold uppercase text-[#14B8A6]">Primary</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {createOfficerIds.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {createOfficerIds.length} selected. The radio marks the primary assignee.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Location</label>

@@ -188,7 +188,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                           itemBuilder: (_, i) {
                             final r = _rows[i];
                             final id = (r['id'] as num?)?.toInt() ?? 0;
-                            final sub = [ctStr(r, 'address_line_1'), ctStr(r, 'town'), ctStr(r, 'postcode')].where((e) => e.isNotEmpty).join(', ');
+                            final sub = [ctStr(r, 'address_line_1'), ctStr(r, 'address_line_2'), ctStr(r, 'address_line_3'), ctStr(r, 'town'), ctStr(r, 'county'), ctStr(r, 'postcode')].where((e) => e.isNotEmpty).join(', ');
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: customerPanel(

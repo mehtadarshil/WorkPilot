@@ -21,9 +21,13 @@ class CustomerFormController extends GetxController {
   final email = TextEditingController();
   final phone = TextEditingController();
   final company = TextEditingController();
-  final address = TextEditingController();
-  final city = TextEditingController();
-  final region = TextEditingController();
+  final addressLine1 = TextEditingController();
+  final addressLine2 = TextEditingController();
+  final addressLine3 = TextEditingController();
+  final town = TextEditingController();
+  final county = TextEditingController();
+  final postcode = TextEditingController();
+  final landline = TextEditingController();
   final country = TextEditingController();
   final notes = TextEditingController();
   final status = 'LEAD'.obs;
@@ -46,9 +50,13 @@ class CustomerFormController extends GetxController {
         email.text = '${c['email'] ?? ''}';
         phone.text = '${c['phone'] ?? ''}';
         company.text = '${c['company'] ?? ''}';
-        address.text = '${c['address'] ?? ''}';
-        city.text = '${c['city'] ?? ''}';
-        region.text = '${c['region'] ?? ''}';
+        addressLine1.text = '${c['address_line_1'] ?? ''}';
+        addressLine2.text = '${c['address_line_2'] ?? ''}';
+        addressLine3.text = '${c['address_line_3'] ?? ''}';
+        town.text = '${c['town'] ?? ''}';
+        county.text = '${c['county'] ?? ''}';
+        postcode.text = '${c['postcode'] ?? ''}';
+        landline.text = '${c['landline'] ?? ''}';
         country.text = '${c['country'] ?? ''}';
         notes.text = '${c['notes'] ?? ''}';
         status.value = '${c['status'] ?? 'LEAD'}';
@@ -66,9 +74,13 @@ class CustomerFormController extends GetxController {
     email.dispose();
     phone.dispose();
     company.dispose();
-    address.dispose();
-    city.dispose();
-    region.dispose();
+    addressLine1.dispose();
+    addressLine2.dispose();
+    addressLine3.dispose();
+    town.dispose();
+    county.dispose();
+    postcode.dispose();
+    landline.dispose();
     country.dispose();
     notes.dispose();
     super.onClose();
@@ -80,9 +92,13 @@ class CustomerFormController extends GetxController {
       'email': email.text.trim().toLowerCase(),
       if (phone.text.trim().isNotEmpty) 'phone': phone.text.trim(),
       if (company.text.trim().isNotEmpty) 'company': company.text.trim(),
-      if (address.text.trim().isNotEmpty) 'address': address.text.trim(),
-      if (city.text.trim().isNotEmpty) 'city': city.text.trim(),
-      if (region.text.trim().isNotEmpty) 'region': region.text.trim(),
+      if (addressLine1.text.trim().isNotEmpty) 'address_line_1': addressLine1.text.trim(),
+      if (addressLine2.text.trim().isNotEmpty) 'address_line_2': addressLine2.text.trim(),
+      if (addressLine3.text.trim().isNotEmpty) 'address_line_3': addressLine3.text.trim(),
+      if (town.text.trim().isNotEmpty) 'town': town.text.trim(),
+      if (county.text.trim().isNotEmpty) 'county': county.text.trim(),
+      if (postcode.text.trim().isNotEmpty) 'postcode': postcode.text.trim(),
+      if (landline.text.trim().isNotEmpty) 'landline': landline.text.trim(),
       if (country.text.trim().isNotEmpty) 'country': country.text.trim(),
       if (notes.text.trim().isNotEmpty) 'notes': notes.text.trim(),
       'status': status.value,

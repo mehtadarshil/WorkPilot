@@ -9,7 +9,7 @@ import JobClientPanelTab from './JobClientPanelTab';
 import JobFilesTab from './JobFilesTab';
 import JobNotesTab from './JobNotesTab';
 import JobCostsTab from './JobCostsTab';
-import CustomerSiteReportTab from '../../customers/[id]/CustomerSiteReportTab';
+import JobDynamicReportsTab from './JobDynamicReportsTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
 import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -64,6 +64,7 @@ interface JobDetails {
   /** Set when the job is scoped to a customer work / site address. */
   work_address?: JobWorkAddress | null;
   pricing_items?: { id: number; item_name: string; quantity: number; unit_price: number; total: number; vat_rate: number }[];
+  officers?: { id: number; full_name: string; is_primary?: boolean }[];
 }
 
 interface DiaryEvent {
@@ -399,27 +400,6 @@ export default function JobDetailsPage() {
   const [diaryAbortReasonPick, setDiaryAbortReasonPick] = useState('');
   const [diaryAbortReasonLoad, setDiaryAbortReasonLoad] = useState(false);
   const [diaryAbortSubmitting, setDiaryAbortSubmitting] = useState(false);
-
-  const jobSiteReportClientDisplay = useMemo(() => {
-    if (!job) return '';
-    return (job.customer_full_name || '').trim();
-  }, [job]);
-
-  /** Property/site line for Reports: work site when job is scoped to one; otherwise customer address. */
-  const jobSiteReportSiteAddress = useMemo(() => {
-    if (!job) return '';
-    if (job.work_address) {
-      const wa = job.work_address;
-      const headline = wa.name?.trim() || 'Site';
-      const addr = [wa.address_line_1, wa.town, wa.postcode]
-        .filter((x) => x != null && String(x).trim() !== '')
-        .join(', ');
-      const branch = wa.branch_name?.trim();
-      const firstLine = branch ? `${headline} — ${branch}` : headline;
-      return [firstLine, addr].filter(Boolean).join('\n');
-    }
-    return (job.customer_address || '').trim() || 'No address on file';
-  }, [job]);
 
   const visitTimesheetTravelSeconds = useMemo(
     () =>
@@ -1000,19 +980,13 @@ export default function JobDetailsPage() {
             token ? (
               <JobReportTab jobId={id} token={token} />
             ) : (
-              <div className="p-8 text-slate-500 text-sm">Sign in to edit Final Job Report Templates.</div>
+              <div className="p-8 text-slate-500 text-sm">Sign in to view submitted job reports.</div>
             )
           ) : activeTab === 'Reports' ? (
             token ? (
-              <CustomerSiteReportTab
-                customerId={String(job.customer_id)}
-                workAddressId={job.work_address ? String(job.work_address.id) : undefined}
-                clientDisplayName={jobSiteReportClientDisplay}
-                siteAddressLabel={jobSiteReportSiteAddress}
-                jobId={id}
-              />
+              <JobDynamicReportsTab jobId={id} token={token} />
             ) : (
-              <div className="p-8 text-slate-500 text-sm">Sign in to view reports.</div>
+              <div className="p-8 text-slate-500 text-sm">Sign in to view job reports.</div>
             )
           ) : activeTab === 'Client panel' ? (
             token ? (
@@ -1140,6 +1114,14 @@ export default function JobDetailsPage() {
                        <span className="text-[13px] font-bold text-slate-500">Job contact</span>
                        <span className="text-[13px] text-slate-800 font-medium col-span-2">
                          {job.site_contact_name || job.contact_name || job.customer_full_name}
+                       </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
+                       <span className="text-[13px] font-bold text-slate-500">Assigned officers</span>
+                       <span className="text-[13px] text-slate-800 font-medium col-span-2">
+                         {job.officers && job.officers.length > 0
+                           ? job.officers.map((o) => `${o.full_name}${o.is_primary ? ' (Primary)' : ''}`).join(', ')
+                           : '—'}
                        </span>
                     </div>
                     {job.work_address && (

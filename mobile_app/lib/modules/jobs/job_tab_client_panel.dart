@@ -363,10 +363,19 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
 
   String _visitLabel(Map<String, dynamic> v) {
     final iso = v['start_time'] as String?;
-    final off = (v['officer_full_name'] as String?)?.trim();
+    final rawOfficers = v['officers'];
+    final officers = <Map<String, dynamic>>[];
+    if (rawOfficers is List) {
+      for (final o in rawOfficers) {
+        if (o is Map) officers.add(Map<String, dynamic>.from(o));
+      }
+    }
+    final officerNames = officers.isNotEmpty
+        ? officers.map((o) => (o['full_name'] as String?)?.trim()).where((n) => n != null && n.isNotEmpty).join(', ')
+        : (v['officer_full_name'] as String?)?.trim() ?? '';
     final d = iso != null ? DateTime.tryParse(iso) : null;
     final dateStr = d != null ? '${d.day}/${d.month}/${d.year}' : (iso ?? '');
-    if (off != null && off.isNotEmpty) return '$dateStr · $off';
+    if (officerNames.isNotEmpty) return '$dateStr · $officerNames';
     return dateStr;
   }
 

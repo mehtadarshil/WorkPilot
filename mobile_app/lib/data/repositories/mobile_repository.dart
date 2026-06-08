@@ -134,7 +134,7 @@ class MobileRepository extends BaseRepository {
         scope: apiScope,
       );
       if (cached != null) {
-        return cached.map(DiaryEventRow.fromJson).toList();
+        return _safeParseDiaryRows(cached);
       }
     }
     try {
@@ -150,11 +150,9 @@ class MobileRepository extends BaseRepository {
       if (data == null) return [];
       final raw = data['events'];
       if (raw is! List) return [];
-      final list = raw
-          .map(
-            (e) => DiaryEventRow.fromJson(Map<String, dynamic>.from(e as Map)),
-          )
-          .toList();
+      final list = _safeParseDiaryRows(
+        raw.map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+      );
       await _storage.writeCachedDiaryEnvelope(
         rangeStart: rangeStart,
         rangeEnd: rangeEnd,
@@ -175,6 +173,21 @@ class MobileRepository extends BaseRepository {
       }
       rethrow;
     }
+  }
+
+  /// Parse diary rows defensively: a single malformed row (e.g., a field the
+  /// backend started returning as an object instead of a number) must not blank
+  /// the whole week. The bad row is skipped silently.
+  List<DiaryEventRow> _safeParseDiaryRows(List<Map<String, dynamic>> raw) {
+    final out = <DiaryEventRow>[];
+    for (final m in raw) {
+      try {
+        out.add(DiaryEventRow.fromJson(m));
+      } catch (_) {
+        // skip malformed row
+      }
+    }
+    return out;
   }
 
   /// [fromCache] is true when using last saved visit payload (offline / connection error).

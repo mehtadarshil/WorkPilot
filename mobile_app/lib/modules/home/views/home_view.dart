@@ -11,7 +11,6 @@ import '../../../core/services/user_profile_cache.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
-import '../../diary_event/diary_event_detail_controller.dart';
 import '../../profile/widgets/profile_avatar_button.dart';
 import '../../legal/legal_document_view.dart';
 import '../controllers/home_controller.dart';
@@ -1467,8 +1466,6 @@ class _DiaryTab extends GetView<HomeController> {
   static String _normVisitStatus(String? s) =>
       (s ?? '').trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
 
-  static bool _visitCompleted(String? s) => _normVisitStatus(s) == 'completed';
-
   static bool _visitCancelled(String? s) {
     final t = _normVisitStatus(s);
     return t == 'cancelled' || t == 'aborted';
@@ -1727,72 +1724,6 @@ class _DiaryTab extends GetView<HomeController> {
                                   color: AppColors.slate500,
                                 ),
                               ),
-                              if (ownVisit &&
-                                  !_visitCompleted(e.eventStatus) &&
-                                  !_visitCancelled(e.eventStatus)) ...[
-                                const SizedBox(height: 10),
-                                Obx(() {
-                                  final busy =
-                                      controller.updatingDiaryEventId.value ==
-                                      e.diaryId;
-                                  final btnStyle = OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white,
-                                    side: BorderSide(
-                                      color: AppColors.whiteOverlay(0.25),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  );
-                                  if (busy) {
-                                    return const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: 8,
-                                      ),
-                                      child: Center(
-                                        child: SizedBox(
-                                          width: 22,
-                                          height: 22,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                  final phase = visitPhaseFromStatus(
-                                    e.eventStatus,
-                                  );
-                                  if (phase == DiaryVisitUiPhase.travelling ||
-                                      phase == DiaryVisitUiPhase.onSite ||
-                                      phase == DiaryVisitUiPhase.completed) {
-                                    return const SizedBox.shrink();
-                                  }
-                                  return Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: OutlinedButton(
-                                      style: btnStyle,
-                                      onPressed: () =>
-                                          controller.updateDiaryVisitStatus(
-                                            e.diaryId,
-                                            'travelling_to_site',
-                                          ),
-                                      child: Text(
-                                        'Travelling to site',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }),
-                              ],
                             ],
                           ),
                         ),

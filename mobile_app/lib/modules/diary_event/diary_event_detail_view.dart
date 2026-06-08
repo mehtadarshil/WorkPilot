@@ -244,26 +244,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.person_outline_rounded,
-                                        size: 18,
-                                        color: AppColors.slate400,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          d.officerFullName ?? '—',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14,
-                                            color: AppColors.slate50,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                  _OfficerRows(officers: d.officers, fallbackName: d.officerFullName),
                                   const SizedBox(height: 8),
                                   Row(
                                     crossAxisAlignment:
@@ -297,18 +278,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 children: [
                                   _accentTitle('Site information'),
                                   const SizedBox(height: 12),
-                                  Text(
-                                    d.siteAddress?.trim().isNotEmpty == true
-                                        ? d.siteAddress!.trim()
-                                        : (d.location?.trim().isNotEmpty == true
-                                              ? d.location!.trim()
-                                              : '—'),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      height: 1.45,
-                                      color: AppColors.slate50,
-                                    ),
-                                  ),
+                                  _NavigableAddress(address: d.fullSiteAddress),
                                   if (!hideContacts &&
                                       _siteContactName(
                                         d,
@@ -371,19 +341,18 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 children: [
                                   _accentTitle('Customer information'),
                                   const SizedBox(height: 12),
-                                  _kv(
+                                  _callableKv(
                                     'Customer name',
                                     (d.customerFullName ?? '').trim().isNotEmpty
                                         ? d.customerFullName!.trim()
                                         : '—',
+                                    phone: (d.customerPhone ?? '').trim(),
                                   ),
                                   if (!hideContacts) ...[_customerPhoneRow(d)],
                                   if (!hideContacts)
-                                    _kv(
+                                    _navigableKv(
                                       'Address',
-                                      (d.siteAddress ?? '').trim().isNotEmpty
-                                          ? d.siteAddress!.trim()
-                                          : '—',
+                                      d.fullSiteAddress,
                                     ),
                                   _kv(
                                     'Account',
@@ -1174,6 +1143,255 @@ Widget _kv(String k, String v) {
   );
 }
 
+void _showNavigationSheet(BuildContext context, String address) {
+  if (address.trim().isEmpty || address.trim() == '—') return;
+  final encoded = Uri.encodeComponent(address.trim());
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: AppColors.gradientStart,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Navigate to',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                address.trim(),
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.slate300,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.apple, color: Colors.white),
+                title: Text('Apple Maps', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  _tryLaunchUri(Uri.parse('https://maps.apple.com/?q=$encoded'));
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.map_outlined, color: Colors.white),
+                title: Text('Google Maps', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  _tryLaunchUri(Uri.parse('https://maps.google.com/?q=$encoded'));
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.local_taxi_outlined, color: Colors.white),
+                title: Text('Waze', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  _tryLaunchUri(Uri.parse('https://waze.com/ul?q=$encoded'));
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _NavigableAddress extends StatelessWidget {
+  const _NavigableAddress({required this.address});
+  final String address;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            address,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              height: 1.45,
+              color: AppColors.slate50,
+            ),
+          ),
+        ),
+        if (address.trim().isNotEmpty && address.trim() != '—') ...[
+          const SizedBox(width: 8),
+          _GlassIconButton(
+            icon: Icons.navigation_outlined,
+            onPressed: () => _showNavigationSheet(context, address),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Widget _navigableKv(String k, String v) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          k,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.slate400,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                v,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.slate50,
+                ),
+              ),
+            ),
+            if (v.trim().isNotEmpty && v.trim() != '—') ...[
+              const SizedBox(width: 8),
+              Builder(
+                builder: (ctx) => _GlassIconButton(
+                  icon: Icons.navigation_outlined,
+                  onPressed: () => _showNavigationSheet(ctx, v),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _callableKv(String k, String v, {String? phone}) {
+  final callPhone = (phone ?? '').trim();
+  final canCall = callPhone.isNotEmpty && callPhone != '—';
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          k,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.slate400,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                v,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.slate50,
+                ),
+              ),
+            ),
+            if (canCall) ...[
+              const SizedBox(width: 8),
+              _GlassIconButton(
+                icon: Icons.phone_rounded,
+                onPressed: () => _tryLaunchUri(
+                  Uri(scheme: 'tel', path: callPhone.replaceAll(RegExp(r'\s'), '')),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+class _OfficerRows extends StatelessWidget {
+  const _OfficerRows({required this.officers, this.fallbackName});
+
+  final List<Map<String, dynamic>> officers;
+  final String? fallbackName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (officers.isEmpty) {
+      return Row(
+        children: [
+          Icon(Icons.person_outline_rounded, size: 18, color: AppColors.slate400),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              fallbackName ?? '—',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.slate50,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final o in officers)
+          Padding(
+            padding: EdgeInsets.only(bottom: o == officers.last ? 0 : 6),
+            child: Row(
+              children: [
+                Icon(
+                  o['is_primary'] == true ? Icons.star : Icons.person_outline_rounded,
+                  size: 18,
+                  color: AppColors.slate400,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${o['full_name'] ?? ''}${o['is_primary'] == true ? ' (Primary)' : ''}',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: AppColors.slate50,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _BottomActions extends StatelessWidget {
   const _BottomActions({required this.controller});
 
@@ -1325,14 +1543,43 @@ class _BottomActions extends StatelessWidget {
 
       if (phase == DiaryVisitUiPhase.scheduled) {
         return _BottomGlassDock(
-          child: Text(
-            'When you leave for this job, tap “Travelling to site” on the Diary list. '
-            'After you arrive, open this visit and tap “Arrived at site”.',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              height: 1.45,
-              color: AppColors.slate300,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'When you leave for this job, tap “Travelling to site”. '
+                'After you arrive, tap “Arrived at site” to start the visit.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: AppColors.slate300,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: busy
+                    ? null
+                    : () => controller.applyStatus('travelling_to_site'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 0,
+                  shadowColor: AppColors.primary.withValues(alpha: 0.4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: Text(
+                  'Travelling to site',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }

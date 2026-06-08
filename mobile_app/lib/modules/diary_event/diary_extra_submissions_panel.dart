@@ -211,9 +211,15 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.paddingOf(context).bottom;
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: bottom, left: 12, right: 12, top: 8),
+      padding: EdgeInsets.only(
+        bottom: safeBottom + keyboardHeight,
+        left: 12,
+        right: 12,
+        top: 8,
+      ),
       child: Material(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         color: const Color(0xFF0f172a),
@@ -221,11 +227,13 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Obx(() {
             final busy = widget.controller.submittingExtra.value;
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+            return GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
                   Center(
                     child: Container(
                       width: 40,
@@ -384,12 +392,13 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
                   ),
                 ],
               ),
-            );
-          }),
-        ),
+            ),
+          );
+        }),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _SubmissionCard extends StatelessWidget {

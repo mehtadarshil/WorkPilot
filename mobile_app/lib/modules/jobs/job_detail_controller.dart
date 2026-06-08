@@ -92,14 +92,14 @@ class JobDetailController extends GetxController {
   }
 
   Future<void> postDiaryVisit({
-    int? officerId,
+    List<int>? officerIds,
     required DateTime start,
     int durationMinutes = 60,
     String? notes,
   }) async {
     await _jobs.postJobDiaryEvent(
       jobId,
-      officerId: officerId,
+      officerIds: officerIds,
       startTimeIso: start.toUtc().toIso8601String(),
       durationMinutes: durationMinutes,
       notes: notes,

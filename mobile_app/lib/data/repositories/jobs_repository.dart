@@ -40,7 +40,7 @@ class JobsRepository extends BaseRepository {
 
   Future<Map<String, dynamic>> postJobDiaryEvent(
     int jobId, {
-    int? officerId,
+    List<int>? officerIds,
     required String startTimeIso,
     int durationMinutes = 60,
     String? notes,
@@ -48,7 +48,7 @@ class JobsRepository extends BaseRepository {
     final res = await api.post<Map<String, dynamic>>(
       '/jobs/$jobId/diary-events',
       data: <String, dynamic>{
-        if (officerId != null) 'officer_id': officerId,
+        if (officerIds != null && officerIds.isNotEmpty) 'officer_ids': officerIds,
         'start_time': startTimeIso,
         'duration_minutes': durationMinutes,
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
@@ -200,6 +200,12 @@ class JobsRepository extends BaseRepository {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getJobReportHistory(int jobId) async {
+    final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/job-report-history');
+    final raw = _asMap(res.data)['submissions'];
+    return _listOfMap(raw);
+  }
+
   Future<Map<String, dynamic>> getJobEmailCompose(int jobId) async {
     final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/email-compose');
     return _asMap(res.data);
@@ -262,5 +268,45 @@ class JobsRepository extends BaseRepository {
     final res = await api.getBytes('/customers/$customerId/site-report/$reportId/pdf');
     final b = res.data;
     return b ?? [];
+  }
+
+  /* ---------- Job dynamic reports ---------- */
+
+  Future<List<Map<String, dynamic>>> getJobReports(int jobId) async {
+    final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/reports');
+    final raw = _asMap(res.data)['reports'];
+    return _listOfMap(raw);
+  }
+
+  Future<Map<String, dynamic>> postJobReport(int jobId, Map<String, dynamic> body) async {
+    final res = await api.post<Map<String, dynamic>>('/jobs/$jobId/reports', data: body);
+    final d = _asMap(res.data);
+    final r = d['report'];
+    if (r is Map) return Map<String, dynamic>.from(r);
+    return d;
+  }
+
+  Future<void> patchJobReport(int jobId, int reportId, Map<String, dynamic> body) async {
+    await api.patch<void>('/jobs/$jobId/reports/$reportId', data: body);
+  }
+
+  Future<void> deleteJobReport(int jobId, int reportId) async {
+    await api.delete<void>('/jobs/$jobId/reports/$reportId');
+  }
+
+  Future<Map<String, dynamic>> postJobReportItem(int jobId, int reportId, Map<String, dynamic> body) async {
+    final res = await api.post<Map<String, dynamic>>('/jobs/$jobId/reports/$reportId/items', data: body);
+    final d = _asMap(res.data);
+    final it = d['item'];
+    if (it is Map) return Map<String, dynamic>.from(it);
+    return d;
+  }
+
+  Future<void> patchJobReportItem(int jobId, int reportId, int itemId, Map<String, dynamic> body) async {
+    await api.put<void>('/jobs/$jobId/reports/$reportId/items/$itemId', data: body);
+  }
+
+  Future<void> deleteJobReportItem(int jobId, int reportId, int itemId) async {
+    await api.delete<void>('/jobs/$jobId/reports/$reportId/items/$itemId');
   }
 }

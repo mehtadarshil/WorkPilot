@@ -14,6 +14,7 @@ class _HubTile {
     required this.icon,
     required this.module,
     required this.accent,
+    this.count,
   });
 
   final String label;
@@ -21,6 +22,7 @@ class _HubTile {
   final IconData icon;
   final String module;
   final Color accent;
+  final int? count;
 }
 
 class WorkHubTab extends StatelessWidget {
@@ -108,7 +110,7 @@ class WorkHubTab extends StatelessWidget {
       bool p(String k) => h.mobilePermissions[k] == true;
       final roleUp = h.role.toUpperCase();
       final tiles = <_HubTile>[];
-      void add(String key) {
+      void add(String key, {int? count}) {
         final m = _tilesMeta[key];
         if (m == null) return;
         tiles.add(
@@ -118,21 +120,24 @@ class WorkHubTab extends StatelessWidget {
             icon: m.icon,
             module: key,
             accent: m.accent,
+            count: count,
           ),
         );
       }
+
+      final s = h.stats;
 
       final hasSettings = h.mobilePermissions.entries.any(
         (e) => e.key.startsWith('settings_') && e.value,
       );
 
       if (p('customers')) {
-        add('customers');
-        add('sites');
+        add('customers', count: s.customersTotal);
+        add('sites', count: s.sitesTotal);
       }
-      if (p('quotations')) add('quotations');
-      if (p('invoices')) add('invoices');
-      if (p('jobs') && roleUp != 'OFFICER') add('jobs');
+      if (p('quotations')) add('quotations', count: s.quotationsPending);
+      if (p('invoices')) add('invoices', count: s.invoicesUnpaid);
+      if (p('jobs') && roleUp != 'OFFICER') add('jobs', count: s.jobsOpen);
       if (hasSettings && roleUp != 'OFFICER') add('settings');
 
       return CustomScrollView(
@@ -336,11 +341,11 @@ class WorkHubTab extends StatelessWidget {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
               sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 200,
                   mainAxisSpacing: 14,
                   crossAxisSpacing: 14,
-                  childAspectRatio: 0.92,
+                  mainAxisExtent: 148,
                 ),
                 delegate: SliverChildBuilderDelegate((context, i) {
                   final t = tiles[i];
@@ -425,6 +430,19 @@ class WorkHubTab extends StatelessWidget {
                                     ],
                                   ),
                                   const Spacer(),
+                                  if (t.count != null && t.count! > 0) ...[
+                                    Text(
+                                      '${t.count}',
+                                      style: GoogleFonts.inter(
+                                        color: t.accent,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 28,
+                                        height: 1.0,
+                                        letterSpacing: -1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                  ],
                                   Text(
                                     t.label,
                                     style: GoogleFonts.inter(

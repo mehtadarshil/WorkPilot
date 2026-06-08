@@ -61,7 +61,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   final RxBool clockedIn = false.obs;
   final RxString timesheetPhaseLabel = ''.obs;
   final RxInt elapsedSeconds = 0.obs;
-  final RxnInt updatingDiaryEventId = RxnInt();
   final RxnInt updatingOfficeTaskId = RxnInt();
 
   Timer? _timesheetTicker;
@@ -288,13 +287,21 @@ class HomeController extends GetxController with WidgetsBindingObserver {
           scope: apiScope,
         );
         if (cached != null && cached.isNotEmpty) {
-          diaryEvents.assignAll(cached.map(DiaryEventRow.fromJson).toList());
+          diaryEvents.assignAll(
+            _safeParseDiaryRows(cached),
+          );
         } else if (diaryEvents.isEmpty) {
           diaryEvents.clear();
         }
       } else {
         diaryEvents.clear();
       }
+    } catch (_) {
+      // Defensive: a malformed row (e.g., unexpected type from a schema change
+      // or stale cache) must not break the home tab. Drop the list and let the
+      // user pull-to-refresh; the underlying error is logged via the catch
+      // chain in refreshHome() if it ever propagates from there in the future.
+      diaryEvents.clear();
     } finally {
       diaryLoading.value = false;
     }
@@ -313,6 +320,21 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       abortReason: abortReason ?? cur.abortReason,
     );
     diaryEvents.refresh();
+  }
+
+  /// Parse cached diary rows one at a time; skip any row that throws so a
+  /// single bad entry (e.g., schema drift in stored data) cannot blank the
+  /// whole week.
+  List<DiaryEventRow> _safeParseDiaryRows(List<Map<String, dynamic>> raw) {
+    final out = <DiaryEventRow>[];
+    for (final m in raw) {
+      try {
+        out.add(DiaryEventRow.fromJson(m));
+      } catch (_) {
+        // skip malformed row
+      }
+    }
+    return out;
   }
 
   void applyOptimisticTimesheetFromDiaryStatus(String status) {
@@ -441,38 +463,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       );
     } finally {
       updatingOfficeTaskId.value = null;
-    }
-  }
-
-  /// Diary API canonical statuses: `travelling_to_site`, `arrived_at_site`, `completed`.
-  Future<void> updateDiaryVisitStatus(int diaryEventId, String status) async {
-    if (!officerFeatures) return;
-    updatingDiaryEventId.value = diaryEventId;
-    try {
-      final synced = await _mobile.patchDiaryEventStatus(diaryEventId, status);
-      if (synced) {
-        await refreshHome();
-      } else {
-        patchDiaryEventInWeekList(diaryEventId, status);
-        applyOptimisticTimesheetFromDiaryStatus(status);
-        Get.snackbar(
-          'Visit',
-          'Saved offline — will sync when you are back online.',
-          snackPosition: SnackPosition.BOTTOM,
-          margin: const EdgeInsets.all(16),
-          borderRadius: 12,
-        );
-      }
-    } on ApiException catch (e) {
-      Get.snackbar(
-        'Visit status',
-        e.message,
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
-        borderRadius: 12,
-      );
-    } finally {
-      updatingDiaryEventId.value = null;
     }
   }
 

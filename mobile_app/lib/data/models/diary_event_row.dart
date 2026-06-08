@@ -15,6 +15,7 @@ class DiaryEventRow {
     this.jobReportQuestionCount = 0,
     this.abortReason,
     this.officerFullName,
+    this.officers = const [],
   });
 
   factory DiaryEventRow.fromJson(Map<String, dynamic> json) {
@@ -40,6 +41,7 @@ class DiaryEventRow {
           ? (json['abort_reason'] as String).trim()
           : null,
       officerFullName: json['officer_full_name'] as String?,
+      officers: _parseOfficers(json['officers']),
     );
   }
 
@@ -57,6 +59,7 @@ class DiaryEventRow {
   final int jobReportQuestionCount;
   final String? abortReason;
   final String? officerFullName;
+  final List<Map<String, dynamic>> officers;
 
   String get displayContactName {
     final s = siteContactName?.trim();
@@ -88,6 +91,7 @@ class DiaryEventRow {
         'job_report_question_count': jobReportQuestionCount,
         if (abortReason != null) 'abort_reason': abortReason,
         if (officerFullName != null) 'officer_full_name': officerFullName,
+        'officers': officers,
       };
 
   DiaryEventRow copyWith({
@@ -109,6 +113,19 @@ class DiaryEventRow {
       jobReportQuestionCount: jobReportQuestionCount,
       abortReason: abortReason ?? this.abortReason,
       officerFullName: officerFullName,
+      officers: officers,
     );
   }
+}
+
+List<Map<String, dynamic>> _parseOfficers(dynamic raw) {
+  final list = <Map<String, dynamic>>[];
+  if (raw is List) {
+    for (final o in raw) {
+      if (o is Map) {
+        list.add(Map<String, dynamic>.from(o));
+      }
+    }
+  }
+  return list;
 }

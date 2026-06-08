@@ -442,7 +442,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     }
 
     final cust = _customer!;
-    final addressStr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'town'), ctStr(cust, 'county'), ctStr(cust, 'postcode')]
+    final addressStr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'address_line_2'), ctStr(cust, 'address_line_3'), ctStr(cust, 'town'), ctStr(cust, 'county'), ctStr(cust, 'postcode')]
         .where((e) => e.isNotEmpty)
         .join(', ');
 

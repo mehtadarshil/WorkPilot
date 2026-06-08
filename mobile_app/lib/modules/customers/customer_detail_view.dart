@@ -226,7 +226,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                           if (preview != null) ...[
                             const SizedBox(height: 2),
                             Text(
-                              [ctStr(preview, 'address_line_1'), ctStr(preview, 'town'), ctStr(preview, 'postcode')].where((e) => e.isNotEmpty).join(', '),
+                              [ctStr(preview, 'address_line_1'), ctStr(preview, 'address_line_2'), ctStr(preview, 'address_line_3'), ctStr(preview, 'town'), ctStr(preview, 'county'), ctStr(preview, 'postcode')].where((e) => e.isNotEmpty).join(', '),
                               style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.7)),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,

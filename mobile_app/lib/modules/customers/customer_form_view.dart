@@ -92,13 +92,24 @@ class CustomerFormView extends GetView<CustomerFormController> {
                 _textField(controller.phone, keyboard: TextInputType.phone),
                 _fieldLabel('Company'),
                 _textField(controller.company),
-                _fieldLabel('Address'),
-                _textField(controller.address, maxLines: 2),
+                _fieldLabel('Address Line 1'),
+                _textField(controller.addressLine1),
+                _fieldLabel('Address Line 2'),
+                _textField(controller.addressLine2),
+                _fieldLabel('Address Line 3'),
+                _textField(controller.addressLine3),
                 Row(
                   children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('City'), _textField(controller.city)])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Town'), _textField(controller.town)])),
                     const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Region'), _textField(controller.region)])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('City'), _textField(controller.county)])),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Postcode'), _textField(controller.postcode)])),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Landline'), _textField(controller.landline)])),
                   ],
                 ),
                 _fieldLabel('Country'),

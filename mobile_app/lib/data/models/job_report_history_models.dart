@@ -39,6 +39,7 @@ class JobReportHistorySubmission {
     this.officerFullName,
     required this.answers,
     this.extraSubmissions = const [],
+    this.officers = const [],
   });
 
   factory JobReportHistorySubmission.fromJson(Map<String, dynamic> m) {
@@ -60,12 +61,20 @@ class JobReportHistorySubmission {
         }
       }
     }
+    final officers = <Map<String, dynamic>>[];
+    final rawOfficers = m['officers'];
+    if (rawOfficers is List) {
+      for (final o in rawOfficers) {
+        if (o is Map) officers.add(Map<String, dynamic>.from(o));
+      }
+    }
     return JobReportHistorySubmission(
       diaryEventId: (m['diary_event_id'] as num).toInt(),
       startTimeIso: m['start_time'] as String? ?? '',
       officerFullName: (m['officer_full_name'] as String?)?.trim(),
       answers: answers,
       extraSubmissions: extras,
+      officers: officers,
     );
   }
 
@@ -74,4 +83,5 @@ class JobReportHistorySubmission {
   final String? officerFullName;
   final List<JobReportHistoryAnswer> answers;
   final List<DiaryExtraSubmission> extraSubmissions;
+  final List<Map<String, dynamic>> officers;
 }

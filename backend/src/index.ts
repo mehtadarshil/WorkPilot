@@ -1033,6 +1033,35 @@ async function initDb() {
   await ensureElectricalCertificateSchema(pool);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_reports (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      title VARCHAR(500) NOT NULL DEFAULT '',
+      notes TEXT,
+      report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_reports_job_id ON job_reports(job_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_report_items (
+      id SERIAL PRIMARY KEY,
+      report_id INTEGER NOT NULL REFERENCES job_reports(id) ON DELETE CASCADE,
+      item_name VARCHAR(500) NOT NULL,
+      description TEXT,
+      quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
+      unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_report_items_report_id ON job_report_items(report_id)`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS customer_communications (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -1850,6 +1879,44 @@ async function initDb() {
     ALTER TABLE timesheet_entries ADD COLUMN IF NOT EXISTS diary_event_id INTEGER
     REFERENCES diary_events(id) ON DELETE SET NULL
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_officers (
+      id SERIAL PRIMARY KEY,
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
+      is_primary BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(job_id, officer_id)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_officers_job ON job_officers(job_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_officers_officer ON job_officers(officer_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS diary_event_officers (
+      id SERIAL PRIMARY KEY,
+      diary_event_id INTEGER NOT NULL REFERENCES diary_events(id) ON DELETE CASCADE,
+      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
+      is_primary BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(diary_event_id, officer_id)
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_event ON diary_event_officers(diary_event_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
+
+  // Migrate existing single-officer assignments into junction tables
+  await pool.query(`
+    INSERT INTO job_officers (job_id, officer_id, is_primary)
+    SELECT id, officer_id, TRUE FROM jobs WHERE officer_id IS NOT NULL
+    ON CONFLICT DO NOTHING
+  `).catch(err => console.error('Migration error (job_officers backfill):', err));
+  await pool.query(`
+    INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
+    SELECT id, officer_id, TRUE FROM diary_events WHERE officer_id IS NOT NULL
+    ON CONFLICT DO NOTHING
+  `).catch(err => console.error('Migration error (diary_event_officers backfill):', err));
 
   const plansExist = await pool.query('SELECT 1 FROM service_plans LIMIT 1');
   if ((plansExist.rowCount ?? 0) === 0) {
@@ -2822,13 +2889,61 @@ app.get('/api/auth/me', authenticate, async (req: AuthenticatedRequest, res: Res
 app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const u = req.user!;
   const mobilePerm = fieldEffectivePerms(u);
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const ownerClause = isSuperAdmin ? '' : 'AND created_by = $1';
+  const ownerParams = isSuperAdmin ? [] : [userId];
+
+  // Tenant-scoped hub counts (run for everyone)
+  const [customersTotal, jobsOpen, quotationsPending, invoicesUnpaid, sitesTotal] = await (async () => {
+    try {
+      const custRes = await pool.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM customers WHERE status = 'ACTIVE' ${ownerClause}`,
+        ownerParams,
+      );
+      const jobsRes = await pool.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM jobs WHERE state NOT IN ('completed', 'closed') ${ownerClause}`,
+        ownerParams,
+      );
+      const qRes = await pool.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM quotations WHERE state IN ('pending', 'quoted') ${ownerClause}`,
+        ownerParams,
+      );
+      const invRes = await pool.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM invoices WHERE status != 'paid' ${ownerClause}`,
+        ownerParams,
+      );
+      const siteRes = await pool.query<{ c: string }>(
+        `SELECT COUNT(*)::text AS c FROM customer_work_addresses cwa WHERE EXISTS (SELECT 1 FROM customers c WHERE c.id = cwa.customer_id ${ownerClause})`,
+        ownerParams,
+      );
+      return [
+        parseInt(custRes.rows[0]?.c || '0', 10),
+        parseInt(jobsRes.rows[0]?.c || '0', 10),
+        parseInt(qRes.rows[0]?.c || '0', 10),
+        parseInt(invRes.rows[0]?.c || '0', 10),
+        parseInt(siteRes.rows[0]?.c || '0', 10),
+      ];
+    } catch {
+      return [0, 0, 0, 0, 0];
+    }
+  })();
+
   if (!fieldMobileFeaturesEnabled(u) || u.officerId == null) {
     return res.json({
       officer_features: false,
       role: u.role,
       email: u.email,
       profile: null,
-      stats: { assigned_jobs_open: 0, diary_upcoming_week: 0 },
+      stats: {
+        assigned_jobs_open: 0,
+        diary_upcoming_week: 0,
+        customers_total: customersTotal,
+        jobs_open: jobsOpen,
+        quotations_pending: quotationsPending,
+        invoices_unpaid: invoicesUnpaid,
+        sites_total: sitesTotal,
+      },
       upcoming_diary: [],
       next_diary_event: null,
       active_timesheet: null,
@@ -2872,12 +2987,13 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
     }
     const profile = profileRes.rows[0];
 
-    const jobsOpen = await pool.query<{ c: string }>(
-      `SELECT COUNT(*)::text AS c FROM jobs
-       WHERE officer_id = $1 AND state NOT IN ('completed', 'closed')`,
+    const jobsOpenRes = await pool.query<{ c: string }>(
+      `SELECT COUNT(*)::text AS c FROM jobs j
+       WHERE (j.officer_id = $1 OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $1))
+         AND j.state NOT IN ('completed', 'closed')`,
       [oid],
     );
-    let assignedJobsOpen = parseInt(jobsOpen.rows[0]?.c || '0', 10);
+    let assignedJobsOpen = parseInt(jobsOpenRes.rows[0]?.c || '0', 10);
     if (!hasJobs) assignedJobsOpen = 0;
 
     const upcoming = hasSched
@@ -3001,6 +3117,11 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       stats: {
         assigned_jobs_open: assignedJobsOpen,
         diary_upcoming_week: diaryUpcomingWeek,
+        customers_total: customersTotal,
+        jobs_open: jobsOpen,
+        quotations_pending: quotationsPending,
+        invoices_unpaid: invoicesUnpaid,
+        sites_total: sitesTotal,
       },
       upcoming_diary: upcoming.rows,
       next_diary_event: nextEvent,
@@ -3047,7 +3168,8 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
               c.full_name AS customer_full_name
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
-       WHERE j.officer_id = $1 AND j.state NOT IN ('completed', 'closed')
+       WHERE (j.officer_id = $1 OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $1))
+         AND j.state NOT IN ('completed', 'closed')
        ORDER BY j.schedule_start ASC NULLS LAST, j.updated_at DESC
        LIMIT 200`,
       [oid],
@@ -5075,6 +5197,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
     const priorityFilter = typeof req.query.priority === 'string' && JOB_PRIORITIES.includes(req.query.priority as typeof JOB_PRIORITIES[number])
       ? req.query.priority
       : '';
+    const officerId = typeof req.query.officer_id === 'string' ? parseInt(req.query.officer_id, 10) : null;
     const offset = (page - 1) * limit;
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -5113,6 +5236,12 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       conditions.push(`j.priority = $${p++}`);
       countParams.push(priorityFilter);
       listParams.push(priorityFilter);
+    }
+    if (officerId && Number.isFinite(officerId)) {
+      conditions.push(`(j.officer_id = $${p} OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $${p}))`);
+      countParams.push(officerId);
+      listParams.push(officerId);
+      p++;
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const joinClause = `LEFT JOIN customers c ON c.id = j.customer_id LEFT JOIN officers o ON o.id = j.officer_id`;
@@ -5153,6 +5282,21 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       stateCounts[s] = Number((r.rows[0] as { c: number }).c);
     }
 
+    const jobIds = listResult.rows.map(r => r.id);
+    const officersResult = jobIds.length > 0 ? await pool.query(
+      `SELECT jo.job_id, jo.officer_id AS id, o.full_name, jo.is_primary
+       FROM job_officers jo JOIN officers o ON o.id = jo.officer_id
+       WHERE jo.job_id = ANY($1::int[])
+       ORDER BY jo.is_primary DESC, o.full_name`,
+      [jobIds]
+    ) : { rows: [] };
+    const officersByJob = new Map<number, Array<{id:number;full_name:string;is_primary:boolean}>>();
+    for (const or of officersResult.rows) {
+      const list = officersByJob.get(or.job_id) || [];
+      list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
+      officersByJob.set(or.job_id, list);
+    }
+
     const jobs = listResult.rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -5161,6 +5305,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       responsible_person: r.responsible_person ?? null,
       officer_id: r.officer_id ?? null,
       officer_full_name: (r as { officer_full_name?: string }).officer_full_name ?? null,
+      officers: officersByJob.get(r.id) || [],
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
       customer_id: r.customer_id ?? null,
@@ -5308,6 +5453,14 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
           }
         : null;
 
+    const officersResult = await pool.query(
+      `SELECT jo.officer_id AS id, o.full_name, jo.is_primary
+       FROM job_officers jo JOIN officers o ON o.id = jo.officer_id
+       WHERE jo.job_id = $1
+       ORDER BY jo.is_primary DESC, o.full_name`,
+      [id]
+    );
+
     return res.json({
       job: {
         ...jobRest,
@@ -5323,6 +5476,7 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
         site_contact_phone: site_contact_phone ?? null,
         work_address: workAddress,
         pricing_items: pItems.rows,
+        officers: officersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
       },
     });
   } catch (error) {
@@ -5338,6 +5492,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     priority?: string;
     responsible_person?: string;
     officer_id?: number;
+    officer_ids?: number[];
     start_date?: string;
     deadline?: string;
     customer_id?: number;
@@ -5387,6 +5542,17 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
       [title, description, priority, responsiblePerson, officerId, startDate, deadline, customerId, location, requiredCertifications, JSON.stringify(attachments), state, createdBy, JSON.stringify(completedServiceItems)],
     );
     const r = result.rows[0];
+    const officerIds = Array.isArray(body.officer_ids)
+      ? body.officer_ids.filter((id: unknown) => typeof id === 'number' && Number.isFinite(id))
+      : (officerId ? [officerId] : []);
+    if (officerIds.length > 0) {
+      for (let i = 0; i < officerIds.length; i++) {
+        await pool.query(
+          `INSERT INTO job_officers (job_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
+          [r.id, officerIds[i], i === 0]
+        );
+      }
+    }
     try {
       await seedJobReportQuestionsForNewJob(r.id, null);
     } catch (e) {
@@ -5400,6 +5566,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
         priority: r.priority,
         responsible_person: r.responsible_person ?? null,
         officer_id: r.officer_id ?? null,
+        officers: officerIds.map((id, i) => ({ id, full_name: '', is_primary: i === 0 })),
         start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
         deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
         customer_id: r.customer_id ?? null,
@@ -5450,6 +5617,20 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
       }
       updates.push(`officer_id = $${idx++}`);
       values.push(oid);
+    }
+  }
+  if (Array.isArray(body.officer_ids)) {
+    const ids = (body.officer_ids as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+    await pool.query(`DELETE FROM job_officers WHERE job_id = $1`, [id]);
+    for (let i = 0; i < ids.length; i++) {
+      await pool.query(
+        `INSERT INTO job_officers (job_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
+        [id, ids[i], i === 0]
+      );
+    }
+    if (!updates.some(u => u.startsWith('officer_id'))) {
+      updates.push(`officer_id = $${idx++}`);
+      values.push(ids.length > 0 ? ids[0] : null);
     }
   }
   if (body.start_date !== undefined) { updates.push(`start_date = $${idx++}`); values.push(body.start_date ? new Date(body.start_date as string) : null); }
@@ -6352,7 +6533,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
         nextParam += 1;
       }
     } else if (tokenOid != null && diaryActsAsFieldOfficer(req, fieldUser)) {
-      officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam})`;
+      officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam} OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $${nextParam}) OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $${nextParam}))`;
       params.push(tokenOid);
       nextParam += 1;
     } else if (typeof req.query.officer_id === 'string') {
@@ -6396,7 +6577,23 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
        ORDER BY d.start_time ASC`,
       params,
     );
-    res.json({ events: result.rows });
+    const rows = result.rows as Array<Record<string, unknown>>;
+    const diaryIds = rows.map((r: any) => r.diary_id);
+    const deOfficers = diaryIds.length > 0 ? await pool.query(
+      `SELECT deo.diary_event_id, deo.officer_id AS id, o.full_name, deo.is_primary
+       FROM diary_event_officers deo JOIN officers o ON o.id = deo.officer_id
+       WHERE deo.diary_event_id = ANY($1::int[])
+       ORDER BY deo.is_primary DESC, o.full_name`,
+      [diaryIds]
+    ) : { rows: [] };
+    const deOfficersByEvent = new Map<number, Array<{id:number;full_name:string;is_primary:boolean}>>();
+    for (const or of deOfficers.rows) {
+      const list = deOfficersByEvent.get(or.diary_event_id) || [];
+      list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
+      deOfficersByEvent.set(or.diary_event_id, list);
+    }
+    const events = rows.map((r: any) => ({ ...r, officers: deOfficersByEvent.get(r.diary_id) || [] }));
+    res.json({ events });
   } catch (error) {
     console.error('get diary events error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -6427,7 +6624,10 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               COALESCE(NULLIF(TRIM(c.contact_mobile), ''), NULLIF(TRIM(c.phone), '')) AS customer_phone,
               NULLIF(TRIM(c.address), '') AS customer_address,
               NULLIF(TRIM(c.address_line_1), '') AS customer_address_line_1,
+              NULLIF(TRIM(c.address_line_2), '') AS customer_address_line_2,
+              NULLIF(TRIM(c.address_line_3), '') AS customer_address_line_3,
               NULLIF(TRIM(c.town), '') AS customer_town,
+              NULLIF(TRIM(c.county), '') AS customer_county,
               NULLIF(TRIM(c.postcode), '') AS customer_postcode,
               o.full_name AS officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
@@ -6470,12 +6670,23 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       }
     }
 
+    const deOfficersResult = await pool.query(
+      `SELECT deo.officer_id AS id, o.full_name, deo.is_primary
+       FROM diary_event_officers deo JOIN officers o ON o.id = deo.officer_id
+       WHERE deo.diary_event_id = $1
+       ORDER BY deo.is_primary DESC, o.full_name`,
+      [id]
+    );
+
     const line1 = (row.customer_address_line_1 as string | null) || '';
+    const line2 = (row.customer_address_line_2 as string | null) || '';
+    const line3 = (row.customer_address_line_3 as string | null) || '';
     const town = (row.customer_town as string | null) || '';
+    const county = (row.customer_county as string | null) || '';
     const pc = (row.customer_postcode as string | null) || '';
     const legacyAddr = (row.customer_address as string | null) || '';
     const composed =
-      [line1, town, pc].filter((x) => x.length > 0).join(', ') ||
+      [line1, line2, line3, town, county, pc].filter((x) => x.length > 0).join(', ') ||
       legacyAddr ||
       (row.location as string | null) ||
       '';
@@ -6624,12 +6835,19 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         customer_email: row.customer_email,
         customer_phone: row.customer_phone,
         site_address: composed || null,
+        site_address_line_1: line1 || null,
+        site_address_line_2: line2 || null,
+        site_address_line_3: line3 || null,
+        site_town: town || null,
+        site_county: county || null,
+        site_postcode: pc || null,
         officer_full_name: row.officer_full_name,
         job_report_question_count: (row.job_report_question_count as number) ?? 0,
         site_contact_name: row.site_contact_name ?? null,
         site_contact_email: row.site_contact_email ?? null,
         site_contact_phone: row.site_contact_phone ?? null,
         abort_reason: row.abort_reason != null && String(row.abort_reason).trim() ? String(row.abort_reason).trim() : null,
+        officers: deOfficersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
         /** Also on root; duplicated here for clients that only read `event`. */
         customer_specific_notes: customerSpecificNotes,
       },
@@ -6654,28 +6872,32 @@ app.post(
       return res.status(400).json({ message: 'Invalid event id' });
     }
     const userId = getTenantScopeUserId(req.user!);
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
     const access = await pool.query<{
       job_id: number;
       officer_id: number | null;
       job_officer_id: number | null;
       job_created_by: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT j.id AS job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by
+      `SELECT j.id AS job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [diaryEventId],
+      [diaryEventId, tokenOfficerId],
     );
     if ((access.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
     }
     const acc = access.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const ok =
-        acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
+        acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId || acc.is_diary_officer || acc.is_job_officer;
       if (!ok) {
         return res
           .status(403)
@@ -6808,27 +7030,31 @@ app.post(
       return res.status(400).json({ message: 'Invalid event id' });
     }
     const userId = getTenantScopeUserId(req.user!);
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
     const access = await pool.query<{
       job_id: number;
       officer_id: number | null;
       job_officer_id: number | null;
       job_created_by: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT j.id AS job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by
+      `SELECT j.id AS job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [diaryEventId],
+      [diaryEventId, tokenOfficerId],
     );
     if ((access.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
     }
     const acc = access.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
+      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId || acc.is_diary_officer || acc.is_job_officer;
       if (!ok) {
         return res.status(403).json({ message: 'You can only add technical notes for visits assigned to you' });
       }
@@ -6968,27 +7194,31 @@ app.get(
       return res.status(400).json({ message: 'Invalid request' });
     }
 
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
     const access = await pool.query<{
       officer_id: number | null;
       job_officer_id: number | null;
       job_created_by: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by
+      `SELECT d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $3) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $3) AS is_job_officer
        FROM diary_event_extra_submissions s
        INNER JOIN diary_events d ON d.id = s.diary_event_id
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE s.diary_event_id = $1 AND s.id = $2`,
-      [eid, sid],
+      [eid, sid, tokenOfficerId],
     );
     if ((access.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
     const acc = access.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
+      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId || acc.is_diary_officer || acc.is_job_officer;
       if (!ok) {
         return res.status(403).json({ message: 'Forbidden' });
       }
@@ -7089,28 +7319,32 @@ app.get(
       return res.status(400).json({ message: 'Invalid request' });
     }
 
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
     const access = await pool.query<{
       officer_id: number | null;
       job_officer_id: number | null;
       job_created_by: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by
+      `SELECT d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $3) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $3) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        INNER JOIN customer_specific_notes n ON n.id = $2 AND n.customer_id = j.customer_id
          AND (n.work_address_id IS NULL OR n.work_address_id = j.work_address_id)
        WHERE d.id = $1`,
-      [eid, sid],
+      [eid, sid, tokenOfficerId],
     );
     if ((access.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
     const acc = access.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     const isSuperAdmin = role === 'SUPER_ADMIN';
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId;
+      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId || acc.is_diary_officer || acc.is_job_officer;
       if (!ok) return res.status(403).json({ message: 'Forbidden' });
     } else if (role === 'OFFICER') {
       return res.status(403).json({ message: 'Forbidden' });
@@ -7799,28 +8033,33 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
     return res.status(400).json({ message: 'Invalid event id' });
   }
 
+  const role = req.user!.role;
+  const tokenOfficerId = req.user!.officerId ?? null;
+
   try {
     const base = await pool.query<{
       job_id: number;
       officer_id: number | null;
       job_officer_id: number | null;
       event_status: string;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [diaryEventId],
+      [diaryEventId, tokenOfficerId],
     );
     if ((base.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
     }
     const row = base.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
-        row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
+        row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
       if (!assigned) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
       }
@@ -7936,12 +8175,16 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
       officer_id: number | null;
       job_officer_id: number | null;
       event_status: string;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [diaryEventId],
+      [diaryEventId, tokenOfficerId],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
@@ -7950,7 +8193,7 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
     const ev = eventRes.rows[0];
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const assigned = ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId;
+      const assigned = ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId || ev.is_diary_officer || ev.is_job_officer;
       if (!assigned) {
         await client.query('ROLLBACK');
         return res.status(403).json({ message: 'You can only update job reports for your visits' });
@@ -8065,27 +8308,32 @@ app.get(
       return res.status(400).json({ message: 'Invalid event id' });
     }
 
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
+
     try {
       const base = await pool.query<{
         job_id: number;
         officer_id: number | null;
         job_officer_id: number | null;
+        is_diary_officer: boolean;
+        is_job_officer: boolean;
       }>(
-        `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id
+        `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
+                EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+                EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
          FROM diary_events d
          INNER JOIN jobs j ON j.id = d.job_id
          WHERE d.id = $1`,
-        [diaryEventId],
+        [diaryEventId, tokenOfficerId],
       );
       if ((base.rowCount ?? 0) === 0) {
         return res.status(404).json({ message: 'Event not found' });
       }
       const row = base.rows[0];
-      const role = req.user!.role;
-      const tokenOfficerId = req.user!.officerId ?? null;
       if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         const assigned =
-          row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
+          row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
         if (!assigned) {
           return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
         }
@@ -8348,13 +8596,17 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
       officer_id: number | null;
       job_officer_id: number | null;
       event_status: string;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1
        FOR UPDATE OF d`,
-      [diaryEventId],
+      [diaryEventId, tokenOfficerId],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
@@ -8364,7 +8616,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
-        ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId;
+        ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId || ev.is_diary_officer || ev.is_job_officer;
       if (!assigned) {
         await client.query('ROLLBACK');
         return res.status(403).json({ message: 'You can only submit job reports for your visits' });
@@ -8468,9 +8720,15 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
       [storedStatus, diaryEventId],
     );
 
-    const timesheetOfficerId = ev.officer_id ?? ev.job_officer_id;
-    if (timesheetOfficerId != null) {
-      await applyDiaryStatusToTimesheet(client, timesheetOfficerId, diaryEventId, 'completed');
+    const deOfficersForTimesheet = await pool.query<{ officer_id: number }>(
+      `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
+      [diaryEventId]
+    );
+    const tsOfficers = deOfficersForTimesheet.rows.length > 0
+      ? deOfficersForTimesheet.rows.map(r => r.officer_id)
+      : [ev.officer_id ?? ev.job_officer_id].filter(Boolean) as number[];
+    for (const tsOid of tsOfficers) {
+      await applyDiaryStatusToTimesheet(client, tsOid, diaryEventId, 'completed');
     }
 
     await client.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [
@@ -8505,6 +8763,562 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
     return res.status(500).json({ message: 'Internal server error' });
   } finally {
     client.release();
+  }
+});
+
+/** All submitted job reports for a job (across every completed visit). */
+app.get('/api/jobs/:id/job-report-history', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const du1 = req.user!;
+  if (du1.role === 'STAFF' && !assertStaffPermissionAny(du1, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ message: 'Invalid job id' });
+    }
+
+    if (du1.role !== 'SUPER_ADMIN' && du1.role !== 'OFFICER') {
+      const own = await pool.query<{ created_by: number | null }>('SELECT created_by FROM jobs WHERE id = $1', [jobId]);
+      if ((own.rowCount ?? 0) === 0 || own.rows[0].created_by !== getTenantScopeUserId(du1)) {
+        return res.status(404).json({ message: 'Job not found' });
+      }
+    }
+
+    const tokenOfficerId = du1.officerId ?? null;
+    if (diaryActsAsFieldOfficer(req, { role: du1.role, officerId: tokenOfficerId, permissions: du1.permissions ?? null })) {
+      const assigned = await pool.query(
+        `SELECT 1 FROM diary_events d
+         INNER JOIN jobs j ON j.id = d.job_id
+         WHERE d.job_id = $1
+           AND (d.officer_id = $2 OR j.officer_id = $2
+                OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
+                OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
+         LIMIT 1`,
+        [jobId, tokenOfficerId],
+      );
+      if ((assigned.rowCount ?? 0) === 0) {
+        return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+      }
+    }
+
+    const histRes = await pool.query<{
+      diary_event_id: number;
+      start_time: Date;
+      officer_full_name: string | null;
+      question_id: number;
+      value: string;
+      prompt: string;
+      question_type: string;
+      sort_order: number;
+      helper_text: string | null;
+    }>(
+      `SELECT d.id AS diary_event_id,
+              d.start_time,
+              o.full_name AS officer_full_name,
+              jra.question_id,
+              jra.value,
+              COALESCE(NULLIF(TRIM(jra.prompt_snapshot), ''), NULLIF(TRIM(q.prompt), ''), 'Question') AS prompt,
+              COALESCE(
+                NULLIF(TRIM(jra.question_type_snapshot), ''),
+                NULLIF(TRIM(q.question_type), ''),
+                'text'
+              ) AS question_type,
+              COALESCE(q.sort_order, 1000000)::int AS sort_order,
+              NULLIF(
+                TRIM(
+                  COALESCE(
+                    NULLIF(TRIM(jra.helper_text_snapshot), ''),
+                    NULLIF(TRIM(q.helper_text), '')
+                  )
+                ),
+                ''
+              ) AS helper_text
+       FROM diary_events d
+       INNER JOIN job_report_answers jra ON jra.diary_event_id = d.id
+       LEFT JOIN job_report_questions q ON q.id = jra.question_id AND q.job_id = d.job_id
+       LEFT JOIN officers o ON o.id = d.officer_id
+       WHERE d.job_id = $1
+         AND LOWER(TRIM(d.status)) = 'completed'
+       ORDER BY d.start_time DESC, sort_order ASC, jra.question_id ASC`,
+      [jobId],
+    );
+
+    type ExtraSubmissionJson = {
+      id: number;
+      notes: string | null;
+      created_at: string;
+      created_by_name: string | null;
+      display_name: string | null;
+      media: Array<{
+        original_filename: string;
+        content_type: string;
+        kind: string;
+        byte_size: number;
+        file_path: string;
+      }>;
+    };
+
+    type Submission = {
+      diary_event_id: number;
+      start_time: string;
+      officer_full_name: string | null;
+      answers: Array<{
+        question_id: number;
+        prompt: string;
+        question_type: string;
+        value: string;
+        helper_text: string | null;
+      }>;
+      extra_submissions: ExtraSubmissionJson[];
+    };
+
+    const byDiary = new Map<number, Submission>();
+    for (const r of histRes.rows) {
+      let sub = byDiary.get(r.diary_event_id);
+      if (!sub) {
+        sub = {
+          diary_event_id: r.diary_event_id,
+          start_time: (r.start_time as Date).toISOString(),
+          officer_full_name: r.officer_full_name ?? null,
+          answers: [],
+          extra_submissions: [],
+        };
+        byDiary.set(r.diary_event_id, sub);
+      }
+      const ht = r.helper_text != null && String(r.helper_text).trim() ? String(r.helper_text).trim() : null;
+      sub.answers.push({
+        question_id: r.question_id,
+        prompt: r.prompt,
+        question_type: r.question_type,
+        value: r.value,
+        helper_text: ht,
+      });
+    }
+
+    const diaryIds = Array.from(byDiary.keys());
+    const extrasByDiary = new Map<number, ExtraSubmissionJson[]>();
+    if (diaryIds.length > 0) {
+      const exRes = await pool.query<{
+        diary_event_id: number;
+        id: number;
+        notes: string | null;
+        media: unknown;
+        created_at: Date;
+        created_by_name: string | null;
+      }>(
+        `SELECT s.diary_event_id, s.id, s.notes, s.media, s.created_at,
+                COALESCE(u.full_name, u.email) AS created_by_name
+         FROM diary_event_extra_submissions s
+         LEFT JOIN users u ON u.id = s.created_by
+         WHERE s.diary_event_id = ANY($1::int[])
+         ORDER BY s.diary_event_id, s.created_at ASC`,
+        [diaryIds],
+      );
+      for (const r of exRes.rows) {
+        const sub = byDiary.get(r.diary_event_id);
+        const visitEngineerName = (() => {
+          const s = sub?.officer_full_name ?? null;
+          return s != null && s.trim() !== '' ? s.trim() : null;
+        })();
+        const uploader = r.created_by_name ?? null;
+        const mediaArr = Array.isArray(r.media) ? (r.media as Record<string, unknown>[]) : [];
+        const shaped: ExtraSubmissionJson = {
+          id: r.id,
+          notes: r.notes,
+          created_at: (r.created_at as Date).toISOString(),
+          created_by_name: uploader,
+          display_name: visitEngineerName ?? uploader,
+          media: mediaArr.map((m) => {
+            const stored = String(m.stored_filename ?? '');
+            const orig = String(m.original_filename ?? 'file');
+            const ct = String(m.content_type ?? 'application/octet-stream');
+            const kind = String(
+              m.kind && String(m.kind).trim()
+                ? m.kind
+                : ct.startsWith('video/')
+                  ? 'video'
+                  : 'image',
+            );
+            return {
+              original_filename: orig,
+              content_type: ct,
+              kind,
+              byte_size: m.byte_size != null ? Number(m.byte_size) : 0,
+              file_path: `/diary-events/${r.diary_event_id}/extra-submissions/${r.id}/files/${encodeURIComponent(stored)}`,
+            };
+          }),
+        };
+        const list = extrasByDiary.get(r.diary_event_id) ?? [];
+        list.push(shaped);
+        extrasByDiary.set(r.diary_event_id, list);
+      }
+    }
+    for (const [did, sub] of byDiary) {
+      sub.extra_submissions = extrasByDiary.get(did) ?? [];
+    }
+
+    return res.json({ submissions: Array.from(byDiary.values()) });
+  } catch (error) {
+    console.error('get job report history error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** ---------- Job Dynamic Reports ---------- */
+
+/** Shared auth helper for job-scoped routes. */
+async function assertJobAccess(
+  req: AuthenticatedRequest,
+  res: Response,
+  jobId: number,
+): Promise<boolean> {
+  const u = req.user!;
+  if (u.role === 'STAFF' && !assertStaffPermissionAny(u, ['jobs', 'scheduling'])) {
+    res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    return false;
+  }
+  if (u.role !== 'SUPER_ADMIN' && u.role !== 'OFFICER') {
+    const own = await pool.query<{ created_by: number | null }>('SELECT created_by FROM jobs WHERE id = $1', [jobId]);
+    if ((own.rowCount ?? 0) === 0 || own.rows[0].created_by !== getTenantScopeUserId(u)) {
+      res.status(404).json({ message: 'Job not found' });
+      return false;
+    }
+  }
+  const tokenOfficerId = u.officerId ?? null;
+  if (diaryActsAsFieldOfficer(req, { role: u.role, officerId: tokenOfficerId, permissions: u.permissions ?? null })) {
+    const assigned = await pool.query(
+      `SELECT 1 FROM diary_events d
+       INNER JOIN jobs j ON j.id = d.job_id
+       WHERE d.job_id = $1
+         AND (d.officer_id = $2 OR j.officer_id = $2
+              OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
+              OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
+       LIMIT 1`,
+      [jobId, tokenOfficerId],
+    );
+    if ((assigned.rowCount ?? 0) === 0) {
+      res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+      return false;
+    }
+  }
+  return true;
+}
+
+app.get('/api/jobs/:id/reports', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ message: 'Invalid job id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const repRes = await pool.query<{
+      id: number;
+      job_id: number;
+      title: string;
+      notes: string | null;
+      report_date: Date;
+      created_by_name: string | null;
+      created_at: Date;
+      updated_at: Date;
+    }>(
+      `SELECT r.id, r.job_id, r.title, r.notes, r.report_date,
+              COALESCE(u.full_name, u.email) AS created_by_name,
+              r.created_at, r.updated_at
+       FROM job_reports r
+       LEFT JOIN users u ON u.id = r.created_by
+       WHERE r.job_id = $1
+       ORDER BY r.report_date DESC, r.created_at DESC`,
+      [jobId],
+    );
+
+    const reportIds = repRes.rows.map((r) => r.id);
+    const itemsRes = reportIds.length > 0
+      ? await pool.query<{
+          report_id: number;
+          id: number;
+          item_name: string;
+          description: string | null;
+          quantity: number;
+          unit_cost: number;
+          total_cost: number;
+          sort_order: number;
+        }>(
+          `SELECT report_id, id, item_name, description, quantity, unit_cost, total_cost, sort_order
+           FROM job_report_items
+           WHERE report_id = ANY($1::int[])
+           ORDER BY report_id, sort_order ASC, id ASC`,
+          [reportIds],
+        )
+      : { rows: [] };
+
+    const itemsByReport = new Map<number, typeof itemsRes.rows>();
+    for (const it of itemsRes.rows) {
+      const list = itemsByReport.get(it.report_id) ?? [];
+      list.push(it);
+      itemsByReport.set(it.report_id, list);
+    }
+
+    const reports = repRes.rows.map((r) => ({
+      id: r.id,
+      job_id: r.job_id,
+      title: r.title,
+      notes: r.notes,
+      report_date: (r.report_date as Date).toISOString().slice(0, 10),
+      created_by_name: r.created_by_name,
+      created_at: (r.created_at as Date).toISOString(),
+      updated_at: (r.updated_at as Date).toISOString(),
+      items: itemsByReport.get(r.id) ?? [],
+    }));
+
+    return res.json({ reports });
+  } catch (error) {
+    console.error('get job reports error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/jobs/:id/reports', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(jobId)) {
+      return res.status(400).json({ message: 'Invalid job id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const body = req.body as Record<string, unknown>;
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+    const reportDate = typeof body.report_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.report_date)
+      ? body.report_date
+      : new Date().toISOString().slice(0, 10);
+
+    const creatorId = getTenantScopeUserId(req.user!);
+    const result = await pool.query<{
+      id: number;
+      job_id: number;
+      title: string;
+      notes: string | null;
+      report_date: Date;
+      created_at: Date;
+      updated_at: Date;
+    }>(
+      `INSERT INTO job_reports (job_id, title, notes, report_date, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, job_id, title, notes, report_date, created_at, updated_at`,
+      [jobId, title.slice(0, 500), notes, reportDate, creatorId],
+    );
+
+    const row = result.rows[0];
+    return res.status(201).json({
+      report: {
+        id: row.id,
+        job_id: row.job_id,
+        title: row.title,
+        notes: row.notes,
+        report_date: (row.report_date as Date).toISOString().slice(0, 10),
+        created_at: (row.created_at as Date).toISOString(),
+        updated_at: (row.updated_at as Date).toISOString(),
+        items: [],
+      },
+    });
+  } catch (error) {
+    console.error('create job report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/jobs/:id/reports/:reportId', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    const reportId = parseInt(String(req.params.reportId), 10);
+    if (!Number.isFinite(jobId) || !Number.isFinite(reportId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const body = req.body as Record<string, unknown>;
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (typeof body.title === 'string') {
+      updates.push(`title = $${idx++}`);
+      values.push(body.title.trim().slice(0, 500));
+    }
+    if (typeof body.notes === 'string') {
+      updates.push(`notes = $${idx++}`);
+      values.push(body.notes.trim() || null);
+    }
+    if (typeof body.report_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.report_date)) {
+      updates.push(`report_date = $${idx++}`);
+      values.push(body.report_date);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'Nothing to update' });
+    }
+    updates.push(`updated_at = NOW()`);
+
+    values.push(reportId, jobId);
+    const result = await pool.query(
+      `UPDATE job_reports SET ${updates.join(', ')} WHERE id = $${idx++} AND job_id = $${idx++} RETURNING *`,
+      values,
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+    return res.json({ report: result.rows[0] });
+  } catch (error) {
+    console.error('update job report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/jobs/:id/reports/:reportId', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    const reportId = parseInt(String(req.params.reportId), 10);
+    if (!Number.isFinite(jobId) || !Number.isFinite(reportId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const result = await pool.query('DELETE FROM job_reports WHERE id = $1 AND job_id = $2', [reportId, jobId]);
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('delete job report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/jobs/:id/reports/:reportId/items', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    const reportId = parseInt(String(req.params.reportId), 10);
+    if (!Number.isFinite(jobId) || !Number.isFinite(reportId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const verify = await pool.query('SELECT 1 FROM job_reports WHERE id = $1 AND job_id = $2', [reportId, jobId]);
+    if ((verify.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    const body = req.body as Record<string, unknown>;
+    const itemName = typeof body.item_name === 'string' ? body.item_name.trim() : '';
+    if (!itemName) {
+      return res.status(400).json({ message: 'item_name is required' });
+    }
+    const description = typeof body.description === 'string' ? body.description.trim() || null : null;
+    const quantity = typeof body.quantity === 'number' && Number.isFinite(body.quantity) ? body.quantity : 1;
+    const unitCost = typeof body.unit_cost === 'number' && Number.isFinite(body.unit_cost) ? body.unit_cost : 0;
+    const totalCost = quantity * unitCost;
+    const sortOrder = typeof body.sort_order === 'number' && Number.isFinite(body.sort_order) ? body.sort_order : 0;
+
+    const result = await pool.query(
+      `INSERT INTO job_report_items (report_id, item_name, description, quantity, unit_cost, total_cost, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [reportId, itemName.slice(0, 500), description, quantity, unitCost, totalCost, sortOrder],
+    );
+    return res.status(201).json({ item: result.rows[0] });
+  } catch (error) {
+    console.error('create job report item error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.put('/api/jobs/:id/reports/:reportId/items/:itemId', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    const reportId = parseInt(String(req.params.reportId), 10);
+    const itemId = parseInt(String(req.params.itemId), 10);
+    if (!Number.isFinite(jobId) || !Number.isFinite(reportId) || !Number.isFinite(itemId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const verify = await pool.query('SELECT 1 FROM job_reports WHERE id = $1 AND job_id = $2', [reportId, jobId]);
+    if ((verify.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    const body = req.body as Record<string, unknown>;
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (typeof body.item_name === 'string') {
+      updates.push(`item_name = $${idx++}`);
+      values.push(body.item_name.trim().slice(0, 500));
+    }
+    if (typeof body.description === 'string') {
+      updates.push(`description = $${idx++}`);
+      values.push(body.description.trim() || null);
+    }
+    if (typeof body.quantity === 'number' && Number.isFinite(body.quantity)) {
+      updates.push(`quantity = $${idx++}`);
+      values.push(body.quantity);
+    }
+    if (typeof body.unit_cost === 'number' && Number.isFinite(body.unit_cost)) {
+      updates.push(`unit_cost = $${idx++}`);
+      values.push(body.unit_cost);
+    }
+    if (typeof body.sort_order === 'number' && Number.isFinite(body.sort_order)) {
+      updates.push(`sort_order = $${idx++}`);
+      values.push(body.sort_order);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'Nothing to update' });
+    }
+    // Recalculate total_cost if quantity or unit_cost changed
+    if (updates.some((u) => u.startsWith('quantity =') || u.startsWith('unit_cost ='))) {
+      updates.push(`total_cost = quantity * unit_cost`);
+    }
+
+    values.push(itemId, reportId);
+    const result = await pool.query(
+      `UPDATE job_report_items SET ${updates.join(', ')} WHERE id = $${idx++} AND report_id = $${idx++} RETURNING *`,
+      values,
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    return res.json({ item: result.rows[0] });
+  } catch (error) {
+    console.error('update job report item error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/jobs/:id/reports/:reportId/items/:itemId', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const jobId = parseInt(String(req.params.id), 10);
+    const reportId = parseInt(String(req.params.reportId), 10);
+    const itemId = parseInt(String(req.params.itemId), 10);
+    if (!Number.isFinite(jobId) || !Number.isFinite(reportId) || !Number.isFinite(itemId)) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    if (!(await assertJobAccess(req, res, jobId))) return;
+
+    const verify = await pool.query('SELECT 1 FROM job_reports WHERE id = $1 AND job_id = $2', [reportId, jobId]);
+    if ((verify.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Report not found' });
+    }
+
+    const result = await pool.query('DELETE FROM job_report_items WHERE id = $1 AND report_id = $2', [itemId, reportId]);
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Item not found' });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('delete job report item error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -8752,12 +9566,26 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
     const ures = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user!.userId]);
     const creatorName = ures.rows[0]?.full_name || 'System User';
 
+    const deOfficerIds = Array.isArray((req.body as Record<string, unknown>).officer_ids)
+      ? ((req.body as Record<string, unknown>).officer_ids as unknown[]).filter((id: unknown) => typeof id === 'number' && Number.isFinite(id))
+      : (officer_id ? [officer_id] : []);
+    const primaryOfficerId = deOfficerIds.length > 0 ? (deOfficerIds[0] as number) : (officer_id || null);
+
     const result = await pool.query(
       `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [jobId, officer_id || null, start_time, duration_minutes || 60, notes || null, creatorName]
+      [jobId, primaryOfficerId, start_time, duration_minutes || 60, notes || null, creatorName]
     );
+    const diaryEventId = result.rows[0].id;
+    if (deOfficerIds.length > 0) {
+      for (let i = 0; i < deOfficerIds.length; i++) {
+        await pool.query(
+          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
+          [diaryEventId, deOfficerIds[i], i === 0]
+        );
+      }
+    }
 
     // Update the job status to scheduled if it was created/draft
     await pool.query('UPDATE jobs SET state = \'scheduled\' WHERE id = $1 AND state IN (\'draft\', \'created\', \'unscheduled\')', [jobId]);
@@ -8794,28 +9622,33 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
   try {
     await client.query('BEGIN');
 
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
+
     const eventRes = await client.query<{
       job_id: number;
       officer_id: number | null;
       job_officer_id: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [id],
+      [id, tokenOfficerId],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Event not found' });
     }
     const row = eventRes.rows[0];
-    const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
-        row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId;
+        row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
       if (!assigned) {
         await client.query('ROLLBACK');
         return res.status(403).json({ message: 'You can only update diary visits assigned to you' });
@@ -8858,9 +9691,15 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     );
 
     const normalized = normalizeDiaryStatusForTimesheet(status);
-    const timesheetOfficerId = row.officer_id ?? row.job_officer_id;
-    if (timesheetOfficerId != null && normalized != null) {
-      await applyDiaryStatusToTimesheet(client, timesheetOfficerId, id, normalized);
+    const deOfficersForTimesheet = await pool.query<{ officer_id: number }>(
+      `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
+      [id]
+    );
+    const tsOfficers = deOfficersForTimesheet.rows.length > 0
+      ? deOfficersForTimesheet.rows.map(r => r.officer_id)
+      : [row.officer_id ?? row.job_officer_id].filter(Boolean) as number[];
+    for (const tsOid of tsOfficers) {
+      await applyDiaryStatusToTimesheet(client, tsOid, id, normalized);
     }
 
     await client.query('COMMIT');
@@ -8954,8 +9793,9 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
     params.push(fromDate, toDate);
     p += 2;
     if (officerId && Number.isFinite(officerId)) {
-      conditions.push(`j.officer_id = $${p++}`);
+      conditions.push(`(j.officer_id = $${p} OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $${p}))`);
       params.push(officerId);
+      p++;
     }
     if (stateFilter) {
       conditions.push(`j.state = $${p++}`);
@@ -8978,6 +9818,21 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
       params,
     );
 
+    const jobIds = result.rows.map(r => r.id);
+    const officersResult = jobIds.length > 0 ? await pool.query(
+      `SELECT jo.job_id, jo.officer_id AS id, o.full_name, jo.is_primary
+       FROM job_officers jo JOIN officers o ON o.id = jo.officer_id
+       WHERE jo.job_id = ANY($1::int[])
+       ORDER BY jo.is_primary DESC, o.full_name`,
+      [jobIds]
+    ) : { rows: [] };
+    const officersByJob = new Map<number, Array<{id:number;full_name:string;is_primary:boolean}>>();
+    for (const or of officersResult.rows) {
+      const list = officersByJob.get(or.job_id) || [];
+      list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
+      officersByJob.set(or.job_id, list);
+    }
+
     const jobs = result.rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -8986,6 +9841,7 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
       responsible_person: r.responsible_person ?? null,
       officer_id: r.officer_id ?? null,
       officer_full_name: (r as { officer_full_name?: string }).officer_full_name ?? null,
+      officers: officersByJob.get(r.id) || [],
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
       customer_id: r.customer_id ?? null,

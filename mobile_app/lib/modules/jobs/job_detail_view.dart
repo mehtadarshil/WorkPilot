@@ -12,7 +12,7 @@ import 'job_tab_files.dart';
 import 'job_tab_invoices.dart';
 import 'job_tab_job_report.dart';
 import 'job_tab_office_tasks.dart';
-import 'job_tab_site_reports.dart';
+import 'job_tab_dynamic_reports.dart';
 
 /// Job detail with the same primary tabs as the web job page (details, report, site report, client share, reminders, files, invoices).
 class JobDetailView extends StatefulWidget {
@@ -29,7 +29,7 @@ class _JobDetailViewState extends State<JobDetailView>
   static const _tabWidgets = <Widget>[
     JobTabDetails(),
     JobTabJobReport(),
-    JobTabSiteReports(),
+    JobTabDynamicReports(),
     JobTabClientPanel(),
     JobTabOfficeTasks(),
     JobTabFiles(),

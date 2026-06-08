@@ -52,7 +52,10 @@ String _workSiteLine(Map<String, dynamic> wa) {
   final parts = <String>[
     if (_nonEmpty(_str(wa, 'branch_name')) != null) _str(wa, 'branch_name'),
     if (_nonEmpty(_str(wa, 'address_line_1')) != null) _str(wa, 'address_line_1'),
+    if (_nonEmpty(_str(wa, 'address_line_2')) != null) _str(wa, 'address_line_2'),
+    if (_nonEmpty(_str(wa, 'address_line_3')) != null) _str(wa, 'address_line_3'),
     if (_nonEmpty(_str(wa, 'town')) != null) _str(wa, 'town'),
+    if (_nonEmpty(_str(wa, 'county')) != null) _str(wa, 'county'),
     if (_nonEmpty(_str(wa, 'postcode')) != null) _str(wa, 'postcode'),
   ].where((e) => e.isNotEmpty).join(', ');
   return parts.isEmpty ? name : '$name · $parts';
@@ -158,10 +161,7 @@ class JobTabDetails extends StatelessWidget {
               _row(Icons.business, _workSiteLine(Map<String, dynamic>.from(j['work_address'] as Map))),
             ),
           ],
-          if (_nonEmpty(_str(j, 'officer_full_name')) != null) ...[
-            const SizedBox(height: 12),
-            _section('Assigned officer', _row(Icons.engineering, _str(j, 'officer_full_name'))),
-          ],
+          ..._officersSection(j),
           if (_nonEmpty(_str(j, 'location')) != null) ...[
             const SizedBox(height: 12),
             _section('Location', _row(Icons.place, _str(j, 'location'))),
@@ -227,10 +227,41 @@ class JobTabDetails extends StatelessWidget {
 
   static TextStyle get _bodyStyle => GoogleFonts.inter(fontSize: 14, height: 1.45, color: AppColors.slate300);
 
+  List<Widget> _officersSection(Map<String, dynamic> j) {
+    final raw = j['officers'];
+    final officers = <Map<String, dynamic>>[];
+    if (raw is List) {
+      for (final o in raw) {
+        if (o is Map) officers.add(Map<String, dynamic>.from(o));
+      }
+    }
+    if (officers.isEmpty) return [];
+    final title = officers.length == 1 ? 'Assigned officer' : 'Assigned officers';
+    return [
+      const SizedBox(height: 12),
+      _section(
+        title,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final o in officers)
+              Padding(
+                padding: EdgeInsets.only(bottom: o == officers.last ? 0 : 6),
+                child: _row(
+                  o['is_primary'] == true ? Icons.star : Icons.engineering,
+                  '${o['full_name'] ?? ''}${o['is_primary'] == true ? ' (Primary)' : ''}',
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
   Future<void> _showAddVisit(BuildContext context, JobDetailController c) async {
     DateTime start = DateTime.now().add(const Duration(days: 1));
     TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
-    int? officerId;
+    final selectedOfficerIds = <int>{};
     final durationC = TextEditingController(text: '60');
     final notesC = TextEditingController();
     final officers = <Map<String, dynamic>>[];
@@ -247,53 +278,74 @@ class JobTabDetails extends StatelessWidget {
           title: const Text('New visit'),
           content: StatefulBuilder(
             builder: (ctx, setS) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    title: const Text('Date'),
-                    subtitle: Text(start.toIso8601String().split('T').first),
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: start,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (d != null) setS(() => start = DateTime(d.year, d.month, d.day));
-                    },
-                  ),
-                  ListTile(
-                    title: const Text('Start time'),
-                    subtitle: Text(startTime.format(ctx)),
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: startTime,
-                      );
-                      if (t != null) setS(() => startTime = t);
-                    },
-                  ),
-                  TextField(
-                    controller: durationC,
-                    decoration: const InputDecoration(labelText: 'Duration (minutes)'),
-                    keyboardType: TextInputType.number,
-                  ),
-                  DropdownButtonFormField<int?>(
-                    initialValue: officerId,
-                    decoration: const InputDecoration(labelText: 'Officer'),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Unassigned')),
-                      for (final o in officers)
-                        DropdownMenuItem(
-                          value: (o['id'] as num?)?.toInt(),
-                          child: Text((o['full_name'] as String?) ?? ''),
-                        ),
-                    ],
-                    onChanged: (v) => setS(() => officerId = v),
-                  ),
-                  TextField(controller: notesC, decoration: const InputDecoration(labelText: 'Notes')),
-                ],
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      title: const Text('Date'),
+                      subtitle: Text(start.toIso8601String().split('T').first),
+                      onTap: () async {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: start,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (d != null) setS(() => start = DateTime(d.year, d.month, d.day));
+                      },
+                    ),
+                    ListTile(
+                      title: const Text('Start time'),
+                      subtitle: Text(startTime.format(ctx)),
+                      onTap: () async {
+                        final t = await showTimePicker(
+                          context: ctx,
+                          initialTime: startTime,
+                        );
+                        if (t != null) setS(() => startTime = t);
+                      },
+                    ),
+                    TextField(
+                      controller: durationC,
+                      decoration: const InputDecoration(labelText: 'Duration (minutes)'),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Officers',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+                      ),
+                    ),
+                    if (officers.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('No officers available', style: TextStyle(color: Colors.white54)),
+                      )
+                    else
+                      ...officers.map((o) {
+                        final id = (o['id'] as num?)?.toInt() ?? 0;
+                        final name = (o['full_name'] as String?) ?? '';
+                        return CheckboxListTile(
+                          value: selectedOfficerIds.contains(id),
+                          onChanged: (v) => setS(() {
+                            if (v == true) {
+                              selectedOfficerIds.add(id);
+                            } else {
+                              selectedOfficerIds.remove(id);
+                            }
+                          }),
+                          title: Text(name, style: GoogleFonts.inter(fontSize: 14, color: Colors.white)),
+                          activeColor: AppColors.primary,
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }),
+                    TextField(controller: notesC, decoration: const InputDecoration(labelText: 'Notes')),
+                  ],
+                ),
               );
             },
           ),
@@ -315,7 +367,7 @@ class JobTabDetails extends StatelessWidget {
           startTime.minute,
         );
         await c.postDiaryVisit(
-          officerId: officerId,
+          officerIds: selectedOfficerIds.isEmpty ? null : selectedOfficerIds.toList(),
           start: startDateTime,
           durationMinutes: duration.clamp(1, 1440),
           notes: notesC.text.trim().isEmpty ? null : notesC.text.trim(),
@@ -333,16 +385,30 @@ class JobTabDetails extends StatelessWidget {
   Widget _diaryRow(BuildContext context, JobDetailController c, Map<String, dynamic> e, Map<String, dynamic> job) {
     final id = (e['id'] as num?)?.toInt();
     final status = e['status'] as String?;
-    final officer = (e['officer_full_name'] as String?) ?? 'Unassigned';
     final start = e['start_time'] as String?;
     final dur = (e['duration_minutes'] as num?)?.toInt() ?? 0;
+    final rawOfficers = e['officers'];
+    final officers = <Map<String, dynamic>>[];
+    if (rawOfficers is List) {
+      for (final o in rawOfficers) {
+        if (o is Map) officers.add(Map<String, dynamic>.from(o));
+      }
+    }
+    final officerLabel = officers.isEmpty
+        ? ((e['officer_full_name'] as String?) ?? 'Unassigned')
+        : officers.map((o) => '${o['full_name'] ?? ''}${o['is_primary'] == true ? ' ★' : ''}').join(', ');
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: AppColors.whiteOverlay(0.06),
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
-          title: Text(officer, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          title: Text(
+            officerLabel,
+            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           subtitle: Text(
             '${start ?? ''} · $dur min · ${status ?? ''}',
             style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),

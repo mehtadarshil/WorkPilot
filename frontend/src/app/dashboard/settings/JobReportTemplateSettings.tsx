@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getJson } from '../../apiClient';
-import JobReportTab from '../jobs/[id]/JobReportTab';
+import JobReportTemplateTab from '../jobs/[id]/JobReportTemplateTab';
 
 type JobDescriptionRow = { id: number; name: string };
 
@@ -41,7 +41,7 @@ export default function JobReportTemplateSettings({ token }: { token: string }) 
           </Link>
           .
         </p>
-        <JobReportTab token={token} templateTarget="default" />
+        <JobReportTemplateTab token={token} templateTarget="default" />
       </div>
 
       <div className="bg-slate-50/80 p-4 sm:p-6">
@@ -83,7 +83,7 @@ export default function JobReportTemplateSettings({ token }: { token: string }) 
 
         {selectedDescId ? (
           <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <JobReportTab
+            <JobReportTemplateTab
               token={token}
               templateTarget="job-description"
               jobDescriptionId={selectedDescId}

@@ -1,310 +1,292 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { getJson, putJson } from '../../../apiClient';
-import { Plus, Trash2, ChevronUp, ChevronDown, Save } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { getJson } from '../../../apiClient';
+import { format } from 'date-fns';
+import { ClipboardCheck, FileImage, FileVideo, Paperclip, User, Calendar } from 'lucide-react';
 
-export type JobReportQuestionType =
-  | 'text'
-  | 'textarea'
-  | 'customer_signature'
-  | 'officer_signature'
-  | 'before_photo'
-  | 'after_photo';
-
-export interface JobReportQuestionRow {
-  id?: number;
-  job_id?: number;
-  sort_order: number;
-  question_type: JobReportQuestionType;
+interface ReportAnswer {
+  question_id: number;
   prompt: string;
+  question_type: string;
+  value: string;
   helper_text: string | null;
-  required: boolean;
 }
 
-const QUESTION_TYPES: { value: JobReportQuestionType; label: string }[] = [
-  { value: 'text', label: 'Short text' },
-  { value: 'textarea', label: 'Long text' },
-  { value: 'customer_signature', label: 'Customer signature' },
-  { value: 'officer_signature', label: 'Officer signature' },
-  { value: 'before_photo', label: 'Before photo' },
-  { value: 'after_photo', label: 'After photo' },
-];
+interface ExtraMedia {
+  original_filename: string;
+  content_type: string;
+  kind: string;
+  byte_size: number;
+  file_path: string;
+}
+
+interface ExtraSubmission {
+  id: number;
+  notes: string | null;
+  created_at: string;
+  created_by_name: string | null;
+  display_name: string | null;
+  media: ExtraMedia[];
+}
+
+interface Submission {
+  diary_event_id: number;
+  start_time: string;
+  officer_full_name: string | null;
+  answers: ReportAnswer[];
+  extra_submissions: ExtraSubmission[];
+}
+
+const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
+function fileUrlFromApiPath(filePath: string) {
+  const base = DEFAULT_API_BASE.replace(/\/$/, '');
+  return `${base}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+}
+
+function AuthenticatedFilePreview({ filePath, contentType, kind, token }: { filePath: string; contentType: string; kind: string; token: string | null }) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const lastBlobRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setObjectUrl(null);
+    setFailed(false);
+    if (lastBlobRef.current) {
+      URL.revokeObjectURL(lastBlobRef.current);
+      lastBlobRef.current = null;
+    }
+    void (async () => {
+      try {
+        const r = await fetch(fileUrlFromApiPath(filePath), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) throw new Error('fetch failed');
+        const blob = await r.blob();
+        if (cancelled) return;
+        const u = URL.createObjectURL(blob);
+        lastBlobRef.current = u;
+        setObjectUrl(u);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (lastBlobRef.current) {
+        URL.revokeObjectURL(lastBlobRef.current);
+        lastBlobRef.current = null;
+      }
+    };
+  }, [filePath, token]);
+
+  if (failed) {
+    return <span className="text-xs text-rose-600">Could not load</span>;
+  }
+  if (!objectUrl) {
+    return <span className="text-xs text-slate-400">Loading…</span>;
+  }
+  if (kind === 'video' || contentType.startsWith('video/')) {
+    return (
+      <video
+        src={objectUrl}
+        controls
+        className="max-h-64 w-full max-w-md rounded border border-slate-200 bg-black"
+      />
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={objectUrl} alt="" className="max-h-52 rounded-md border border-slate-200 object-contain bg-slate-50" />;
+}
+
+function renderAnswer(q: { question_type: string; prompt: string }, raw: string | undefined): ReactNode {
+  const v = raw?.trim() ?? '';
+  if (!v) return <span className="text-slate-400 italic text-sm">No answer</span>;
+  const isImageAnswer =
+    q.question_type === 'customer_signature' ||
+    q.question_type === 'officer_signature' ||
+    q.question_type === 'before_photo' ||
+    q.question_type === 'after_photo' ||
+    v.startsWith('data:image');
+  if (isImageAnswer) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={v} alt="" className="max-h-52 rounded-md border border-slate-200 bg-white object-contain" />
+    );
+  }
+  if (q.question_type === 'textarea') {
+    return (
+      <pre className="whitespace-pre-wrap rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+        {v}
+      </pre>
+    );
+  }
+  return <p className="text-sm text-slate-800">{v}</p>;
+}
 
 interface Props {
-  /** Required when [templateTarget] is `"job"` (per-job checklist on job detail). */
-  jobId?: string;
-  /** Required when [templateTarget] is `"job-description"` (extra fields merged after global default for new jobs). */
-  jobDescriptionId?: string;
+  jobId: string;
   token: string;
-  /**
-   * `"default"` — global template in Settings; copied to new jobs.
-   * `"job"` — this job only (overrides for that job after copy).
-   * `"job-description"` — extra questions for a job type (merged after global when a job is created with that description).
-   */
-  templateTarget?: 'job' | 'default' | 'job-description';
 }
 
-export default function JobReportTab({
-  jobId,
-  jobDescriptionId,
-  token,
-  templateTarget = 'job',
-}: Props) {
-  const [questions, setQuestions] = useState<JobReportQuestionRow[]>([]);
+export default function JobReportTab({ jobId, token }: Props) {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-
-  const apiPath =
-    templateTarget === 'default'
-      ? '/settings/job-report-template'
-      : templateTarget === 'job-description'
-        ? `/settings/job-descriptions/${jobDescriptionId}/job-report-questions`
-        : `/jobs/${jobId}/job-report-questions`;
-
-  const questionTypeOptions = QUESTION_TYPES;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getJson<{ questions: JobReportQuestionRow[] }>(apiPath, token);
-      const list = res.questions || [];
-      setQuestions(
-        list.map((q, i) => ({
-          ...q,
-          sort_order: q.sort_order ?? i,
-          required: q.required !== false,
-          helper_text: q.helper_text ?? null,
-        })),
-      );
+      const res = await getJson<{ submissions: Submission[] }>(`/jobs/${jobId}/job-report-history`, token);
+      setSubmissions(res.submissions || []);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      setError(e instanceof Error ? e.message : 'Failed to load job reports');
     } finally {
       setLoading(false);
     }
-  }, [apiPath, token]);
+  }, [jobId, token]);
 
   useEffect(() => {
-    if (templateTarget === 'job' && !jobId) {
-      setError('Missing job id');
-      setLoading(false);
-      return;
-    }
-    if (templateTarget === 'job-description' && !jobDescriptionId) {
-      setError('Missing job description id');
-      setLoading(false);
-      return;
-    }
     void load();
-  }, [load, templateTarget, jobId, jobDescriptionId]);
-
-  const move = (index: number, dir: -1 | 1) => {
-    const j = index + dir;
-    if (j < 0 || j >= questions.length) return;
-    const next = [...questions];
-    const t = next[index];
-    next[index] = next[j];
-    next[j] = t;
-    setQuestions(next.map((q, i) => ({ ...q, sort_order: i })));
-  };
-
-  const addRow = () => {
-    setQuestions([
-      ...questions,
-      {
-        sort_order: questions.length,
-        question_type: 'text',
-        prompt: '',
-        helper_text: null,
-        required: true,
-      },
-    ]);
-  };
-
-  const removeRow = (index: number) => {
-    setQuestions(questions.filter((_, i) => i !== index).map((q, i) => ({ ...q, sort_order: i })));
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    setSavedAt(null);
-    try {
-      await putJson<{ questions: JobReportQuestionRow[] }>(apiPath, { questions }, token);
-      setSavedAt(new Date().toLocaleTimeString());
-      await load();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (templateTarget === 'job' && !jobId) {
-    return <div className="p-8 text-slate-500 text-sm font-medium">Missing job id.</div>;
-  }
+  }, [load]);
 
   if (loading) {
-    return <div className="p-8 text-slate-500 text-sm font-medium">Loading Final Job Report Templates…</div>;
+    return (
+      <div className="p-8 text-slate-500 text-sm font-medium">Loading submitted job reports…</div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
+      </div>
+    );
+  }
+
+  if (submissions.length === 0) {
+    return (
+      <div className="p-12 flex flex-col items-center justify-center text-center">
+        <div className="bg-slate-50 p-6 rounded-full border border-slate-100 mb-4 ring-8 ring-slate-50/50">
+          <ClipboardCheck className="size-10 text-slate-300 stroke-[1.5]" />
+        </div>
+        <p className="text-[15px] font-black text-slate-400 italic tracking-tight uppercase">
+          No submitted job reports yet
+        </p>
+        <p className="text-sm text-slate-400 mt-2">
+          Reports appear here once a diary visit is marked complete and the engineer submits their job report.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-3xl space-y-6 p-6">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">
-          {templateTarget === 'default'
-            ? 'Default Final Job Report Template'
-            : templateTarget === 'job-description'
-              ? 'Job report — extra fields for this job type'
-              : 'Final Job Report Templates'}
-        </h2>
-        <p className="mt-1 text-sm text-slate-600">
-          {templateTarget === 'default' ? (
-            <>
-              This checklist is <strong>copied first</strong> onto every new job when the job is created. If the job
-              uses a job description that has its own extra report fields, those are <strong>appended after</strong>{' '}
-              this default (see <span className="font-semibold text-slate-800">Final Job Report Templates</span> below for
-              per-type extras). Existing jobs are not changed.
-            </>
-          ) : templateTarget === 'job-description' ? (
-            <>
-              These questions are <strong>merged after</strong> the global default when someone creates a job with this
-              job description (e.g. electrical-specific fields plus the general form). They are not copied to jobs
-              that use another description or no description. Edit job types under{' '}
-              <span className="font-semibold text-slate-800">Settings → Job descriptions</span>.
-            </>
-          ) : (
-            <>
-              For <strong>this job only</strong> — it overrides the default for visits on this job. To edit the
-              company-wide default for <strong>new</strong> jobs, go to{' '}
-              <span className="font-semibold text-slate-800">Settings → Final Job Report Templates</span>. Field officers must
-              submit this report before a visit can be marked complete on jobs that include at least one question.
-            </>
-          )}
-        </p>
+    <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
+      <div className="flex items-center gap-3">
+        <ClipboardCheck className="size-5 text-[#14B8A6]" />
+        <h2 className="text-lg font-bold text-slate-900">Submitted Job Reports</h2>
+        <span className="ml-auto text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+          {submissions.length} visit{submissions.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>
-      )}
-      {savedAt && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          Saved at {savedAt}
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {questions.length === 0 && (
-          <p className="text-sm text-slate-500">No questions yet. Add rows for this job, then save.</p>
-        )}
-        {questions.map((q, index) => (
-          <div
-            key={`${index}-${q.id ?? 'new'}`}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 w-8">#{index + 1}</span>
-              <select
-                className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-medium text-slate-800"
-                value={q.question_type}
-                onChange={(e) => {
-                  const v = e.target.value as JobReportQuestionType;
-                  setQuestions(questions.map((row, i) => (i === index ? { ...row, question_type: v } : row)));
-                }}
-              >
-                {questionTypeOptions.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <label className="ml-auto flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={q.required}
-                  onChange={(e) => {
-                    setQuestions(
-                      questions.map((row, i) => (i === index ? { ...row, required: e.target.checked } : row)),
-                    );
-                  }}
-                />
-                Required
-              </label>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100"
-                onClick={() => move(index, -1)}
-                title="Move up"
-              >
-                <ChevronUp className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100"
-                onClick={() => move(index, 1)}
-                title="Move down"
-              >
-                <ChevronDown className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-rose-600 hover:bg-rose-50"
-                onClick={() => removeRow(index)}
-                title="Remove"
-              >
-                <Trash2 className="size-4" />
-              </button>
+      {submissions.map((sub) => (
+        <div
+          key={sub.diary_event_id}
+          className="bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden"
+        >
+          {/* Visit header */}
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <Calendar className="size-4 text-slate-400" />
+              <span className="font-bold text-slate-700">
+                {format(new Date(sub.start_time), 'EEEE do MMMM yyyy')}
+              </span>
+              <span className="text-slate-400">·</span>
+              <span className="text-slate-600">{format(new Date(sub.start_time), 'HH:mm')}</span>
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Question / label</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={q.prompt}
-                placeholder="e.g. Describe work completed"
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setQuestions(questions.map((row, i) => (i === index ? { ...row, prompt: v } : row)));
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Helper text (optional)</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={q.helper_text ?? ''}
-                placeholder="Shown under the field on the officer app"
-                onChange={(e) => {
-                  const v = e.target.value.trim() ? e.target.value : '';
-                  setQuestions(
-                    questions.map((row, i) => (i === index ? { ...row, helper_text: v || null } : row)),
-                  );
-                }}
-              />
+            <div className="flex items-center gap-2 text-sm">
+              <User className="size-4 text-slate-400" />
+              <span className="font-semibold text-slate-600">
+                {sub.officer_full_name || 'Unknown officer'}
+              </span>
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={addRow}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-        >
-          <Plus className="size-4" /> Add question
-        </button>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2 text-sm font-bold text-white shadow hover:bg-[#119f8e] disabled:opacity-50"
-        >
-          <Save className="size-4" /> {saving ? 'Saving…' : 'Save template'}
-        </button>
-      </div>
+          {/* Answers */}
+          {sub.answers.length > 0 && (
+            <div className="px-6 py-4 space-y-4">
+              {sub.answers.map((ans, idx) => (
+                <div key={`${ans.question_id}-${idx}`} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+                      {ans.prompt}
+                    </span>
+                    {ans.helper_text && (
+                      <span className="text-[11px] text-slate-400">({ans.helper_text})</span>
+                    )}
+                  </div>
+                  <div className="pl-0">{renderAnswer(ans, ans.value)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Extra submissions */}
+          {sub.extra_submissions.length > 0 && (
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/30">
+              <h4 className="text-xs font-black uppercase tracking-wide text-slate-500 mb-3 flex items-center gap-1.5">
+                <Paperclip className="size-3.5" />
+                Extra submissions
+              </h4>
+              <div className="space-y-4">
+                {sub.extra_submissions.map((extra) => (
+                  <div key={extra.id} className="bg-white rounded-lg border border-slate-200 p-3 space-y-2">
+                    {extra.notes && (
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{extra.notes}</p>
+                    )}
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span className="font-medium">
+                        {extra.display_name || extra.created_by_name || 'Unknown'}
+                      </span>
+                      <span>·</span>
+                      <span>{format(new Date(extra.created_at), 'dd MMM yyyy HH:mm')}</span>
+                    </div>
+                    {extra.media.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {extra.media.map((m, mIdx) => (
+                          <div key={mIdx} className="space-y-1">
+                            {m.kind === 'video' || m.content_type.startsWith('video/') ? (
+                              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                <FileVideo className="size-4 text-slate-400" />
+                                <span className="truncate max-w-[200px]">{m.original_filename}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                <FileImage className="size-4 text-slate-400" />
+                                <span className="truncate max-w-[200px]">{m.original_filename}</span>
+                              </div>
+                            )}
+                            <AuthenticatedFilePreview
+                              filePath={m.file_path}
+                              contentType={m.content_type}
+                              kind={m.kind}
+                              token={token}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

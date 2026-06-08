@@ -32,6 +32,7 @@ interface DiaryEvent {
   job_id: number;
   officer_id: number | null;
   officer_full_name: string | null;
+  officers?: { id: number; full_name: string; is_primary?: boolean }[];
   start_time: string;
   duration_minutes: number;
   event_status: string;
@@ -158,7 +159,7 @@ export default function DiaryPage() {
   const [scheduleForm, setScheduleForm] = useState({
     start_time: '',
     duration_minutes: 60,
-    officer_id: '',
+    officer_ids: [] as number[],
     notes: ''
   });
 
@@ -250,7 +251,7 @@ export default function DiaryPage() {
     setScheduleForm({
       start_time: localISOTime,
       duration_minutes: 60,
-      officer_id: String(officer.id),
+      officer_ids: [officer.id],
       notes: ''
     });
     setScheduleModalOpen(true);
@@ -266,7 +267,7 @@ export default function DiaryPage() {
         {
           start_time: new Date(scheduleForm.start_time).toISOString(),
           duration_minutes: scheduleForm.duration_minutes,
-          officer_id: parseInt(scheduleForm.officer_id, 10),
+          officer_ids: scheduleForm.officer_ids,
           notes: scheduleForm.notes
         },
         token
@@ -459,7 +460,7 @@ export default function DiaryPage() {
                             const cellEvents = events
                               .filter(
                                 (e) =>
-                                  e.officer_id === officer.id &&
+                                  (e.officer_id === officer.id || (e.officers || []).some((o) => o.id === officer.id)) &&
                                   isSameDay(new Date(e.start_time), day),
                               )
                               .sort(
@@ -531,7 +532,7 @@ export default function DiaryPage() {
                         {officers.map((officer) => {
                           const officerEvents = events.filter(
                             (e) =>
-                              e.officer_id === officer.id &&
+                              (e.officer_id === officer.id || (e.officers || []).some((o) => o.id === officer.id)) &&
                               isSameDay(new Date(e.start_time), date),
                           );
                           const totalDayMins = DAILY_TIMELINE_HOUR_COUNT * 60;
@@ -760,15 +761,62 @@ export default function DiaryPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700">Engineer</label>
-                <select 
-                   value={scheduleForm.officer_id}
-                   onChange={(e) => setScheduleForm({...scheduleForm, officer_id: e.target.value})}
-                   className="mt-1 w-full border border-slate-300 rounded px-3 py-2 text-sm"
-                   required
-                >
-                   {officers.map(o => <option key={o.id} value={o.id}>{o.full_name}</option>)}
-                </select>
+                <label className="block text-sm font-medium text-slate-700">Engineers</label>
+                <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-300 bg-white p-2">
+                  {officers.length === 0 && (
+                    <p className="px-2 py-1 text-sm text-slate-400">No users</p>
+                  )}
+                  {officers.map((o) => {
+                    const checked = scheduleForm.officer_ids.includes(o.id);
+                    const isPrimary = scheduleForm.officer_ids[0] === o.id;
+                    return (
+                      <label
+                        key={o.id}
+                        className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setScheduleForm({ ...scheduleForm, officer_ids: [...scheduleForm.officer_ids, o.id] });
+                            } else {
+                              setScheduleForm({
+                                ...scheduleForm,
+                                officer_ids: scheduleForm.officer_ids.filter((id) => id !== o.id),
+                              });
+                            }
+                          }}
+                          className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                        />
+                        <span className="text-sm text-slate-700 flex-1">{o.full_name}</span>
+                        {checked && (
+                          <input
+                            type="radio"
+                            name="diary_primary_officer"
+                            checked={isPrimary}
+                            onChange={() => {
+                              setScheduleForm({
+                                ...scheduleForm,
+                                officer_ids: [o.id, ...scheduleForm.officer_ids.filter((id) => id !== o.id)],
+                              });
+                            }}
+                            title="Primary"
+                            className="text-[#14B8A6] focus:ring-[#14B8A6]"
+                          />
+                        )}
+                        {checked && isPrimary && (
+                          <span className="text-[10px] font-bold uppercase text-[#14B8A6]">Primary</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {scheduleForm.officer_ids.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {scheduleForm.officer_ids.length} selected. The radio marks the primary engineer.
+                  </p>
+                )}
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setScheduleModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded">Cancel</button>

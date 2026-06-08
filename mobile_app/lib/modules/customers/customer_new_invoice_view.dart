@@ -212,7 +212,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
     }
 
     final cust = _customer!;
-    final addr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'town'), ctStr(cust, 'postcode')].where((e) => e.isNotEmpty).join(', ');
+    final addr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'address_line_2'), ctStr(cust, 'address_line_3'), ctStr(cust, 'town'), ctStr(cust, 'county'), ctStr(cust, 'postcode')].where((e) => e.isNotEmpty).join(', ');
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
@@ -255,7 +255,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                         style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFFBBF24)),
                       ),
                       Text(
-                        [ctStr(_workAddress!, 'address_line_1'), ctStr(_workAddress!, 'town'), ctStr(_workAddress!, 'postcode')].where((e) => e.isNotEmpty).join(', '),
+                        [ctStr(_workAddress!, 'address_line_1'), ctStr(_workAddress!, 'address_line_2'), ctStr(_workAddress!, 'address_line_3'), ctStr(_workAddress!, 'town'), ctStr(_workAddress!, 'county'), ctStr(_workAddress!, 'postcode')].where((e) => e.isNotEmpty).join(', '),
                         style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.65)),
                       ),
                     ],
