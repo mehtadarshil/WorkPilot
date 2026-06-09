@@ -13,8 +13,14 @@ import '../../data/repositories/jobs_repository.dart';
 import 'job_detail_controller.dart';
 
 /// Customer site / FRA report — mirrors web job tab **Reports** (`CustomerSiteReportTab`).
+/// When [customerId] is provided, the tab loads that customer directly instead of
+/// reading from [JobDetailController].
 class JobTabSiteReports extends StatefulWidget {
-  const JobTabSiteReports({super.key});
+  final int? customerId;
+  final int? workAddressId;
+  final int? reportId;
+
+  const JobTabSiteReports({super.key, this.customerId, this.workAddressId, this.reportId});
 
   @override
   State<JobTabSiteReports> createState() => _JobTabSiteReportsState();
@@ -78,21 +84,25 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
   }
 
   Future<void> _load() async {
-    final c = Get.find<JobDetailController>();
     final jobs = Get.find<JobsRepository>();
-    final j = c.job.value;
-    final cid = (j?['customer_id'] as num?)?.toInt();
+    int? cid = widget.customerId;
+    int? waId = widget.workAddressId;
     if (cid == null) {
-      setState(() {
-        _loading = false;
-        _err = 'Missing customer';
-      });
-      return;
-    }
-    int? waId = (j?['work_address_id'] as num?)?.toInt();
-    final wa = j?['work_address'];
-    if (waId == null && wa is Map) {
-      waId = (wa['id'] as num?)?.toInt();
+      final c = Get.find<JobDetailController>();
+      final j = c.job.value;
+      cid = (j?['customer_id'] as num?)?.toInt();
+      if (cid == null) {
+        setState(() {
+          _loading = false;
+          _err = 'Missing customer';
+        });
+        return;
+      }
+      waId ??= (j?['work_address_id'] as num?)?.toInt();
+      final wa = j?['work_address'];
+      if (waId == null && wa is Map) {
+        waId = (wa['id'] as num?)?.toInt();
+      }
     }
 
     setState(() {
@@ -102,7 +112,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     });
 
     try {
-      final payload = await jobs.getCustomerSiteReport(cid, workAddressId: waId);
+      final payload = await jobs.getCustomerSiteReport(cid, workAddressId: waId, reportId: widget.reportId);
       final rep = payload['report'];
       final tpl = payload['template'];
       if (rep is! Map) throw ApiException('Invalid site report response');

@@ -731,6 +731,7 @@ export default function JobsNewJobPage() {
                       </div>
                     </label>
                   </div>
+
                 </div>
               </div>
 

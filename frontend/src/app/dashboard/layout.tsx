@@ -293,17 +293,30 @@ export default function DashboardLayout({
               </Link>
             )}
             {hasNavPermission(user, 'quotations') && (
-              <Link
-                href="/dashboard/quotations"
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                  pathname.startsWith('/dashboard/quotations')
-                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <Quote className="size-4" />
-                Quotations
-              </Link>
+              <>
+                <Link
+                  href="/dashboard/quotations"
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                    pathname.startsWith('/dashboard/quotations') && !pathname.startsWith('/dashboard/quotation-visits')
+                      ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Quote className="size-4" />
+                  Quotations
+                </Link>
+                <Link
+                  href="/dashboard/quotation-visits"
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                    pathname.startsWith('/dashboard/quotation-visits')
+                      ? 'bg-amber-100/80 text-amber-900'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Quote className="size-4" />
+                  Visits
+                </Link>
+              </>
             )}
             {showSettingsNav(user) && (
               <Link

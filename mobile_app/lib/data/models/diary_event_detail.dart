@@ -54,6 +54,8 @@ class DiaryEventDetail {
     this.customerSpecificNotes = const [],
     this.abortReason,
     this.officers = const [],
+    this.isQuotationVisit = false,
+    this.jobNumber,
   });
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
@@ -145,6 +147,8 @@ class DiaryEventDetail {
           ? (m['abort_reason'] as String).trim()
           : null,
       officers: _parseOfficers(json['officers'] ?? m['officers']),
+      isQuotationVisit: m['is_quotation_visit'] == true,
+      jobNumber: m['job_number'] as String?,
     );
   }
 
@@ -186,6 +190,8 @@ class DiaryEventDetail {
   final List<CustomerSpecificNote> customerSpecificNotes;
   final String? abortReason;
   final List<Map<String, dynamic>> officers;
+  final bool isQuotationVisit;
+  final String? jobNumber;
 
   String? get primaryOfficerName {
     for (final o in officers) {
@@ -263,6 +269,8 @@ class DiaryEventDetail {
       customerSpecificNotes: customerSpecificNotes,
       abortReason: abortReason ?? this.abortReason,
       officers: officers,
+      isQuotationVisit: isQuotationVisit,
+      jobNumber: jobNumber,
     );
   }
 }

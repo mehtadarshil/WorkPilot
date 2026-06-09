@@ -581,6 +581,25 @@ class MobileRepository extends BaseRepository {
     }
   }
 
+  Future<({List<Map<String, dynamic>> items, int page, int? totalPages})> fetchSiteReports({
+    int page = 1,
+  }) async {
+    final res = await api.get<Map<String, dynamic>>(
+      '/site-reports',
+      queryParameters: <String, dynamic>{'page': page, 'limit': 25},
+    );
+    final data = res.data;
+    final raw = data?['reports'];
+    final list = raw is List
+        ? raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+        : <Map<String, dynamic>>[];
+    return (
+      items: list,
+      page: page,
+      totalPages: (data?['totalPages'] as num?)?.toInt(),
+    );
+  }
+
   // ─── Settings: Email ───
   Future<Map<String, dynamic>> fetchEmailSettings() async {
     final res = await api.get<Map<String, dynamic>>('/settings/email');
@@ -718,6 +737,21 @@ class MobileRepository extends BaseRepository {
     final data = res.data;
     if (data == null) throw Exception('Empty response');
     return Map<String, dynamic>.from(data['template'] as Map? ?? {});
+  }
+
+  Future<Map<String, dynamic>> createSiteReport({
+    required int customerId,
+    required int templateId,
+  }) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/customers/$customerId/site-reports',
+      data: <String, dynamic>{
+        'template_id': templateId,
+        'work_address_id': null,
+        'job_id': null,
+      },
+    );
+    return Map<String, dynamic>.from(res.data ?? {});
   }
 
   Future<void> postSiteReportTemplate(Map<String, dynamic> payload) async {

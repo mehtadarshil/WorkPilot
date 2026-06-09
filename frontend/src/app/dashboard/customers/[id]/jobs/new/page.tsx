@@ -110,6 +110,7 @@ interface EditableJob {
   quoted_amount?: number | null;
   customer_reference?: string | null;
   job_pipeline?: string | null;
+  is_quotation_visit?: boolean;
   pricing_items?: DescPricingItem[];
   completed_service_items?: unknown;
 }
@@ -140,6 +141,7 @@ export default function AddNewJobPage() {
   const editJobId = searchParams.get('edit');
   const workAddressIdParam = searchParams.get('work_address_id');
   const fromQuotationId = searchParams.get('from_quotation');
+  const convertVisit = searchParams.get('convert_visit') === '1';
   const isEdit = !!editJobId;
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -327,7 +329,7 @@ export default function AddNewJobPage() {
   }, [fetchData]);
 
   useEffect(() => {
-    if (isEdit || !fromQuotationId || !token || !customerId || loading) return;
+    if ((!convertVisit && isEdit) || !fromQuotationId || !token || !customerId || loading) return;
     if (quotationPrefillDoneRef.current) return;
     const qid = parseInt(fromQuotationId, 10);
     if (!Number.isFinite(qid)) return;
@@ -399,7 +401,7 @@ export default function AddNewJobPage() {
     return () => {
       cancelled = true;
     };
-  }, [isEdit, fromQuotationId, token, customerId, loading]);
+  }, [isEdit, convertVisit, fromQuotationId, token, customerId, loading]);
 
   // When description changes, auto-fill skills, job notes, pricing items
   const handleDescriptionChange = async (newId: number | '') => {
@@ -550,6 +552,12 @@ export default function AddNewJobPage() {
 
       if (isEdit) {
         await patchJson(`/jobs/${editJobId}`, payload, token);
+        if (convertVisit && fromQuotationId) {
+          await postJson(`/jobs/${editJobId}/convert-to-work-job`, payload, token);
+          setSaving(false);
+          router.push(`/dashboard/jobs/${editJobId}`);
+          return;
+        }
       } else {
         const created = await postJson<{ job: { id: number } }>(`/customers/${customerId}/jobs`, payload, token);
         const newJobId = created.job?.id;
@@ -613,6 +621,16 @@ export default function AddNewJobPage() {
           {error && (
             <div className="rounded-lg bg-rose-50 p-4 text-sm font-medium text-rose-800 border border-rose-200">{error}</div>
           )}
+
+          {convertVisit && isEdit && fromQuotationId ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950">
+              <p className="font-semibold">Converting quotation visit to work job</p>
+              <p className="mt-1 text-amber-900/90">
+                Complete all required job fields below. Saving will convert this survey visit into a regular work job
+                using the accepted quotation pricing.
+              </p>
+            </div>
+          ) : null}
 
           {fromQuotationId && !isEdit ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950">
@@ -873,6 +891,7 @@ export default function AddNewJobPage() {
                       </div>
                     </label>
                   </div>
+
                 </div>
               </div>
 

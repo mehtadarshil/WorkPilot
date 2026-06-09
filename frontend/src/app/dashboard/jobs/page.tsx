@@ -28,6 +28,7 @@ interface Job {
   state: string;
   created_at: string;
   updated_at: string;
+  is_quotation_visit?: boolean;
 }
 
 interface JobsResponse {
@@ -120,6 +121,7 @@ export default function JobsPage() {
       if (searchDebounced) params.set('search', searchDebounced);
       if (stateFilter) params.set('state', stateFilter);
       if (priorityFilter) params.set('priority', priorityFilter);
+      params.set('exclude_quotation_visits', 'true');
       const data = await getJson<JobsResponse>(`/jobs?${params.toString()}`, token);
       setJobs(data.jobs ?? []);
       setTotal(data.total ?? 0);
@@ -420,12 +422,14 @@ export default function JobsPage() {
                                 <Briefcase className="size-5 text-[#14B8A6]" />
                               </div>
                               <div>
-                                <button
-                                  onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
-                                  className="text-sm font-semibold text-slate-900 hover:text-[#14B8A6] hover:underline text-left block"
-                                >
-                                  {j.title}
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
+                                    className="text-sm font-semibold text-slate-900 hover:text-[#14B8A6] hover:underline text-left block"
+                                  >
+                                    {j.title}
+                                  </button>
+                                </div>
                                 <span className="block max-w-[200px] truncate text-xs text-slate-500">{j.description || '—'}</span>
                               </div>
                             </div>

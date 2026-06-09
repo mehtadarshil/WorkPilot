@@ -65,6 +65,7 @@ interface JobDetails {
   work_address?: JobWorkAddress | null;
   pricing_items?: { id: number; item_name: string; quantity: number; unit_price: number; total: number; vat_rate: number }[];
   officers?: { id: number; full_name: string; is_primary?: boolean }[];
+  is_quotation_visit?: boolean;
 }
 
 interface DiaryEvent {
@@ -423,6 +424,10 @@ export default function JobDetailsPage() {
     setLoading(true);
     try {
       const resJob = await getJson<{ job: JobDetails }>(`/jobs/${id}`, token);
+      if (resJob.job.is_quotation_visit) {
+        router.replace(`/dashboard/quotation-visits/${id}`);
+        return;
+      }
       setJob(resJob.job);
       const resEvents = await getJson<{ events: DiaryEvent[] }>(`/jobs/${id}/diary-events`, token);
       setDiaryEvents(resEvents.events || []);
@@ -437,7 +442,7 @@ export default function JobDetailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, token]);
+  }, [id, token, router]);
 
   useEffect(() => {
     fetchJobDetails();
@@ -795,6 +800,11 @@ export default function JobDetailsPage() {
       <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-baseline gap-x-8 gap-y-2 text-[13px]">
         <span className="text-slate-500">Customer: <strong className="text-slate-800 font-bold ml-1">{job.customer_full_name}</strong></span>
         <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{job.id.toString().padStart(4, '0')}</strong></span>
+        {job.is_quotation_visit && (
+          <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+            Quotation Visit
+          </span>
+        )}
         <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{job.description_name || job.title}</strong></span>
         {job.work_address ? (
           <>

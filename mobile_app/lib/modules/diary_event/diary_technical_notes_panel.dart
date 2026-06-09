@@ -13,10 +13,33 @@ import 'extra_submission_helpers.dart';
 
 const int _kMaxImagesPerTechnicalNote = 8;
 
+void showDiaryTechnicalNoteSheet(
+  BuildContext context,
+  DiaryEventDetailController controller,
+  {
+    bool completeAfterSubmit = false,
+  }
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) => _AddTechnicalNoteSheet(
+      controller: controller,
+      completeAfterSubmit: completeAfterSubmit,
+    ),
+  );
+}
+
 class DiaryTechnicalNotesPanel extends StatelessWidget {
-  const DiaryTechnicalNotesPanel({super.key, required this.controller});
+  const DiaryTechnicalNotesPanel({
+    super.key,
+    required this.controller,
+    this.isQuotationVisit = false,
+  });
 
   final DiaryEventDetailController controller;
+  final bool isQuotationVisit;
 
   @override
   Widget build(BuildContext context) {
@@ -30,14 +53,18 @@ class DiaryTechnicalNotesPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: _accentTitleLocal('Technical notes')),
+                Expanded(
+                  child: _accentTitleLocal(
+                    isQuotationVisit ? 'Site survey notes' : 'Technical notes',
+                  ),
+                ),
                 Material(
                   color: AppColors.primary.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     onTap: controller.submittingTechnicalNote.value
                         ? null
-                        : () => _openAddSheet(context),
+                        : () => showDiaryTechnicalNoteSheet(context, controller),
                     borderRadius: BorderRadius.circular(12),
                     child: const Padding(
                       padding: EdgeInsets.all(10),
@@ -53,7 +80,9 @@ class DiaryTechnicalNotesPanel extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Add technical notes with images from site (images only).',
+              isQuotationVisit
+                  ? 'Record site survey notes and photos for the office to create a quotation.'
+                  : 'Add technical notes with images from site (images only).',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 height: 1.35,
@@ -78,21 +107,16 @@ class DiaryTechnicalNotesPanel extends StatelessWidget {
       );
     });
   }
-
-  void _openAddSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _AddTechnicalNoteSheet(controller: controller),
-    );
-  }
 }
 
 class _AddTechnicalNoteSheet extends StatefulWidget {
-  const _AddTechnicalNoteSheet({required this.controller});
+  const _AddTechnicalNoteSheet({
+    required this.controller,
+    this.completeAfterSubmit = false,
+  });
 
   final DiaryEventDetailController controller;
+  final bool completeAfterSubmit;
 
   @override
   State<_AddTechnicalNoteSheet> createState() => _AddTechnicalNoteSheetState();
@@ -161,10 +185,13 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
       _toast('Could not compress images small enough, or they were invalid.');
       return;
     }
-    await widget.controller.submitTechnicalNote(
+    final saved = await widget.controller.submitTechnicalNote(
       notes: notes.isEmpty ? null : notes,
       media: media,
     );
+    if (saved && widget.completeAfterSubmit) {
+      await widget.controller.applyStatus('completed');
+    }
   }
 
   @override
@@ -204,7 +231,9 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'New technical note',
+                    widget.completeAfterSubmit
+                        ? 'Add notes and complete visit'
+                        : 'New technical note',
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -218,7 +247,9 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                     maxLines: 6,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
                     decoration: InputDecoration(
-                      hintText: 'Technical note (optional if you add images)',
+                      hintText: widget.completeAfterSubmit
+                          ? 'Site notes for office (optional if you add images)'
+                          : 'Technical note (optional if you add images)',
                       hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                       filled: true,
                       fillColor: AppColors.whiteOverlay(0.06),

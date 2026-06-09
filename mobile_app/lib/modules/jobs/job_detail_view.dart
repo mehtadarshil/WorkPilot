@@ -62,10 +62,13 @@ class _JobDetailViewState extends State<JobDetailView>
       child: Scaffold(
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
-          title: Text(
-            'Job #${controller.jobId}',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-          ),
+          title: Obx(() {
+            final number = (controller.job.value?['job_number'] as String?)?.trim();
+            return Text(
+              number != null && number.isNotEmpty ? number : 'Job #${controller.jobId}',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+            );
+          }),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,

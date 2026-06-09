@@ -41,6 +41,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
   final _customersRepo = Get.find<CustomersRepository>();
 
   int? _editId;
+  int? _diaryEventId;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -65,7 +66,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
   void initState() {
     super.initState();
     final a = Get.arguments;
-    _editId = a is int ? a : null;
+    if (a is int) {
+      _editId = a;
+    } else if (a is Map<String, dynamic>) {
+      _diaryEventId = (a['diaryEventId'] as num?)?.toInt();
+      _customerId = (a['customerId'] as num?)?.toInt();
+    }
     _quotationDate = DateTime.now();
     _validUntil = DateTime.now().add(const Duration(days: 30));
     _lines.add(_LineRow());
@@ -141,6 +147,9 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
         _validUntil = DateTime.now().add(Duration(days: vd));
         final dtp = (settings['default_tax_percentage'] as num?)?.toDouble() ?? 0;
         _taxC.text = '$dtp';
+        if (_customerId != null) {
+          await _loadWorkAddresses(_customerId!);
+        }
       }
       setState(() => _loading = false);
     } on ApiException catch (e) {
@@ -224,7 +233,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
           'line_items': validItems,
           'tax_percentage': _taxPct,
         };
-        final created = await _repo.createQuotation(body);
+        final Map<String, dynamic> created;
+        if (_diaryEventId != null) {
+          created = await _repo.createQuotationFromDiaryEvent(_diaryEventId!, body);
+        } else {
+          created = await _repo.createQuotation(body);
+        }
         final id = (created['id'] as num?)?.toInt();
         Get.back(result: id);
       } else {
@@ -267,7 +281,9 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
           title: Text(
-            _editId == null ? 'Create quotation' : 'Edit quotation',
+            _editId == null
+                ? (_diaryEventId != null ? 'Create quotation from visit' : 'Create quotation')
+                : 'Edit quotation',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
@@ -506,7 +522,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       ),
                       child: _saving
                           ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Text(_editId == null ? 'Create quotation' : 'Save changes', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                          : Text(
+                              _editId == null
+                                  ? (_diaryEventId != null ? 'Submit quotation' : 'Create quotation')
+                                  : 'Save changes',
+                              style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+                            ),
                     ),
                   ],
                 ),

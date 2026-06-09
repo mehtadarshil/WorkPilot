@@ -374,11 +374,11 @@ class DiaryEventDetailController extends GetxController {
     detail.value = d.copyWith(extraSubmissions: [...d.extraSubmissions, row]);
   }
 
-  Future<void> submitTechnicalNote({
+  Future<bool> submitTechnicalNote({
     String? notes,
     required List<Map<String, dynamic>> media,
   }) async {
-    if (submittingTechnicalNote.value) return;
+    if (submittingTechnicalNote.value) return false;
     final n = notes?.trim() ?? '';
     if (n.isEmpty && media.isEmpty) {
       Get.snackbar(
@@ -388,7 +388,7 @@ class DiaryEventDetailController extends GetxController {
         margin: const EdgeInsets.all(16),
         borderRadius: 12,
       );
-      return;
+      return false;
     }
     submittingTechnicalNote.value = true;
     try {
@@ -407,6 +407,7 @@ class DiaryEventDetailController extends GetxController {
           margin: const EdgeInsets.all(16),
           borderRadius: 12,
         );
+        return true;
       } else {
         Get.back();
         _appendPendingTechnicalNoteLocally(
@@ -420,6 +421,7 @@ class DiaryEventDetailController extends GetxController {
           margin: const EdgeInsets.all(16),
           borderRadius: 12,
         );
+        return true;
       }
     } on ApiException catch (e) {
       Get.snackbar(
@@ -429,6 +431,7 @@ class DiaryEventDetailController extends GetxController {
         margin: const EdgeInsets.all(16),
         borderRadius: 12,
       );
+      return false;
     } catch (e) {
       Get.snackbar(
         'Technical note',
@@ -437,6 +440,7 @@ class DiaryEventDetailController extends GetxController {
         margin: const EdgeInsets.all(16),
         borderRadius: 12,
       );
+      return false;
     } finally {
       submittingTechnicalNote.value = false;
     }

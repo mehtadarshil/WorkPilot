@@ -432,6 +432,7 @@ interface DbCustomerNote {
 
 interface DbJob {
   id: number;
+  job_number?: string | null;
   title: string;
   description: string | null;
   priority: string;
@@ -463,6 +464,7 @@ interface DbJob {
   customer_reference?: string | null;
   job_pipeline?: string | null;
   book_into_diary?: boolean;
+  is_quotation_visit?: boolean;
   contact_name?: string | null;
   job_contact_id?: number | null;
   expected_completion?: Date | null;
@@ -524,6 +526,8 @@ interface DbQuotation {
   description: string | null;
   billing_address: string | null;
   quotation_work_address_id?: number | null;
+  diary_event_id?: number | null;
+  tax_percentage?: number | null;
   state: string;
   created_at: Date;
   updated_at: Date;
@@ -1126,6 +1130,7 @@ async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS jobs (
       id SERIAL PRIMARY KEY,
+      job_number VARCHAR(50),
       title VARCHAR(255) NOT NULL,
       description TEXT,
       priority VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
@@ -1142,6 +1147,36 @@ async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
+  `);
+
+  await pool.query(`CREATE SEQUENCE IF NOT EXISTS job_number_seq`);
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_number VARCHAR(50)`);
+  await pool.query(`
+    UPDATE jobs
+       SET job_number = 'JOB-' || LPAD(id::text, 6, '0')
+     WHERE job_number IS NULL OR TRIM(job_number) = ''
+  `);
+  await pool.query(`
+    SELECT setval(
+      'job_number_seq',
+      GREATEST(
+        1,
+        (SELECT COALESCE(MAX(id), 0) FROM jobs),
+        (SELECT COALESCE(MAX(substring(job_number from '^JOB-(\\d+)$')::bigint), 0)
+           FROM jobs
+          WHERE job_number ~ '^JOB-\\d+$')
+      ),
+      true
+    )
+  `);
+  await pool.query(`
+    ALTER TABLE jobs
+      ALTER COLUMN job_number SET DEFAULT ('JOB-' || LPAD(nextval('job_number_seq')::text, 6, '0'))
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_job_number_unique
+      ON jobs(job_number)
+      WHERE job_number IS NOT NULL
   `);
 
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS officer_id INTEGER REFERENCES officers(id) ON DELETE SET NULL`);
@@ -1247,6 +1282,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS customer_reference VARCHAR(255)`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_pipeline VARCHAR(100)`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS book_into_diary BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_quotation_visit BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS contact_name VARCHAR(255)`);
   await pool.query(
     `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_contact_id INTEGER REFERENCES customer_contacts(id) ON DELETE SET NULL`,
@@ -1649,6 +1685,12 @@ async function initDb() {
   await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
   await pool.query(
     `ALTER TABLE quotations ADD COLUMN IF NOT EXISTS quotation_work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
+  );
+  await pool.query(
+    `ALTER TABLE quotations ADD COLUMN IF NOT EXISTS diary_event_id INTEGER REFERENCES diary_events(id) ON DELETE SET NULL`,
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_quotations_diary_event_id ON quotations(diary_event_id) WHERE diary_event_id IS NOT NULL`,
   );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_line_items (
@@ -3000,7 +3042,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       ? await pool.query(
           `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description, j.location, j.customer_id,
+              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number,
               c.full_name AS customer_full_name, c.email AS customer_email,
               o.full_name AS officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
@@ -3162,9 +3204,10 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
     const listResult = await pool.query<
       DbJob & { customer_full_name: string | null }
     >(
-      `SELECT j.id, j.title, j.description, j.state, j.priority, j.location,
+      `SELECT j.id, j.job_number, j.title, j.description, j.state, j.priority, j.location,
               j.schedule_start, j.duration_minutes, j.scheduling_notes,
               j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
+              j.start_date, j.deadline,
               c.full_name AS customer_full_name
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
@@ -3176,6 +3219,7 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
     );
     const jobs = listResult.rows.map((r) => ({
       id: r.id,
+      job_number: r.job_number ?? null,
       title: r.title,
       description: r.description ?? null,
       state: r.state,
@@ -3189,6 +3233,8 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
       job_notes: r.job_notes ?? null,
       dispatched_at: r.dispatched_at ? (r.dispatched_at as Date).toISOString() : null,
       updated_at: (r.updated_at as Date).toISOString(),
+      start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
+      deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
     }));
     return res.json({ jobs });
   } catch (error) {
@@ -4179,7 +4225,13 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
   }
 });
 
-app.get('/api/officers/list', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/officers/list', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user!;
+  const canAccess = user.role === 'SUPER_ADMIN' || user.role === 'ADMIN' ||
+    (user.role === 'STAFF' && assertStaffPermissionAny(user, ['field_users', 'jobs', 'scheduling', 'quotations']));
+  if (!canAccess) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
   try {
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -5198,6 +5250,10 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       ? req.query.priority
       : '';
     const officerId = typeof req.query.officer_id === 'string' ? parseInt(req.query.officer_id, 10) : null;
+    const excludeQuotationVisitsRaw = req.query.exclude_quotation_visits;
+    const excludeQuotationVisits =
+      excludeQuotationVisitsRaw === undefined || excludeQuotationVisitsRaw === '' || excludeQuotationVisitsRaw === 'true' || excludeQuotationVisitsRaw === '1';
+    const onlyQuotationVisits = req.query.is_quotation_visit === 'true' || req.query.is_quotation_visit === '1';
     const offset = (page - 1) * limit;
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -5212,7 +5268,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       listParams.push(userId);
     }
     if (search) {
-      conditions.push(`(j.title ILIKE $${p} OR j.description ILIKE $${p} OR j.responsible_person ILIKE $${p} OR o.full_name ILIKE $${p})`);
+      conditions.push(`(j.job_number ILIKE $${p} OR j.title ILIKE $${p} OR j.description ILIKE $${p} OR j.responsible_person ILIKE $${p} OR o.full_name ILIKE $${p})`);
       countParams.push(`%${search}%`);
       listParams.push(`%${search}%`);
       p++;
@@ -5243,6 +5299,11 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       listParams.push(officerId);
       p++;
     }
+    if (onlyQuotationVisits) {
+      conditions.push('j.is_quotation_visit = true');
+    } else if (excludeQuotationVisits) {
+      conditions.push('(j.is_quotation_visit IS NOT TRUE)');
+    }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const joinClause = `LEFT JOIN customers c ON c.id = j.customer_id LEFT JOIN officers o ON o.id = j.officer_id`;
     listParams.push(limit, offset);
@@ -5254,10 +5315,10 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
     const listResult = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string }>(
-      `SELECT j.id, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
+      `SELECT j.id, j.job_number, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
         j.customer_id, j.work_address_id, j.location, j.required_certifications, j.attachments, j.state,
         j.schedule_start, j.duration_minutes, j.scheduling_notes, j.dispatched_at,
-        j.created_at, j.updated_at, j.created_by,
+        j.created_at, j.updated_at, j.created_by, j.is_quotation_visit,
         c.full_name AS customer_full_name,
         o.full_name AS officer_full_name
        FROM jobs j
@@ -5299,6 +5360,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
 
     const jobs = listResult.rows.map((r) => ({
       id: r.id,
+      job_number: r.job_number ?? null,
       title: r.title,
       description: r.description ?? null,
       priority: r.priority,
@@ -5322,6 +5384,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       created_at: (r.created_at as Date).toISOString(),
       updated_at: (r.updated_at as Date).toISOString(),
       created_by: r.created_by,
+      is_quotation_visit: !!r.is_quotation_visit,
     }));
 
     return res.json({
@@ -5501,6 +5564,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     attachments?: unknown[];
     state?: string;
     completed_service_items?: unknown;
+    is_quotation_visit?: boolean;
   };
   const title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!title) return res.status(400).json({ message: 'Job title is required' });
@@ -5521,6 +5585,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
   const requiredCertifications = typeof body.required_certifications === 'string' ? body.required_certifications.trim() || null : null;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const completedServiceItems = normalizeCompletedServiceItemsForDb(body.completed_service_items);
+  const isQuotationVisit = !!body.is_quotation_visit;
   const createdBy = getTenantScopeUserId(req.user!);
 
   const userId = getTenantScopeUserId(req.user!);
@@ -5536,10 +5601,10 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
 
   try {
     const result = await pool.query<DbJob>(
-      `INSERT INTO jobs (title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_by, completed_service_items)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       RETURNING id, title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_at, updated_at, created_by, completed_service_items`,
-      [title, description, priority, responsiblePerson, officerId, startDate, deadline, customerId, location, requiredCertifications, JSON.stringify(attachments), state, createdBy, JSON.stringify(completedServiceItems)],
+      `INSERT INTO jobs (title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_by, completed_service_items, is_quotation_visit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       RETURNING id, job_number, title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_at, updated_at, created_by, completed_service_items, is_quotation_visit`,
+      [title, description, priority, responsiblePerson, officerId, startDate, deadline, customerId, location, requiredCertifications, JSON.stringify(attachments), state, createdBy, JSON.stringify(completedServiceItems), isQuotationVisit],
     );
     const r = result.rows[0];
     const officerIds = Array.isArray(body.officer_ids)
@@ -5561,6 +5626,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     return res.status(201).json({
       job: {
         id: r.id,
+        job_number: r.job_number ?? null,
         title: r.title,
         description: r.description ?? null,
         priority: r.priority,
@@ -5578,6 +5644,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
         completed_service_items: Array.isArray(r.completed_service_items) ? r.completed_service_items : [],
+        is_quotation_visit: !!r.is_quotation_visit,
       },
     });
   } catch (error) {
@@ -5709,6 +5776,7 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
     values.push(JSON.stringify(completedServiceItems));
   }
   if (body.book_into_diary !== undefined) { updates.push(`book_into_diary = $${idx++}`); values.push(!!body.book_into_diary); }
+  if (body.is_quotation_visit !== undefined) { updates.push(`is_quotation_visit = $${idx++}`); values.push(!!body.is_quotation_visit); }
 
   if (updates.length === 0 && body.pricing_items === undefined) return res.status(400).json({ message: 'No fields to update' });
 
@@ -5783,6 +5851,600 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
     });
   } catch (error) {
     console.error('Update job error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Convert a quotation-visit job into a regular work job (requires accepted quotation + full job fields). */
+app.post('/api/jobs/:id/convert-to-work-job', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as {
+    title?: unknown;
+    job_description_id?: unknown;
+    contact_name?: unknown;
+    job_contact_id?: unknown;
+    expected_completion?: unknown;
+    priority?: unknown;
+    user_group?: unknown;
+    business_unit?: unknown;
+    skills?: unknown;
+    job_notes?: unknown;
+    is_service_job?: unknown;
+    quoted_amount?: unknown;
+    customer_reference?: unknown;
+    job_pipeline?: unknown;
+    book_into_diary?: unknown;
+    completed_service_items?: unknown;
+    pricing_items?: unknown;
+    description?: unknown;
+  };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const jobRow = await client.query<DbJob>(
+      isSuperAdmin ? `SELECT * FROM jobs WHERE id = $1 FOR UPDATE` : `SELECT * FROM jobs WHERE id = $1 AND created_by = $2 FOR UPDATE`,
+      isSuperAdmin ? [id] : [id, userId],
+    );
+    if ((jobRow.rowCount ?? 0) === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Job not found' });
+    }
+    const job = jobRow.rows[0];
+    if (!job.is_quotation_visit) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'This job is not a quotation visit' });
+    }
+
+    const acceptedQuote = await client.query<DbQuotation>(
+      `SELECT * FROM quotations WHERE job_id = $1 AND state = 'accepted' ORDER BY updated_at DESC LIMIT 1`,
+      [id],
+    );
+    if ((acceptedQuote.rowCount ?? 0) === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'An accepted quotation linked to this visit is required before converting to a work job' });
+    }
+    const quotation = acceptedQuote.rows[0];
+
+    const str = (key: keyof typeof body) => {
+      const v = body[key];
+      return typeof v === 'string' ? v.trim() || null : undefined;
+    };
+
+    const updates: string[] = ['is_quotation_visit = false', `state = 'created'`, 'updated_at = NOW()'];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : job.title;
+    updates.push(`title = $${idx++}`);
+    values.push(title);
+
+    if (body.job_description_id !== undefined) {
+      updates.push(`job_description_id = $${idx++}`);
+      values.push(parseOptionalJobDescriptionId(body.job_description_id));
+    }
+    if (str('contact_name') !== undefined) {
+      updates.push(`contact_name = $${idx++}`);
+      values.push(str('contact_name'));
+    }
+    if (body.job_contact_id !== undefined) {
+      const rawJc = body.job_contact_id;
+      if (rawJc === null || rawJc === '') {
+        updates.push(`job_contact_id = $${idx++}`);
+        values.push(null);
+      } else {
+        const jcid = typeof rawJc === 'number' && Number.isFinite(rawJc) ? Math.trunc(rawJc) : parseInt(String(rawJc), 10);
+        if (!Number.isFinite(jcid)) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Invalid job_contact_id' });
+        }
+        const v = await validateJobContactForCustomer(pool, job.customer_id!, job.work_address_id ?? null, jcid);
+        if (!v.valid) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Invalid job contact for this customer or work site' });
+        }
+        updates.push(`job_contact_id = $${idx++}`);
+        values.push(jcid);
+        updates.push(`contact_name = $${idx++}`);
+        values.push(v.display_name);
+      }
+    }
+    if (body.expected_completion !== undefined) {
+      updates.push(`expected_completion = $${idx++}`);
+      values.push(body.expected_completion ? new Date(body.expected_completion as string) : null);
+    }
+    if (typeof body.priority === 'string' && ['low', 'medium', 'high', 'critical'].includes(body.priority)) {
+      updates.push(`priority = $${idx++}`);
+      values.push(body.priority);
+    }
+    if (str('user_group') !== undefined) {
+      updates.push(`user_group = $${idx++}`);
+      values.push(str('user_group'));
+    }
+    if (str('business_unit') !== undefined) {
+      updates.push(`business_unit = $${idx++}`);
+      values.push(str('business_unit'));
+    }
+    if (str('skills') !== undefined) {
+      updates.push(`skills = $${idx++}`);
+      values.push(str('skills'));
+    }
+    if (str('job_notes') !== undefined) {
+      updates.push(`job_notes = $${idx++}`);
+      values.push(str('job_notes'));
+      updates.push(`description = $${idx++}`);
+      values.push(str('job_notes'));
+    } else if (typeof body.description === 'string') {
+      updates.push(`description = $${idx++}`);
+      values.push(body.description.trim() || null);
+    }
+    if (body.is_service_job !== undefined) {
+      updates.push(`is_service_job = $${idx++}`);
+      values.push(!!body.is_service_job);
+    }
+    if (body.quoted_amount !== undefined) {
+      updates.push(`quoted_amount = $${idx++}`);
+      values.push(typeof body.quoted_amount === 'number' ? body.quoted_amount : null);
+    }
+    if (str('customer_reference') !== undefined) {
+      updates.push(`customer_reference = $${idx++}`);
+      values.push(str('customer_reference'));
+    }
+    if (str('job_pipeline') !== undefined) {
+      updates.push(`job_pipeline = $${idx++}`);
+      values.push(str('job_pipeline'));
+    }
+    if (body.completed_service_items !== undefined) {
+      updates.push(`completed_service_items = $${idx++}`);
+      values.push(JSON.stringify(normalizeCompletedServiceItemsForDb(body.completed_service_items)));
+    }
+    if (body.book_into_diary !== undefined) {
+      updates.push(`book_into_diary = $${idx++}`);
+      values.push(!!body.book_into_diary);
+    }
+
+    await client.query(`UPDATE jobs SET ${updates.join(', ')} WHERE id = $${idx}`, [...values, id]);
+
+    const existingPricing = await client.query('SELECT id FROM job_pricing_items WHERE job_id = $1 LIMIT 1', [id]);
+    if ((existingPricing.rowCount ?? 0) === 0) {
+      const lineItems = await client.query(
+        'SELECT description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
+        [quotation.id],
+      );
+      for (let i = 0; i < lineItems.rows.length; i++) {
+        const item = lineItems.rows[i] as { description: string; quantity: string; unit_price: string; amount: string; sort_order: number };
+        await client.query(
+          `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [id, item.description, 0, parseFloat(item.unit_price), quotation.tax_percentage ?? 20, parseFloat(item.quantity), parseFloat(item.amount), i],
+        );
+      }
+    }
+
+    if (body.pricing_items !== undefined && Array.isArray(body.pricing_items)) {
+      await client.query('DELETE FROM job_pricing_items WHERE job_id = $1', [id]);
+      for (let i = 0; i < body.pricing_items.length; i++) {
+        const pi = body.pricing_items[i] as { item_name?: string; time_included?: number; unit_price?: number; vat_rate?: number; quantity?: number };
+        const total = Number(pi.unit_price || 0) * Number(pi.quantity || 1);
+        await client.query(
+          `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [id, pi.item_name, pi.time_included || 0, pi.unit_price || 0, pi.vat_rate ?? 20.0, pi.quantity || 1, total, i],
+        );
+      }
+    }
+
+    const newDescId = body.job_description_id !== undefined ? parseOptionalJobDescriptionId(body.job_description_id) : null;
+    if (newDescId != null) {
+      try {
+        await mergeJobDescriptionReportQuestionsIntoJob(client as unknown as Pool, id, newDescId);
+      } catch (mergeErr) {
+        console.error('Merge job description report questions on convert:', mergeErr);
+      }
+    }
+
+    await logQuotationActivity(quotation.id, 'converted_to_work_job', { job_id: id, quotation_number: quotation.quotation_number }, userId);
+
+    await client.query('COMMIT');
+
+    const finalResult = await pool.query<DbJob>(`SELECT * FROM jobs WHERE id = $1`, [id]);
+    const r = finalResult.rows[0];
+    return res.json({
+      job: {
+        ...r,
+        start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
+        deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
+        created_at: (r.created_at as Date).toISOString(),
+        updated_at: (r.updated_at as Date).toISOString(),
+        schedule_start: r.schedule_start ? (r.schedule_start as Date).toISOString() : null,
+        expected_completion: r.expected_completion ? (r.expected_completion as Date).toISOString() : null,
+      },
+    });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
+    console.error('Convert to work job error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+/** Create a simplified quotation-visit job + diary event from the quotation module. */
+app.post('/api/quotation-visits', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body as {
+    customer_id?: unknown;
+    officer_id?: unknown;
+    start_time?: unknown;
+    duration_minutes?: unknown;
+    notes?: unknown;
+    work_address_id?: unknown;
+    title?: unknown;
+  };
+  const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
+  const officerId = typeof body.officer_id === 'number' && Number.isFinite(body.officer_id) ? body.officer_id : null;
+  const startTime = typeof body.start_time === 'string' && body.start_time.trim() ? new Date(body.start_time.trim()) : null;
+  const durationMinutes = typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes) && body.duration_minutes > 0 ? Math.round(body.duration_minutes) : 60;
+  const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+  const workAddressId = typeof body.work_address_id === 'number' && Number.isFinite(body.work_address_id) ? body.work_address_id : null;
+
+  if (!customerId) return res.status(400).json({ message: 'customer_id is required' });
+  if (!officerId) return res.status(400).json({ message: 'officer_id is required' });
+  if (!startTime || isNaN(startTime.getTime())) return res.status(400).json({ message: 'start_time is required' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const custCheck = await pool.query<{ full_name: string }>('SELECT full_name FROM customers WHERE id = $1', [customerId]);
+    if ((custCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid customer' });
+    const customerName = custCheck.rows[0].full_name;
+
+    if (!isSuperAdmin) {
+      const offCheck = await pool.query('SELECT id FROM officers WHERE id = $1 AND created_by = $2', [officerId, userId]);
+      if ((offCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid officer' });
+    }
+
+    const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : `Quotation Visit - ${customerName}`;
+
+    const jobResult = await pool.query<DbJob>(
+      `INSERT INTO jobs (title, description, priority, customer_id, work_address_id, officer_id, state, created_by, is_quotation_visit, location)
+       VALUES ($1, $2, 'medium', $3, $4, $5, 'created', $6, true, $7)
+       RETURNING *`,
+      [title, notes, customerId, workAddressId, officerId, userId, notes],
+    );
+    const job = jobResult.rows[0];
+
+    await pool.query(
+      `INSERT INTO job_officers (job_id, officer_id, is_primary) VALUES ($1, $2, true)`,
+      [job.id, officerId],
+    );
+
+    const diaryResult = await pool.query(
+      `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, status, notes, created_by_name)
+       VALUES ($1, $2, $3, $4, 'No status', $5, $6)
+       RETURNING *`,
+      [job.id, officerId, startTime, durationMinutes, notes, req.user!.email || 'System'],
+    );
+    const diaryEvent = diaryResult.rows[0];
+
+    await pool.query(
+      `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
+      [diaryEvent.id, officerId],
+    );
+
+    return res.status(201).json({
+      job: {
+        ...job,
+        start_date: job.start_date ? (job.start_date as Date).toISOString() : null,
+        deadline: job.deadline ? (job.deadline as Date).toISOString() : null,
+        created_at: (job.created_at as Date).toISOString(),
+        updated_at: (job.updated_at as Date).toISOString(),
+        is_quotation_visit: true,
+      },
+      diary_event: {
+        id: diaryEvent.id,
+        job_id: diaryEvent.job_id,
+        officer_id: diaryEvent.officer_id,
+        start_time: (diaryEvent.start_time as Date).toISOString(),
+        duration_minutes: diaryEvent.duration_minutes,
+        status: diaryEvent.status,
+        notes: diaryEvent.notes,
+      },
+    });
+  } catch (error) {
+    console.error('Create quotation visit error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** List quotation-visit jobs with latest diary event and linked quotation summary. */
+app.get('/api/quotation-visits', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
+    const offset = (page - 1) * limit;
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+    const conditions: string[] = ['j.is_quotation_visit = true'];
+    const countParams: unknown[] = [];
+    const listParams: unknown[] = [];
+    let p = 1;
+    if (!isSuperAdmin) {
+      conditions.push(`j.created_by = $${p++}`);
+      countParams.push(userId);
+      listParams.push(userId);
+    }
+    if (search) {
+      conditions.push(`(j.title ILIKE $${p} OR c.full_name ILIKE $${p} OR o.full_name ILIKE $${p})`);
+      countParams.push(`%${search}%`);
+      listParams.push(`%${search}%`);
+      p++;
+    }
+    if (customerId && Number.isFinite(customerId)) {
+      conditions.push(`j.customer_id = $${p++}`);
+      countParams.push(customerId);
+      listParams.push(customerId);
+    }
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM jobs j
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN officers o ON o.id = j.officer_id
+       ${whereClause}`,
+      countParams,
+    );
+    listParams.push(limit, offset);
+    const limitIdx = listParams.length - 1;
+    const offsetIdx = listParams.length;
+
+    const listResult = await pool.query(
+      `SELECT j.id, j.title, j.state, j.customer_id, j.officer_id, j.location, j.created_at, j.updated_at,
+              c.full_name AS customer_full_name,
+              o.full_name AS officer_full_name,
+              ld.diary_event_id, ld.start_time AS latest_visit_start, ld.event_status AS latest_visit_status,
+              q.id AS quotation_id, q.quotation_number, q.state AS quotation_state
+       FROM jobs j
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN officers o ON o.id = j.officer_id
+       LEFT JOIN LATERAL (
+         SELECT d.id AS diary_event_id, d.start_time, d.status AS event_status
+         FROM diary_events d WHERE d.job_id = j.id
+         ORDER BY d.start_time DESC LIMIT 1
+       ) ld ON true
+       LEFT JOIN LATERAL (
+         SELECT qt.id, qt.quotation_number, qt.state
+         FROM quotations qt WHERE qt.job_id = j.id
+         ORDER BY qt.created_at DESC LIMIT 1
+       ) q ON true
+       ${whereClause}
+       ORDER BY COALESCE(ld.start_time, j.created_at) DESC NULLS LAST
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      listParams,
+    );
+
+    const total = Number((countResult.rows[0] as { total: number }).total);
+    const visits = listResult.rows.map((r) => ({
+      id: r.id as number,
+      title: r.title as string,
+      state: r.state as string,
+      customer_id: r.customer_id as number | null,
+      customer_full_name: (r.customer_full_name as string | null) ?? null,
+      officer_id: r.officer_id as number | null,
+      officer_full_name: (r.officer_full_name as string | null) ?? null,
+      location: (r.location as string | null) ?? null,
+      diary_event_id: (r.diary_event_id as number | null) ?? null,
+      latest_visit_start: r.latest_visit_start ? (r.latest_visit_start as Date).toISOString() : null,
+      latest_visit_status: (r.latest_visit_status as string | null) ?? null,
+      quotation_id: (r.quotation_id as number | null) ?? null,
+      quotation_number: (r.quotation_number as string | null) ?? null,
+      quotation_state: (r.quotation_state as string | null) ?? null,
+      created_at: (r.created_at as Date).toISOString(),
+      updated_at: (r.updated_at as Date).toISOString(),
+    }));
+
+    return res.json({
+      visits,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (error) {
+    console.error('List quotation visits error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Quotation-visit detail: job, diary events, officer notes, timesheets, linked quotation. */
+app.get('/api/quotation-visits/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid visit id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const jobResult = await pool.query(
+      isSuperAdmin
+        ? `SELECT j.*, c.full_name AS customer_full_name, c.email AS customer_email,
+                  o.full_name AS officer_full_name
+           FROM jobs j
+           LEFT JOIN customers c ON c.id = j.customer_id
+           LEFT JOIN officers o ON o.id = j.officer_id
+           WHERE j.id = $1 AND j.is_quotation_visit = true`
+        : `SELECT j.*, c.full_name AS customer_full_name, c.email AS customer_email,
+                  o.full_name AS officer_full_name
+           FROM jobs j
+           LEFT JOIN customers c ON c.id = j.customer_id
+           LEFT JOIN officers o ON o.id = j.officer_id
+           WHERE j.id = $1 AND j.is_quotation_visit = true AND j.created_by = $2`,
+      isSuperAdmin ? [id] : [id, userId],
+    );
+    if ((jobResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation visit not found' });
+    const job = jobResult.rows[0] as Record<string, unknown>;
+    const customerId = job.customer_id as number | null;
+    const workAddressId = job.work_address_id as number | null;
+
+    const diaryResult = await pool.query(
+      `SELECT d.id AS diary_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
+              d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at,
+              o.full_name AS officer_full_name
+       FROM diary_events d
+       LEFT JOIN officers o ON o.id = d.officer_id
+       WHERE d.job_id = $1
+       ORDER BY d.start_time ASC`,
+      [id],
+    );
+
+    const diaryEvents = [];
+    for (const dRow of diaryResult.rows) {
+      const diaryId = dRow.diary_id as number;
+
+      const extraRes = await pool.query(
+        `SELECT s.id, s.notes, s.media, s.created_at, COALESCE(u.full_name, u.email) AS created_by_name
+         FROM diary_event_extra_submissions s
+         LEFT JOIN users u ON u.id = s.created_by
+         WHERE s.diary_event_id = $1 ORDER BY s.created_at ASC`,
+        [diaryId],
+      );
+      const extraSubmissions = extraRes.rows.map((r) => ({
+        id: r.id as number,
+        notes: (r.notes as string | null) ?? null,
+        created_at: (r.created_at as Date).toISOString(),
+        created_by_name: (r.created_by_name as string | null) ?? null,
+        media: Array.isArray(r.media) ? r.media : [],
+      }));
+
+      let technicalNotes: Array<{ id: number; notes: string; created_at: string; created_by_name: string | null; media: unknown[] }> = [];
+      if (customerId != null) {
+        const notesRes = await pool.query(
+          `SELECT n.id, n.description, n.created_at, n.media,
+                  COALESCE(u.full_name, u.email) AS created_by_name
+           FROM customer_specific_notes n
+           LEFT JOIN users u ON u.id = n.created_by
+           WHERE n.customer_id = $1
+             AND (n.work_address_id IS NULL OR ($2::integer IS NOT NULL AND n.work_address_id = $2))
+           ORDER BY n.created_at ASC`,
+          [customerId, workAddressId],
+        );
+        technicalNotes = notesRes.rows.map((r) => ({
+          id: r.id as number,
+          notes: String(r.description ?? ''),
+          created_at: (r.created_at as Date).toISOString(),
+          created_by_name: (r.created_by_name as string | null) ?? null,
+          media: Array.isArray(r.media) ? r.media : [],
+        }));
+      }
+
+      const tsRes = await pool.query(
+        `SELECT te.id, te.officer_id, te.clock_in, te.clock_out, te.segment_type,
+                EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::bigint AS duration_seconds,
+                o.full_name AS officer_full_name
+         FROM timesheet_entries te
+         LEFT JOIN officers o ON o.id = te.officer_id
+         WHERE te.diary_event_id = $1
+         ORDER BY te.clock_in ASC`,
+        [diaryId],
+      );
+      const timesheetEntries = tsRes.rows.map((r) => ({
+        id: r.id as number,
+        officer_id: r.officer_id as number,
+        officer_full_name: (r.officer_full_name as string | null) ?? null,
+        clock_in: (r.clock_in as Date).toISOString(),
+        clock_out: r.clock_out ? (r.clock_out as Date).toISOString() : null,
+        segment_type: (r.segment_type as string | null) ?? null,
+        duration_seconds: Number(r.duration_seconds),
+      }));
+      const timesheetTotalSeconds = timesheetEntries.reduce((sum, e) => sum + e.duration_seconds, 0);
+
+      diaryEvents.push({
+        diary_id: diaryId,
+        officer_id: dRow.officer_id as number | null,
+        officer_full_name: (dRow.officer_full_name as string | null) ?? null,
+        start_time: (dRow.start_time as Date).toISOString(),
+        duration_minutes: dRow.duration_minutes as number | null,
+        event_status: dRow.event_status as string,
+        notes: (dRow.notes as string | null) ?? null,
+        abort_reason: (dRow.abort_reason as string | null) ?? null,
+        created_by_name: (dRow.created_by_name as string | null) ?? null,
+        created_at: (dRow.created_at as Date).toISOString(),
+        updated_at: (dRow.updated_at as Date).toISOString(),
+        extra_submissions: extraSubmissions,
+        technical_notes: technicalNotes,
+        timesheet_entries: timesheetEntries,
+        timesheet_total_seconds: timesheetTotalSeconds,
+      });
+    }
+
+    const quotationResult = await pool.query(
+      `SELECT id, quotation_number, state, diary_event_id, subtotal, tax_amount, total_amount, currency, created_at
+       FROM quotations WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [id],
+    );
+    const quotation = quotationResult.rows[0]
+      ? {
+          id: quotationResult.rows[0].id as number,
+          quotation_number: quotationResult.rows[0].quotation_number as string,
+          state: quotationResult.rows[0].state as string,
+          diary_event_id: (quotationResult.rows[0].diary_event_id as number | null) ?? null,
+          subtotal: parseFloat(String(quotationResult.rows[0].subtotal)),
+          tax_amount: parseFloat(String(quotationResult.rows[0].tax_amount)),
+          total_amount: parseFloat(String(quotationResult.rows[0].total_amount)),
+          currency: quotationResult.rows[0].currency as string,
+          created_at: (quotationResult.rows[0].created_at as Date).toISOString(),
+        }
+      : null;
+
+    const officersResult = await pool.query(
+      `SELECT jo.officer_id AS id, o.full_name, jo.is_primary
+       FROM job_officers jo JOIN officers o ON o.id = jo.officer_id
+       WHERE jo.job_id = $1 ORDER BY jo.is_primary DESC, o.full_name`,
+      [id],
+    );
+
+    return res.json({
+      visit: {
+        id: job.id as number,
+        title: job.title as string,
+        description: (job.description as string | null) ?? null,
+        state: job.state as string,
+        location: (job.location as string | null) ?? null,
+        customer_id: customerId,
+        customer_full_name: (job.customer_full_name as string | null) ?? null,
+        customer_email: (job.customer_email as string | null) ?? null,
+        officer_id: (job.officer_id as number | null) ?? null,
+        officer_full_name: (job.officer_full_name as string | null) ?? null,
+        officers: officersResult.rows.map((r) => ({
+          id: r.id as number,
+          full_name: r.full_name as string,
+          is_primary: !!r.is_primary,
+        })),
+        work_address_id: workAddressId,
+        created_at: (job.created_at as Date).toISOString(),
+        updated_at: (job.updated_at as Date).toISOString(),
+        is_quotation_visit: true,
+      },
+      diary_events: diaryEvents,
+      quotation,
+    });
+  } catch (error) {
+    console.error('Get quotation visit error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -6553,7 +7215,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     const result = await pool.query(
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status as event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description, j.location, j.customer_id,
+              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number,
               c.full_name as customer_full_name, c.email as customer_email,
               o.full_name as officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
@@ -6616,10 +7278,12 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at,
               j.title, j.description, j.location, j.state AS job_state, j.job_notes, j.customer_id,
+              j.job_number,
               j.created_by AS job_created_by,
               j.work_address_id AS job_work_address_id,
               j.officer_id AS job_officer_id,
               j.quoted_amount, j.customer_reference,
+              j.is_quotation_visit,
               c.full_name AS customer_full_name, c.email AS customer_email,
               COALESCE(NULLIF(TRIM(c.contact_mobile), ''), NULLIF(TRIM(c.phone), '')) AS customer_phone,
               NULLIF(TRIM(c.address), '') AS customer_address,
@@ -6830,6 +7494,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         job_notes: row.job_notes,
         quoted_amount: row.quoted_amount,
         customer_reference: row.customer_reference,
+        is_quotation_visit: !!row.is_quotation_visit,
         customer_id: row.customer_id,
         customer_full_name: row.customer_full_name,
         customer_email: row.customer_email,
@@ -7019,6 +7684,252 @@ app.post(
     }
   },
 );
+
+/** Officer creates a quotation from a completed diary event (quotation visit). */
+app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const diaryEventId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(diaryEventId)) return res.status(400).json({ message: 'Invalid event id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const role = req.user!.role;
+  const tokenOfficerId = req.user!.officerId ?? null;
+
+  const body = req.body as {
+    description?: unknown;
+    notes?: unknown;
+    line_items?: unknown;
+    tax_percentage?: unknown;
+    quotation_work_address_id?: unknown;
+    quotation_date?: unknown;
+    valid_until?: unknown;
+    currency?: unknown;
+  };
+
+  try {
+    const eventRes = await pool.query<{
+      job_id: number;
+      officer_id: number | null;
+      job_officer_id: number | null;
+      customer_id: number;
+      job_created_by: number | null;
+      is_quotation_visit: boolean;
+      event_status: string;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
+    }>(
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, j.customer_id, j.created_by AS job_created_by,
+              j.is_quotation_visit, d.status AS event_status,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
+       FROM diary_events d
+       INNER JOIN jobs j ON j.id = d.job_id
+       WHERE d.id = $1`,
+      [diaryEventId, tokenOfficerId],
+    );
+    if ((eventRes.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Event not found' });
+    const ev = eventRes.rows[0];
+
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
+      const assigned =
+        ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId || ev.is_diary_officer || ev.is_job_officer;
+      if (!assigned) return res.status(403).json({ message: 'You can only create quotations for your visits' });
+    } else if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      if (ev.job_created_by !== userId) return res.status(404).json({ message: 'Event not found' });
+    }
+
+    if (!ev.is_quotation_visit) {
+      return res.status(400).json({ message: 'This diary event is not a quotation visit' });
+    }
+
+    const existingQuote = await pool.query('SELECT id FROM quotations WHERE diary_event_id = $1 LIMIT 1', [diaryEventId]);
+    if ((existingQuote.rowCount ?? 0) > 0) {
+      return res.status(400).json({ message: 'A quotation already exists for this visit', quotation_id: existingQuote.rows[0].id });
+    }
+
+    const statusNorm = normalizeDiaryStatusForTimesheet(ev.event_status);
+    if (statusNorm !== 'completed' && statusNorm !== 'arrived_at_site') {
+      return res.status(400).json({ message: 'Quotation can only be created after visiting the site' });
+    }
+
+    const settings = await getQuotationSettings(ev.job_created_by ?? userId);
+    const lineItems = Array.isArray(body.line_items)
+      ? body.line_items.filter((li: unknown) => li && typeof li === 'object')
+      : [];
+    const taxPercentageRaw = body.tax_percentage;
+    const taxPercentage =
+      typeof taxPercentageRaw === 'number' && Number.isFinite(taxPercentageRaw)
+        ? Math.max(0, Math.min(100, taxPercentageRaw))
+        : settings.default_tax_percentage;
+
+    let subtotal = 0;
+    const cleanLineItems: { description: string; quantity: number; unit_price: number; amount: number; sort_order: number }[] = [];
+    for (let i = 0; i < lineItems.length; i++) {
+      const li = lineItems[i] as Record<string, unknown>;
+      const desc = typeof li.description === 'string' ? li.description.trim() : '';
+      const qtyRaw = li.quantity;
+      const qty =
+        typeof qtyRaw === 'number' && Number.isFinite(qtyRaw)
+          ? qtyRaw
+          : typeof qtyRaw === 'string' && qtyRaw.trim()
+            ? parseFloat(qtyRaw)
+            : 1;
+      const upRaw = li.unit_price;
+      const up =
+        typeof upRaw === 'number' && Number.isFinite(upRaw)
+          ? upRaw
+          : typeof upRaw === 'string' && upRaw.trim()
+            ? parseFloat(upRaw)
+            : 0;
+      const amt = desc ? qty * up : 0;
+      if (desc) {
+        subtotal += amt;
+        cleanLineItems.push({ description: desc, quantity: qty, unit_price: up, amount: amt, sort_order: i });
+      }
+    }
+
+    const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
+    const totalAmount = subtotal + taxAmount;
+    const quotationNumber = await generateQuotationNumber(settings.quotation_prefix || 'QUOT');
+    const quotationDate =
+      typeof body.quotation_date === 'string' && body.quotation_date.trim()
+        ? new Date(body.quotation_date.trim())
+        : new Date();
+    const validUntil =
+      typeof body.valid_until === 'string' && body.valid_until.trim()
+        ? new Date(body.valid_until.trim())
+        : (() => {
+            const d = new Date(quotationDate);
+            d.setDate(d.getDate() + (settings.default_valid_days || 30));
+            return d;
+          })();
+    const currency =
+      typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim() : settings.default_currency || 'USD';
+
+    let quotationWorkAddressId: number | null = null;
+    if (body.quotation_work_address_id !== undefined && body.quotation_work_address_id !== null) {
+      const wid = parseQuotationWorkAddressIdInput(body.quotation_work_address_id);
+      if (wid === undefined || wid === null) {
+        return res.status(400).json({ message: 'Invalid quotation_work_address_id' });
+      }
+      try {
+        const resolved = await resolveInvoiceBillingFromWorkAddress(ev.customer_id, wid);
+        quotationWorkAddressId = resolved.invoice_work_address_id;
+      } catch (e) {
+        if ((e as Error).message === 'INVALID_WORK_ADDRESS') {
+          return res.status(400).json({ message: 'Invalid work address for this customer' });
+        }
+        throw e;
+      }
+    }
+
+    const client = await pool.connect();
+    let quotation: DbQuotation;
+    try {
+      await client.query('BEGIN');
+      const duplicateCheck = await client.query(
+        'SELECT id FROM quotations WHERE diary_event_id = $1 LIMIT 1',
+        [diaryEventId],
+      );
+      if ((duplicateCheck.rowCount ?? 0) > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          message: 'A quotation already exists for this visit',
+          quotation_id: duplicateCheck.rows[0].id,
+        });
+      }
+
+      const qResult = await client.query<DbQuotation>(
+        `INSERT INTO quotations (quotation_number, customer_id, job_id, quotation_date, valid_until, subtotal, tax_amount, total_amount, currency, notes, description, state, created_by, diary_event_id, quotation_work_address_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft', $12, $13, $14)
+         RETURNING *`,
+        [
+          quotationNumber,
+          ev.customer_id,
+          ev.job_id,
+          quotationDate,
+          validUntil,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          currency,
+          typeof body.notes === 'string' ? body.notes.trim() || null : null,
+          typeof body.description === 'string' ? body.description.trim() || null : null,
+          ev.job_created_by ?? userId,
+          diaryEventId,
+          quotationWorkAddressId,
+        ],
+      );
+      quotation = qResult.rows[0];
+
+      for (const li of cleanLineItems) {
+        await client.query(
+          `INSERT INTO quotation_line_items (quotation_id, description, quantity, unit_price, amount, sort_order) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [quotation.id, li.description, li.quantity, li.unit_price, li.amount, li.sort_order],
+        );
+      }
+
+      await client.query(
+        `INSERT INTO quotation_activities (quotation_id, action, details, created_by)
+         VALUES ($1, $2, $3::jsonb, $4)`,
+        [
+          quotation.id,
+          'created_from_diary_event',
+          JSON.stringify({ diary_event_id: diaryEventId, officer_id: tokenOfficerId }),
+          userId,
+        ],
+      );
+
+      await client.query(
+        `UPDATE diary_events SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+        [diaryEventId],
+      );
+      await client.query(`UPDATE jobs SET state = 'completed', updated_at = NOW() WHERE id = $1`, [ev.job_id]);
+
+      const deOfficersForTimesheet = await client.query<{ officer_id: number }>(
+        `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
+        [diaryEventId],
+      );
+      const tsOfficers = deOfficersForTimesheet.rows.length > 0
+        ? deOfficersForTimesheet.rows.map(r => r.officer_id)
+        : [ev.officer_id ?? ev.job_officer_id].filter(Boolean) as number[];
+      for (const tsOid of tsOfficers) {
+        await applyDiaryStatusToTimesheet(client, tsOid, diaryEventId, 'completed');
+      }
+
+      await client.query('COMMIT');
+    } catch (txError) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw txError;
+    } finally {
+      client.release();
+    }
+
+    return res.status(201).json({
+      quotation: {
+        id: quotation.id,
+        quotation_number: quotation.quotation_number,
+        customer_id: quotation.customer_id,
+        job_id: quotation.job_id,
+        diary_event_id: quotation.diary_event_id,
+        state: quotation.state,
+        subtotal: parseFloat(quotation.subtotal),
+        tax_amount: parseFloat(quotation.tax_amount),
+        total_amount: parseFloat(quotation.total_amount),
+        currency: quotation.currency,
+        quotation_date: (quotation.quotation_date as Date).toISOString().slice(0, 10),
+        valid_until: (quotation.valid_until as Date).toISOString().slice(0, 10),
+      },
+    });
+  } catch (error) {
+    console.error('Create quotation from diary event error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 app.post(
   '/api/diary-events/:id/technical-notes',
@@ -8740,10 +9651,16 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
 
     let autoInvoiceId: number | null = null;
     if (nextJobState === 'completed') {
-      try {
-        autoInvoiceId = await createInvoiceFromJob(ev.job_id, userId);
-      } catch (invErr) {
-        console.error('Auto invoice after job report submit:', invErr);
+      const jobIsQuotationVisit = await client.query<{ is_quotation_visit: boolean }>(
+        'SELECT is_quotation_visit FROM jobs WHERE id = $1',
+        [ev.job_id],
+      );
+      if (!jobIsQuotationVisit.rows[0]?.is_quotation_visit) {
+        try {
+          autoInvoiceId = await createInvoiceFromJob(ev.job_id, userId);
+        } catch (invErr) {
+          console.error('Auto invoice after job report submit:', invErr);
+        }
       }
     }
 
@@ -9705,10 +10622,17 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     await client.query('COMMIT');
 
     if (normalized === 'completed') {
-      try {
-        await createInvoiceFromJob(row.job_id, userId);
-      } catch (invErr) {
-        console.error('Auto invoice after diary visit completed:', invErr);
+      const jobVisitCheck = await pool.query<{ is_quotation_visit: boolean }>(
+        'SELECT is_quotation_visit FROM jobs WHERE id = $1',
+        [row.job_id],
+      );
+      const isQuotationVisitJob = !!jobVisitCheck.rows[0]?.is_quotation_visit;
+      if (!isQuotationVisitJob) {
+        try {
+          await createInvoiceFromJob(row.job_id, userId);
+        } catch (invErr) {
+          console.error('Auto invoice after diary visit completed:', invErr);
+        }
       }
       await pool.query(`UPDATE jobs SET state = 'completed' WHERE id = $1`, [row.job_id]);
     }
@@ -12835,12 +13759,13 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
       city?: string;
       region?: string;
       country?: string;
-      job_title?: string 
+      job_title?: string;
+      job_is_quotation_visit?: boolean
     }>(
       `SELECT q.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
         c.address_line_1, c.address_line_2, c.town, c.county, c.postcode,
         c.address, c.city, c.region, c.country,
-        j.title AS job_title
+        j.title AS job_title, j.is_quotation_visit AS job_is_quotation_visit
        FROM quotations q
        JOIN customers c ON c.id = q.customer_id
        LEFT JOIN jobs j ON j.id = q.job_id
@@ -12899,6 +13824,8 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
       quotation_custom_address: workSite.quotation_custom_address,
       job_id: q.job_id ?? null,
       job_title: q.job_title ?? null,
+      job_is_quotation_visit: !!q.job_is_quotation_visit,
+      diary_event_id: q.diary_event_id ?? null,
       quotation_date: (q.quotation_date as Date).toISOString().slice(0, 10),
       valid_until: (q.valid_until as Date).toISOString().slice(0, 10),
       subtotal: parseFloat(q.subtotal),
@@ -14033,8 +14960,11 @@ app.post('/api/quotations/:id/link-job', authenticate, requireTenantCrmAccess('q
   }
 
   if (q.job_id != null && q.job_id !== jobId) {
-    const ex = await pool.query('SELECT id FROM jobs WHERE id = $1 AND customer_id = $2', [q.job_id, q.customer_id]);
-    if ((ex.rowCount ?? 0) > 0) {
+    const ex = await pool.query<{ id: number; is_quotation_visit: boolean }>(
+      'SELECT id, is_quotation_visit FROM jobs WHERE id = $1 AND customer_id = $2',
+      [q.job_id, q.customer_id],
+    );
+    if ((ex.rowCount ?? 0) > 0 && !ex.rows[0].is_quotation_visit) {
       return res.status(400).json({ message: 'This quotation is already linked to a different job' });
     }
   }
@@ -14042,6 +14972,119 @@ app.post('/api/quotations/:id/link-job', authenticate, requireTenantCrmAccess('q
   await pool.query('UPDATE quotations SET job_id = $1, updated_at = NOW() WHERE id = $2', [jobId, quotationId]);
   await logQuotationActivity(quotationId, 'linked_job', { job_id: jobId, quotation_number: q.quotation_number }, userId);
   return res.json({ success: true, quotation_id: quotationId, job_id: jobId });
+});
+
+/** Create a real job from an accepted quotation (admin action). */
+app.post('/api/quotations/:id/create-job', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const q = qCheck.rows[0];
+  if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+  if (q.state !== 'accepted') {
+    return res.status(400).json({ message: 'Only accepted quotations can be converted to a job' });
+  }
+
+  const body = req.body as {
+    title?: unknown;
+    job_description_id?: unknown;
+    priority?: unknown;
+    user_group?: unknown;
+    business_unit?: unknown;
+    skills?: unknown;
+    job_notes?: unknown;
+    expected_completion?: unknown;
+    officer_id?: unknown;
+    officer_ids?: unknown;
+    work_address_id?: unknown;
+  };
+
+  try {
+    const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : `Job from ${q.quotation_number}`;
+    const priority = typeof body.priority === 'string' && ['low', 'medium', 'high', 'critical'].includes(body.priority) ? body.priority : 'medium';
+    const userGroup = typeof body.user_group === 'string' ? body.user_group.trim() || null : null;
+    const businessUnit = typeof body.business_unit === 'string' ? body.business_unit.trim() || null : null;
+    const skills = typeof body.skills === 'string' ? body.skills.trim() || null : null;
+    const jobNotes = typeof body.job_notes === 'string' ? body.job_notes.trim() || null : null;
+    const jobDescriptionId = typeof body.job_description_id === 'number' && Number.isFinite(body.job_description_id) ? body.job_description_id : null;
+    const expectedCompletion = typeof body.expected_completion === 'string' && body.expected_completion.trim() ? new Date(body.expected_completion.trim()) : null;
+    const workAddressId = typeof body.work_address_id === 'number' && Number.isFinite(body.work_address_id) ? body.work_address_id : (q.quotation_work_address_id ?? null);
+
+    const officerId = typeof body.officer_id === 'number' && Number.isFinite(body.officer_id) ? body.officer_id : null;
+    const officerIds = Array.isArray(body.officer_ids)
+      ? body.officer_ids.filter((id: unknown) => typeof id === 'number' && Number.isFinite(id))
+      : (officerId ? [officerId] : []);
+
+    const jobResult = await pool.query<DbJob>(
+      `INSERT INTO jobs (title, description, priority, customer_id, work_address_id, officer_id, state, created_by,
+        job_description_id, skills, job_notes, user_group, business_unit, quoted_amount, customer_reference, expected_completion, job_pipeline)
+       VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       RETURNING *`,
+      [
+        title,
+        q.description ?? q.notes ?? null,
+        priority,
+        q.customer_id,
+        workAddressId,
+        officerIds.length > 0 ? officerIds[0] : null,
+        userId,
+        jobDescriptionId,
+        skills,
+        jobNotes,
+        userGroup,
+        businessUnit,
+        parseFloat(q.total_amount),
+        q.quotation_number,
+        expectedCompletion,
+        'Service/Reactive Workflow',
+      ],
+    );
+    const job = jobResult.rows[0];
+
+    if (officerIds.length > 0) {
+      for (let i = 0; i < officerIds.length; i++) {
+        await pool.query(
+          `INSERT INTO job_officers (job_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
+          [job.id, officerIds[i], i === 0],
+        );
+      }
+    }
+
+    // Copy quotation line items to job pricing items
+    const lineItems = await pool.query(
+      'SELECT description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
+      [quotationId],
+    );
+    for (let i = 0; i < lineItems.rows.length; i++) {
+      const item = lineItems.rows[i] as { description: string; quantity: string; unit_price: string; amount: string; sort_order: number };
+      await pool.query(
+        `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [job.id, item.description, 0, parseFloat(item.unit_price), q.tax_percentage ?? 20, parseFloat(item.quantity), parseFloat(item.amount), i],
+      );
+    }
+
+    await pool.query('UPDATE quotations SET job_id = $1, updated_at = NOW() WHERE id = $2', [job.id, quotationId]);
+    await logQuotationActivity(quotationId, 'converted_to_job', { job_id: job.id, quotation_number: q.quotation_number }, userId);
+
+    return res.status(201).json({
+      job: {
+        ...job,
+        start_date: job.start_date ? (job.start_date as Date).toISOString() : null,
+        deadline: job.deadline ? (job.deadline as Date).toISOString() : null,
+        created_at: (job.created_at as Date).toISOString(),
+        updated_at: (job.updated_at as Date).toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Create job from quotation error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
 });
 
 app.delete('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
@@ -15545,7 +16588,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
   const {
     job_description_id, contact_name, expected_completion, priority, user_group, business_unit,
     skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline,
-    book_into_diary, pricing_items, completed_service_items,
+    book_into_diary, pricing_items, completed_service_items, is_quotation_visit,
   } = req.body;
 
   const title = req.body.title?.trim() || 'Untitled Job';
@@ -15577,8 +16620,8 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
     const jobResult = await pool.query(
       `INSERT INTO jobs (title, description, priority, customer_id, work_address_id, state, created_by,
         job_description_id, contact_name, job_contact_id, expected_completion, user_group, business_unit,
-        skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline, book_into_diary, completed_service_items)
-       VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline, book_into_diary, completed_service_items, is_quotation_visit)
+       VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING *`,
       [
         title, job_notes || null, priority || 'medium', customerId, workAddressIdJob, createdBy,
@@ -15586,7 +16629,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
         expected_completion ? new Date(expected_completion) : null,
         user_group || null, business_unit || null, skills || null, job_notes || null,
         !!is_service_job, quoted_amount || null, customer_reference || null, job_pipeline || null,
-        book_into_diary !== false, JSON.stringify(completedServiceItems),
+        book_into_diary !== false, JSON.stringify(completedServiceItems), !!is_quotation_visit,
       ],
     );
 
@@ -16854,6 +17897,65 @@ app.get('/api/customers/:customerId/site-reports', authenticate, requireTenantCr
     });
   } catch (error) {
     console.error('List customer site reports error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Global site reports list for the Certificates module (tenant-scoped). */
+app.get('/api/site-reports', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  if (u.role === 'STAFF' && !assertStaffPermissionAny(u, ['customers', 'jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
+  const userId = getTenantScopeUserId(u);
+  const isSuperAdmin = u.role === 'SUPER_ADMIN';
+  try {
+    const rows = await pool.query<{
+      id: number;
+      template_id: number | null;
+      template_name: string | null;
+      report_title: string | null;
+      updated_at: Date;
+      created_at: Date;
+      certificate_number: string | null;
+      job_id: number | null;
+      customer_id: number;
+      customer_full_name: string | null;
+      work_address_id: number | null;
+      work_address_name: string | null;
+    }>(
+      `SELECT r.id, r.template_id, t.name AS template_name, r.report_title, r.updated_at, r.created_at,
+              r.certificate_number, r.job_id, r.customer_id,
+              c.full_name AS customer_full_name,
+              r.work_address_id,
+              wa.name AS work_address_name
+       FROM customer_site_reports r
+       LEFT JOIN site_report_templates t ON t.id = r.template_id
+       LEFT JOIN customers c ON c.id = r.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = r.work_address_id
+       ${isSuperAdmin ? '' : 'WHERE c.created_by = $1'}
+       ORDER BY r.updated_at DESC
+       LIMIT 200`,
+      isSuperAdmin ? [] : [userId],
+    );
+    return res.json({
+      reports: rows.rows.map((r) => ({
+        id: r.id,
+        template_id: r.template_id != null ? Number(r.template_id) : null,
+        template_name: r.template_name,
+        report_title: r.report_title,
+        updated_at: (r.updated_at as Date).toISOString(),
+        created_at: (r.created_at as Date).toISOString(),
+        certificate_number: r.certificate_number,
+        job_id: r.job_id != null ? Number(r.job_id) : null,
+        customer_id: r.customer_id,
+        customer_full_name: r.customer_full_name,
+        work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
+        work_address_name: r.work_address_name,
+      })),
+    });
+  } catch (error) {
+    console.error('List site reports error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

@@ -72,71 +72,106 @@ class OpenJobsView extends GetView<OpenJobsController> {
                 ),
               );
             }
-            if (controller.jobs.isEmpty) {
-              return RefreshIndicator(
-                color: AppColors.primary,
-                onRefresh: controller.load,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  children: [
-                    SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
-                    Center(
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.work_outline_rounded,
-                            size: 56,
-                            color: AppColors.whiteOverlay(0.25),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No open jobs',
-                            style: GoogleFonts.inter(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              'Assigned jobs that are not completed will appear here.',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                color: AppColors.slate400,
-                              ),
-                            ),
-                          ),
-                        ],
+            return Column(
+              children: [
+                if (controller.hasLoadedJobs)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+                    child: TextField(
+                      controller: controller.searchController,
+                      onChanged: controller.setSearch,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Search jobs by number, title, customer...',
+                        hintStyle: GoogleFonts.inter(color: AppColors.slate500),
+                        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.slate400),
+                        filled: true,
+                        fillColor: AppColors.whiteOverlay(0.08),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.primary),
+                        ),
                       ),
                     ),
-                  ],
+                  ),
+                Expanded(
+                  child: controller.jobs.isEmpty
+                      ? RefreshIndicator(
+                          color: AppColors.primary,
+                          onRefresh: controller.load,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            children: [
+                              SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
+                              Center(
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      controller.hasSearch ? Icons.search_off_rounded : Icons.work_outline_rounded,
+                                      size: 56,
+                                      color: AppColors.whiteOverlay(0.25),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      controller.hasSearch ? 'No matching jobs' : 'No open jobs',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                                      child: Text(
+                                        controller.hasSearch
+                                            ? 'Try another job number, title, customer, or site.'
+                                            : 'Assigned jobs that are not completed will appear here.',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          color: AppColors.slate400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: AppColors.primary,
+                          onRefresh: controller.load,
+                          child: ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                            itemCount: controller.jobs.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            itemBuilder: (context, i) {
+                              final job = controller.jobs[i];
+                              return _OpenJobListTile(
+                                job: job,
+                                onTap: () =>
+                                    Get.toNamed(AppRoutes.openJobDetail, arguments: job),
+                              );
+                            },
+                          ),
+                        ),
                 ),
-              );
-            }
-            return RefreshIndicator(
-              color: AppColors.primary,
-              onRefresh: controller.load,
-              child: ListView.separated(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                itemCount: controller.jobs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, i) {
-                  final job = controller.jobs[i];
-                  return _OpenJobListTile(
-                    job: job,
-                    onTap: () =>
-                        Get.toNamed(AppRoutes.openJobDetail, arguments: job),
-                  );
-                },
-              ),
+              ],
             );
           }),
         ),
@@ -183,14 +218,44 @@ class _OpenJobListTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        job.title,
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          height: 1.25,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if ((job.jobNumber ?? '').trim().isNotEmpty) ...[
+                            Text(
+                              job.jobNumber!.trim(),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                          ],
+                          Text(
+                            job.title,
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              height: 1.25,
+                            ),
+                          ),
+                          if (job.description != null &&
+                              job.description!.trim().isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              job.description!.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.slate400,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),

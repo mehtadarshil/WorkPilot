@@ -95,6 +95,7 @@ interface Quotation {
   public_token?: string | null;
   job_id?: number | null;
   job_title?: string | null;
+  job_is_quotation_visit?: boolean;
   line_items: LineItem[];
   activities: Activity[];
   internal_notes?: QuotationInternalNote[];
@@ -239,7 +240,17 @@ export default function QuotationDetailPage() {
   const canAcceptReject = quotation.state === 'sent';
   const canTransferToInvoice = quotation.state === 'accepted';
   const canConvertToJob = quotation.state === 'accepted' && !quotation.job_id;
-  const canOpenLinkedJob = quotation.job_id != null;
+  const canOpenLinkedJob = quotation.job_id != null && !quotation.job_is_quotation_visit;
+  const canOpenLinkedVisit = quotation.job_id != null && !!quotation.job_is_quotation_visit;
+  const canConvertSurveyJob = quotation.state === 'accepted' && quotation.job_id != null && !!quotation.job_is_quotation_visit;
+
+  const handleSetupWorkJobFromVisit = () => {
+    if (!quotation?.job_id) return;
+    setActionError(null);
+    router.push(
+      `/dashboard/customers/${quotation.customer_id}/jobs/new?edit=${quotation.job_id}&from_quotation=${encodeURIComponent(id)}&convert_visit=1`,
+    );
+  };
 
   const publicCustomerUrl =
     quotation.public_token && appOrigin ? `${appOrigin}/public/quotations/${quotation.public_token}` : null;
@@ -438,6 +449,29 @@ export default function QuotationDetailPage() {
                   <span className="hidden sm:inline">Open job</span>
                   <span className="sm:hidden">Job</span>
                 </Link>
+              )}
+
+              {canOpenLinkedVisit && (
+                <Link
+                  href={`/dashboard/quotation-visits/${quotation.job_id}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100 transition-colors"
+                >
+                  <Briefcase className="size-4" />
+                  <span className="hidden sm:inline">Open visit</span>
+                  <span className="sm:hidden">Visit</span>
+                </Link>
+              )}
+
+              {canConvertSurveyJob && (
+                <button
+                  type="button"
+                  onClick={handleSetupWorkJobFromVisit}
+                  className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100 transition-colors"
+                >
+                  <Briefcase className="size-4" />
+                  <span className="hidden sm:inline">Set up work job</span>
+                  <span className="sm:hidden">Work job</span>
+                </button>
               )}
 
               {canConvertToJob && (

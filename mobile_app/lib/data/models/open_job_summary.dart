@@ -2,6 +2,7 @@
 class OpenJobSummary {
   OpenJobSummary({
     required this.id,
+    this.jobNumber,
     required this.title,
     this.description,
     required this.state,
@@ -15,11 +16,14 @@ class OpenJobSummary {
     this.jobNotes,
     this.dispatchedAt,
     required this.updatedAt,
+    this.startDate,
+    this.deadline,
   });
 
   factory OpenJobSummary.fromJson(Map<String, dynamic> json) {
     return OpenJobSummary(
       id: (json['id'] as num).toInt(),
+      jobNumber: json['job_number'] as String?,
       title: json['title'] as String? ?? 'Untitled',
       description: json['description'] as String?,
       state: json['state'] as String? ?? '',
@@ -33,10 +37,13 @@ class OpenJobSummary {
       jobNotes: json['job_notes'] as String?,
       dispatchedAt: json['dispatched_at'] as String?,
       updatedAt: json['updated_at'] as String? ?? '',
+      startDate: json['start_date'] as String?,
+      deadline: json['deadline'] as String?,
     );
   }
 
   final int id;
+  final String? jobNumber;
   final String title;
   final String? description;
   final String state;
@@ -50,4 +57,6 @@ class OpenJobSummary {
   final String? jobNotes;
   final String? dispatchedAt;
   final String updatedAt;
+  final String? startDate;
+  final String? deadline;
 }

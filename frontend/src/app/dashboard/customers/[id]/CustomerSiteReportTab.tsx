@@ -62,6 +62,10 @@ interface Props {
   siteAddressLabel: string;
   /** When embedded from a job, used to link the job contact for renewal emails. */
   jobId?: string | null;
+  /** When provided, auto-opens this report in editor mode on mount. */
+  initialReportId?: number | null;
+  /** When provided, the Back button calls this instead of returning to the internal list. */
+  onBack?: () => void;
 }
 
 export default function CustomerSiteReportTab({
@@ -70,6 +74,8 @@ export default function CustomerSiteReportTab({
   clientDisplayName,
   siteAddressLabel,
   jobId,
+  initialReportId,
+  onBack,
 }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [report, setReport] = useState<ReportPayload | null>(null);
@@ -194,6 +200,10 @@ export default function CustomerSiteReportTab({
       try {
         await loadTemplates();
         await loadReports();
+        if (initialReportId != null) {
+          await loadReport(initialReportId);
+          setMode('editor');
+        }
         setLoading(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load report');
@@ -201,7 +211,7 @@ export default function CustomerSiteReportTab({
       }
     })();
     return () => revokeAllImageUrls();
-  }, [loadReport, loadReports, loadTemplates, revokeAllImageUrls]);
+  }, [loadReport, loadReports, loadTemplates, revokeAllImageUrls, initialReportId]);
 
   const handleCreateReport = async () => {
     if (!token || !newTemplateId) return;
@@ -634,7 +644,13 @@ export default function CustomerSiteReportTab({
         <div>
           <button
             type="button"
-            onClick={() => setMode('list')}
+            onClick={() => {
+              if (onBack) {
+                onBack();
+              } else {
+                setMode('list');
+              }
+            }}
             className="mb-3 inline-flex items-center gap-1.5 text-sm font-bold text-[#14B8A6] hover:text-[#119f8e]"
           >
             <ArrowLeft className="size-4" />

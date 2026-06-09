@@ -16,6 +16,9 @@ class DiaryEventRow {
     this.abortReason,
     this.officerFullName,
     this.officers = const [],
+    this.isQuotationVisit = false,
+    this.jobNumber,
+    this.description,
   });
 
   factory DiaryEventRow.fromJson(Map<String, dynamic> json) {
@@ -42,6 +45,9 @@ class DiaryEventRow {
           : null,
       officerFullName: json['officer_full_name'] as String?,
       officers: _parseOfficers(json['officers']),
+      isQuotationVisit: json['is_quotation_visit'] == true,
+      jobNumber: json['job_number'] as String?,
+      description: json['description'] as String?,
     );
   }
 
@@ -60,6 +66,9 @@ class DiaryEventRow {
   final String? abortReason;
   final String? officerFullName;
   final List<Map<String, dynamic>> officers;
+  final bool isQuotationVisit;
+  final String? jobNumber;
+  final String? description;
 
   String get displayContactName {
     final s = siteContactName?.trim();
@@ -92,6 +101,9 @@ class DiaryEventRow {
         if (abortReason != null) 'abort_reason': abortReason,
         if (officerFullName != null) 'officer_full_name': officerFullName,
         'officers': officers,
+        'is_quotation_visit': isQuotationVisit,
+        if (jobNumber != null) 'job_number': jobNumber,
+        if (description != null) 'description': description,
       };
 
   DiaryEventRow copyWith({
@@ -114,6 +126,9 @@ class DiaryEventRow {
       abortReason: abortReason ?? this.abortReason,
       officerFullName: officerFullName,
       officers: officers,
+      isQuotationVisit: isQuotationVisit,
+      jobNumber: jobNumber,
+      description: description,
     );
   }
 }

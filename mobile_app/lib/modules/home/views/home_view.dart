@@ -833,6 +833,40 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                     ),
                   )
                 else ...[
+                  Row(
+                    children: [
+                      if ((next.jobNumber ?? '').trim().isNotEmpty) ...[
+                        Text(
+                          next.jobNumber!.trim(),
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      if (next.isQuotationVisit) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Quotation visit',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if ((next.jobNumber ?? '').trim().isNotEmpty || next.isQuotationVisit)
+                    const SizedBox(height: 4),
                   Text(
                     next.title ?? 'Job',
                     style: GoogleFonts.inter(
@@ -841,6 +875,19 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                       color: Colors.white,
                     ),
                   ),
+                  if (next.description != null && next.description!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      next.description!.trim(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.slate400,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Text(
                     _timeLine(next.startTime),
@@ -1617,13 +1664,18 @@ class _DiaryTab extends GetView<HomeController> {
                         );
                         await controller.loadDiaryWeek();
                       },
-                      child: DecoratedBox(
+                      child: Ink(
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          color: AppColors.whiteOverlay(0.06),
-                          border: Border.all(
-                            color: AppColors.whiteOverlay(0.1),
-                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          color: const Color(0xB30F172A),
+                          border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.blackOverlay(0.25),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -1634,95 +1686,244 @@ class _DiaryTab extends GetView<HomeController> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
+                                              Text(
+                                                e.jobNumber!.trim(),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.primary,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                            if (e.isQuotationVisit) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFEF3C7),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  'Quotation visit',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: const Color(0xFF92400E),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        if ((e.jobNumber ?? '').trim().isNotEmpty || e.isQuotationVisit)
+                                          const SizedBox(height: 4),
+                                        Text(
+                                          e.title ?? 'Job',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                            height: 1.25,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(
+                                        color: AppColors.primary.withValues(alpha: 0.45),
+                                      ),
+                                    ),
                                     child: Text(
-                                      e.title ?? 'Job',
+                                      _displayVisitStatus(e.eventStatus),
                                       style: GoogleFonts.inter(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
                                       ),
                                     ),
                                   ),
-                                  Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: AppColors.slate400,
-                                    size: 22,
-                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _line(e),
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  color: AppColors.slate400,
-                                ),
-                              ),
-                              if (showTeamFields &&
-                                  (e.officerFullName ?? '').trim().isNotEmpty) ...[
+                              if (e.description != null && e.description!.trim().isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Officer: ${e.officerFullName!.trim()}',
+                                  e.description!.trim(),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
-                              if (e.displayContactName.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  e.displayContactName,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14,
-                                    color: AppColors.slate300,
-                                  ),
-                                ),
-                              ],
-                              if (e.location != null &&
-                                  e.location!.trim().isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  e.location!,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    color: AppColors.slate500,
+                                    color: AppColors.slate400,
+                                    height: 1.35,
                                   ),
                                 ),
                               ],
                               const SizedBox(height: 10),
-                              Text(
-                                'Status: ${_displayVisitStatus(e.eventStatus)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.slate400,
-                                ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.schedule_rounded,
+                                    size: 16,
+                                    color: AppColors.slate400,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _line(e),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: AppColors.slate300,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
+                              if (showTeamFields &&
+                                  (e.officerFullName ?? '').trim().isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.badge_outlined,
+                                      size: 16,
+                                      color: AppColors.slate400,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Officer: ${e.officerFullName!.trim()}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (e.displayContactName.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.person_outline_rounded,
+                                      size: 16,
+                                      color: AppColors.slate400,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        e.displayContactName,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          color: AppColors.slate300,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (e.location != null &&
+                                  e.location!.trim().isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.place_outlined,
+                                      size: 16,
+                                      color: AppColors.slate500,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        e.location!,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          height: 1.35,
+                                          color: AppColors.slate400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               if (_visitCancelled(e.eventStatus) &&
                                   e.abortReason != null &&
                                   e.abortReason!.trim().isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Reason: ${e.abortReason!.trim()}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    height: 1.35,
-                                    color: AppColors.slate500,
-                                  ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline_rounded,
+                                      size: 16,
+                                      color: Colors.red.shade300,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Reason: ${e.abortReason!.trim()}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          height: 1.35,
+                                          color: Colors.red.shade300,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
-                              const SizedBox(height: 6),
-                              Text(
-                                ownVisit
-                                    ? 'Tap card for visit details, site contact, and to mark arrived.'
-                                    : 'Tap card to view visit details (read-only).',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  height: 1.35,
-                                  color: AppColors.slate500,
-                                ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      ownVisit
+                                          ? 'Tap card for visit details, site contact, and to mark arrived.'
+                                          : 'Tap card to view visit details (read-only).',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        height: 1.35,
+                                        color: AppColors.slate500,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'Details',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: AppColors.primary,
+                                        size: 22,
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ],
                           ),

@@ -24,7 +24,9 @@ class OpenJobDetailView extends StatelessWidget {
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
           title: Text(
-            'Job #${job.id}',
+            (job.jobNumber ?? '').trim().isNotEmpty
+                ? job.jobNumber!.trim()
+                : 'Job #${job.id}',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(

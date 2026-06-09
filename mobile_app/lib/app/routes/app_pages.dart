@@ -50,6 +50,9 @@ import '../../modules/biometric_lock/biometric_lock_view.dart';
 import '../../modules/settings/settings_view.dart';
 import '../../modules/sites/sites_list_binding.dart';
 import '../../modules/sites/sites_list_view.dart';
+import '../../modules/site_reports/site_reports_list_binding.dart';
+import '../../modules/site_reports/site_reports_list_view.dart';
+import '../../modules/site_reports/site_report_editor_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -186,6 +189,15 @@ class AppPages {
       name: AppRoutes.sitesList,
       page: () => const SitesListView(),
       binding: SitesListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.siteReportsList,
+      page: () => const SiteReportsListView(),
+      binding: SiteReportsListBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.siteReportEditor,
+      page: () => const SiteReportEditorView(),
     ),
   ];
 }

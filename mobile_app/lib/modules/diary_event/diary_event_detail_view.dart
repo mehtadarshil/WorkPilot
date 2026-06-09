@@ -99,8 +99,10 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
             fontSize: 17,
           ),
           title: Obx(() {
-            final id = controller.detail.value?.jobId;
-            return Text(id != null ? 'Job #$id' : 'Visit');
+            final d = controller.detail.value;
+            if (d == null) return const Text('Visit');
+            if (d.isQuotationVisit) return const Text('Quotation visit');
+            return Text('Job #${d.jobId}');
           }),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
@@ -205,6 +207,26 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                   );
                                 },
                               ),
+                              if (d.isQuotationVisit) ...[
+                                const SizedBox(height: 12),
+                                _CreateQuotationBanner(
+                                  onAddNotes: () async {
+                                    showDiaryTechnicalNoteSheet(
+                                      context,
+                                      controller,
+                                    );
+                                  },
+                                  onTap: () async {
+                                    await Get.toNamed(
+                                      AppRoutes.quotationForm,
+                                      arguments: <String, dynamic>{
+                                        'diaryEventId': controller.diaryId,
+                                        'customerId': d.customerId,
+                                      },
+                                    );
+                                  },
+                                ),
+                              ],
                             ],
                             if (controller.phase == DiaryVisitUiPhase.onSite &&
                                 controller.effectiveJobReportQuestionCount >
@@ -217,6 +239,28 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                     arguments: controller.diaryId,
                                   );
                                   await controller.load();
+                                },
+                              ),
+                            ],
+                            if (controller.phase == DiaryVisitUiPhase.onSite &&
+                                d.isQuotationVisit) ...[
+                              const SizedBox(height: 12),
+                              _CreateQuotationBanner(
+                                onAddNotes: () async {
+                                  showDiaryTechnicalNoteSheet(
+                                    context,
+                                    controller,
+                                    completeAfterSubmit: true,
+                                  );
+                                },
+                                onTap: () async {
+                                  await Get.toNamed(
+                                    AppRoutes.quotationForm,
+                                    arguments: <String, dynamic>{
+                                      'diaryEventId': controller.diaryId,
+                                      'customerId': d.customerId,
+                                    },
+                                  );
                                 },
                               ),
                             ],
@@ -411,10 +455,12 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 children: [
                                   _accentTitle('Job details'),
                                   const SizedBox(height: 12),
-                                  _kv('Job description', d.title ?? '—'),
+                                  if (d.jobNumber != null && d.jobNumber!.trim().isNotEmpty)
+                                    _kv('Job number', d.jobNumber!.trim()),
+                                  _kv('Job title', d.title ?? '—'),
                                   if (d.description != null &&
                                       d.description!.trim().isNotEmpty)
-                                    _kv('Notes', d.description!),
+                                    _kv('Job description', d.description!),
                                   if (d.jobNotes != null &&
                                       d.jobNotes!.trim().isNotEmpty)
                                     _kv('Job notes', d.jobNotes!),
@@ -435,7 +481,10 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               ),
                             ),
                             const SizedBox(height: 12),
-                            DiaryTechnicalNotesPanel(controller: controller),
+                            DiaryTechnicalNotesPanel(
+                              controller: controller,
+                              isQuotationVisit: d.isQuotationVisit,
+                            ),
                             const SizedBox(height: 12),
                             DiaryExtraSubmissionsPanel(controller: controller),
                             const SizedBox(height: 24),
@@ -893,6 +942,132 @@ class _SubmittedJobReportBanner extends StatelessWidget {
                           color: Colors.white,
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateQuotationBanner extends StatelessWidget {
+  const _CreateQuotationBanner({
+    required this.onTap,
+    required this.onAddNotes,
+  });
+
+  final Future<void> Function() onTap;
+  final Future<void> Function() onAddNotes;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.whiteOverlay(0.35), AppColors.whiteOverlay(0.05)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.blackOverlay(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(1.0),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(17),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [AppColors.primary, Color(0x990f172a)],
+                ),
+                border: Border.all(color: AppColors.whiteOverlay(0.18)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.request_quote_outlined,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Create quotation or add site notes only',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => onAddNotes(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Color(0x66FFFFFF)),
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Notes only',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => onTap(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF0f766e),
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Quotation',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1412,6 +1587,86 @@ class _BottomActions extends StatelessWidget {
 
       if (phase == DiaryVisitUiPhase.completed ||
           phase == DiaryVisitUiPhase.cancelled) {
+        if (phase == DiaryVisitUiPhase.completed && d.isQuotationVisit) {
+          return _BottomGlassDock(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Choose what you want to send from this visit.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppColors.slate300,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: busy
+                            ? null
+                            : () => showDiaryTechnicalNoteSheet(
+                                  context,
+                                  controller,
+                                ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: _outlineOnGlass,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Notes only',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                await Get.toNamed(
+                                  AppRoutes.quotationForm,
+                                  arguments: <String, dynamic>{
+                                    'diaryEventId': controller.diaryId,
+                                    'customerId': d.customerId,
+                                  },
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Quotation',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
         return _BottomGlassDock(
           child: SizedBox(
             width: double.infinity,

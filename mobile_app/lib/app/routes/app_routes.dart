@@ -28,6 +28,8 @@ abstract class AppRoutes {
   static const String customerAssetForm = '/customers/asset-form';
   static const String settings = '/settings';
   static const String sitesList = '/sites';
+  static const String siteReportsList = '/site-reports';
+  static const String siteReportEditor = '/site-reports/editor';
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
 }

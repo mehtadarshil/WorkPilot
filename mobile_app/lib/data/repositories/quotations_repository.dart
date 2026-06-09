@@ -98,6 +98,14 @@ class QuotationsRepository extends GetxService {
     );
   }
 
+  Future<Map<String, dynamic>> createQuotationFromDiaryEvent(int diaryEventId, Map<String, dynamic> body) async {
+    final res = await _api.post<Map<String, dynamic>>(
+      '/diary-events/$diaryEventId/create-quotation',
+      data: body,
+    );
+    return _asMap(res.data);
+  }
+
   Future<Map<String, dynamic>> getEmailComposeDraft(int id) async {
     final res = await _api.get<Map<String, dynamic>>('/quotations/$id/email-compose');
     return _asMap(res.data);

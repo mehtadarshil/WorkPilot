@@ -1,52 +1,28 @@
-import 'dart:async';
-
-import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../data/repositories/mobile_repository.dart';
 
-class CrmListController extends GetxController {
-  CrmListController({MobileRepository? mobile})
+class SiteReportsListController extends GetxController {
+  SiteReportsListController({MobileRepository? mobile})
     : _mobile = mobile ?? Get.find<MobileRepository>();
 
   final MobileRepository _mobile;
 
-  late final String module;
-
   final RxList<Map<String, dynamic>> items = <Map<String, dynamic>>[].obs;
   final RxBool loading = false.obs;
   final RxString error = ''.obs;
-  final TextEditingController searchController = TextEditingController();
 
   int _page = 1;
   int? _totalPages;
-  Timer? _searchDebounce;
-
-  String get title => switch (module) {
-    'customers' => 'Customers',
-    'jobs' => 'Jobs',
-    'quotations' => 'Quotations',
-    'invoices' => 'Invoices',
-    'parts_catalog' => 'Part catalog',
-    'certifications' => 'Certifications',
-    _ => 'List',
-  };
-
-  bool get _paginated =>
-      module == 'customers' ||
-      module == 'jobs' ||
-      module == 'quotations' ||
-      module == 'invoices';
 
   bool get hasMore {
-    if (!_paginated || _totalPages == null) return false;
+    if (_totalPages == null) return false;
     return _page < _totalPages!;
   }
 
   @override
   void onInit() {
-    module = Get.arguments as String? ?? 'customers';
     super.onInit();
     reloadFromStart();
   }
@@ -55,11 +31,6 @@ class CrmListController extends GetxController {
     _page = 1;
     items.clear();
     await _fetch(append: false);
-  }
-
-  void setSearch(String value) {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 350), reloadFromStart);
   }
 
   Future<void> loadMore() async {
@@ -72,11 +43,7 @@ class CrmListController extends GetxController {
     loading.value = true;
     error.value = '';
     try {
-      final r = await _mobile.fetchCrmListPage(
-        module: module,
-        page: _page,
-        search: module == 'jobs' ? searchController.text : null,
-      );
+      final r = await _mobile.fetchSiteReports(page: _page);
       if (append) {
         items.addAll(r.items);
       } else {
@@ -92,12 +59,5 @@ class CrmListController extends GetxController {
     } finally {
       loading.value = false;
     }
-  }
-
-  @override
-  void onClose() {
-    _searchDebounce?.cancel();
-    searchController.dispose();
-    super.onClose();
   }
 }

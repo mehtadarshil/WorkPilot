@@ -91,6 +91,16 @@ export default function QuotationsPage() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  const [visitModalOpen, setVisitModalOpen] = useState(false);
+  const [visitError, setVisitError] = useState<string | null>(null);
+  const [visitCustomerId, setVisitCustomerId] = useState<number | null>(null);
+  const [visitOfficerId, setVisitOfficerId] = useState<number | null>(null);
+  const [visitDate, setVisitDate] = useState('');
+  const [visitTime, setVisitTime] = useState('09:00');
+  const [visitDuration, setVisitDuration] = useState(60);
+  const [visitNotes, setVisitNotes] = useState('');
+  const [officers, setOfficers] = useState<{ id: number; full_name: string; state: string }[]>([]);
+
   const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
   const [formQuotationDate, setFormQuotationDate] = useState('');
   const [formValidUntil, setFormValidUntil] = useState('');
@@ -195,10 +205,10 @@ export default function QuotationsPage() {
   }, [fetchQuotations]);
 
   useEffect(() => {
-    if (addModalOpen) {
+    if (addModalOpen || visitModalOpen) {
       fetchCustomers();
     }
-  }, [addModalOpen, fetchCustomers]);
+  }, [addModalOpen, visitModalOpen, fetchCustomers]);
 
   useEffect(() => {
     if (!formCustomerId) {
@@ -312,6 +322,73 @@ export default function QuotationsPage() {
     );
   };
 
+  const resetVisitForm = () => {
+    setVisitCustomerId(null);
+    setVisitOfficerId(null);
+    setVisitDate('');
+    setVisitTime('09:00');
+    setVisitDuration(60);
+    setVisitNotes('');
+    setVisitError(null);
+  };
+
+  const openVisitModal = async () => {
+    setVisitError(null);
+    resetVisitForm();
+    if (token) {
+      try {
+        const data = await getJson<{ officers: { id: number; full_name: string; state: string }[] }>('/officers/list', token);
+        setOfficers(data.officers?.filter((o) => o.state === 'active') ?? []);
+      } catch {
+        setOfficers([]);
+      }
+    }
+    setVisitModalOpen(true);
+  };
+
+  const handleCreateVisit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVisitError(null);
+    if (!visitCustomerId) {
+      setVisitError('Customer is required.');
+      return;
+    }
+    if (!visitOfficerId) {
+      setVisitError('Officer is required.');
+      return;
+    }
+    if (!visitDate || !visitTime) {
+      setVisitError('Date and time are required.');
+      return;
+    }
+    if (!token) return;
+    try {
+      const startTime = `${visitDate}T${visitTime}:00`;
+      const res = await postJson<{
+        job: { id: number };
+        diary_event: { id: number };
+      }>(
+        '/quotation-visits',
+        {
+          customer_id: visitCustomerId,
+          officer_id: visitOfficerId,
+          start_time: startTime,
+          duration_minutes: visitDuration,
+          notes: visitNotes.trim() || undefined,
+        },
+        token,
+      );
+      setVisitModalOpen(false);
+      resetVisitForm();
+      const jobId = res.job?.id;
+      if (jobId) {
+        router.push(`/dashboard/quotation-visits/${jobId}`);
+      }
+    } catch (err) {
+      setVisitError(err instanceof Error ? err.message : 'Failed to create quotation visit.');
+    }
+  };
+
   return (
     <>
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
@@ -337,16 +414,28 @@ export default function QuotationsPage() {
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Quotation Management</h1>
               <p className="mt-1 text-slate-500">Create, send, and track quotations for your services.</p>
             </div>
-            <motion.button
-              type="button"
-              onClick={openAdd}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
-            >
-              <Plus className="size-5" />
-              Create Quotation
-            </motion.button>
+            <div className="flex items-center gap-3">
+              <motion.button
+                type="button"
+                onClick={openVisitModal}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-5 py-2.5 font-bold text-amber-900 shadow-sm transition hover:bg-amber-100"
+              >
+                <Plus className="size-5" />
+                Create Quotation Visit
+              </motion.button>
+              <motion.button
+                type="button"
+                onClick={openAdd}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
+              >
+                <Plus className="size-5" />
+                Create Quotation
+              </motion.button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -596,6 +685,69 @@ export default function QuotationsPage() {
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setAddModalOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
                 <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a]">Create Quotation</button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {visitModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setVisitModalOpen(false)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900">Create Quotation Visit</h3>
+            <p className="mt-1 text-sm text-slate-500">Book a site survey so an officer can visit and create a quotation.</p>
+            <form onSubmit={handleCreateVisit} className="mt-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Customer *</label>
+                <div className="mt-1">
+                  <ImportCustomerSelect
+                    customers={customers}
+                    value={visitCustomerId}
+                    onChange={setVisitCustomerId}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Officer *</label>
+                <select
+                  value={visitOfficerId ?? ''}
+                  onChange={(e) => setVisitOfficerId(e.target.value ? Number(e.target.value) : null)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                >
+                  <option value="">-- Select officer --</option>
+                  {officers.map((o) => (
+                    <option key={o.id} value={o.id}>{o.full_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700">Date *</label>
+                  <input type="date" required value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700">Time *</label>
+                  <input type="time" required value={visitTime} onChange={(e) => setVisitTime(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Duration (minutes)</label>
+                <input type="number" min={15} step={15} value={visitDuration} onChange={(e) => setVisitDuration(Number(e.target.value) || 60)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Notes</label>
+                <textarea rows={3} value={visitNotes} onChange={(e) => setVisitNotes(e.target.value)} placeholder="Any special instructions for the officer..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              {visitError && <p className="text-sm text-red-600">{visitError}</p>}
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setVisitModalOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="flex-1 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600">Create Visit</button>
               </div>
             </form>
           </motion.div>

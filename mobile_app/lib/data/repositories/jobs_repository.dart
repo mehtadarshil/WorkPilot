@@ -249,11 +249,12 @@ class JobsRepository extends BaseRepository {
     return _asMap(res.data);
   }
 
-  Future<Map<String, dynamic>> getCustomerSiteReport(int customerId, {int? workAddressId}) async {
+  Future<Map<String, dynamic>> getCustomerSiteReport(int customerId, {int? workAddressId, int? reportId}) async {
     final res = await api.get<Map<String, dynamic>>(
       '/customers/$customerId/site-report',
       queryParameters: <String, dynamic>{
         if (workAddressId != null) 'work_address_id': workAddressId,
+        if (reportId != null) 'report_id': reportId,
       },
     );
     return _asMap(res.data);

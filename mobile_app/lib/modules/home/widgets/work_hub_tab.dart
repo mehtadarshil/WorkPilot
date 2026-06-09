@@ -55,6 +55,10 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.sitesList);
       return;
     }
+    if (module == 'site_reports') {
+      Get.toNamed(AppRoutes.siteReportsList);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
@@ -96,6 +100,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.location_on_rounded,
           accent: Color(0xFFFB923C),
         ),
+        'site_reports': (
+          label: 'Site Reports',
+          subtitle: 'FRA & site condition reports',
+          icon: Icons.description_rounded,
+          accent: Color(0xFF34D399),
+        ),
       };
 
   @override
@@ -134,6 +144,7 @@ class WorkHubTab extends StatelessWidget {
       if (p('customers')) {
         add('customers', count: s.customersTotal);
         add('sites', count: s.sitesTotal);
+        add('site_reports');
       }
       if (p('quotations')) add('quotations', count: s.quotationsPending);
       if (p('invoices')) add('invoices', count: s.invoicesUnpaid);
