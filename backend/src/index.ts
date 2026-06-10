@@ -86,6 +86,7 @@ import { authLimiter } from './middleware/rateLimiters';
 import {
   ensureCustomerSiteReportImageDir,
   findCustomerSiteReportImageFile,
+  mirrorCustomerSiteReportImageFile,
   removeCustomerSiteReportImageDirs,
   removeCustomerSiteReportImageFile,
 } from './customerSiteReportImageStorage';
@@ -19314,6 +19315,7 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
     const dir = await ensureCustomerSiteReportImageDir(customerId, reportId);
     const fullPath = path.join(dir, storedFilename);
     await fs.writeFile(fullPath, uploadBuf);
+    await mirrorCustomerSiteReportImageFile(customerId, reportId, storedFilename, fullPath);
 
     try {
       const inserted = await pool.query(
