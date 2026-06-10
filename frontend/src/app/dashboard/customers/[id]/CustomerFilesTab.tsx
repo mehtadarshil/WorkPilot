@@ -181,9 +181,9 @@ export default function CustomerFilesTab({ customerId, workAddressId }: Props) {
             className="sr-only"
             disabled={uploading}
             onChange={(e) => {
-              const fl = e.target.files;
+              const fl = e.target.files ? Array.from(e.target.files) : [];
               e.target.value = '';
-              if (fl?.length) void uploadFiles(fl);
+              if (fl.length) void uploadFiles(fl);
             }}
           />
           <span>{uploading ? 'Uploading…' : 'Choose files'}</span>

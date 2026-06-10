@@ -7,6 +7,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/offline/offline_api_support.dart';
 import '../../data/models/diary_event_detail.dart';
 import '../../data/models/diary_extra_submission.dart';
+import '../../data/models/electrical_certificate_models.dart';
 import '../../data/models/job_report_history_models.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../home/controllers/home_controller.dart';
@@ -56,6 +57,9 @@ class DiaryEventDetailController extends GetxController {
       <JobReportHistorySubmission>[].obs;
   final RxString jobReportHistoryError = ''.obs;
   final RxBool jobReportHistoryLoaded = false.obs;
+  final Rxn<JobCompletionDocuments> completionDocuments = Rxn<JobCompletionDocuments>();
+  final RxBool completionDocumentsLoading = false.obs;
+  final RxString completionDocumentsError = ''.obs;
 
   /// Max of API detail count and list/home hint so job report stays available after cold start.
   int get effectiveJobReportQuestionCount => max(
@@ -141,6 +145,14 @@ class DiaryEventDetailController extends GetxController {
         jobReportHistory.clear();
         jobReportHistoryError.value = '';
         jobReportHistoryLoaded.value = false;
+      }
+      if (p == DiaryVisitUiPhase.completed &&
+          detail.value?.isQuotationVisit != true &&
+          (detail.value?.jobId ?? 0) > 0) {
+        await _loadCompletionDocuments();
+      } else {
+        completionDocuments.value = null;
+        completionDocumentsError.value = '';
       }
     } on ApiException catch (e) {
       if (silent) {
@@ -288,6 +300,24 @@ class DiaryEventDetailController extends GetxController {
       );
     } finally {
       jobReportHistoryLoaded.value = true;
+    }
+  }
+
+  Future<void> _loadCompletionDocuments() async {
+    final jobId = detail.value?.jobId ?? 0;
+    if (jobId <= 0) return;
+    completionDocumentsLoading.value = true;
+    completionDocumentsError.value = '';
+    try {
+      completionDocuments.value = await _mobile.fetchJobCompletionDocuments(jobId);
+    } on ApiException catch (e) {
+      completionDocuments.value = null;
+      completionDocumentsError.value = e.message;
+    } catch (e) {
+      completionDocuments.value = null;
+      completionDocumentsError.value = e.toString().replaceFirst('Exception: ', '');
+    } finally {
+      completionDocumentsLoading.value = false;
     }
   }
 

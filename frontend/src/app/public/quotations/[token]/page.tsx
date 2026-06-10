@@ -15,6 +15,7 @@ type LineItem = {
   unit_price: number;
   amount: number;
   sort_order: number;
+  images?: { original_filename: string; data_url?: string | null }[];
 };
 
 type PublicQuotationPayload = {
@@ -52,11 +53,14 @@ export default function PublicQuotationPage() {
 
   useEffect(() => {
     if (!token) return;
-    setLoading(true);
-    getJson<PublicQuotationPayload>(`/public/quotations/${token}`)
-      .then(setData)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Quotation not found'))
-      .finally(() => setLoading(false));
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      getJson<PublicQuotationPayload>(`/public/quotations/${token}`)
+        .then(setData)
+        .catch((err) => setError(err instanceof Error ? err.message : 'Quotation not found'))
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [token]);
 
   if (loading) {

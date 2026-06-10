@@ -47,6 +47,7 @@ type Ctx = {
   validationIssues: ValidationIssue[];
   validateOpen: boolean;
   setValidateOpen: (open: boolean) => void;
+  applyCertificate: (next: ElectricalCertificate) => void;
 };
 
 const CertificateEditorContext = createContext<Ctx | null>(null);
@@ -345,6 +346,11 @@ export function CertificateEditorProvider({
     [certificate.id, token],
   );
 
+  const applyCertificate = useCallback((next: ElectricalCertificate) => {
+    setCertificate(next);
+    setLastSavedAt(next.updated_at);
+  }, []);
+
   const runValidate = useCallback(async () => {
     const issues = validateElectricalCertificate(docRef.current);
     setValidationIssues(issues);
@@ -378,6 +384,7 @@ export function CertificateEditorProvider({
       validationIssues,
       validateOpen,
       setValidateOpen,
+      applyCertificate,
     }),
     [
       certificate,
@@ -391,6 +398,7 @@ export function CertificateEditorProvider({
       runValidate,
       validationIssues,
       validateOpen,
+      applyCertificate,
     ],
   );
 

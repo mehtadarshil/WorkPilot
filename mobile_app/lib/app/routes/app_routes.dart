@@ -30,6 +30,8 @@ abstract class AppRoutes {
   static const String sitesList = '/sites';
   static const String siteReportsList = '/site-reports';
   static const String siteReportEditor = '/site-reports/editor';
+  static const String certificateTypePicker = '/certificates/picker';
+  static const String certificateEditor = '/certificates/editor';
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
 }

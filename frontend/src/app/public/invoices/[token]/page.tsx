@@ -103,9 +103,10 @@ export default function PublicInvoicePage() {
             background: linear-gradient(to right, ${accent}, ${accentEnd}) !important;
           }
           @page {
-            margin: 10mm 12mm;
+            margin: 0;
             size: auto;
           }
+          body { padding: 12mm; box-sizing: border-box; }
         }
       `}} />
 

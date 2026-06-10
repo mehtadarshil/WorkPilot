@@ -78,7 +78,9 @@ class JobReportView extends GetView<JobReportController> {
             () => Text(
               controller.readonlyMode.value
                   ? 'Submitted job report'
-                  : (controller.flowStep.value == 1 ? 'Change job stage' : 'Job report'),
+                  : (controller.flowStep.value == 2
+                      ? 'Job completed'
+                      : (controller.flowStep.value == 1 ? 'Change job stage' : 'Job report')),
               style: GoogleFonts.inter(fontWeight: FontWeight.w700),
             ),
           ),
@@ -89,7 +91,9 @@ class JobReportView extends GetView<JobReportController> {
                 Get.back();
                 return;
               }
-              if (controller.flowStep.value == 1) {
+              if (controller.flowStep.value == 2) {
+                controller.finishCompletionFlow();
+              } else if (controller.flowStep.value == 1) {
                 controller.flowStep.value = 0;
               } else {
                 Get.back();
@@ -140,6 +144,9 @@ class JobReportView extends GetView<JobReportController> {
                   ),
                 ),
               );
+            }
+            if (!controller.readonlyMode.value && controller.flowStep.value == 2) {
+              return _CompletionActionsBody(controller: controller);
             }
             if (!controller.readonlyMode.value && controller.flowStep.value == 1) {
               return _ChangeJobStageBody(controller: controller);
@@ -447,6 +454,251 @@ class _JobReportGlassPanel extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
                 child: child,
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompletionActionsBody extends StatelessWidget {
+  const _CompletionActionsBody({required this.controller});
+
+  final JobReportController controller;
+
+  Future<void> _pickSiteReportTemplate(BuildContext context) async {
+    final templates = await controller.loadSiteReportTemplates();
+    if (!context.mounted) return;
+    if (templates.isEmpty) {
+      Get.snackbar(
+        'Site report',
+        'No site report templates are available.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+      return;
+    }
+    int? selectedId = (templates.first['id'] as num?)?.toInt();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xF21E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Choose site report template',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      value: selectedId,
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppColors.whiteOverlay(0.08),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      items: templates.map((t) {
+                        final id = (t['id'] as num).toInt();
+                        final name = (t['name'] as String?) ?? 'Template';
+                        return DropdownMenuItem(value: id, child: Text(name));
+                      }).toList(),
+                      onChanged: (v) => setState(() => selectedId = v),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: selectedId == null
+                          ? null
+                          : () async {
+                              Navigator.pop(ctx);
+                              await controller.createSiteReportWithTemplate(selectedId!);
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        'Create site report',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bundle = controller.reportBundle.value;
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            children: [
+              Text(
+                'Job report submitted successfully. You can optionally generate linked documents for this job.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.slate300,
+                  height: 1.45,
+                ),
+              ),
+              if (controller.submittedOffline.value) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+                  ),
+                  child: Text(
+                    'Your job report is queued offline. Sync when online before creating certificates or site reports.',
+                    style: GoogleFonts.inter(color: Colors.amber.shade100, fontSize: 13, height: 1.4),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              _JobReportGlassPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      bundle?.jobNumber?.trim().isNotEmpty == true
+                          ? 'Job ${bundle!.jobNumber}'
+                          : 'Completed job',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (bundle?.jobTitle?.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        bundle!.jobTitle!,
+                        style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13),
+                      ),
+                    ],
+                    if (bundle?.customerFullName?.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        bundle!.customerFullName!,
+                        style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _CompletionActionCard(
+                icon: Icons.verified_outlined,
+                title: 'Generate Certificate',
+                subtitle: 'Create an electrical certificate linked to this job',
+                onTap: controller.submittedOffline.value ? null : controller.openCertificatePicker,
+              ),
+              const SizedBox(height: 12),
+              _CompletionActionCard(
+                icon: Icons.description_outlined,
+                title: 'Generate Site Report',
+                subtitle: 'Create a site report from a template linked to this job',
+                onTap: controller.submittedOffline.value
+                    ? null
+                    : () => _pickSiteReportTemplate(context),
+              ),
+              const SizedBox(height: 12),
+              _CompletionActionCard(
+                icon: Icons.skip_next_rounded,
+                title: 'Skip',
+                subtitle: 'Return to the visit without creating documents',
+                onTap: controller.finishCompletionFlow,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CompletionActionCard extends StatelessWidget {
+  const _CompletionActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Opacity(
+          opacity: enabled ? 1 : 0.45,
+          child: _JobReportGlassPanel(
+            child: Row(
+              children: [
+                Icon(icon, color: AppColors.primary, size: 28),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.inter(
+                          color: AppColors.slate400,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+              ],
             ),
           ),
         ),

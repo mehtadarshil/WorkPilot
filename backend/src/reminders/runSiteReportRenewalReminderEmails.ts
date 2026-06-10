@@ -98,12 +98,21 @@ export async function runSiteReportRenewalReminderEmails(
   let skipped = 0;
 
   const tenantRows = await pool.query<{ created_by: number }>(
-    `SELECT DISTINCT c.created_by AS created_by
-     FROM customer_site_reports csr
-     INNER JOIN customers c ON c.id = csr.customer_id
-     WHERE csr.renewal_reminder_enabled = true
-       AND csr.renewal_anchor_date IS NOT NULL
-       AND c.created_by IS NOT NULL`,
+    `SELECT DISTINCT created_by FROM (
+       SELECT c.created_by AS created_by
+       FROM customer_site_reports csr
+       INNER JOIN customers c ON c.id = csr.customer_id
+       WHERE csr.renewal_reminder_enabled = true
+         AND csr.renewal_anchor_date IS NOT NULL
+         AND c.created_by IS NOT NULL
+       UNION
+       SELECT c.created_by AS created_by
+       FROM electrical_certificates ec
+       INNER JOIN customers c ON c.id = ec.customer_id
+       WHERE ec.renewal_reminder_enabled = true
+         AND ec.renewal_anchor_date IS NOT NULL
+         AND c.created_by IS NOT NULL
+     ) x`,
   );
 
   for (const { created_by: tenantUserId } of tenantRows.rows) {
@@ -386,6 +395,211 @@ export async function runSiteReportRenewalReminderEmails(
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`site report ${row.report_id} / ${phase}: ${msg}`);
+      }
+    }
+
+    const certsRes = await pool.query<{
+      certificate_id: number;
+      certificate_number: string;
+      type_slug: string;
+      renewal_anchor_date: unknown;
+      renewal_interval_years: number | null;
+      renewal_early_days: number | null;
+      renewal_job_id: number | null;
+      customer_id: number;
+      customer_name: string | null;
+      customer_email: string | null;
+      service_reminders_enabled: boolean;
+      service_reminder_custom_email: string | null;
+      service_reminder_recipient_mode: string | null;
+      customer_address_line_1: string | null;
+      customer_address_line_2: string | null;
+      customer_address_line_3: string | null;
+      customer_town: string | null;
+      customer_county: string | null;
+      customer_postcode: string | null;
+      wa_name: string | null;
+      wa_branch_name: string | null;
+      wa_line1: string | null;
+      wa_line2: string | null;
+      wa_line3: string | null;
+      wa_town: string | null;
+      wa_county: string | null;
+      wa_postcode: string | null;
+      job_contact_id: number | null;
+      job_title: string | null;
+    }>(
+      `SELECT ec.id AS certificate_id,
+              ec.certificate_number,
+              ec.type_slug,
+              ec.renewal_anchor_date,
+              ec.renewal_interval_years,
+              ec.renewal_early_days,
+              ec.renewal_job_id,
+              c.id AS customer_id,
+              c.full_name AS customer_name,
+              c.email AS customer_email,
+              COALESCE(c.service_reminders_enabled, true) AS service_reminders_enabled,
+              c.service_reminder_custom_email,
+              c.service_reminder_recipient_mode,
+              c.address_line_1 AS customer_address_line_1,
+              c.address_line_2 AS customer_address_line_2,
+              c.address_line_3 AS customer_address_line_3,
+              c.town AS customer_town,
+              c.county AS customer_county,
+              c.postcode AS customer_postcode,
+              wa.name AS wa_name,
+              wa.branch_name AS wa_branch_name,
+              wa.address_line_1 AS wa_line1,
+              wa.address_line_2 AS wa_line2,
+              wa.address_line_3 AS wa_line3,
+              wa.town AS wa_town,
+              wa.county AS wa_county,
+              wa.postcode AS wa_postcode,
+              j.job_contact_id,
+              j.title AS job_title
+       FROM electrical_certificates ec
+       INNER JOIN customers c ON c.id = ec.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = ec.work_address_id AND wa.customer_id = ec.customer_id
+       LEFT JOIN jobs j ON j.id = ec.renewal_job_id AND j.customer_id = ec.customer_id
+       WHERE c.created_by = $1
+         AND ec.renewal_reminder_enabled = true
+         AND ec.renewal_anchor_date IS NOT NULL`,
+      [tenantUserId],
+    );
+
+    const certTypeLabel = (slug: string): string => {
+      if (slug === 'portable_appliance_test') return 'PAT certificate';
+      if (slug === 'fi_insp_2025') return 'Fire alarm inspection';
+      if (slug === 'dfi_insp_2019_a1') return 'Domestic fire alarm inspection';
+      if (slug === 'dfi_inst_2019_a1') return 'Domestic fire alarm installation';
+      if (slug === 'fi_extinsp_5306') return 'Fire extinguisher inspection';
+      if (slug === 'em_pir_2025') return 'Emergency lighting PIR';
+      if (slug === 'eic_18e_a3') return 'Electrical installation certificate';
+      if (slug === 'mwc_18e_a3') return 'Minor works certificate';
+      return 'EICR certificate';
+    };
+
+    for (const row of certsRes.rows) {
+      if (row.service_reminders_enabled === false) continue;
+      const anchorYmd = dateOnlyFromPg(row.renewal_anchor_date);
+      if (!anchorYmd) continue;
+      const anchorDay = new Date(`${anchorYmd}T00:00:00.000Z`);
+      if (Number.isNaN(anchorDay.getTime())) continue;
+
+      let intervalYears = row.renewal_interval_years != null ? Math.trunc(Number(row.renewal_interval_years)) : 1;
+      if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
+      if (intervalYears > 10) intervalYears = 10;
+      let earlyDays = row.renewal_early_days != null ? Math.trunc(Number(row.renewal_early_days)) : 14;
+      if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+      if (earlyDays > 120) earlyDays = 120;
+
+      let nextDue = addCalendarInterval(anchorDay, intervalYears, 'years');
+      const todayD = new Date(`${today}T00:00:00.000Z`);
+      while (nextDue.getTime() < todayD.getTime()) nextDue = addCalendarInterval(nextDue, intervalYears, 'years');
+      const renewalYmd = utcDateOnlyFromDate(nextDue);
+      const earlyStartYmd = utcDateOnlyFromDate(addCalendarInterval(nextDue, -earlyDays, 'days'));
+      const phase = today >= renewalYmd ? 'due' : today >= earlyStartYmd ? 'early' : null;
+      if (!phase) {
+        skipped += 1;
+        continue;
+      }
+
+      const dup = await pool.query(
+        `SELECT 1 FROM electrical_certificate_renewal_sent
+         WHERE certificate_id = $1 AND phase = $2 AND renewal_due_date = $3`,
+        [row.certificate_id, phase, renewalYmd],
+      );
+      if ((dup.rowCount ?? 0) > 0) {
+        skipped += 1;
+        continue;
+      }
+
+      const modeRaw = (row.service_reminder_recipient_mode ?? '').trim();
+      const effectiveRecipientMode = SERVICE_REMINDER_RECIPIENT_MODES.has(modeRaw) ? modeRaw : recipientMode;
+      let toEmail = (row.service_reminder_custom_email ?? '').trim();
+      if (!toEmail) {
+        toEmail =
+          (await resolveServiceReminderRecipientEmail(
+            pool,
+            row.customer_id,
+            row.customer_email,
+            row.job_contact_id,
+            effectiveRecipientMode,
+          )) || '';
+      }
+      if (!toEmail) {
+        skipped += 1;
+        continue;
+      }
+
+      const dueDisplay = nextDue.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+      const reportTitle = certTypeLabel(row.type_slug);
+      const jobTitleTrim = (row.job_title || '').trim();
+      const jobLine =
+        row.renewal_job_id != null && (jobTitleTrim || row.renewal_job_id)
+          ? `Linked job: ${jobTitleTrim || 'Job'} (#${row.renewal_job_id}).`
+          : '';
+      const vars: Record<string, string> = {
+        company_name: companyName,
+        customer_name: (row.customer_name || 'there').trim(),
+        customer_account_no: String(row.customer_id),
+        customer_email: (row.customer_email || '').trim(),
+        customer_address: formatJoinedAddressLines([
+          row.customer_address_line_1,
+          row.customer_address_line_2,
+          row.customer_address_line_3,
+          row.customer_town,
+          row.customer_county,
+          row.customer_postcode,
+        ]),
+        service_name: reportTitle,
+        service_reminder_name: reportTitle,
+        job_title: jobTitleTrim,
+        job_id: row.renewal_job_id != null ? String(row.renewal_job_id) : '',
+        job_line: jobLine,
+        due_date: dueDisplay,
+        service_due_date: dueDisplay,
+        phase_label: phase === 'early' ? 'friendly reminder' : 'reminder that your certificate renewal is now due',
+        report_title: reportTitle,
+        certificate_number: row.certificate_number,
+        ...siteAddressVars(row),
+      };
+      const subject = applyTemplateVars(tplRow.subject, vars);
+      const bodyInner = applyTemplateVars(tplRow.body_html, vars);
+      const html = wrapEmailHtml(bodyInner, (emailCfg.default_signature_html as string) || '');
+      const from = formatFromHeader(String(emailCfg.from_name ?? ''), String(emailCfg.from_email ?? ''));
+      try {
+        await deps.sendUserEmail(pool, tenantUserId, emailCfg, {
+          from,
+          to: toEmail,
+          subject,
+          html,
+          replyTo: emailCfg.reply_to,
+        });
+        await pool.query(
+          `INSERT INTO electrical_certificate_renewal_sent (certificate_id, phase, renewal_due_date, tenant_user_id)
+           VALUES ($1, $2, $3, $4)`,
+          [row.certificate_id, phase, renewalYmd, tenantUserId],
+        );
+        await pool.query(
+          `INSERT INTO customer_communications
+            (customer_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
+           VALUES ($1, 'email', $2, $3, 'sent', $4, $5, $6, $7)`,
+          [
+            row.customer_id,
+            subject,
+            bodyInner,
+            toEmail,
+            row.renewal_job_id != null ? 'job' : 'customer',
+            row.renewal_job_id != null ? row.renewal_job_id : row.customer_id,
+            tenantUserId,
+          ],
+        );
+        sent += 1;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`certificate ${row.certificate_id} / ${phase}: ${msg}`);
       }
     }
   }

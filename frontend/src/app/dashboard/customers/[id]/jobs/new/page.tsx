@@ -113,6 +113,7 @@ interface EditableJob {
   is_quotation_visit?: boolean;
   pricing_items?: DescPricingItem[];
   completed_service_items?: unknown;
+  charge_type?: string | null;
 }
 
 let keyCounter = 0;
@@ -123,6 +124,12 @@ const PIPELINE_OPTIONS: SearchableSelectOption[] = [
   { value: 'Installation Workflow', label: 'Installation Workflow' },
   { value: 'Emergency Workflow', label: 'Emergency Workflow' },
   { value: 'Maintenance Workflow', label: 'Maintenance Workflow' },
+];
+
+const CHARGE_TYPE_OPTIONS: SearchableSelectOption[] = [
+  { value: 'chargeable', label: 'Chargeable' },
+  { value: 'free', label: 'Free of Charge' },
+  { value: 'callback', label: 'Call Back' },
 ];
 
 const FALLBACK_USER_GROUPS = ['Field Engineers', 'Senior Technicians', 'Apprentices', 'Subcontractors'];
@@ -170,6 +177,7 @@ export default function AddNewJobPage() {
   const [userGroup, setUserGroup] = useState('');
   const [businessUnit, setBusinessUnit] = useState('');
   const [bookIntoDiary, setBookIntoDiary] = useState(true);
+  const [chargeType, setChargeType] = useState('chargeable');
 
   // Bottom section
   const [quotedAmount, setQuotedAmount] = useState('');
@@ -291,6 +299,7 @@ export default function AddNewJobPage() {
         setQuotedAmount(j.quoted_amount ? String(j.quoted_amount) : '');
         setCustomerReference(j.customer_reference || '');
         setJobPipeline(j.job_pipeline || 'Service/Reactive Workflow');
+        setChargeType(j.charge_type || 'chargeable');
         if (j.pricing_items && Array.isArray(j.pricing_items)) {
           setPricingItems(j.pricing_items.map((pi: DescPricingItem) => {
             const unit = Number(pi.unit_price);
@@ -540,6 +549,7 @@ export default function AddNewJobPage() {
         customer_reference: customerReference || null,
         job_pipeline: jobPipeline || null,
         book_into_diary: bookIntoDiary,
+        charge_type: chargeType,
         pricing_items: pricingItems.filter(pi => pi.item_name.trim()).map(pi => ({
           item_name: pi.item_name,
           time_included: pi.time_included,
@@ -880,6 +890,20 @@ export default function AddNewJobPage() {
                     <p className="mt-1 text-[11px] font-medium text-[#14B8A6]">
                       When this job is invoiced the system will automatically select this category.
                     </p>
+                  </div>
+
+                  <div>
+                    <label className={labelClass}>Charge option</label>
+                    <SearchableSelect
+                      options={CHARGE_TYPE_OPTIONS}
+                      value={chargeType}
+                      onChange={setChargeType}
+                      allowEmpty={false}
+                      emptyButtonLabel="Charge Option"
+                      emptyMenuLabel=""
+                      searchPlaceholder="Search charge option…"
+                      className={inputClass}
+                    />
                   </div>
 
                   <div>

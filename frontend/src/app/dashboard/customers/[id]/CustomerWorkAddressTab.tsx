@@ -29,7 +29,10 @@ interface WorkAddress {
   prefers_email: boolean;
   prefers_letter: boolean;
   uprn: string | null;
+  key_info: string | null;
   is_active: boolean;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface Branch {
@@ -63,7 +66,10 @@ type WorkAddressForm = {
   prefers_email: boolean;
   prefers_letter: boolean;
   uprn: string;
+  key_info: string;
   is_active: boolean;
+  latitude: string;
+  longitude: string;
 };
 
 const emptyForm: WorkAddressForm = {
@@ -88,7 +94,10 @@ const emptyForm: WorkAddressForm = {
   prefers_email: false,
   prefers_letter: false,
   uprn: '',
+  key_info: '',
   is_active: true,
+  latitude: '',
+  longitude: '',
 };
 
 export default function CustomerWorkAddressTab({ customerId }: Props) {
@@ -166,7 +175,10 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
       prefers_email: row.prefers_email,
       prefers_letter: row.prefers_letter,
       uprn: row.uprn || '',
+      key_info: row.key_info || '',
       is_active: row.is_active,
+      latitude: row.latitude != null ? String(row.latitude) : '',
+      longitude: row.longitude != null ? String(row.longitude) : '',
     });
     setOpenModal(true);
   };
@@ -193,7 +205,10 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
     prefers_email: form.prefers_email,
     prefers_letter: form.prefers_letter,
     uprn: form.uprn.trim() || null,
+    key_info: form.key_info.trim() || null,
     is_active: form.is_active,
+    latitude: form.latitude.trim() !== '' ? parseFloat(form.latitude.trim()) : null,
+    longitude: form.longitude.trim() !== '' ? parseFloat(form.longitude.trim()) : null,
   };
 
   const saveRow = async () => {
@@ -267,14 +282,15 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Town</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">City</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Postcode</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Key info</th>
                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">Loading work addresses...</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">Loading work addresses...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">No work addresses found.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">No work addresses found.</td></tr>
               ) : (
                 rows.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50/50">
@@ -284,6 +300,9 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                     <td className="px-4 py-3">{r.town || '-'}</td>
                     <td className="px-4 py-3">{r.county || '-'}</td>
                     <td className="px-4 py-3">{r.postcode || '-'}</td>
+                    <td className="max-w-xs px-4 py-3">
+                      {r.key_info?.trim() ? <span className="line-clamp-2 text-slate-600">{r.key_info}</span> : '-'}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
@@ -412,9 +431,47 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                  <label className="text-sm text-slate-600">UPRN</label>
-                  <input value={form.uprn} onChange={(e) => setForm((f) => ({ ...f, uprn: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                <div className="space-y-3">
+                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-600">UPRN</label>
+                    <input value={form.uprn} onChange={(e) => setForm((f) => ({ ...f, uprn: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  </div>
+                  <div className="grid grid-cols-[130px_1fr] items-start gap-2">
+                    <label className="pt-2 text-sm text-slate-600">Key info</label>
+                    <textarea
+                      value={form.key_info}
+                      onChange={(e) => setForm((f) => ({ ...f, key_info: e.target.value }))}
+                      rows={4}
+                      placeholder="Access notes, parking, alarm codes, hazards, preferred entrance..."
+                      className="resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-600">Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="-90"
+                      max="90"
+                      placeholder="e.g. 51.5074"
+                      value={form.latitude}
+                      onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
+                      className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
+                    <label className="text-sm text-slate-600">Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="-180"
+                      max="180"
+                      placeholder="e.g. -0.1278"
+                      value={form.longitude}
+                      onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
+                      className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

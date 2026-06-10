@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../../apiClient';
-import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, FileText, Trash2, X, Check } from 'lucide-react';
+import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, Trash2, X, Check, ImagePlus } from 'lucide-react';
 import dayjs from 'dayjs';
 import CustomerCommunicationsTab from './CustomerCommunicationsTab';
 import CustomerContactsTab from './CustomerContactsTab';
@@ -13,7 +13,11 @@ import CustomerWorkAddressTab from './CustomerWorkAddressTab';
 import CustomerAssetsTab from './CustomerAssetsTab';
 import CustomerInvoicesTab from './CustomerInvoicesTab';
 import CustomerFilesTab from './CustomerFilesTab';
+import CustomerSiteImagesTab from './CustomerSiteImagesTab';
 import CustomerSiteReportTab from './CustomerSiteReportTab';
+import CustomerOverviewMapTab from './CustomerOverviewMapTab';
+import CustomerTechnicalNoteMedia, { type TechnicalNoteMediaItem } from './CustomerTechnicalNoteMedia';
+import { IMAGE_MAX_BYTES, prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
 
 interface SpecificNote {
   id: number;
@@ -21,6 +25,7 @@ interface SpecificNote {
   description: string;
   created_at: string;
   work_address_id?: number | null;
+  media?: TechnicalNoteMediaItem[];
 }
 
 interface CustomerDetails {
@@ -65,10 +70,132 @@ interface CustomerDetails {
   service_reminder_recipient_mode?: string | null;
 }
 
+function CustomerBehaviourNotesEditor({
+  customerId,
+  token,
+  initialNotes,
+  onSaved,
+}: {
+  customerId: string;
+  token: string | null;
+  initialNotes: string;
+  onSaved: (notes: string | null) => void;
+}) {
+  const [notes, setNotes] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (!token) return;
+    setSaving(true);
+    setError('');
+    try {
+      const nextNotes = notes.trim();
+      await patchJson(`/customers/${customerId}`, { notes: nextNotes }, token);
+      onSaved(nextNotes);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save notes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-5 border-b border-slate-100">
+      <div className="mb-3">
+        <h3 className="font-bold text-slate-800 text-[15px]">Customer behaviour &amp; notes</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Record payment behaviour, access warnings, preferences, and anything the team should know before booking work.
+        </p>
+      </div>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={5}
+        placeholder="Example: pays late, requires PO before visit, call accounts before booking, prefers email..."
+        className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
+      />
+      {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[11px] text-slate-400">Visible to office and mobile users on this customer.</p>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#119f90] disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save notes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WorkAddressKeyInfoEditor({
+  customerId,
+  workAddressId,
+  token,
+  initialKeyInfo,
+  onSaved,
+}: {
+  customerId: string;
+  workAddressId: string;
+  token: string | null;
+  initialKeyInfo: string;
+  onSaved: (keyInfo: string | null) => void;
+}) {
+  const [keyInfo, setKeyInfo] = useState(initialKeyInfo);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (!token) return;
+    setSaving(true);
+    setError('');
+    try {
+      const next = keyInfo.trim();
+      await patchJson(`/customers/${customerId}/work-addresses/${workAddressId}`, { key_info: next }, token);
+      onSaved(next || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save key info');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-white/70 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-extrabold uppercase tracking-widest text-amber-700">Key info</p>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded bg-amber-500 px-2 py-1 text-[11px] font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <textarea
+        value={keyInfo}
+        onChange={(e) => setKeyInfo(e.target.value)}
+        rows={4}
+        placeholder="Access notes, parking, alarm codes, hazards, preferred entrance..."
+        className="w-full resize-none rounded border border-amber-100 bg-white px-2 py-1.5 text-xs leading-relaxed text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+      />
+      {error ? <p className="mt-2 text-[11px] text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
 type ServiceReminderScheduleLine = {
-  job_id: number;
+  source?: 'service_job' | 'site_report' | 'certificate';
+  job_id: number | null;
   job_title: string | null;
   job_state: string;
+  report_id?: number | null;
+  report_title?: string | null;
+  certificate_number?: string | null;
   service_name: string;
   remind_email: boolean;
   checklist_matched: boolean;
@@ -124,6 +251,7 @@ interface WorkAddressDetails {
   town: string | null;
   county?: string | null;
   postcode: string | null;
+  key_info?: string | null;
 }
 
 /** Central London — used when geocoding fails or no address is stored. */
@@ -155,9 +283,9 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site Reports'];
-    let initial = tab && allowed.includes(tab) ? tab : 'All works';
-    if (workAddressId && initial === 'Work address') initial = 'All works';
+    const allowed = ['Overview', 'All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
+    let initial = tab && allowed.includes(tab) ? tab : 'Overview';
+    if (workAddressId && initial === 'Work address') initial = 'Overview';
     return initial;
   });
 
@@ -166,6 +294,8 @@ export default function CustomerDetailsPage() {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [noteTitle, setNoteTitle] = useState('');
   const [noteDescription, setNoteDescription] = useState('');
+  const [noteFiles, setNoteFiles] = useState<File[]>([]);
+  const [noteUploadError, setNoteUploadError] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
@@ -187,15 +317,15 @@ export default function CustomerDetailsPage() {
   // any in-app tab click to be overwritten whenever `?tab=` was present in the URL (e.g. Files → All works).
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Files', 'Site Reports'];
+    const allowed = ['Overview', 'All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
-        setActiveTab('All works');
+        setActiveTab('Overview');
       } else {
         setActiveTab(tab);
       }
     } else if (workAddressId) {
-      setActiveTab((prev) => (prev === 'Work address' ? 'All works' : prev));
+      setActiveTab((prev) => (prev === 'Work address' ? 'Overview' : prev));
     }
   }, [searchParams, workAddressId]);
 
@@ -205,8 +335,8 @@ export default function CustomerDetailsPage() {
     try {
       const res = await getJson<CustomerDetails>(`/customers/${id}`, token);
       setData({ ...res, specific_notes: res.specific_notes ?? [] });
-    } catch (err: any) {
-      setError(err?.message || 'Failed to fetch customer details');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch customer details');
     } finally {
       setLoading(false);
     }
@@ -338,8 +468,6 @@ export default function CustomerDetailsPage() {
   ]);
 
   const historyRows = useMemo(() => {
-    const q = historySearch.trim().toLowerCase();
-
     if (historyType === 'jobs') {
       return jobs
         .filter((j) => ['completed', 'closed'].includes(j.state))
@@ -371,7 +499,7 @@ export default function CustomerDetailsPage() {
     }
 
     return [];
-  }, [historySearch, historyType, jobs, invoices]).filter((row) => {
+  }, [historyType, jobs, invoices]).filter((row) => {
     if (!historySearch.trim()) return true;
     const text = `${row.recordNo} ${row.description} ${row.typeLabel}`.toLowerCase();
     return text.includes(historySearch.trim().toLowerCase());
@@ -386,6 +514,36 @@ export default function CustomerDetailsPage() {
     return all.filter((n) => n.work_address_id == null);
   }, [data?.specific_notes, workAddressId]);
 
+  const uploadNoteFiles = useCallback(async (noteId: number, files: File[]) => {
+    if (!token || !id || files.length === 0) return [];
+    let latestMedia: TechnicalNoteMediaItem[] = [];
+    for (const original of files) {
+      const file = await prepareImageFileForUpload(original);
+      if (file.size > IMAGE_MAX_BYTES) {
+        throw new Error(`"${original.name}" is too large (max ${Math.round(IMAGE_MAX_BYTES / (1024 * 1024))} MB).`);
+      }
+      const contentBase64 = await readFileAsBase64(file);
+      const res = await postJson<{ media: TechnicalNoteMediaItem[] }>(
+        `/customers/${id}/specific-notes/${noteId}/media`,
+        {
+          filename: file.name,
+          content_type: file.type || 'image/jpeg',
+          content_base64: contentBase64,
+        },
+        token,
+      );
+      latestMedia = res.media;
+    }
+    return latestMedia;
+  }, [id, token]);
+
+  const updateNoteMedia = useCallback((noteId: number, media: TechnicalNoteMediaItem[]) => {
+    setData(prev => prev ? {
+      ...prev,
+      specific_notes: (prev.specific_notes ?? []).map(n => n.id === noteId ? { ...n, media } : n),
+    } : null);
+  }, []);
+
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
   if (!data) return (
     <div className="flex flex-col gap-4 p-8">
@@ -397,11 +555,10 @@ export default function CustomerDetailsPage() {
   const addressString = [data.address_line_1, data.address_line_2, data.town, data.county, data.postcode].filter(Boolean).join(', ');
   const displayAddress = addressString || 'No address provided';
 
-  const fullContactName = [data.contact_title, data.contact_first_name, data.contact_surname].filter(Boolean).join(' ');
-
   const allowBranches = data.customer_type_allow_branches !== false;
   const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
   const tabs: { key: string; label: string }[] = [
+    { key: 'Overview', label: 'Overview' },
     { key: 'All works', label: 'All works' },
     { key: 'Communications', label: 'Communications' },
     { key: 'Contacts', label: 'Contacts' },
@@ -409,6 +566,7 @@ export default function CustomerDetailsPage() {
     ...(allowBranches ? [{ key: 'Branches', label: 'Branches' }] : []),
     ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
     { key: 'Assets', label: 'Assets' },
+    { key: 'Site images', label: 'Site images' },
     { key: 'Files', label: 'Files' },
     { key: 'Site Reports', label: 'Site Reports' },
   ];
@@ -622,6 +780,14 @@ export default function CustomerDetailsPage() {
                       </span>
                     </div>
                   </div>
+                  <WorkAddressKeyInfoEditor
+                    key={`${workAddressDetails.id}-${workAddressDetails.key_info ?? ''}`}
+                    customerId={id}
+                    workAddressId={String(workAddressDetails.id)}
+                    token={token}
+                    initialKeyInfo={workAddressDetails.key_info ?? ''}
+                    onSaved={(keyInfo) => setWorkAddressDetails(prev => prev ? { ...prev, key_info: keyInfo } : prev)}
+                  />
                 </div>
               </div>
             )}
@@ -643,8 +809,8 @@ export default function CustomerDetailsPage() {
                 <>
                   <p className="text-sm text-slate-600">
                     {svcSchedule.lines.length === 0
-                      ? 'No completed service jobs with renewal email tracks yet. Complete a service job with a next service date, tick services with “remind by email”, and match names to Settings → Job descriptions → Service checklist.'
-                      : `${svcSchedule.lines.filter((l) => l.checklist_matched).length} renewal track(s) from completed jobs.`}{' '}
+                      ? 'No service or site-report renewal email tracks yet. Complete a service job with a next service date, or enable renewal reminders on a site report.'
+                      : `${svcSchedule.lines.length} renewal track(s): ${svcSchedule.lines.filter((l) => (l.source ?? 'service_job') === 'service_job').length} service job, ${svcSchedule.lines.filter((l) => l.source === 'site_report').length} site report, ${svcSchedule.lines.filter((l) => l.source === 'certificate').length} certificate.`}{' '}
                     {svcSchedule.lines.some((l) => l.would_send_today) ? (
                       <span className="ml-1 font-semibold text-amber-800">
                         {svcSchedule.lines.filter((l) => l.would_send_today).length} would send on the next reminder run
@@ -746,8 +912,8 @@ export default function CustomerDetailsPage() {
                     <table className="min-w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 text-slate-500">
-                          <th className="py-1 pr-2">Job</th>
-                          <th className="py-1 pr-2">Service</th>
+                          <th className="py-1 pr-2">Source</th>
+                          <th className="py-1 pr-2">Reminder</th>
                           <th className="py-1 pr-2">Next due</th>
                           <th className="py-1 pr-2">Status</th>
                           <th className="py-1">To</th>
@@ -756,14 +922,34 @@ export default function CustomerDetailsPage() {
                       <tbody>
                         {svcSchedule.lines.map((row, idx) => (
                           <tr
-                            key={`${row.job_id}-${row.service_name}-${row.next_renewal_due_date ?? 'na'}-${idx}`}
+                            key={`${row.source ?? 'service_job'}-${row.job_id ?? row.report_id ?? 'na'}-${row.service_name}-${row.next_renewal_due_date ?? 'na'}-${idx}`}
                             className="border-b border-slate-100 align-top"
                           >
                             <td className="py-1.5 pr-2">
-                              <Link href={`/dashboard/jobs/${row.job_id}`} className="text-[#14B8A6] hover:underline">
-                                #{row.job_id}
-                              </Link>{' '}
-                              <span className="text-slate-700">{row.job_title || ''}</span>
+                              {(row.source ?? 'service_job') === 'site_report' || row.source === 'certificate' ? (
+                                <span>
+                                  <span className="font-semibold text-slate-800">
+                                    {row.source === 'certificate' ? 'Certificate' : 'Site report'}
+                                  </span>
+                                  <span className="mt-0.5 block text-[10px] text-slate-500">
+                                    {row.certificate_number || (row.report_id ? `Report #${row.report_id}` : 'Renewal report')}
+                                  </span>
+                                  {row.job_id ? (
+                                    <Link href={`/dashboard/jobs/${row.job_id}`} className="mt-0.5 block text-[#14B8A6] hover:underline">
+                                      Linked job #{row.job_id}
+                                    </Link>
+                                  ) : null}
+                                </span>
+                              ) : row.job_id ? (
+                                <>
+                                  <Link href={`/dashboard/jobs/${row.job_id}`} className="text-[#14B8A6] hover:underline">
+                                    #{row.job_id}
+                                  </Link>{' '}
+                                  <span className="text-slate-700">{row.job_title || ''}</span>
+                                </>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
                             </td>
                             <td className="py-1.5 pr-2 text-slate-800">{row.service_name}</td>
                             <td className="py-1.5 pr-2 text-slate-700">
@@ -804,6 +990,14 @@ export default function CustomerDetailsPage() {
                 </div>
               )}
             </div>
+
+            <CustomerBehaviourNotesEditor
+              key={`${data.id}-${data.notes ?? ''}`}
+              customerId={id}
+              token={token}
+              initialNotes={data.notes ?? ''}
+              onSaved={(notes) => setData(prev => prev ? { ...prev, notes } : prev)}
+            />
 
             {/* Other details */}
             <div className="p-5 border-b border-slate-100 relative group">
@@ -858,6 +1052,8 @@ export default function CustomerDetailsPage() {
                     setEditingNoteId(null);
                     setNoteTitle('');
                     setNoteDescription('');
+                    setNoteFiles([]);
+                    setNoteUploadError('');
                   }}
                   className="inline-flex items-center gap-1 text-xs font-bold text-[#14B8A6] hover:bg-emerald-50 px-2 py-1 rounded transition-colors"
                 >
@@ -884,9 +1080,48 @@ export default function CustomerDetailsPage() {
                         onChange={(e) => setNoteDescription(e.target.value)}
                         className="w-full text-xs bg-white border border-slate-200 rounded px-2 py-1.5 outline-none focus:border-[#14B8A6] resize-none"
                       />
+                      <div className="space-y-2">
+                        <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 hover:border-[#14B8A6] hover:text-[#14B8A6]">
+                          <ImagePlus className="size-3" />
+                          Add pictures
+                          <input
+                            type="file"
+                            accept="image/*,.heic,.heif"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files ?? []);
+                              setNoteFiles(prev => [...prev, ...files]);
+                              setNoteUploadError('');
+                              e.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                        {noteFiles.length > 0 ? (
+                          <div className="space-y-1">
+                            {noteFiles.map((file, index) => (
+                              <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between rounded bg-white px-2 py-1 text-[11px] text-slate-600">
+                                <span className="truncate">{file.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setNoteFiles(prev => prev.filter((_, i) => i !== index))}
+                                  className="ml-2 text-slate-400 hover:text-rose-500"
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {noteUploadError ? <p className="text-[11px] text-rose-600">{noteUploadError}</p> : null}
+                      </div>
                       <div className="flex justify-end gap-2 pt-1">
                         <button 
-                          onClick={() => setIsAddingNote(false)}
+                          onClick={() => {
+                            setIsAddingNote(false);
+                            setNoteFiles([]);
+                            setNoteUploadError('');
+                          }}
                           className="p-1 text-slate-400 hover:text-slate-600"
                         >
                           <X className="size-4" />
@@ -895,6 +1130,7 @@ export default function CustomerDetailsPage() {
                           disabled={noteSaving || !noteTitle.trim() || !noteDescription.trim()}
                           onClick={async () => {
                             setNoteSaving(true);
+                            let createdNote: SpecificNote | null = null;
                             try {
                               const res = await postJson<SpecificNote>(
                                 `/customers/${id}/specific-notes`,
@@ -905,10 +1141,22 @@ export default function CustomerDetailsPage() {
                                 },
                                 token,
                               );
+                              createdNote = res;
                               setData(prev => prev ? { ...prev, specific_notes: [...(prev.specific_notes ?? []), res] } : null);
+                              if (noteFiles.length > 0) {
+                                const uploadedMedia = await uploadNoteFiles(res.id, noteFiles);
+                                updateNoteMedia(res.id, uploadedMedia);
+                              }
                               setIsAddingNote(false);
+                              setNoteFiles([]);
+                              setNoteUploadError('');
                             } catch (err) {
                               console.error('Failed to add note', err);
+                              setNoteUploadError(err instanceof Error ? err.message : 'Failed to add note');
+                              if (createdNote) {
+                                setIsAddingNote(false);
+                                setNoteFiles([]);
+                              }
                             } finally {
                               setNoteSaving(false);
                             }
@@ -1007,6 +1255,13 @@ export default function CustomerDetailsPage() {
                             </div>
                           </div>
                           <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-wrap">{note.description}</p>
+                          <CustomerTechnicalNoteMedia
+                            customerId={Number(id)}
+                            noteId={note.id}
+                            media={note.media ?? []}
+                            token={token}
+                            onMediaChange={updateNoteMedia}
+                          />
                         </>
                       )}
                    </div>
@@ -1048,6 +1303,17 @@ export default function CustomerDetailsPage() {
              {/* Tab Content */}
              <div className="p-4 md:p-6 lg:p-8 overflow-y-auto">
                
+               {activeTab === 'Overview' && (
+                 <CustomerOverviewMapTab
+                   customerId={id}
+                   workAddressId={workAddressId}
+                   customerDetails={data}
+                   invoices={invoices}
+                   mapEmbedSrc={mapEmbedSrc}
+                   mapGeocoding={mapGeocoding}
+                 />
+               )}
+
                {activeTab === 'All works' && (
                  <div className="space-y-6 max-w-6xl mx-auto">
                     
@@ -1253,6 +1519,10 @@ export default function CustomerDetailsPage() {
                 <CustomerAssetsTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
 
+              {activeTab === 'Site images' && (
+                <CustomerSiteImagesTab customerId={id} workAddressId={workAddressId || undefined} />
+              )}
+
               {activeTab === 'Files' && (
                 <CustomerFilesTab customerId={id} workAddressId={workAddressId || undefined} />
               )}
@@ -1266,7 +1536,7 @@ export default function CustomerDetailsPage() {
                 />
               )}
 
-              {activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Files' && activeTab !== 'Site Reports' && (
+              {activeTab !== 'Overview' && activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Site images' && activeTab !== 'Files' && activeTab !== 'Site Reports' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

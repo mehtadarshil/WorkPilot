@@ -204,6 +204,24 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                                             Text(ctStr(r, 'name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                                             const SizedBox(height: 6),
                                             Text(sub, style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65), height: 1.3)),
+                                            if (ctStr(r, 'key_info').isNotEmpty) ...[
+                                              const SizedBox(height: 8),
+                                              Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.all(8),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.whiteOverlay(0.06),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                                                ),
+                                                child: Text(
+                                                  ctStr(r, 'key_info'),
+                                                  maxLines: 3,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.76), height: 1.35),
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),

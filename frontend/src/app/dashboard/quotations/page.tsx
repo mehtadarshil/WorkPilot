@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Search, Quote, Plus, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
+import { Search, Quote, Plus, ChevronRight, ImagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
@@ -53,6 +54,17 @@ interface QuotationSettings {
   default_tax_percentage: number;
 }
 
+type LineItemImage = {
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  data_url?: string | null;
+  content_base64?: string;
+  filename?: string;
+};
+
+type LineItemForm = { description: string; quantity: number; unit_price: number; images: LineItemImage[] };
+
 const PAGE_SIZE = 10;
 const QUOTATION_STATES = [
   { value: 'draft', label: 'Draft', color: 'bg-slate-100 text-slate-600' },
@@ -77,6 +89,28 @@ function formatCustomerAddress(c: Customer): string {
     .join(', ');
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result || '');
+      const i = s.indexOf(',');
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    r.onerror = () => reject(new Error('Could not read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ''));
+    r.onerror = () => reject(new Error('Could not preview file'));
+    r.readAsDataURL(file);
+  });
+}
+
 export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -99,6 +133,8 @@ export default function QuotationsPage() {
   const [visitTime, setVisitTime] = useState('09:00');
   const [visitDuration, setVisitDuration] = useState(60);
   const [visitNotes, setVisitNotes] = useState('');
+  const [visitWorkAddressId, setVisitWorkAddressId] = useState<number | null>(null);
+  const [visitWorkAddressOptions, setVisitWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [officers, setOfficers] = useState<{ id: number; full_name: string; state: string }[]>([]);
 
   const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
@@ -107,8 +143,8 @@ export default function QuotationsPage() {
   const [formCurrency, setFormCurrency] = useState('USD');
   const [formNotes, setFormNotes] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formLineItems, setFormLineItems] = useState<{ description: string; quantity: number; unit_price: number }[]>([
-    { description: '', quantity: 1, unit_price: 0 },
+  const [formLineItems, setFormLineItems] = useState<LineItemForm[]>([
+    { description: '', quantity: 1, unit_price: 0, images: [] },
   ]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
   const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
@@ -117,9 +153,9 @@ export default function QuotationsPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const fetchWorkAddressesForCustomer = useCallback(
-    async (customerId: number) => {
+    async (customerId: number, setter: (options: { id: number; label: string }[]) => void = setWorkAddressOptions) => {
       if (!token) {
-        setWorkAddressOptions([]);
+        setter([]);
         return;
       }
       try {
@@ -133,7 +169,7 @@ export default function QuotationsPage() {
           }[];
         }>(`/customers/${customerId}/work-addresses?status=active`, token);
         const rows = res.work_addresses ?? [];
-        setWorkAddressOptions(
+        setter(
           rows.map((w) => {
             const addr = [w.address_line_1, w.town, w.postcode].filter((x): x is string => Boolean(x && String(x).trim())).join(', ');
             const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
@@ -141,7 +177,7 @@ export default function QuotationsPage() {
           }),
         );
       } catch {
-        setWorkAddressOptions([]);
+        setter([]);
       }
     },
     [token],
@@ -197,35 +233,20 @@ export default function QuotationsPage() {
   }, [search]);
 
   useEffect(() => {
-    setPage(1);
-  }, [stateFilter]);
-
-  useEffect(() => {
-    fetchQuotations();
+    const t = setTimeout(() => {
+      void fetchQuotations();
+    }, 0);
+    return () => clearTimeout(t);
   }, [fetchQuotations]);
 
   useEffect(() => {
     if (addModalOpen || visitModalOpen) {
-      fetchCustomers();
+      const t = setTimeout(() => {
+        void fetchCustomers();
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, [addModalOpen, visitModalOpen, fetchCustomers]);
-
-  useEffect(() => {
-    if (!formCustomerId) {
-      setFormWorkAddressId(null);
-      setWorkAddressOptions([]);
-      return;
-    }
-    setFormWorkAddressId(null);
-    fetchWorkAddressesForCustomer(formCustomerId);
-  }, [formCustomerId, fetchWorkAddressesForCustomer]);
-
-  useEffect(() => {
-    if (formWorkAddressId == null) return;
-    if (!workAddressOptions.some((w) => w.id === formWorkAddressId)) {
-      setFormWorkAddressId(null);
-    }
-  }, [workAddressOptions, formWorkAddressId]);
 
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId(null);
@@ -239,7 +260,7 @@ export default function QuotationsPage() {
     setFormCurrency(settings?.default_currency ?? 'USD');
     setFormNotes('');
     setFormDescription('');
-    setFormLineItems([{ description: '', quantity: 1, unit_price: 0 }]);
+    setFormLineItems([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
     setFormTaxPercentage(settings?.default_tax_percentage ?? 0);
   };
 
@@ -250,8 +271,17 @@ export default function QuotationsPage() {
     setAddModalOpen(true);
   };
 
+  const handleFormCustomerChange = (customerId: number | null) => {
+    setFormCustomerId(customerId);
+    setFormWorkAddressId(null);
+    setWorkAddressOptions([]);
+    if (customerId) {
+      void fetchWorkAddressesForCustomer(customerId);
+    }
+  };
+
   const addLineItem = () => {
-    setFormLineItems((prev) => [...prev, { description: '', quantity: 1, unit_price: 0 }]);
+    setFormLineItems((prev) => [...prev, { description: '', quantity: 1, unit_price: 0, images: [] }]);
   };
 
   const updateLineItem = (i: number, field: 'description' | 'quantity' | 'unit_price', value: string | number) => {
@@ -265,6 +295,39 @@ export default function QuotationsPage() {
   const removeLineItem = (i: number) => {
     if (formLineItems.length <= 1) return;
     setFormLineItems((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const addLineItemImages = async (lineIndex: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const selected = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|gif|webp)$/i.test(f.name));
+    if (selected.length === 0) return;
+    const images = await Promise.all(
+      selected.map(async (file) => ({
+        original_filename: file.name || 'image',
+        filename: file.name || 'image',
+        content_type: file.type || 'image/jpeg',
+        byte_size: file.size,
+        content_base64: await readFileAsBase64(file),
+        data_url: await readFileAsDataUrl(file),
+      })),
+    );
+    setFormLineItems((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+      next[lineIndex] = { ...current, images: [...current.images, ...images].slice(0, 8) };
+      return next;
+    });
+  };
+
+  const removeLineItemImage = (lineIndex: number, imageIndex: number) => {
+    setFormLineItems((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+      next[lineIndex] = { ...current, images: current.images.filter((_, idx) => idx !== imageIndex) };
+      return next;
+    });
   };
 
   const subtotal = formLineItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -299,6 +362,13 @@ export default function QuotationsPage() {
             description: item.description.trim(),
             quantity: item.quantity,
             unit_price: item.unit_price,
+            images: item.images.map((image) => ({
+              original_filename: image.original_filename,
+              content_type: image.content_type,
+              byte_size: image.byte_size,
+              filename: image.filename,
+              content_base64: image.content_base64,
+            })),
           })),
           tax_percentage: formTaxPercentage,
         },
@@ -325,11 +395,22 @@ export default function QuotationsPage() {
   const resetVisitForm = () => {
     setVisitCustomerId(null);
     setVisitOfficerId(null);
+    setVisitWorkAddressId(null);
+    setVisitWorkAddressOptions([]);
     setVisitDate('');
     setVisitTime('09:00');
     setVisitDuration(60);
     setVisitNotes('');
     setVisitError(null);
+  };
+
+  const handleVisitCustomerChange = (customerId: number | null) => {
+    setVisitCustomerId(customerId);
+    setVisitWorkAddressId(null);
+    setVisitWorkAddressOptions([]);
+    if (customerId) {
+      void fetchWorkAddressesForCustomer(customerId, setVisitWorkAddressOptions);
+    }
   };
 
   const openVisitModal = async () => {
@@ -372,6 +453,7 @@ export default function QuotationsPage() {
         {
           customer_id: visitCustomerId,
           officer_id: visitOfficerId,
+          ...(visitWorkAddressId != null ? { work_address_id: visitWorkAddressId } : {}),
           start_time: startTime,
           duration_minutes: visitDuration,
           notes: visitNotes.trim() || undefined,
@@ -473,7 +555,10 @@ export default function QuotationsPage() {
                 </div>
                 <select
                   value={stateFilter}
-                  onChange={(e) => setStateFilter(e.target.value)}
+                  onChange={(e) => {
+                    setStateFilter(e.target.value);
+                    setPage(1);
+                  }}
                   className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium transition hover:bg-slate-50"
                 >
                   <option value="">All states</option>
@@ -571,7 +656,7 @@ export default function QuotationsPage() {
                     <ImportCustomerSelect
                       customers={customers}
                       value={formCustomerId}
-                      onChange={setFormCustomerId}
+                      onChange={handleFormCustomerChange}
                       className="w-full"
                     />
                   </div>
@@ -652,11 +737,65 @@ export default function QuotationsPage() {
                 </div>
                 <div className="space-y-2">
                   {formLineItems.map((item, i) => (
-                    <div key={i} className="flex gap-2">
-                      <input type="text" value={item.description} onChange={(e) => updateLineItem(i, 'description', e.target.value)} placeholder="Description" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <input type="number" min={0} step={0.01} value={item.quantity} onChange={(e) => updateLineItem(i, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <input type="number" min={0} step={0.01} value={item.unit_price} onChange={(e) => updateLineItem(i, 'unit_price', parseFloat(e.target.value) || 0)} placeholder="Price" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
+                    <div key={i} className="rounded-lg border border-slate-100 bg-slate-50/40 p-2">
+                      <div className="flex gap-2">
+                        <input type="text" value={item.description} onChange={(e) => updateLineItem(i, 'description', e.target.value)} placeholder="Description" className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={item.quantity === 0 ? '' : item.quantity}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateLineItem(i, 'quantity', isNaN(val) ? 0 : val);
+                          }}
+                          className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={item.unit_price === 0 ? '' : item.unit_price}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateLineItem(i, 'unit_price', isNaN(val) ? 0 : val);
+                          }}
+                          placeholder="Price"
+                          className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                        />
+                        <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {item.images.map((image, imageIndex) => (
+                          <div key={`${image.original_filename}-${imageIndex}`} className="group relative h-16 w-20 overflow-hidden rounded border border-slate-200 bg-white">
+                            {image.data_url ? (
+                              <Image src={image.data_url} alt={image.original_filename} fill unoptimized className="object-cover" />
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => removeLineItemImage(i, imageIndex)}
+                              className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-rose-600 opacity-0 shadow-sm transition group-hover:opacity-100"
+                              aria-label="Remove image"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <label className="inline-flex h-16 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded border border-dashed border-slate-300 bg-white text-[10px] font-semibold text-slate-500 hover:border-[#14B8A6] hover:text-[#14B8A6]">
+                          <ImagePlus className="size-4" />
+                          Photos
+                          <input
+                            type="file"
+                            accept="image/*,.heic,.heif"
+                            multiple
+                            className="hidden"
+                            onChange={(event) => {
+                              void addLineItemImages(i, event.target.files);
+                              event.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -708,11 +847,44 @@ export default function QuotationsPage() {
                   <ImportCustomerSelect
                     customers={customers}
                     value={visitCustomerId}
-                    onChange={setVisitCustomerId}
+                    onChange={handleVisitCustomerChange}
                     className="w-full"
                   />
                 </div>
               </div>
+              {visitCustomerId && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700">Work / site address (optional)</label>
+                  <div className="mt-1 flex gap-2">
+                    <div className="min-w-0 flex-1">
+                      <WorkAddressSelect
+                        options={visitWorkAddressOptions}
+                        value={visitWorkAddressId}
+                        onChange={setVisitWorkAddressId}
+                        emptyButtonLabel="None — use customer main address"
+                        emptyMenuLabel="None — customer main address"
+                        className="w-full"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(
+                          `/dashboard/customers/${visitCustomerId}?tab=${encodeURIComponent('Work address')}`,
+                          '_blank',
+                        )
+                      }
+                      className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
+                      title="Add work / site address"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </div>
+                  {visitWorkAddressOptions.length === 0 && (
+                    <p className="mt-1 text-xs text-slate-500">This customer has no active work addresses yet.</p>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700">Officer *</label>
                 <select

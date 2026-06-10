@@ -56,5 +56,11 @@
 	<string>Select photos and videos for job reports and visit submissions.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock WorkPilot using your device biometrics.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>waze</string>
+		<string>maps</string>
+	</array>
 </dict>
 </plist>

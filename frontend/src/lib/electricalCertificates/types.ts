@@ -615,6 +615,11 @@ export interface ElectricalCertificate {
   installation_label: string | null;
   created_at: string;
   updated_at: string;
+  renewal_reminder_enabled: boolean;
+  renewal_anchor_date: string | null;
+  renewal_interval_years: number;
+  renewal_early_days: number;
+  renewal_job_id: number | null;
 }
 
 export const CERTIFICATE_TYPE_CATALOG = [

@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Quote,
   Send,
   DollarSign,
   Clock,
@@ -13,7 +12,6 @@ import {
   Check,
   X,
   FileText,
-  Info,
   Pencil,
   Trash2,
   ExternalLink,
@@ -41,6 +39,7 @@ interface LineItem {
   unit_price: number;
   amount: number;
   sort_order: number;
+  images?: { original_filename: string; data_url?: string | null }[];
 }
 
 interface Activity {
@@ -697,6 +696,18 @@ export default function QuotationDetailPage() {
                               ? {
                                   ...q,
                                   internal_notes: (q.internal_notes ?? []).filter((n) => n.id !== noteId),
+                                }
+                              : null,
+                          )
+                        }
+                        onUpdateNote={(noteId, newBody) =>
+                          setQuotation((q) =>
+                            q
+                              ? {
+                                  ...q,
+                                  internal_notes: (q.internal_notes ?? []).map((n) =>
+                                    n.id === noteId ? { ...n, body: newBody } : n,
+                                  ),
                                 }
                               : null,
                           )

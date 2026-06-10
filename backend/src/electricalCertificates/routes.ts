@@ -1,6 +1,8 @@
 import type { Application, Request, Response } from 'express';
 import type { Pool } from 'pg';
-import { getTenantScopeUserId, requireTenantCrmAccess } from '../tenantAccess';
+import { getTenantScopeUserId } from '../tenantAccess';
+import { isMobileWorkPilotClient, requireTenantCrmOrMobileJobDocs } from '../mobileFieldAccess';
+import { officerAssignedToJob } from '../jobAssignment';
 import type { TenantAuthUser } from '../tenantAccess';
 import { coerceDocument, createDefaultDocument } from './documentDefaults';
 import { validateElectricalCertificate } from './validation';
@@ -70,6 +72,26 @@ export async function ensureElectricalCertificateSchema(pool: Pool): Promise<voi
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_electrical_certificates_created_by ON electrical_certificates(created_by)`,
   );
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_reminder_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_anchor_date DATE`);
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_interval_years INTEGER NOT NULL DEFAULT 1`);
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 14`);
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL`);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_electrical_certificates_renewal ON electrical_certificates (customer_id)
+     WHERE renewal_reminder_enabled = true AND renewal_anchor_date IS NOT NULL`,
+  );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS electrical_certificate_renewal_sent (
+      id SERIAL PRIMARY KEY,
+      certificate_id INTEGER NOT NULL REFERENCES electrical_certificates(id) ON DELETE CASCADE,
+      phase VARCHAR(8) NOT NULL CHECK (phase IN ('early', 'due')),
+      renewal_due_date DATE NOT NULL,
+      tenant_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(certificate_id, phase, renewal_due_date)
+    );
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS electrical_certificate_number_settings (
       id SERIAL PRIMARY KEY,
@@ -376,6 +398,16 @@ function mapRow(row: Record<string, unknown>) {
     installation_label: (row.installation_label as string | null) ?? null,
     created_at: (row.created_at as Date).toISOString(),
     updated_at: (row.updated_at as Date).toISOString(),
+    renewal_reminder_enabled: row.renewal_reminder_enabled === true,
+    renewal_anchor_date:
+      row.renewal_anchor_date instanceof Date
+        ? row.renewal_anchor_date.toISOString().slice(0, 10)
+        : typeof row.renewal_anchor_date === 'string'
+          ? row.renewal_anchor_date.slice(0, 10)
+          : null,
+    renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
+    renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+    renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
   };
 }
 
@@ -444,7 +476,7 @@ async function loadCertificate(
 
 export function mountElectricalCertificateRoutes(app: Application, deps: ElectricalCertificateRouteDeps): void {
   const { pool, authenticate } = deps;
-  const guard = [authenticate, requireTenantCrmAccess('certifications')] as const;
+  const guard = [authenticate, requireTenantCrmOrMobileJobDocs('certifications')] as const;
 
   app.get('/api/electrical-certificates', ...guard, async (req: Request, res: Response) => {
     const userId = getTenantScopeUserId((req as AuthReq).user!);
@@ -822,6 +854,16 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
         workAddressId = jobWorkAddressId;
       }
       linkedJobId = requestedJobId;
+      const authUser = (req as AuthReq).user!;
+      const oid = authUser.officerId ?? null;
+      if (
+        authUser.role === 'OFFICER' &&
+        oid != null &&
+        isMobileWorkPilotClient(req) &&
+        !(await officerAssignedToJob(pool, oid, requestedJobId))
+      ) {
+        return res.status(403).json({ message: 'Forbidden: job not assigned to you' });
+      }
     }
     let selectedInstallationAddress = '';
     if (workAddressId) {
@@ -1024,6 +1066,71 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     );
     if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Certificate not found' });
     return res.json({ ok: true });
+  });
+
+  app.patch('/api/electrical-certificates/:id/renewal-reminder', ...guard, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+    const body = req.body as Record<string, unknown>;
+
+    const renewalEnabled =
+      typeof body.renewal_reminder_enabled === 'boolean'
+        ? body.renewal_reminder_enabled
+        : body.renewal_reminder_enabled === 'true'
+          ? true
+          : body.renewal_reminder_enabled === 'false'
+            ? false
+            : undefined;
+    if (renewalEnabled === undefined) {
+      return res.status(400).json({ message: 'renewal_reminder_enabled is required' });
+    }
+
+    const anchorYmd = body.renewal_anchor_date == null ? null : normalizeDateOnly(body.renewal_anchor_date);
+    if (renewalEnabled && !anchorYmd) {
+      return res.status(400).json({ message: 'renewal_anchor_date is required when reminders are enabled' });
+    }
+    const intervalYearsRaw = Number(body.renewal_interval_years);
+    const earlyDaysRaw = Number(body.renewal_early_days);
+    const intervalYears = Math.max(1, Math.min(10, Number.isFinite(intervalYearsRaw) ? Math.trunc(intervalYearsRaw) : 1));
+    const earlyDays = Math.max(1, Math.min(120, Number.isFinite(earlyDaysRaw) ? Math.trunc(earlyDaysRaw) : 14));
+    const renewalJobId =
+      body.renewal_job_id === undefined || body.renewal_job_id === null || body.renewal_job_id === ''
+        ? null
+        : Number.isFinite(Number(body.renewal_job_id))
+          ? Math.trunc(Number(body.renewal_job_id))
+          : NaN;
+    if (Number.isNaN(renewalJobId)) return res.status(400).json({ message: 'Invalid renewal_job_id' });
+
+    const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
+    if (!cert) return res.status(404).json({ message: 'Certificate not found' });
+
+    if (renewalJobId != null) {
+      const job = await pool.query<{ id: number }>(
+        `SELECT id FROM jobs WHERE id = $1 AND customer_id = $2${isSuperAdmin ? '' : ' AND created_by = $3'}`,
+        isSuperAdmin ? [renewalJobId, cert.customer_id] : [renewalJobId, cert.customer_id, userId],
+      );
+      if ((job.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Linked job was not found for this customer' });
+    }
+
+    await pool.query(
+      `UPDATE electrical_certificates
+       SET renewal_reminder_enabled = $1,
+           renewal_anchor_date = $2,
+           renewal_interval_years = $3,
+           renewal_early_days = $4,
+           renewal_job_id = $5,
+           updated_by = $6,
+           updated_at = NOW()
+       WHERE id = $7${isSuperAdmin ? '' : ' AND created_by = $8'}`,
+      isSuperAdmin
+        ? [renewalEnabled, anchorYmd, intervalYears, earlyDays, renewalJobId, userId, id]
+        : [renewalEnabled, anchorYmd, intervalYears, earlyDays, renewalJobId, userId, id, userId],
+    );
+
+    const next = await loadCertificate(pool, id, userId, isSuperAdmin);
+    return res.json({ certificate: next });
   });
 
   app.post('/api/electrical-certificates/:id/validate', ...guard, async (req: Request, res: Response) => {

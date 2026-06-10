@@ -56,6 +56,9 @@ class DiaryEventDetail {
     this.officers = const [],
     this.isQuotationVisit = false,
     this.jobNumber,
+    this.chargeType,
+    this.siteLatitude,
+    this.siteLongitude,
   });
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
@@ -149,6 +152,9 @@ class DiaryEventDetail {
       officers: _parseOfficers(json['officers'] ?? m['officers']),
       isQuotationVisit: m['is_quotation_visit'] == true,
       jobNumber: m['job_number'] as String?,
+      chargeType: m['charge_type'] as String?,
+      siteLatitude: m['site_latitude'] != null ? (m['site_latitude'] as num?)?.toDouble() : null,
+      siteLongitude: m['site_longitude'] != null ? (m['site_longitude'] as num?)?.toDouble() : null,
     );
   }
 
@@ -192,6 +198,9 @@ class DiaryEventDetail {
   final List<Map<String, dynamic>> officers;
   final bool isQuotationVisit;
   final String? jobNumber;
+  final String? chargeType;
+  final double? siteLatitude;
+  final double? siteLongitude;
 
   String? get primaryOfficerName {
     for (final o in officers) {
@@ -199,6 +208,12 @@ class DiaryEventDetail {
     }
     return officerFullName;
   }
+
+  bool get hasCoordinates =>
+      siteLatitude != null &&
+      siteLongitude != null &&
+      siteLatitude != 0.0 &&
+      siteLongitude != 0.0;
 
   DateTime? get startTime => DateTime.tryParse(startTimeIso)?.toLocal();
   DateTime? get endTime {
@@ -229,6 +244,7 @@ class DiaryEventDetail {
     String? updatedAtIso,
     List<DiaryExtraSubmission>? extraSubmissions,
     List<DiaryExtraSubmission>? technicalNotes,
+    String? chargeType,
   }) {
     return DiaryEventDetail(
       diaryId: diaryId,
@@ -271,6 +287,9 @@ class DiaryEventDetail {
       officers: officers,
       isQuotationVisit: isQuotationVisit,
       jobNumber: jobNumber,
+      chargeType: chargeType ?? this.chargeType,
+      siteLatitude: siteLatitude,
+      siteLongitude: siteLongitude,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import 'customer_form_controller.dart';
 
@@ -85,24 +86,24 @@ class CustomerFormView extends GetView<CustomerFormController> {
                   );
                 }),
                 _fieldLabel('Full name *'),
-                _textField(controller.fullName, required: true),
+                _textField(controller.fullName, required: true, capitalizeWords: true),
                 _fieldLabel('Email *'),
                 _textField(controller.email, required: true, keyboard: TextInputType.emailAddress),
                 _fieldLabel('Phone'),
                 _textField(controller.phone, keyboard: TextInputType.phone),
                 _fieldLabel('Company'),
-                _textField(controller.company),
+                _textField(controller.company, capitalizeWords: true),
                 _fieldLabel('Address Line 1'),
-                _textField(controller.addressLine1),
+                _textField(controller.addressLine1, capitalizeWords: true),
                 _fieldLabel('Address Line 2'),
-                _textField(controller.addressLine2),
+                _textField(controller.addressLine2, capitalizeWords: true),
                 _fieldLabel('Address Line 3'),
-                _textField(controller.addressLine3),
+                _textField(controller.addressLine3, capitalizeWords: true),
                 Row(
                   children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Town'), _textField(controller.town)])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('Town'), _textField(controller.town, capitalizeWords: true)])),
                     const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('City'), _textField(controller.county)])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_fieldLabel('City'), _textField(controller.county, capitalizeWords: true)])),
                   ],
                 ),
                 Row(
@@ -113,8 +114,8 @@ class CustomerFormView extends GetView<CustomerFormController> {
                   ],
                 ),
                 _fieldLabel('Country'),
-                _textField(controller.country),
-                _fieldLabel('Notes'),
+                _textField(controller.country, capitalizeWords: true),
+                _fieldLabel('Customer behaviour & notes'),
                 _textField(controller.notes, maxLines: 4),
                 _fieldLabel('Status'),
                 Obx(
@@ -143,7 +144,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
                     );
                   }
                   return DropdownButtonFormField<int?>(
-                    value: controller.customerTypeId.value,
+                    initialValue: controller.customerTypeId.value,
                     dropdownColor: AppColors.slate900,
                     style: GoogleFonts.inter(color: Colors.white),
                     decoration: _inputDeco(),
@@ -216,11 +217,15 @@ class CustomerFormView extends GetView<CustomerFormController> {
     bool required = false,
     TextInputType keyboard = TextInputType.text,
     int maxLines = 1,
+    bool capitalizeWords = false,
   }) {
     return TextFormField(
       controller: c,
       maxLines: maxLines,
       keyboardType: keyboard,
+      textCapitalization:
+          capitalizeWords ? TextCapitalization.words : TextCapitalization.none,
+      inputFormatters: capitalizeWords ? const [capitalizeWordsFormatter] : null,
       style: GoogleFonts.inter(color: Colors.white),
       decoration: _inputDeco(),
       validator: required

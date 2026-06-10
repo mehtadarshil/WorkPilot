@@ -96,7 +96,8 @@ export default function CertificatePage() {
           main { padding: 0 !important; }
           body { background: white !important; }
           #certificate-print { box-shadow: none !important; margin: 0 !important; }
-          @page { size: A4 landscape; margin: 12mm; }
+          @page { size: A4 landscape; margin: 0; }
+          @media print { body { padding: 10mm; box-sizing: border-box; } }
         }
       `}} />
       <div className="flex min-h-screen items-center justify-center p-8 print:p-0">

@@ -64,7 +64,8 @@ export default function PublicJobClientReportPage() {
           html, body { background: white !important; margin: 0 !important; padding: 0 !important; }
           .no-print { display: none !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          @page { margin: 12mm; size: auto; }
+          @page { margin: 0; size: auto; }
+          body { padding: 12mm; box-sizing: border-box; }
         }
       `,
         }}

@@ -65,7 +65,9 @@ import {
   fieldMobileHasJobs,
   fieldMobileHasScheduling,
   fieldMobileSessionOk,
+  requireTenantCrmOrMobileJobDocs,
 } from './mobileFieldAccess';
+import { officerAssignedToJob } from './jobAssignment';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateQuotationPdfBuffer } from './quotationPdf';
 import { normalizeTemplateSiteReportDocument, collectTemplateDocumentImageIds } from './siteReportTemplates/documentNormalize';
@@ -103,6 +105,18 @@ function getDiaryExtraSubmissionsRootDir(): string {
   return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'diary-extra-submissions');
 }
 
+function getDiaryExtraSubmissionsReadRootDirs(): string[] {
+  const configured = process.env.DIARY_EXTRA_FILES_DIR?.trim();
+  const roots = configured
+    ? [path.resolve(configured)]
+    : [
+        getDiaryExtraSubmissionsRootDir(),
+        path.resolve(process.cwd(), 'backend', 'data', 'diary-extra-submissions'),
+        path.resolve(process.cwd(), '..', 'data', 'diary-extra-submissions'),
+      ];
+  return Array.from(new Set(roots));
+}
+
 async function ensureDiaryExtraSubmissionDir(diaryEventId: number, submissionId: number): Promise<string> {
   const dir = path.join(getDiaryExtraSubmissionsRootDir(), String(diaryEventId), String(submissionId));
   await fs.mkdir(dir, { recursive: true });
@@ -114,16 +128,88 @@ function getDiaryTechnicalNotesRootDir(): string {
   return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'diary-technical-notes');
 }
 
+function getDiaryTechnicalNotesReadRootDirs(): string[] {
+  const configured = process.env.DIARY_TECHNICAL_NOTE_FILES_DIR?.trim();
+  const roots = configured
+    ? [path.resolve(configured)]
+    : [
+        getDiaryTechnicalNotesRootDir(),
+        path.resolve(process.cwd(), 'backend', 'data', 'diary-technical-notes'),
+        path.resolve(process.cwd(), '..', 'data', 'diary-technical-notes'),
+      ];
+  return Array.from(new Set(roots));
+}
+
 async function ensureDiaryTechnicalNoteDir(diaryEventId: number, noteId: number): Promise<string> {
   const dir = path.join(getDiaryTechnicalNotesRootDir(), String(diaryEventId), String(noteId));
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
 
+async function findDiaryStoredFile(
+  roots: string[],
+  diaryEventId: number,
+  submissionId: number,
+  fileName: string,
+): Promise<{ fullPath: string; size: number } | null> {
+  for (const root of roots) {
+    const fullPath = path.join(root, String(diaryEventId), String(submissionId), fileName);
+    const rel = path.relative(root, fullPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    try {
+      const st = await fs.stat(fullPath);
+      if (st.isFile()) return { fullPath, size: st.size };
+    } catch {
+      // Try the next legacy/dev storage root.
+    }
+  }
+  return null;
+}
+
 async function ensureCustomerFilesDir(customerId: number): Promise<string> {
   const dir = path.join(getCustomerFilesRootDir(), String(customerId));
   await fs.mkdir(dir, { recursive: true });
   return dir;
+}
+
+function getCustomerSpecificNoteMediaRootDir(): string {
+  const raw = process.env.CUSTOMER_SPECIFIC_NOTE_MEDIA_DIR?.trim();
+  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-specific-note-media');
+}
+
+function getQuotationLineItemImagesRootDir(): string {
+  const raw = process.env.QUOTATION_LINE_ITEM_IMAGES_DIR?.trim();
+  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'quotation-line-item-images');
+}
+
+async function ensureQuotationLineItemImagesDir(quotationId: number): Promise<string> {
+  const dir = path.join(getQuotationLineItemImagesRootDir(), String(quotationId));
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+async function ensureCustomerSpecificNoteMediaDir(customerId: number, noteId: number): Promise<string> {
+  const dir = path.join(getCustomerSpecificNoteMediaRootDir(), String(customerId), String(noteId));
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+function shapeCustomerSpecificNoteMedia(customerId: number, noteId: number, raw: unknown): Array<Record<string, unknown>> {
+  const list = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+  const shaped: Array<Record<string, unknown>> = [];
+  for (const m of list) {
+    const stored = String(m.stored_filename ?? '');
+    if (!stored) continue;
+    shaped.push({
+      stored_filename: stored,
+      original_filename: String(m.original_filename ?? 'image'),
+      content_type: String(m.content_type ?? 'application/octet-stream'),
+      kind: 'image',
+      byte_size: m.byte_size != null ? Number(m.byte_size) : 0,
+      file_path: `/customers/${customerId}/specific-notes/${noteId}/media/${encodeURIComponent(stored)}/content`,
+    });
+  }
+  return shaped;
 }
 
 function getCustomerSiteReportImagesRootDir(): string {
@@ -168,6 +254,130 @@ async function ensureQuotationInternalNoteDir(quotationId: number, noteId: numbe
 function sanitizeStoredOriginalName(name: string): string {
   const base = path.basename(name.trim().replace(/[/\\]/g, '')) || 'upload';
   return base.length > 480 ? base.slice(0, 480) : base;
+}
+
+type QuotationLineItemImageMeta = {
+  stored_filename: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+};
+
+type QuotationLineItemInput = {
+  description?: string;
+  quantity?: number;
+  unit_price?: number;
+  images?: unknown;
+};
+
+function existingQuotationLineImages(raw: unknown): QuotationLineItemImageMeta[] {
+  if (!Array.isArray(raw)) return [];
+  const out: QuotationLineItemImageMeta[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const m = item as Record<string, unknown>;
+    const stored = typeof m.stored_filename === 'string' ? path.basename(m.stored_filename) : '';
+    if (!stored) continue;
+    out.push({
+      stored_filename: stored,
+      original_filename: typeof m.original_filename === 'string' && m.original_filename.trim()
+        ? sanitizeStoredOriginalName(m.original_filename)
+        : 'image',
+      content_type: typeof m.content_type === 'string' && m.content_type.trim()
+        ? m.content_type.trim().slice(0, 255)
+        : 'application/octet-stream',
+      byte_size: typeof m.byte_size === 'number' && Number.isFinite(m.byte_size) ? Math.max(0, Math.round(m.byte_size)) : 0,
+    });
+  }
+  return out;
+}
+
+async function normalizeQuotationLineImage(
+  item: Record<string, unknown>,
+): Promise<QuotationLineItemImageMeta & { buffer?: Buffer }> {
+  const existing = typeof item.stored_filename === 'string' && item.stored_filename.trim() ? existingQuotationLineImages([item])[0] : null;
+  const b64 = typeof item.content_base64 === 'string' ? item.content_base64.trim() : '';
+  if (!b64) {
+    if (existing) return existing;
+    throw new Error('Each line item image needs content_base64');
+  }
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(b64, 'base64');
+  } catch {
+    throw new Error('Invalid base64 image data');
+  }
+  if (buf.length === 0) throw new Error('Empty image file');
+  const filename = typeof item.filename === 'string' && item.filename.trim()
+    ? sanitizeStoredOriginalName(item.filename)
+    : 'image.jpg';
+  const contentType = typeof item.content_type === 'string' && item.content_type.trim()
+    ? item.content_type.trim().slice(0, 255)
+    : null;
+  const declaredContentType = (contentType || '').toLowerCase();
+  const imageLikeFilename = /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(filename);
+  if ((declaredContentType && !declaredContentType.startsWith('image/') && !imageLikeFilename) || (!declaredContentType && !imageLikeFilename)) {
+    throw new Error('Only image files are allowed on quotation line items');
+  }
+  let uploadBuf = buf;
+  let uploadContentType = contentType;
+  let storedExt = path.extname(filename).slice(0, 32) || '';
+  const normalized = await normalizeCustomerImageUpload(buf, contentType, filename);
+  uploadBuf = normalized.buffer;
+  uploadContentType = normalized.contentType || contentType || 'application/octet-stream';
+  storedExt = normalized.storedExtension || storedExt || '.jpg';
+  if (uploadBuf.length > CUSTOMER_FILE_MAX_BYTES) {
+    throw new Error(`Image too large (max ${Math.round(CUSTOMER_FILE_MAX_BYTES / (1024 * 1024))} MB)`);
+  }
+  return {
+    stored_filename: `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${storedExt}`,
+    original_filename: filename,
+    content_type: uploadContentType,
+    byte_size: uploadBuf.length,
+    buffer: uploadBuf,
+  };
+}
+
+async function prepareQuotationLineImages(quotationId: number, raw: unknown): Promise<QuotationLineItemImageMeta[]> {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > 8) throw new Error('At most 8 images per quotation line item');
+  const dir = await ensureQuotationLineItemImagesDir(quotationId);
+  const out: QuotationLineItemImageMeta[] = [];
+  for (const rawItem of raw) {
+    if (!rawItem || typeof rawItem !== 'object') throw new Error('Invalid line item image');
+    const prepared = await normalizeQuotationLineImage(rawItem as Record<string, unknown>);
+    if (prepared.buffer) {
+      await fs.writeFile(path.join(dir, prepared.stored_filename), prepared.buffer);
+    }
+    out.push({
+      stored_filename: prepared.stored_filename,
+      original_filename: prepared.original_filename,
+      content_type: prepared.content_type,
+      byte_size: prepared.byte_size,
+    });
+  }
+  return out;
+}
+
+async function shapeQuotationLineItemImages(quotationId: number, raw: unknown): Promise<Array<QuotationLineItemImageMeta & { data_url: string | null }>> {
+  const images = existingQuotationLineImages(raw);
+  const root = getQuotationLineItemImagesRootDir();
+  const out: Array<QuotationLineItemImageMeta & { data_url: string | null }> = [];
+  for (const image of images) {
+    let dataUrl: string | null = null;
+    try {
+      const fullPath = path.join(root, String(quotationId), image.stored_filename);
+      const rel = path.relative(root, fullPath);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+        const data = await fs.readFile(fullPath);
+        dataUrl = `data:${image.content_type || 'application/octet-stream'};base64,${data.toString('base64')}`;
+      }
+    } catch {
+      dataUrl = null;
+    }
+    out.push({ ...image, data_url: dataUrl });
+  }
+  return out;
 }
 
 const JOB_PART_STATUSES = [
@@ -469,6 +679,7 @@ interface DbJob {
   job_contact_id?: number | null;
   expected_completion?: Date | null;
   completed_service_items?: string[] | null;
+  charge_type?: string;
 }
 
 interface DbOfficer {
@@ -880,6 +1091,9 @@ async function initDb() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_work_addresses_customer_id ON customer_work_addresses(customer_id)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS key_info TEXT`);
   await pool.query(
     `ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
   );
@@ -1292,10 +1506,16 @@ async function initDb() {
   );
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS expected_completion TIMESTAMP WITH TIME ZONE`);
   await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completed_service_items JSONB NOT NULL DEFAULT '[]'::jsonb`);
-  await pool.query(
-    `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
-  );
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_jobs_work_address_id ON jobs(work_address_id) WHERE work_address_id IS NOT NULL`);
+
+  await pool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS charge_type VARCHAR(50) DEFAULT 'chargeable'`);
+  try {
+    await pool.query(`ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_charge_type_check`);
+    await pool.query(`ALTER TABLE jobs ADD CONSTRAINT jobs_charge_type_check CHECK (charge_type IN ('chargeable', 'free', 'callback'))`);
+  } catch (e) {
+    /* ignore check constraint error if table has violation or empty */
+  }
 
   // Per-job pricing items (instantiated from template or manually added)
   await pool.query(`
@@ -1703,6 +1923,7 @@ async function initDb() {
       sort_order INT NOT NULL DEFAULT 0
     );
   `);
+  await pool.query(`ALTER TABLE quotation_line_items ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quotation_activities (
       id SERIAL PRIMARY KEY,
@@ -1726,6 +1947,7 @@ async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_quotation_internal_notes_quotation_id ON quotation_internal_notes(quotation_id)`,
   );
   await pool.query(`ALTER TABLE quotation_internal_notes ADD COLUMN IF NOT EXISTS media JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE quotation_internal_notes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_client_report_default_questions (
@@ -3042,18 +3264,26 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
       ? await pool.query(
           `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number,
+              j.title, j.description,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
+                j.location
+              ) AS location,
+              j.customer_id, j.is_quotation_visit, j.job_number,
               c.full_name AS customer_full_name, c.email AS customer_email,
               o.full_name AS officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', wa.title, wa.first_name, wa.surname)), ''),
+                NULLIF(TRIM(wa.company_name), ''),
                 NULLIF(TRIM(j.contact_name), ''),
                 c.full_name
               ) AS site_contact_name
        FROM diary_events d
        JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE (d.officer_id = $1 OR j.officer_id = $1)
@@ -3204,13 +3434,18 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
     const listResult = await pool.query<
       DbJob & { customer_full_name: string | null }
     >(
-      `SELECT j.id, j.job_number, j.title, j.description, j.state, j.priority, j.location,
+      `SELECT j.id, j.job_number, j.title, j.description, j.state, j.priority,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
+                j.location
+              ) AS location,
               j.schedule_start, j.duration_minutes, j.scheduling_notes,
               j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
-              j.start_date, j.deadline,
+              j.start_date, j.deadline, j.charge_type,
               c.full_name AS customer_full_name
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        WHERE (j.officer_id = $1 OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $1))
          AND j.state NOT IN ('completed', 'closed')
        ORDER BY j.schedule_start ASC NULLS LAST, j.updated_at DESC
@@ -3235,10 +3470,136 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
       updated_at: (r.updated_at as Date).toISOString(),
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
+      charge_type: r.charge_type,
     }));
     return res.json({ jobs });
   } catch (error) {
     console.error('Mobile open jobs error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
+/** Field officer: list site report templates for job completion flows. */
+app.get('/api/mobile/site-report-templates', authenticate, requireFieldMobileJobs, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    await ensureFireRiskAssessmentTemplate(pool, userId);
+    await ensureDrainBlockingReportTemplate(pool, userId);
+    const rows = await pool.query<{ id: number; name: string; slug: string }>(
+      `SELECT id, name, slug FROM site_report_templates
+       WHERE ${isSuperAdmin ? 'TRUE' : 'created_by = $1'}
+       ORDER BY name ASC`,
+      isSuperAdmin ? [] : [userId],
+    );
+    return res.json({
+      templates: rows.rows.map((r) => ({
+        id: Number(r.id),
+        name: r.name,
+        slug: r.slug,
+      })),
+    });
+  } catch (error) {
+    console.error('Mobile site report templates error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Field officer: certificates and site reports linked to a job. */
+app.get('/api/mobile/jobs/:jobId/completion-documents', authenticate, requireFieldMobileJobs, async (req: AuthenticatedRequest, res: Response) => {
+  const jobId = parseInt(String(req.params.jobId), 10);
+  if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
+  const oid = req.user!.officerId!;
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    const jobR = await pool.query<{ id: number; customer_id: number | null; work_address_id: number | null; title: string; job_number: string | null }>(
+      `SELECT id, customer_id, work_address_id, title, job_number
+       FROM jobs WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+      isSuperAdmin ? [jobId] : [jobId, userId],
+    );
+    if ((jobR.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+    if (!(await officerAssignedToJob(pool, oid, jobId))) {
+      return res.status(403).json({ message: 'Forbidden: job not assigned to you' });
+    }
+    const job = jobR.rows[0];
+    const certs = await pool.query(
+      `SELECT ec.id, ec.certificate_number, ec.type_slug, ec.status, ec.updated_at
+       FROM electrical_certificates ec
+       WHERE ec.job_id = $1 ${isSuperAdmin ? '' : 'AND ec.created_by = $2'}
+       ORDER BY ec.updated_at DESC`,
+      isSuperAdmin ? [jobId] : [jobId, userId],
+    );
+    const reports = await pool.query(
+      `SELECT r.id, r.report_title, r.certificate_number, r.template_id, t.name AS template_name, r.updated_at
+       FROM customer_site_reports r
+       LEFT JOIN site_report_templates t ON t.id = r.template_id
+       WHERE r.job_id = $1
+       ORDER BY r.updated_at DESC`,
+      [jobId],
+    );
+    return res.json({
+      job: {
+        id: job.id,
+        customer_id: job.customer_id,
+        work_address_id: job.work_address_id,
+        title: job.title,
+        job_number: job.job_number,
+      },
+      certificates: certs.rows.map((r) => ({
+        id: Number((r as { id: number }).id),
+        certificate_number: (r as { certificate_number: string }).certificate_number,
+        type_slug: (r as { type_slug: string }).type_slug,
+        status: (r as { status: string }).status,
+        updated_at: ((r as { updated_at: Date }).updated_at as Date).toISOString(),
+      })),
+      site_reports: reports.rows.map((r) => ({
+        id: Number((r as { id: number }).id),
+        report_title: (r as { report_title: string | null }).report_title,
+        certificate_number: (r as { certificate_number: string | null }).certificate_number,
+        template_id: (r as { template_id: number | null }).template_id,
+        template_name: (r as { template_name: string | null }).template_name,
+        updated_at: ((r as { updated_at: Date }).updated_at as Date).toISOString(),
+      })),
+    });
+  } catch (error) {
+    console.error('Mobile job completion documents error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** Field officer: list electrical certificates for a job. */
+app.get('/api/mobile/jobs/:jobId/electrical-certificates', authenticate, requireFieldMobileJobs, async (req: AuthenticatedRequest, res: Response) => {
+  const jobId = parseInt(String(req.params.jobId), 10);
+  if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
+  const oid = req.user!.officerId!;
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    if (!(await officerAssignedToJob(pool, oid, jobId))) {
+      return res.status(403).json({ message: 'Forbidden: job not assigned to you' });
+    }
+    const rows = await pool.query(
+      `SELECT ec.id, ec.certificate_number, ec.type_slug, ec.status, ec.updated_at, ec.customer_id, ec.work_address_id
+       FROM electrical_certificates ec
+       WHERE ec.job_id = $1 ${isSuperAdmin ? '' : 'AND ec.created_by = $2'}
+       ORDER BY ec.updated_at DESC`,
+      isSuperAdmin ? [jobId] : [jobId, userId],
+    );
+    return res.json({
+      certificates: rows.rows.map((r) => ({
+        id: Number((r as { id: number }).id),
+        certificate_number: (r as { certificate_number: string }).certificate_number,
+        type_slug: (r as { type_slug: string }).type_slug,
+        status: (r as { status: string }).status,
+        customer_id: (r as { customer_id: number }).customer_id,
+        work_address_id: (r as { work_address_id: number | null }).work_address_id,
+        updated_at: ((r as { updated_at: Date }).updated_at as Date).toISOString(),
+      })),
+    });
+  } catch (error) {
+    console.error('Mobile job certificates list error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -3712,7 +4073,10 @@ app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'),
     
     return res.json({
       ...customer,
-      specific_notes: notesRes.rows
+      specific_notes: notesRes.rows.map((note: Record<string, unknown>) => ({
+        ...note,
+        media: shapeCustomerSpecificNoteMedia(id, Number(note.id), note.media),
+      }))
     });
   } catch (error) {
     console.error('Get customer error:', error);
@@ -3754,12 +4118,21 @@ app.post('/api/customers/:id/specific-notes', authenticate, requireTenantCrmAcce
   if (!title || !description) return res.status(400).json({ message: 'Title and description are required' });
 
   try {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
     const workAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, body.work_address_id);
     const result = await pool.query(
-      'INSERT INTO customer_specific_notes (customer_id, title, description, work_address_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [customerId, title.trim(), description.trim(), workAddressId],
+      'INSERT INTO customer_specific_notes (customer_id, title, description, work_address_id, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [customerId, title.trim(), description.trim(), workAddressId, userId],
     );
-    return res.status(201).json(result.rows[0]);
+    const note = result.rows[0] as Record<string, unknown>;
+    return res.status(201).json({
+      ...note,
+      media: shapeCustomerSpecificNoteMedia(customerId, Number(note.id), note.media),
+    });
   } catch (error) {
     console.error('Create customer note error:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -3767,13 +4140,18 @@ app.post('/api/customers/:id/specific-notes', authenticate, requireTenantCrmAcce
 });
 
 app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const idRaw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const customerId = parseInt(String(idRaw), 10);
   const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
   const noteId = parseInt(String(noteIdRaw), 10);
   const { title, description } = req.body as { title?: string; description?: string };
+  if (!Number.isFinite(customerId) || !Number.isFinite(noteId)) return res.status(400).json({ message: 'Invalid id' });
 
   try {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     let idx = 1;
 
     if (title !== undefined) { updates.push(`title = $${idx++}`); values.push(title.trim()); }
@@ -3781,25 +4159,201 @@ app.patch('/api/customers/:id/specific-notes/:noteId', authenticate, requireTena
 
     if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
 
-    values.push(noteId);
+    values.push(noteId, customerId);
     const result = await pool.query(
-      `UPDATE customer_specific_notes SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
-      values
+      `UPDATE customer_specific_notes n
+       SET ${updates.join(', ')}
+       FROM customers c
+       WHERE n.id = $${idx++}
+         AND n.customer_id = $${idx++}
+         AND c.id = n.customer_id
+         ${isSuperAdmin ? '' : `AND c.created_by = $${idx++}`}
+       RETURNING n.*`,
+      isSuperAdmin ? values : [...values, userId]
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
-    return res.json(result.rows[0]);
+    const note = result.rows[0] as Record<string, unknown>;
+    return res.json({
+      ...note,
+      media: shapeCustomerSpecificNoteMedia(customerId, Number(note.id), note.media),
+    });
   } catch (error) {
     console.error('Update customer note error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
+app.post('/api/customers/:id/specific-notes/:noteId/media', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.id), 10);
+  const noteId = parseInt(String(req.params.noteId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(noteId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as Record<string, unknown>;
+  const filenameRaw = typeof body.filename === 'string' ? body.filename : '';
+  const b64 = typeof body.content_base64 === 'string' ? body.content_base64.trim() : '';
+  const contentType =
+    typeof body.content_type === 'string' && body.content_type.trim() ? body.content_type.trim().slice(0, 255) : null;
+  if (!filenameRaw.trim() || !b64) return res.status(400).json({ message: 'filename and content_base64 are required' });
+
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(b64, 'base64');
+  } catch {
+    return res.status(400).json({ message: 'Invalid base64 file data' });
+  }
+  if (buf.length === 0) return res.status(400).json({ message: 'Empty file' });
+  const imageLikeFilename = /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(filenameRaw);
+  const declaredContentType = (contentType || '').toLowerCase();
+  if ((declaredContentType && !declaredContentType.startsWith('image/') && !imageLikeFilename) || (!declaredContentType && !imageLikeFilename)) {
+    return res.status(400).json({ message: 'Only image files are allowed' });
+  }
+
+  const originalFilename = sanitizeStoredOriginalName(filenameRaw);
+  let uploadBuf = buf;
+  let uploadContentType = contentType;
+  let storedExt = path.extname(originalFilename).slice(0, 32) || '';
+  try {
+    const normalized = await normalizeCustomerImageUpload(buf, contentType, originalFilename);
+    uploadBuf = normalized.buffer;
+    uploadContentType = normalized.contentType;
+    storedExt = normalized.storedExtension || storedExt;
+  } catch (normErr) {
+    if (normErr instanceof Error && normErr.message === 'HEIC_DECODE_FAILED') {
+      return res.status(400).json({
+        message:
+          'Could not read this HEIC/HEIF image. Save as JPEG from your device, or ensure the server has HEIC support (Sharp + libheif).',
+      });
+    }
+    throw normErr;
+  }
+  if (uploadBuf.length > CUSTOMER_FILE_MAX_BYTES) {
+    return res.status(400).json({ message: `File too large (max ${Math.round(CUSTOMER_FILE_MAX_BYTES / (1024 * 1024))} MB)` });
+  }
+  const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${storedExt || '.jpg'}`;
+
+  try {
+    const note = await pool.query<{ media: unknown }>(
+      `SELECT n.media
+       FROM customer_specific_notes n
+       INNER JOIN customers c ON c.id = n.customer_id
+       WHERE n.id = $1 AND n.customer_id = $2 ${isSuperAdmin ? '' : 'AND c.created_by = $3'}`,
+      isSuperAdmin ? [noteId, customerId] : [noteId, customerId, userId],
+    );
+    if ((note.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+
+    const dir = await ensureCustomerSpecificNoteMediaDir(customerId, noteId);
+    const fullPath = path.join(dir, storedFilename);
+    await fs.writeFile(fullPath, uploadBuf);
+
+    const media = Array.isArray(note.rows[0].media) ? [...(note.rows[0].media as Record<string, unknown>[])] : [];
+    media.push({
+      stored_filename: storedFilename,
+      original_filename: originalFilename,
+      content_type: uploadContentType || 'application/octet-stream',
+      byte_size: uploadBuf.length,
+      uploaded_at: new Date().toISOString(),
+      created_by: userId,
+    });
+    const updated = await pool.query<{ media: unknown }>(
+      `UPDATE customer_specific_notes SET media = $1::jsonb WHERE id = $2 AND customer_id = $3 RETURNING media`,
+      [JSON.stringify(media), noteId, customerId],
+    );
+    return res.status(201).json({
+      media: shapeCustomerSpecificNoteMedia(customerId, noteId, updated.rows[0].media),
+    });
+  } catch (error) {
+    console.error('Upload customer note media error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/customers/:id/specific-notes/:noteId/media/:file/content', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.id), 10);
+  const noteId = parseInt(String(req.params.noteId), 10);
+  const fileName = typeof req.params.file === 'string' ? decodeURIComponent(req.params.file) : '';
+  if (!Number.isFinite(customerId) || !Number.isFinite(noteId) || !fileName || fileName.includes('..') || path.isAbsolute(fileName)) {
+    return res.status(400).json({ message: 'Invalid request' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    const note = await pool.query<{ media: unknown }>(
+      `SELECT n.media
+       FROM customer_specific_notes n
+       INNER JOIN customers c ON c.id = n.customer_id
+       WHERE n.id = $1 AND n.customer_id = $2 ${isSuperAdmin ? '' : 'AND c.created_by = $3'}`,
+      isSuperAdmin ? [noteId, customerId] : [noteId, customerId, userId],
+    );
+    if ((note.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    const list = Array.isArray(note.rows[0].media) ? (note.rows[0].media as Record<string, unknown>[]) : [];
+    const meta = list.find((m) => String(m.stored_filename ?? '') === fileName);
+    if (!meta) return res.status(404).json({ message: 'Image not found' });
+    const root = getCustomerSpecificNoteMediaRootDir();
+    const fullPath = path.join(root, String(customerId), String(noteId), fileName);
+    const rel = path.relative(root, fullPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return res.status(400).json({ message: 'Invalid path' });
+    const data = await fs.readFile(fullPath);
+    res.setHeader('Content-Type', String(meta.content_type ?? 'application/octet-stream'));
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.send(data);
+  } catch (error) {
+    console.error('Get customer note media error:', error);
+    return res.status(404).json({ message: 'Image not found' });
+  }
+});
+
+app.delete('/api/customers/:id/specific-notes/:noteId/media/:file', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.id), 10);
+  const noteId = parseInt(String(req.params.noteId), 10);
+  const fileName = typeof req.params.file === 'string' ? decodeURIComponent(req.params.file) : '';
+  if (!Number.isFinite(customerId) || !Number.isFinite(noteId) || !fileName || fileName.includes('..') || path.isAbsolute(fileName)) {
+    return res.status(400).json({ message: 'Invalid request' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  try {
+    const note = await pool.query<{ media: unknown }>(
+      `SELECT n.media
+       FROM customer_specific_notes n
+       INNER JOIN customers c ON c.id = n.customer_id
+       WHERE n.id = $1 AND n.customer_id = $2 ${isSuperAdmin ? '' : 'AND c.created_by = $3'}`,
+      isSuperAdmin ? [noteId, customerId] : [noteId, customerId, userId],
+    );
+    if ((note.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    const list = Array.isArray(note.rows[0].media) ? (note.rows[0].media as Record<string, unknown>[]) : [];
+    const next = list.filter((m) => String(m.stored_filename ?? '') !== fileName);
+    if (next.length === list.length) return res.status(404).json({ message: 'Image not found' });
+    await pool.query(`UPDATE customer_specific_notes SET media = $1::jsonb WHERE id = $2 AND customer_id = $3`, [
+      JSON.stringify(next),
+      noteId,
+      customerId,
+    ]);
+    await fs.unlink(path.join(getCustomerSpecificNoteMediaRootDir(), String(customerId), String(noteId), fileName)).catch(() => {});
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete customer note media error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const idRaw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const customerId = parseInt(String(idRaw), 10);
   const noteIdRaw = Array.isArray(req.params.noteId) ? req.params.noteId[0] : req.params.noteId;
   const noteId = parseInt(String(noteIdRaw), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(noteId)) return res.status(400).json({ message: 'Invalid id' });
   try {
-    const result = await pool.query('DELETE FROM customer_specific_notes WHERE id = $1', [noteId]);
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const result = await pool.query(
+      `DELETE FROM customer_specific_notes n
+       USING customers c
+       WHERE n.id = $1 AND n.customer_id = $2 AND c.id = n.customer_id ${isSuperAdmin ? '' : 'AND c.created_by = $3'}`,
+      isSuperAdmin ? [noteId, customerId] : [noteId, customerId, userId],
+    );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    await fs.rm(path.join(getCustomerSpecificNoteMediaRootDir(), String(customerId), String(noteId)), { recursive: true, force: true }).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer note error:', error);
@@ -5318,7 +5872,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       `SELECT j.id, j.job_number, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
         j.customer_id, j.work_address_id, j.location, j.required_certifications, j.attachments, j.state,
         j.schedule_start, j.duration_minutes, j.scheduling_notes, j.dispatched_at,
-        j.created_at, j.updated_at, j.created_by, j.is_quotation_visit,
+        j.created_at, j.updated_at, j.created_by, j.is_quotation_visit, j.charge_type,
         c.full_name AS customer_full_name,
         o.full_name AS officer_full_name
        FROM jobs j
@@ -5565,6 +6119,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     state?: string;
     completed_service_items?: unknown;
     is_quotation_visit?: boolean;
+    charge_type?: string;
   };
   const title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!title) return res.status(400).json({ message: 'Job title is required' });
@@ -5586,6 +6141,9 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const completedServiceItems = normalizeCompletedServiceItemsForDb(body.completed_service_items);
   const isQuotationVisit = !!body.is_quotation_visit;
+  const chargeType = typeof body.charge_type === 'string' && ['chargeable', 'free', 'callback'].includes(body.charge_type)
+    ? body.charge_type
+    : 'chargeable';
   const createdBy = getTenantScopeUserId(req.user!);
 
   const userId = getTenantScopeUserId(req.user!);
@@ -5601,10 +6159,10 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
 
   try {
     const result = await pool.query<DbJob>(
-      `INSERT INTO jobs (title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_by, completed_service_items, is_quotation_visit)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-       RETURNING id, job_number, title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_at, updated_at, created_by, completed_service_items, is_quotation_visit`,
-      [title, description, priority, responsiblePerson, officerId, startDate, deadline, customerId, location, requiredCertifications, JSON.stringify(attachments), state, createdBy, JSON.stringify(completedServiceItems), isQuotationVisit],
+      `INSERT INTO jobs (title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_by, completed_service_items, is_quotation_visit, charge_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       RETURNING id, job_number, title, description, priority, responsible_person, officer_id, start_date, deadline, customer_id, location, required_certifications, attachments, state, created_at, updated_at, created_by, completed_service_items, is_quotation_visit, charge_type`,
+      [title, description, priority, responsiblePerson, officerId, startDate, deadline, customerId, location, requiredCertifications, JSON.stringify(attachments), state, createdBy, JSON.stringify(completedServiceItems), isQuotationVisit, chargeType],
     );
     const r = result.rows[0];
     const officerIds = Array.isArray(body.officer_ids)
@@ -5645,6 +6203,7 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
         created_by: r.created_by,
         completed_service_items: Array.isArray(r.completed_service_items) ? r.completed_service_items : [],
         is_quotation_visit: !!r.is_quotation_visit,
+        charge_type: r.charge_type,
       },
     });
   } catch (error) {
@@ -5777,6 +6336,10 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
   }
   if (body.book_into_diary !== undefined) { updates.push(`book_into_diary = $${idx++}`); values.push(!!body.book_into_diary); }
   if (body.is_quotation_visit !== undefined) { updates.push(`is_quotation_visit = $${idx++}`); values.push(!!body.is_quotation_visit); }
+  if (body.charge_type !== undefined) {
+    updates.push(`charge_type = $${idx++}`);
+    values.push(typeof body.charge_type === 'string' && ['chargeable', 'free', 'callback'].includes(body.charge_type) ? body.charge_type : 'chargeable');
+  }
 
   if (updates.length === 0 && body.pricing_items === undefined) return res.status(400).json({ message: 'No fields to update' });
 
@@ -6109,6 +6672,15 @@ app.post('/api/quotation-visits', authenticate, requireTenantCrmAccess('quotatio
     const custCheck = await pool.query<{ full_name: string }>('SELECT full_name FROM customers WHERE id = $1', [customerId]);
     if ((custCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid customer' });
     const customerName = custCheck.rows[0].full_name;
+    let resolvedWorkAddressId: number | null;
+    try {
+      resolvedWorkAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, workAddressId);
+    } catch {
+      return res.status(400).json({ message: 'Invalid work address for this customer' });
+    }
+    if (workAddressId != null && resolvedWorkAddressId == null) {
+      return res.status(400).json({ message: 'Invalid work address for this customer' });
+    }
 
     if (!isSuperAdmin) {
       const offCheck = await pool.query('SELECT id FROM officers WHERE id = $1 AND created_by = $2', [officerId, userId]);
@@ -6121,7 +6693,7 @@ app.post('/api/quotation-visits', authenticate, requireTenantCrmAccess('quotatio
       `INSERT INTO jobs (title, description, priority, customer_id, work_address_id, officer_id, state, created_by, is_quotation_visit, location)
        VALUES ($1, $2, 'medium', $3, $4, $5, 'created', $6, true, $7)
        RETURNING *`,
-      [title, notes, customerId, workAddressId, officerId, userId, notes],
+      [title, notes, customerId, resolvedWorkAddressId, officerId, userId, notes],
     );
     const job = jobResult.rows[0];
 
@@ -7215,7 +7787,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     const result = await pool.query(
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status as event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number,
+              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
               c.full_name as customer_full_name, c.email as customer_email,
               o.full_name as officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
@@ -7283,9 +7855,17 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               j.work_address_id AS job_work_address_id,
               j.officer_id AS job_officer_id,
               j.quoted_amount, j.customer_reference,
-              j.is_quotation_visit,
+              j.is_quotation_visit, j.charge_type,
               c.full_name AS customer_full_name, c.email AS customer_email,
               COALESCE(NULLIF(TRIM(c.contact_mobile), ''), NULLIF(TRIM(c.phone), '')) AS customer_phone,
+              NULLIF(TRIM(wa.address_line_1), '') AS work_address_line_1,
+              NULLIF(TRIM(wa.address_line_2), '') AS work_address_line_2,
+              NULLIF(TRIM(wa.address_line_3), '') AS work_address_line_3,
+              NULLIF(TRIM(wa.town), '') AS work_town,
+              NULLIF(TRIM(wa.county), '') AS work_county,
+              NULLIF(TRIM(wa.postcode), '') AS work_postcode,
+              wa.latitude AS work_latitude,
+              wa.longitude AS work_longitude,
               NULLIF(TRIM(c.address), '') AS customer_address,
               NULLIF(TRIM(c.address_line_1), '') AS customer_address_line_1,
               NULLIF(TRIM(c.address_line_2), '') AS customer_address_line_2,
@@ -7297,17 +7877,21 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', wa.title, wa.first_name, wa.surname)), ''),
+                NULLIF(TRIM(wa.company_name), ''),
                 NULLIF(TRIM(j.contact_name), ''),
                 c.full_name
               ) AS site_contact_name,
-              COALESCE(NULLIF(TRIM(jc.email), ''), c.email) AS site_contact_email,
+              COALESCE(NULLIF(TRIM(jc.email), ''), NULLIF(TRIM(wa.email), ''), c.email) AS site_contact_email,
               COALESCE(
                 CASE WHEN jc.id IS NOT NULL THEN COALESCE(NULLIF(TRIM(jc.mobile), ''), NULLIF(TRIM(jc.landline), '')) END,
+                COALESCE(NULLIF(TRIM(wa.mobile), ''), NULLIF(TRIM(wa.landline), '')),
                 COALESCE(NULLIF(TRIM(c.contact_mobile), ''), NULLIF(TRIM(c.phone), ''))
               ) AS site_contact_phone
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE d.id = $1`,
@@ -7342,12 +7926,24 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       [id]
     );
 
-    const line1 = (row.customer_address_line_1 as string | null) || '';
-    const line2 = (row.customer_address_line_2 as string | null) || '';
-    const line3 = (row.customer_address_line_3 as string | null) || '';
-    const town = (row.customer_town as string | null) || '';
-    const county = (row.customer_county as string | null) || '';
-    const pc = (row.customer_postcode as string | null) || '';
+    const workParts = [
+      row.work_address_line_1,
+      row.work_address_line_2,
+      row.work_address_line_3,
+      row.work_town,
+      row.work_county,
+      row.work_postcode,
+    ].map((x) => (typeof x === 'string' ? x.trim() : ''));
+    const customerParts = [
+      row.customer_address_line_1,
+      row.customer_address_line_2,
+      row.customer_address_line_3,
+      row.customer_town,
+      row.customer_county,
+      row.customer_postcode,
+    ].map((x) => (typeof x === 'string' ? x.trim() : ''));
+    const siteParts = workParts.some((x) => x.length > 0) ? workParts : customerParts;
+    const [line1, line2, line3, town, county, pc] = siteParts;
     const legacyAddr = (row.customer_address as string | null) || '';
     const composed =
       [line1, line2, line3, town, county, pc].filter((x) => x.length > 0).join(', ') ||
@@ -7495,6 +8091,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         quoted_amount: row.quoted_amount,
         customer_reference: row.customer_reference,
         is_quotation_visit: !!row.is_quotation_visit,
+        charge_type: row.charge_type as string | undefined,
         customer_id: row.customer_id,
         customer_full_name: row.customer_full_name,
         customer_email: row.customer_email,
@@ -7506,6 +8103,8 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         site_town: town || null,
         site_county: county || null,
         site_postcode: pc || null,
+        site_latitude: row.work_latitude != null ? parseFloat(String(row.work_latitude)) : null,
+        site_longitude: row.work_longitude != null ? parseFloat(String(row.work_longitude)) : null,
         officer_full_name: row.officer_full_name,
         job_report_question_count: (row.job_report_question_count as number) ?? 0,
         site_contact_name: row.site_contact_name ?? null,
@@ -7712,13 +8311,14 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
       officer_id: number | null;
       job_officer_id: number | null;
       customer_id: number;
+      work_address_id: number | null;
       job_created_by: number | null;
       is_quotation_visit: boolean;
       event_status: string;
       is_diary_officer: boolean;
       is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, j.customer_id, j.created_by AS job_created_by,
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, j.customer_id, j.work_address_id, j.created_by AS job_created_by,
               j.is_quotation_visit, d.status AS event_status,
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
@@ -7806,7 +8406,7 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
     const currency =
       typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim() : settings.default_currency || 'USD';
 
-    let quotationWorkAddressId: number | null = null;
+    let quotationWorkAddressId: number | null = ev.work_address_id ?? null;
     if (body.quotation_work_address_id !== undefined && body.quotation_work_address_id !== null) {
       const wid = parseQuotationWorkAddressIdInput(body.quotation_work_address_id);
       if (wid === undefined || wid === null) {
@@ -8139,13 +8739,10 @@ app.get(
       return res.status(404).json({ message: 'Not found' });
     }
 
-    const fullPath = path.join(getDiaryExtraSubmissionsRootDir(), String(eid), String(sid), fileName);
-    if (!fullPath.startsWith(getDiaryExtraSubmissionsRootDir())) {
-      return res.status(400).json({ message: 'Invalid path' });
-    }
     try {
-      const st = await fs.stat(fullPath);
-      const fileSize = st.size;
+      const found = await findDiaryStoredFile(getDiaryExtraSubmissionsReadRootDirs(), eid, sid, fileName);
+      if (!found) return res.status(404).json({ message: 'File not found' });
+      const { fullPath, size: fileSize } = found;
       const m = await pool.query<{ media: unknown }>(
         'SELECT media FROM diary_event_extra_submissions WHERE id = $1 AND diary_event_id = $2',
         [sid, eid],
@@ -8263,13 +8860,10 @@ app.get(
       return res.status(404).json({ message: 'Not found' });
     }
 
-    const fullPath = path.join(getDiaryTechnicalNotesRootDir(), String(eid), String(sid), fileName);
-    if (!fullPath.startsWith(getDiaryTechnicalNotesRootDir())) {
-      return res.status(400).json({ message: 'Invalid path' });
-    }
     try {
-      const st = await fs.stat(fullPath);
-      const fileSize = st.size;
+      const found = await findDiaryStoredFile(getDiaryTechnicalNotesReadRootDirs(), eid, sid, fileName);
+      if (!found) return res.status(404).json({ message: 'File not found' });
+      const { fullPath, size: fileSize } = found;
       const m = await pool.query<{ media: unknown }>(
         `SELECT n.media
          FROM customer_specific_notes n
@@ -8955,12 +9549,22 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       event_status: string;
       is_diary_officer: boolean;
       is_job_officer: boolean;
+      customer_id: number | null;
+      work_address_id: number | null;
+      job_number: string | null;
+      job_title: string;
+      customer_full_name: string | null;
+      is_quotation_visit: boolean;
     }>(
       `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
-              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer,
+              j.customer_id, j.work_address_id, j.job_number, j.title AS job_title,
+              c.full_name AS customer_full_name,
+              COALESCE(j.is_quotation_visit, false) AS is_quotation_visit
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN customers c ON c.id = j.customer_id
        WHERE d.id = $1`,
       [diaryEventId, tokenOfficerId],
     );
@@ -9053,6 +9657,12 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       diary_event_id: diaryEventId,
       job_id: row.job_id,
       event_status: row.event_status,
+      customer_id: row.customer_id,
+      work_address_id: row.work_address_id,
+      job_number: row.job_number,
+      job_title: row.job_title,
+      customer_full_name: row.customer_full_name,
+      is_quotation_visit: row.is_quotation_visit,
       questions,
       answers,
     });
@@ -12002,6 +12612,24 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
     return null;
   }
 
+  const workAddressIdRaw = job.work_address_id;
+  let invoiceWorkAddressId: number | null = null;
+  let billingAddress: string | null = null;
+  if (workAddressIdRaw) {
+    const waId = typeof workAddressIdRaw === 'number' && Number.isFinite(workAddressIdRaw)
+      ? workAddressIdRaw
+      : parseInt(String(workAddressIdRaw), 10);
+    if (Number.isFinite(waId) && waId > 0) {
+      try {
+        const resolved = await resolveInvoiceBillingFromWorkAddress(customerId, waId);
+        invoiceWorkAddressId = resolved.invoice_work_address_id;
+        billingAddress = resolved.billing_address;
+      } catch (e) {
+        console.error('Failed to resolve work address for invoice from job', { jobId, workAddressIdRaw });
+      }
+    }
+  }
+
   const pricingResult = await pool.query('SELECT * FROM job_pricing_items WHERE job_id = $1 ORDER BY sort_order', [jobId]);
   const pricingItems = pricingResult.rows;
 
@@ -12022,8 +12650,8 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
 
   const publicToken = crypto.randomBytes(32).toString('hex');
   const invResult = await pool.query(
-    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11)
+    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token, billing_address, invoice_work_address_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13)
      RETURNING id`,
     [
       invoiceNumber,
@@ -12037,6 +12665,8 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
       settings.default_currency,
       invoiceCreatedBy,
       publicToken,
+      billingAddress,
+      invoiceWorkAddressId,
     ],
   );
 
@@ -12226,6 +12856,7 @@ app.get('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), a
         job_title?: string;
         job_customer_reference?: string | null;
         job_created_by?: number | null;
+        job_work_address_id?: number | null;
       }
     >(
       `SELECT i.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
@@ -12233,7 +12864,8 @@ app.get('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), a
         c.address, c.city, c.region, c.country,
         j.title AS job_title,
         j.customer_reference AS job_customer_reference,
-        j.created_by AS job_created_by
+        j.created_by AS job_created_by,
+        j.work_address_id AS job_work_address_id
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN jobs j ON j.id = i.job_id
@@ -12295,9 +12927,14 @@ app.get('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'), a
 
     let workSiteName: string | null = null;
     let workSiteAddressOnly: string | null = null;
-    if (inv.invoice_work_address_id) {
+    let workAddressIdToUse = inv.invoice_work_address_id;
+    // If invoice doesn't have its own work address but is linked to a job with a work address, use that
+    if (!workAddressIdToUse && inv.job_id && inv.job_work_address_id) {
+      workAddressIdToUse = inv.job_work_address_id;
+    }
+    if (workAddressIdToUse) {
       const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
-        inv.invoice_work_address_id,
+        workAddressIdToUse,
         inv.customer_id,
       ]);
       if ((waRes.rowCount ?? 0) > 0) {
@@ -12423,7 +13060,7 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
     notes?: string;
     billing_address?: string;
     customer_reference?: string | null;
-    line_items?: { description: string; quantity: number; unit_price: number }[];
+    line_items?: QuotationLineItemInput[];
     tax_percentage?: number;
     state?: string;
     /** Raw value from CSV import; normalized to PREFIX-000001 and checked for duplicates. */
@@ -13777,7 +14414,7 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
     if (!canAccessQuotation(q as DbQuotation, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
 
     const lineItemsResult = await pool.query(
-      'SELECT id, description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
+      'SELECT id, description, quantity, unit_price, amount, sort_order, images FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
       [id],
     );
     const activitiesResult = await pool.query(
@@ -13840,14 +14477,15 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
       updated_at: (q.updated_at as Date).toISOString(),
       created_by: q.created_by,
       public_token: q.public_token ?? null,
-      line_items: lineItemsResult.rows.map((row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number }) => ({
+      line_items: await Promise.all(lineItemsResult.rows.map(async (row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number; images: unknown }) => ({
         id: row.id,
         description: row.description,
         quantity: parseFloat(row.quantity),
         unit_price: parseFloat(row.unit_price),
         amount: parseFloat(row.amount),
         sort_order: row.sort_order,
-      })),
+        images: await shapeQuotationLineItemImages(id, row.images),
+      }))),
       activities: activitiesResult.rows.map((row: { id: number; action: string; details: unknown; created_at: Date; created_by: number | null }) => ({
         id: row.id,
         action: row.action,
@@ -14187,6 +14825,40 @@ app.delete('/api/quotations/:id/internal-notes/:noteId', authenticate, requireTe
   }
 });
 
+app.patch('/api/quotations/:id/internal-notes/:noteId', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  const noteId = parseInt(String(req.params.noteId), 10);
+  if (!Number.isFinite(quotationId) || !Number.isFinite(noteId)) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as { body?: unknown };
+  const text = typeof body.body === 'string' ? body.body.trim() : null;
+  if (text === null) return res.status(400).json({ message: 'body is required' });
+  if (text.length > 20000) return res.status(400).json({ message: 'Note is too long' });
+
+  try {
+    const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    if (!canAccessQuotation(qCheck.rows[0], userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+    const upd = await pool.query<{ id: number; body: string; updated_at: Date }>(
+      `UPDATE quotation_internal_notes SET body = $1, updated_at = NOW() WHERE id = $2 AND quotation_id = $3 RETURNING id, body`,
+      [text, noteId, quotationId],
+    );
+    if ((upd.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
+    return res.json({ note: { id: upd.rows[0].id, body: upd.rows[0].body } });
+  } catch (error) {
+    console.error('Update quotation internal note error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
+
 app.get(
   '/api/quotations/:id/internal-notes/:noteId/files/:file',
   authenticate,
@@ -14468,7 +15140,7 @@ app.post('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), 
     notes?: string;
     billing_address?: string;
     quotation_work_address_id?: number;
-    line_items?: { description: string; quantity: number; unit_price: number }[];
+    line_items?: QuotationLineItemInput[];
     tax_percentage?: number;
     description?: string;
   };
@@ -14543,9 +15215,10 @@ app.post('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), 
       const qty = typeof item.quantity === 'number' ? item.quantity : 1;
       const price = typeof item.unit_price === 'number' ? item.unit_price : 0;
       const amount = qty * price;
+      const images = await prepareQuotationLineImages(qId, item.images);
       await pool.query(
-        'INSERT INTO quotation_line_items (quotation_id, description, quantity, unit_price, amount, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
-        [qId, item.description || 'Item', qty, price, amount, i],
+        'INSERT INTO quotation_line_items (quotation_id, description, quantity, unit_price, amount, sort_order, images) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)',
+        [qId, item.description || 'Item', qty, price, amount, i, JSON.stringify(images)],
       );
     }
 
@@ -14659,14 +15332,15 @@ app.patch('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotation
     await pool.query('DELETE FROM quotation_line_items WHERE quotation_id = $1', [id]);
     let subtotal = 0;
     for (let i = 0; i < body.line_items.length; i++) {
-      const item = body.line_items[i] as { description?: string; quantity?: number; unit_price?: number };
+      const item = body.line_items[i] as QuotationLineItemInput;
       const qty = typeof item.quantity === 'number' ? item.quantity : 1;
       const price = typeof item.unit_price === 'number' ? item.unit_price : 0;
       const amount = qty * price;
       subtotal += amount;
+      const images = await prepareQuotationLineImages(id, item.images);
       await pool.query(
-        'INSERT INTO quotation_line_items (quotation_id, description, quantity, unit_price, amount, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
-        [id, item.description || 'Item', qty, price, amount, i],
+        'INSERT INTO quotation_line_items (quotation_id, description, quantity, unit_price, amount, sort_order, images) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)',
+        [id, item.description || 'Item', qty, price, amount, i, JSON.stringify(images)],
       );
     }
     const prevSubtotal = parseFloat(q.subtotal);
@@ -16588,13 +17262,16 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
   const {
     job_description_id, contact_name, expected_completion, priority, user_group, business_unit,
     skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline,
-    book_into_diary, pricing_items, completed_service_items, is_quotation_visit,
+    book_into_diary, pricing_items, completed_service_items, is_quotation_visit, charge_type,
   } = req.body;
 
   const title = req.body.title?.trim() || 'Untitled Job';
   const createdBy = getTenantScopeUserId(req.user!);
 
   const completedServiceItems = normalizeCompletedServiceItemsForDb(completed_service_items);
+  const chargeType = typeof charge_type === 'string' && ['chargeable', 'free', 'callback'].includes(charge_type)
+    ? charge_type
+    : 'chargeable';
 
   try {
     const workAddressIdJob = await resolveWorkAddressIdForCustomer(pool, customerId, (req.body as { work_address_id?: unknown }).work_address_id);
@@ -16620,8 +17297,8 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
     const jobResult = await pool.query(
       `INSERT INTO jobs (title, description, priority, customer_id, work_address_id, state, created_by,
         job_description_id, contact_name, job_contact_id, expected_completion, user_group, business_unit,
-        skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline, book_into_diary, completed_service_items, is_quotation_visit)
-       VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        skills, job_notes, is_service_job, quoted_amount, customer_reference, job_pipeline, book_into_diary, completed_service_items, is_quotation_visit, charge_type)
+       VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [
         title, job_notes || null, priority || 'medium', customerId, workAddressIdJob, createdBy,
@@ -16629,7 +17306,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
         expected_completion ? new Date(expected_completion) : null,
         user_group || null, business_unit || null, skills || null, job_notes || null,
         !!is_service_job, quoted_amount || null, customer_reference || null, job_pipeline || null,
-        book_into_diary !== false, JSON.stringify(completedServiceItems), !!is_quotation_visit,
+        book_into_diary !== false, JSON.stringify(completedServiceItems), !!is_quotation_visit, chargeType,
       ],
     );
 
@@ -16893,6 +17570,30 @@ app.patch('/api/customers/:customerId/contacts/:contactId', authenticate, requir
   }
 });
 
+app.delete('/api/customers/:customerId/contacts/:contactId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const contactId = parseInt(String(req.params.contactId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(contactId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const result = await pool.query(
+      'DELETE FROM customer_contacts WHERE customer_id = $1 AND id = $2 RETURNING id',
+      [customerId, contactId],
+    );
+    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Contact not found' });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete customer contact error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.get('/api/customers/:customerId/branches', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
@@ -17051,7 +17752,7 @@ app.get('/api/customers/:customerId/work-addresses', authenticate, requireTenant
     }
     if (search) {
       params.push(`%${search}%`);
-      whereClause += ` AND (name ILIKE $${p} OR COALESCE(branch_name,'') ILIKE $${p} OR COALESCE(company_name,'') ILIKE $${p} OR address_line_1 ILIKE $${p} OR COALESCE(address_line_2,'') ILIKE $${p} OR COALESCE(town,'') ILIKE $${p} OR COALESCE(county,'') ILIKE $${p} OR COALESCE(postcode,'') ILIKE $${p})`;
+      whereClause += ` AND (name ILIKE $${p} OR COALESCE(branch_name,'') ILIKE $${p} OR COALESCE(company_name,'') ILIKE $${p} OR address_line_1 ILIKE $${p} OR COALESCE(address_line_2,'') ILIKE $${p} OR COALESCE(town,'') ILIKE $${p} OR COALESCE(county,'') ILIKE $${p} OR COALESCE(postcode,'') ILIKE $${p} OR COALESCE(key_info,'') ILIKE $${p})`;
       p++;
     }
     const result = await pool.query(
@@ -17268,14 +17969,18 @@ app.post('/api/customers/:customerId/work-addresses', authenticate, requireTenan
     if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
 
     const inserted = await pool.query(
-      `INSERT INTO customer_work_addresses (customer_id, name, branch_name, landlord, title, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode, landline, mobile, email, prefers_phone, prefers_sms, prefers_email, prefers_letter, uprn, is_active, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+      `INSERT INTO customer_work_addresses (customer_id, name, branch_name, landlord, title, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode, landline, mobile, email, prefers_phone, prefers_sms, prefers_email, prefers_letter, uprn, is_active, latitude, longitude, key_info, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
        RETURNING id`,
       [
         customerId, name, str('branch_name'), str('landlord'), str('title'), str('first_name'), str('surname'), str('company_name'),
         addressLine1, str('address_line_2'), str('address_line_3'), str('town'), str('county'), str('postcode'), str('landline'),
         str('mobile'), str('email'), !!body.prefers_phone, !!body.prefers_sms, !!body.prefers_email,
-        body.prefers_letter === undefined ? true : !!body.prefers_letter, str('uprn'), body.is_active === undefined ? true : !!body.is_active, userId,
+        body.prefers_letter === undefined ? true : !!body.prefers_letter, str('uprn'), body.is_active === undefined ? true : !!body.is_active,
+        body.latitude != null && body.latitude !== '' ? parseFloat(String(body.latitude)) : null,
+        body.longitude != null && body.longitude !== '' ? parseFloat(String(body.longitude)) : null,
+        str('key_info'),
+        userId,
       ],
     );
     return res.status(201).json({ work_address: { id: Number(inserted.rows[0].id) } });
@@ -17302,7 +18007,7 @@ app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authentica
     const values: unknown[] = [];
     let idx = 1;
     const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() || null : undefined);
-    const textFields = ['name', 'branch_name', 'landlord', 'title', 'first_name', 'surname', 'company_name', 'address_line_1', 'address_line_2', 'address_line_3', 'town', 'county', 'postcode', 'landline', 'mobile', 'email', 'uprn'];
+    const textFields = ['name', 'branch_name', 'landlord', 'title', 'first_name', 'surname', 'company_name', 'address_line_1', 'address_line_2', 'address_line_3', 'town', 'county', 'postcode', 'landline', 'mobile', 'email', 'uprn', 'key_info'];
     for (const f of textFields) {
       const v = str(f);
       if (v !== undefined) { updates.push(`${f} = $${idx++}`); values.push(v); }
@@ -17312,6 +18017,8 @@ app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authentica
     if (body.prefers_email !== undefined) { updates.push(`prefers_email = $${idx++}`); values.push(!!body.prefers_email); }
     if (body.prefers_letter !== undefined) { updates.push(`prefers_letter = $${idx++}`); values.push(!!body.prefers_letter); }
     if (body.is_active !== undefined) { updates.push(`is_active = $${idx++}`); values.push(!!body.is_active); }
+    if (body.latitude !== undefined) { updates.push(`latitude = $${idx++}`); values.push(body.latitude != null && body.latitude !== '' ? parseFloat(String(body.latitude)) : null); }
+    if (body.longitude !== undefined) { updates.push(`longitude = $${idx++}`); values.push(body.longitude != null && body.longitude !== '' ? parseFloat(String(body.longitude)) : null); }
     if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
 
     updates.push('updated_at = NOW()');
@@ -17368,6 +18075,7 @@ app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers')
         OR COALESCE(cwa.town,'') ILIKE $${isSuperAdmin ? 1 : 2}
         OR COALESCE(cwa.county,'') ILIKE $${isSuperAdmin ? 1 : 2}
         OR COALESCE(cwa.postcode,'') ILIKE $${isSuperAdmin ? 1 : 2}
+        OR COALESCE(cwa.key_info,'') ILIKE $${isSuperAdmin ? 1 : 2}
       )`
       : '';
     const searchParam = search ? [`%${search}%`] : [];
@@ -17390,6 +18098,7 @@ app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers')
         cwa.landline,
         cwa.mobile,
         cwa.email,
+        cwa.key_info,
         cwa.is_active,
         false AS is_default_address,
         cwa.created_at
@@ -17425,6 +18134,7 @@ app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers')
         c.landline,
         c.phone AS mobile,
         c.email,
+        NULL::text AS key_info,
         true AS is_active,
         true AS is_default_address,
         c.created_at
@@ -17831,7 +18541,7 @@ app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireTena
   }
 });
 
-app.get('/api/customers/:customerId/site-reports', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/site-reports', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
   const userId = getTenantScopeUserId(req.user!);
@@ -17960,7 +18670,7 @@ app.get('/api/site-reports', authenticate, async (req: AuthenticatedRequest, res
   }
 });
 
-app.post('/api/customers/:customerId/site-reports', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/site-reports', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
   const userId = getTenantScopeUserId(req.user!);
@@ -18015,6 +18725,10 @@ app.post('/api/customers/:customerId/site-reports', authenticate, requireTenantC
         isSuperAdmin ? [jobId, customerId] : [jobId, customerId, userId],
       );
       if ((jk.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Job not found for this customer' });
+      const oid = req.user!.officerId ?? null;
+      if (req.user!.role === 'OFFICER' && oid != null && !(await officerAssignedToJob(pool, oid, jobId))) {
+        return res.status(403).json({ message: 'Forbidden: job not assigned to you' });
+      }
     }
     const def = await fetchTemplateDefinition(pool, templateId, ownerUserId);
     if (!def) return res.status(404).json({ message: 'Template not found' });
@@ -18051,7 +18765,7 @@ app.post('/api/customers/:customerId/site-reports', authenticate, requireTenantC
   }
 });
 
-app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
   const userId = getTenantScopeUserId(req.user!);
@@ -18206,7 +18920,7 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
   }
 });
 
-app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
   const userId = getTenantScopeUserId(req.user!);
@@ -18328,6 +19042,35 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     });
   } catch (error) {
     console.error('Put customer site report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/customers/:customerId/site-report/:reportId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const deleted = await pool.query<{ id: number }>(
+      'DELETE FROM customer_site_reports WHERE id = $1 AND customer_id = $2 RETURNING id',
+      [reportId, customerId],
+    );
+    if ((deleted.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
+
+    const dir = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId));
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    return res.json({ message: 'Report deleted' });
+  } catch (error) {
+    console.error('Delete customer site report error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -18515,7 +19258,7 @@ app.patch(
   },
 );
 
-app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const reportId = parseInt(String(req.params.reportId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) return res.status(400).json({ message: 'Invalid id' });
@@ -18601,7 +19344,7 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
   }
 });
 
-app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/content', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/content', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const reportId = parseInt(String(req.params.reportId), 10);
   const imageId = parseInt(String(req.params.imageId), 10);
@@ -18646,7 +19389,7 @@ app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/conten
   }
 });
 
-app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const reportId = parseInt(String(req.params.reportId), 10);
   const imageId = parseInt(String(req.params.imageId), 10);
@@ -18679,7 +19422,7 @@ app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', a
   }
 });
 
-app.get('/api/customers/:customerId/site-report/:reportId/pdf', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/customers/:customerId/site-report/:reportId/pdf', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   const reportId = parseInt(String(req.params.reportId), 10);
   if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) return res.status(400).json({ message: 'Invalid id' });
@@ -19135,10 +19878,12 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
               c.address_line_1, c.address_line_2, c.address_line_3, 
               c.town, c.county, c.postcode, 
               c.city, c.region, c.country,
-              ct.name AS customer_type_name
+              ct.name AS customer_type_name,
+              j.work_address_id AS job_work_address_id
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN customer_types ct ON ct.id = c.customer_type_id
+       LEFT JOIN jobs j ON j.id = i.job_id
        WHERE i.public_token = $1`,
       [token]
     );
@@ -19150,9 +19895,14 @@ app.get('/api/public/invoices/:token', async (req: Request, res: Response) => {
     // Resolve work/site address (same logic as dashboard detail endpoint)
     let workSiteName: string | null = null;
     let workSiteAddress: string | null = null;
-    if (rawInv.invoice_work_address_id) {
+    let workAddressIdToUse = rawInv.invoice_work_address_id;
+    // If invoice doesn't have its own work address but is linked to a job with a work address, use that
+    if (!workAddressIdToUse && rawInv.job_id && rawInv.job_work_address_id) {
+      workAddressIdToUse = rawInv.job_work_address_id;
+    }
+    if (workAddressIdToUse) {
       const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
-        rawInv.invoice_work_address_id,
+        workAddressIdToUse,
         rawInv.customer_id,
       ]);
       if ((waRes.rowCount ?? 0) > 0) {
@@ -19246,7 +19996,7 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
     );
 
     const itemsResult = await pool.query(
-      'SELECT id, description, quantity, unit_price, amount, sort_order FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
+      'SELECT id, description, quantity, unit_price, amount, sort_order, images FROM quotation_line_items WHERE quotation_id = $1 ORDER BY sort_order ASC, id ASC',
       [rawQ.id],
     );
 
@@ -19278,14 +20028,15 @@ app.get('/api/public/quotations/:token', async (req: Request, res: Response) => 
       settings: mergedSettings,
     };
 
-    const line_items = itemsResult.rows.map((row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number }) => ({
+    const line_items = await Promise.all(itemsResult.rows.map(async (row: { id: number; description: string; quantity: string; unit_price: string; amount: string; sort_order: number; images: unknown }) => ({
       id: row.id,
       description: row.description,
       quantity: parseFloat(row.quantity),
       unit_price: parseFloat(row.unit_price),
       amount: parseFloat(row.amount),
       sort_order: row.sort_order,
-    }));
+      images: await shapeQuotationLineItemImages(rawQ.id, row.images),
+    })));
 
     res.json({
       quotation,

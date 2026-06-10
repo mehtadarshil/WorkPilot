@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
@@ -536,6 +537,8 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     TextField(
                       controller: _contactName,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),

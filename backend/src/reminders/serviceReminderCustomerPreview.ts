@@ -19,9 +19,13 @@ type ChecklistRow = {
 };
 
 export type CustomerServiceReminderScheduleLine = {
-  job_id: number;
+  source: 'service_job' | 'site_report' | 'certificate';
+  job_id: number | null;
   job_title: string | null;
   job_state: string;
+  report_id?: number | null;
+  report_title?: string | null;
+  certificate_number?: string | null;
   service_name: string;
   remind_email: boolean;
   checklist_matched: boolean;
@@ -143,6 +147,7 @@ export async function getCustomerServiceReminderSchedule(
     for (const svc of items) {
       if (!svc.remind_email) {
         lines.push({
+          source: 'service_job',
           job_id: job.id,
           job_title: job.title,
           job_state: job.state,
@@ -164,6 +169,7 @@ export async function getCustomerServiceReminderSchedule(
       const ck = checklistByKey.get(svc.name.trim().toLowerCase());
       if (!ck) {
         lines.push({
+          source: 'service_job',
           job_id: job.id,
           job_title: job.title,
           job_state: job.state,
@@ -257,6 +263,7 @@ export async function getCustomerServiceReminderSchedule(
       }
 
       lines.push({
+        source: 'service_job',
         job_id: job.id,
         job_title: job.title,
         job_state: job.state,
@@ -273,6 +280,262 @@ export async function getCustomerServiceReminderSchedule(
         block_reason,
       });
     }
+  }
+
+  const reportRes = await pool.query<{
+    report_id: number;
+    report_title: string | null;
+    certificate_number: string | null;
+    renewal_anchor_date: unknown;
+    renewal_interval_years: number | null;
+    renewal_early_days: number | null;
+    renewal_job_id: number | null;
+    job_title: string | null;
+    job_state: string | null;
+    job_contact_id: number | null;
+  }>(
+    `SELECT csr.id AS report_id,
+            csr.report_title,
+            csr.certificate_number,
+            csr.renewal_anchor_date,
+            csr.renewal_interval_years,
+            csr.renewal_early_days,
+            csr.renewal_job_id,
+            j.title AS job_title,
+            j.state AS job_state,
+            j.job_contact_id
+     FROM customer_site_reports csr
+     INNER JOIN customers c ON c.id = csr.customer_id
+     LEFT JOIN jobs j ON j.id = csr.renewal_job_id AND j.customer_id = csr.customer_id
+     WHERE csr.customer_id = $1
+       AND c.created_by = $2
+       AND csr.renewal_reminder_enabled = true
+       AND csr.renewal_anchor_date IS NOT NULL
+     ORDER BY csr.renewal_anchor_date DESC, csr.id DESC`,
+    [customerId, tenantUserId],
+  );
+
+  for (const report of reportRes.rows) {
+    const anchorRaw = report.renewal_anchor_date;
+    const anchorYmd =
+      anchorRaw instanceof Date
+        ? utcDateOnlyFromDate(anchorRaw)
+        : typeof anchorRaw === 'string'
+          ? anchorRaw.slice(0, 10)
+          : '';
+    const anchor = new Date(`${anchorYmd}T00:00:00.000Z`);
+    if (!anchorYmd || Number.isNaN(anchor.getTime())) continue;
+
+    let intervalYears = report.renewal_interval_years != null ? Math.trunc(Number(report.renewal_interval_years)) : 1;
+    if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
+    if (intervalYears > 10) intervalYears = 10;
+
+    let earlyDays = report.renewal_early_days != null ? Math.trunc(Number(report.renewal_early_days)) : 14;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    if (earlyDays > 120) earlyDays = 120;
+
+    let nextDue = addCalendarInterval(anchor, intervalYears, 'years');
+    const todayD = new Date(`${today}T00:00:00.000Z`);
+    while (nextDue.getTime() < todayD.getTime()) {
+      nextDue = addCalendarInterval(nextDue, intervalYears, 'years');
+    }
+    const renewalYmd = utcDateOnlyFromDate(nextDue);
+    const earlyStart = addCalendarInterval(nextDue, -earlyDays, 'days');
+    const earlyStartYmd = utcDateOnlyFromDate(earlyStart);
+
+    const inEarlyWindow = today >= earlyStartYmd && today < renewalYmd;
+    const inDueWindow = today >= renewalYmd;
+    let phase: 'early' | 'due' | null = null;
+    if (inEarlyWindow) phase = 'early';
+    else if (inDueWindow) phase = 'due';
+
+    const sentEarly = await pool.query(
+      `SELECT 1 FROM customer_site_report_renewal_sent
+       WHERE report_id = $1 AND phase = 'early' AND renewal_due_date = $2`,
+      [report.report_id, renewalYmd],
+    );
+    const sentDue = await pool.query(
+      `SELECT 1 FROM customer_site_report_renewal_sent
+       WHERE report_id = $1 AND phase = 'due' AND renewal_due_date = $2`,
+      [report.report_id, renewalYmd],
+    );
+    const early_reminder_sent = (sentEarly.rowCount ?? 0) > 0;
+    const due_reminder_sent = (sentDue.rowCount ?? 0) > 0;
+
+    const modeRaw = (c.service_reminder_recipient_mode ?? '').trim();
+    const effectiveMode = SERVICE_REMINDER_RECIPIENT_MODES.has(modeRaw) ? modeRaw : tenantMode;
+    const recipient_preview =
+      customTrim ||
+      (await resolveServiceReminderRecipientEmail(
+        pool,
+        customerId,
+        c.email,
+        report.job_contact_id,
+        effectiveMode,
+      ));
+
+    let block_reason: string | null = null;
+    let would_send_today = false;
+    if (c.service_reminders_enabled === false) block_reason = 'Customer opted out of service reminders.';
+    else if (!tenantAutomated) block_reason = 'Organisation automation is off.';
+    else if (!phase) block_reason = `Next window opens ${earlyStartYmd} (early) or on/after ${renewalYmd} (due).`;
+    else if (phase === 'early' && early_reminder_sent) block_reason = 'Early reminder for this renewal cycle was already sent.';
+    else if (phase === 'due' && due_reminder_sent) block_reason = 'Due reminder for this renewal cycle was already sent.';
+    else if (!recipient_preview)
+      block_reason =
+        'No recipient email (set account email, linked job contact, primary contact, or a custom reminder address on this customer).';
+    else {
+      would_send_today = true;
+      block_reason = null;
+    }
+
+    lines.push({
+      source: 'certificate',
+      job_id: report.renewal_job_id,
+      job_title: report.job_title,
+      job_state: report.job_state ?? '',
+      report_id: report.report_id,
+      report_title: report.report_title,
+      certificate_number: report.certificate_number,
+      service_name: report.report_title?.trim() || 'Site report renewal',
+      remind_email: true,
+      checklist_matched: true,
+      next_renewal_due_date: renewalYmd,
+      early_window_starts: earlyStartYmd,
+      active_phase: phase ?? 'none',
+      early_reminder_sent,
+      due_reminder_sent,
+      would_send_today,
+      recipient_preview,
+      block_reason,
+    });
+  }
+
+  const certRes = await pool.query<{
+    certificate_id: number;
+    certificate_number: string;
+    type_slug: string;
+    renewal_anchor_date: unknown;
+    renewal_interval_years: number | null;
+    renewal_early_days: number | null;
+    renewal_job_id: number | null;
+    job_title: string | null;
+    job_state: string | null;
+    job_contact_id: number | null;
+  }>(
+    `SELECT ec.id AS certificate_id,
+            ec.certificate_number,
+            ec.type_slug,
+            ec.renewal_anchor_date,
+            ec.renewal_interval_years,
+            ec.renewal_early_days,
+            ec.renewal_job_id,
+            j.title AS job_title,
+            j.state AS job_state,
+            j.job_contact_id
+     FROM electrical_certificates ec
+     INNER JOIN customers c ON c.id = ec.customer_id
+     LEFT JOIN jobs j ON j.id = ec.renewal_job_id AND j.customer_id = ec.customer_id
+     WHERE ec.customer_id = $1
+       AND c.created_by = $2
+       AND ec.renewal_reminder_enabled = true
+       AND ec.renewal_anchor_date IS NOT NULL
+     ORDER BY ec.renewal_anchor_date DESC, ec.id DESC`,
+    [customerId, tenantUserId],
+  );
+
+  const certTypeLabel = (slug: string): string => {
+    if (slug === 'portable_appliance_test') return 'PAT certificate';
+    if (slug === 'fi_insp_2025') return 'Fire alarm inspection';
+    if (slug === 'dfi_insp_2019_a1') return 'Domestic fire alarm inspection';
+    if (slug === 'dfi_inst_2019_a1') return 'Domestic fire alarm installation';
+    if (slug === 'fi_extinsp_5306') return 'Fire extinguisher inspection';
+    if (slug === 'em_pir_2025') return 'Emergency lighting PIR';
+    if (slug === 'eic_18e_a3') return 'Electrical installation certificate';
+    if (slug === 'mwc_18e_a3') return 'Minor works certificate';
+    return 'EICR certificate';
+  };
+
+  for (const cert of certRes.rows) {
+    const anchorRaw = cert.renewal_anchor_date;
+    const anchorYmd =
+      anchorRaw instanceof Date
+        ? utcDateOnlyFromDate(anchorRaw)
+        : typeof anchorRaw === 'string'
+          ? anchorRaw.slice(0, 10)
+          : '';
+    const anchor = new Date(`${anchorYmd}T00:00:00.000Z`);
+    if (!anchorYmd || Number.isNaN(anchor.getTime())) continue;
+
+    let intervalYears = cert.renewal_interval_years != null ? Math.trunc(Number(cert.renewal_interval_years)) : 1;
+    if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
+    if (intervalYears > 10) intervalYears = 10;
+    let earlyDays = cert.renewal_early_days != null ? Math.trunc(Number(cert.renewal_early_days)) : 14;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    if (earlyDays > 120) earlyDays = 120;
+
+    let nextDue = addCalendarInterval(anchor, intervalYears, 'years');
+    const todayD = new Date(`${today}T00:00:00.000Z`);
+    while (nextDue.getTime() < todayD.getTime()) {
+      nextDue = addCalendarInterval(nextDue, intervalYears, 'years');
+    }
+    const renewalYmd = utcDateOnlyFromDate(nextDue);
+    const earlyStartYmd = utcDateOnlyFromDate(addCalendarInterval(nextDue, -earlyDays, 'days'));
+    const inEarlyWindow = today >= earlyStartYmd && today < renewalYmd;
+    const inDueWindow = today >= renewalYmd;
+    let phase: 'early' | 'due' | null = null;
+    if (inEarlyWindow) phase = 'early';
+    else if (inDueWindow) phase = 'due';
+
+    const sentEarly = await pool.query(
+      `SELECT 1 FROM electrical_certificate_renewal_sent
+       WHERE certificate_id = $1 AND phase = 'early' AND renewal_due_date = $2`,
+      [cert.certificate_id, renewalYmd],
+    );
+    const sentDue = await pool.query(
+      `SELECT 1 FROM electrical_certificate_renewal_sent
+       WHERE certificate_id = $1 AND phase = 'due' AND renewal_due_date = $2`,
+      [cert.certificate_id, renewalYmd],
+    );
+    const early_reminder_sent = (sentEarly.rowCount ?? 0) > 0;
+    const due_reminder_sent = (sentDue.rowCount ?? 0) > 0;
+
+    const modeRaw = (c.service_reminder_recipient_mode ?? '').trim();
+    const effectiveMode = SERVICE_REMINDER_RECIPIENT_MODES.has(modeRaw) ? modeRaw : tenantMode;
+    const recipient_preview =
+      customTrim ||
+      (await resolveServiceReminderRecipientEmail(pool, customerId, c.email, cert.job_contact_id, effectiveMode));
+
+    let block_reason: string | null = null;
+    let would_send_today = false;
+    if (c.service_reminders_enabled === false) block_reason = 'Customer opted out of service reminders.';
+    else if (!tenantAutomated) block_reason = 'Organisation automation is off.';
+    else if (!phase) block_reason = `Next window opens ${earlyStartYmd} (early) or on/after ${renewalYmd} (due).`;
+    else if (phase === 'early' && early_reminder_sent) block_reason = 'Early reminder for this renewal cycle was already sent.';
+    else if (phase === 'due' && due_reminder_sent) block_reason = 'Due reminder for this renewal cycle was already sent.';
+    else if (!recipient_preview) block_reason = 'No recipient email for this customer/certificate reminder.';
+    else would_send_today = true;
+
+    lines.push({
+      source: 'site_report',
+      job_id: cert.renewal_job_id,
+      job_title: cert.job_title,
+      job_state: cert.job_state ?? '',
+      report_id: cert.certificate_id,
+      report_title: certTypeLabel(cert.type_slug),
+      certificate_number: cert.certificate_number,
+      service_name: certTypeLabel(cert.type_slug),
+      remind_email: true,
+      checklist_matched: true,
+      next_renewal_due_date: renewalYmd,
+      early_window_starts: earlyStartYmd,
+      active_phase: phase ?? 'none',
+      early_reminder_sent,
+      due_reminder_sent,
+      would_send_today,
+      recipient_preview,
+      block_reason,
+    });
   }
 
   return {

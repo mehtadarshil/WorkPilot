@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
-import { AlertCircle, Calculator, Loader2, Paperclip, Plus, Receipt, UploadCloud } from 'lucide-react';
-import { getBlob, getJson, postJson } from '../../../apiClient';
+import { AlertCircle, Calculator, Loader2, Paperclip, Plus, Receipt, RotateCcw, Save, UploadCloud } from 'lucide-react';
+import { getBlob, getJson, patchJson, postJson } from '../../../apiClient';
 
 type CostSource = 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
 
@@ -29,6 +29,16 @@ interface CostLine {
 }
 
 interface CostPayload {
+  rate_config: {
+    default_hourly_rate: number;
+    default_rate_name: string | null;
+    travel_hourly_rate: number;
+    on_site_hourly_rate: number;
+    travel_override: number | null;
+    on_site_override: number | null;
+    updated_at: string | null;
+    updated_by_name: string | null;
+  };
   summary: {
     total: number;
     manual_total: number;
@@ -87,6 +97,9 @@ export default function JobCostsTab({ jobId, token }: Props) {
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [proofFiles, setProofFiles] = useState<File[]>([]);
+  const [rateSaving, setRateSaving] = useState(false);
+  const [travelRateInput, setTravelRateInput] = useState('');
+  const [onSiteRateInput, setOnSiteRateInput] = useState('');
 
   const loadCosts = useCallback(async () => {
     setLoading(true);
@@ -94,6 +107,8 @@ export default function JobCostsTab({ jobId, token }: Props) {
     try {
       const res = await getJson<CostPayload>(`/jobs/${jobId}/costs`, token);
       setPayload(res);
+      setTravelRateInput(res.rate_config.travel_override == null ? '' : String(res.rate_config.travel_override));
+      setOnSiteRateInput(res.rate_config.on_site_override == null ? '' : String(res.rate_config.on_site_override));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load job costs');
     } finally {
@@ -163,8 +178,54 @@ export default function JobCostsTab({ jobId, token }: Props) {
     }
   };
 
+  const saveRates = async () => {
+    const travel = travelRateInput.trim();
+    const onSite = onSiteRateInput.trim();
+    const travelNumber = travel === '' ? null : Number(travel);
+    const onSiteNumber = onSite === '' ? null : Number(onSite);
+    if ((travel !== '' && (!Number.isFinite(travelNumber) || travelNumber < 0)) || (onSite !== '' && (!Number.isFinite(onSiteNumber) || onSiteNumber < 0))) {
+      setError('Rates must be positive numbers, or blank to use the price book default.');
+      return;
+    }
+    setRateSaving(true);
+    setError(null);
+    try {
+      await patchJson(
+        `/jobs/${jobId}/costs/rates`,
+        {
+          travel_hourly_rate: travel === '' ? null : travelNumber,
+          on_site_hourly_rate: onSite === '' ? null : onSiteNumber,
+        },
+        token,
+      );
+      await loadCosts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save labour rates');
+    } finally {
+      setRateSaving(false);
+    }
+  };
+
+  const resetRates = async () => {
+    setRateSaving(true);
+    setError(null);
+    try {
+      await patchJson(`/jobs/${jobId}/costs/rates`, { reset_to_default: true }, token);
+      await loadCosts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reset labour rates');
+    } finally {
+      setRateSaving(false);
+    }
+  };
+
   const canSave = description.trim().length > 0 && Number(amount) > 0 && proofFiles.length > 0 && !saving;
   const summary = payload?.summary;
+  const rateConfig = payload?.rate_config;
+  const rateDirty =
+    rateConfig != null &&
+    (travelRateInput.trim() !== (rateConfig.travel_override == null ? '' : String(rateConfig.travel_override)) ||
+      onSiteRateInput.trim() !== (rateConfig.on_site_override == null ? '' : String(rateConfig.on_site_override)));
 
   return (
     <div className="space-y-6">
@@ -209,6 +270,64 @@ export default function JobCostsTab({ jobId, token }: Props) {
               <SummaryCard label="Quotations" value={money(summary?.quotation_total)} />
               <SummaryCard label="Parts" value={money(summary?.parts_total)} />
             </div>
+
+            {rateConfig ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Timesheet labour rates</h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Used for travel and on-site timesheet costs on this job. Leave blank to use the customer price book default
+                      {rateConfig.default_rate_name ? ` (${rateConfig.default_rate_name})` : ''}: {money(rateConfig.default_hourly_rate)}/hr.
+                    </p>
+                  </div>
+                  {rateConfig.updated_at ? (
+                    <p className="text-xs font-semibold text-slate-400">
+                      Updated {dayjs(rateConfig.updated_at).format('DD/MM/YYYY h:mm a')}
+                      {rateConfig.updated_by_name ? ` by ${rateConfig.updated_by_name}` : ''}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
+                  <RateInput
+                    label="Travel £/hr"
+                    value={travelRateInput}
+                    effective={rateConfig.travel_hourly_rate}
+                    usingDefault={rateConfig.travel_override == null}
+                    onChange={setTravelRateInput}
+                    disabled={rateSaving}
+                  />
+                  <RateInput
+                    label="On-site £/hr"
+                    value={onSiteRateInput}
+                    effective={rateConfig.on_site_hourly_rate}
+                    usingDefault={rateConfig.on_site_override == null}
+                    onChange={setOnSiteRateInput}
+                    disabled={rateSaving}
+                  />
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="button"
+                      disabled={rateSaving || !rateDirty}
+                      onClick={saveRates}
+                      className="inline-flex h-10 items-center gap-2 rounded-md bg-[#14B8A6] px-3 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {rateSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      disabled={rateSaving || (rateConfig.travel_override == null && rateConfig.on_site_override == null)}
+                      onClick={resetRates}
+                      className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black uppercase text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RotateCcw className="size-4" />
+                      Default
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {showForm ? (
               <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
@@ -347,5 +466,40 @@ function SummaryCard({ label, value, strong = false }: { label: string; value: s
         {value}
       </p>
     </div>
+  );
+}
+
+function RateInput({
+  label,
+  value,
+  effective,
+  usingDefault,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  effective: number;
+  usingDefault: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</span>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Price book default"
+        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20 disabled:opacity-60"
+      />
+      <span className="mt-1 block text-[11px] font-semibold text-slate-500">
+        Effective: {money(effective)}/hr {usingDefault ? '(price book default)' : '(job override)'}
+      </span>
+    </label>
   );
 }

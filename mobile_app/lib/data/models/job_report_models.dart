@@ -31,6 +31,12 @@ class JobReportBundle {
     required this.diaryEventId,
     required this.jobId,
     this.eventStatus,
+    this.customerId,
+    this.workAddressId,
+    this.jobNumber,
+    this.jobTitle,
+    this.customerFullName,
+    this.isQuotationVisit = false,
     required this.questions,
     required this.answersByQuestionId,
   });
@@ -59,6 +65,12 @@ class JobReportBundle {
       diaryEventId: (json['diary_event_id'] as num?)?.toInt() ?? 0,
       jobId: (json['job_id'] as num?)?.toInt() ?? 0,
       eventStatus: json['event_status'] as String?,
+      customerId: (json['customer_id'] as num?)?.toInt(),
+      workAddressId: (json['work_address_id'] as num?)?.toInt(),
+      jobNumber: json['job_number'] as String?,
+      jobTitle: json['job_title'] as String?,
+      customerFullName: json['customer_full_name'] as String?,
+      isQuotationVisit: json['is_quotation_visit'] == true,
       questions: questions,
       answersByQuestionId: answers,
     );
@@ -67,6 +79,12 @@ class JobReportBundle {
   final int diaryEventId;
   final int jobId;
   final String? eventStatus;
+  final int? customerId;
+  final int? workAddressId;
+  final String? jobNumber;
+  final String? jobTitle;
+  final String? customerFullName;
+  final bool isQuotationVisit;
   final List<JobReportQuestion> questions;
   final Map<int, String> answersByQuestionId;
 }

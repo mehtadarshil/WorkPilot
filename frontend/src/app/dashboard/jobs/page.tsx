@@ -29,6 +29,7 @@ interface Job {
   created_at: string;
   updated_at: string;
   is_quotation_visit?: boolean;
+  charge_type?: string;
 }
 
 interface JobsResponse {
@@ -109,6 +110,7 @@ export default function JobsPage() {
   const [formLocation, setFormLocation] = useState('');
   const [formRequiredCertifications, setFormRequiredCertifications] = useState('');
   const [formState, setFormState] = useState('draft');
+  const [formChargeType, setFormChargeType] = useState('chargeable');
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -201,6 +203,7 @@ export default function JobsPage() {
     setFormLocation('');
     setFormRequiredCertifications('');
     setFormState('draft');
+    setFormChargeType('chargeable');
   };
 
   const openEdit = (j: Job) => {
@@ -218,6 +221,7 @@ export default function JobsPage() {
     setFormLocation(j.location ?? '');
     setFormRequiredCertifications(j.required_certifications ?? '');
     setFormState(j.state);
+    setFormChargeType(j.charge_type || 'chargeable');
     setActionMenu(null);
     setEditModalOpen(true);
   };
@@ -240,6 +244,7 @@ export default function JobsPage() {
           location: formLocation.trim() || null,
           required_certifications: formRequiredCertifications.trim() || null,
           state: formState,
+          charge_type: formChargeType,
         },
         token,
       );
@@ -429,6 +434,16 @@ export default function JobsPage() {
                                   >
                                     {j.title}
                                   </button>
+                                  {j.charge_type === 'free' && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                                      Free of Charge
+                                    </span>
+                                  )}
+                                  {j.charge_type === 'callback' && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                                      Call Back
+                                    </span>
+                                  )}
                                 </div>
                                 <span className="block max-w-[200px] truncate text-xs text-slate-500">{j.description || '—'}</span>
                               </div>
@@ -547,6 +562,8 @@ export default function JobsPage() {
           setFormRequiredCertifications={setFormRequiredCertifications}
           formState={formState}
           setFormState={setFormState}
+          formChargeType={formChargeType}
+          setFormChargeType={setFormChargeType}
           submitLabel="Save Changes"
         />
       )}
@@ -581,6 +598,8 @@ function JobModal({
   setFormRequiredCertifications,
   formState,
   setFormState,
+  formChargeType,
+  setFormChargeType,
   submitLabel,
 }: {
   title: string;
@@ -609,6 +628,8 @@ function JobModal({
   setFormRequiredCertifications: (v: string) => void;
   formState: string;
   setFormState: (v: string) => void;
+  formChargeType: string;
+  setFormChargeType: (v: string) => void;
   submitLabel: string;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -631,7 +652,7 @@ function JobModal({
             <label className="block text-sm font-medium text-slate-700">Description</label>
             <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Detailed explanation of the work to be performed" className={inputClass} />
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-slate-700">Priority</label>
               <select value={formPriority} onChange={(e) => setFormPriority(e.target.value)} className={inputClass}>
@@ -646,6 +667,14 @@ function JobModal({
                 {JOB_STATES.map((s) => (
                   <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Charge option</label>
+              <select value={formChargeType} onChange={(e) => setFormChargeType(e.target.value)} className={inputClass}>
+                <option value="chargeable">Chargeable</option>
+                <option value="free">Free of Charge</option>
+                <option value="callback">Call Back</option>
               </select>
             </div>
           </div>

@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, Plus, AlertTriangle } from 'lucide-react';
-import { getJson, patchJson, postJson } from '../../../apiClient';
+import { Search, Plus, AlertTriangle, Trash2 } from 'lucide-react';
+import { deleteRequest, getJson, patchJson, postJson } from '../../../apiClient';
 
 interface Contact {
   id: number;
@@ -87,6 +87,7 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
   const [editing, setEditing] = useState<Contact | null>(null);
   const [form, setForm] = useState<ContactForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fetchContacts = useCallback(async () => {
     if (!token || !customerId) return;
@@ -185,6 +186,23 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
     }
   };
 
+  const deleteContact = async (contact: Contact) => {
+    if (!token) return;
+    const name = [contact.title, contact.first_name, contact.surname].filter(Boolean).join(' ') || 'this contact';
+    if (!window.confirm(`Delete ${name}? This removes them from this customer's contacts.`)) return;
+    setDeletingId(contact.id);
+    setError(null);
+    try {
+      await deleteRequest(`/customers/${customerId}/contacts/${contact.id}`, token);
+      setContacts((prev) => prev.filter((c) => c.id !== contact.id));
+      void fetchContacts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete contact');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const prefWarnings = [
     form.prefers_phone && !form.landline && !form.mobile ? 'Contact does not have a phone number' : null,
     form.prefers_sms && !form.mobile ? 'Contact does not have a mobile number' : null,
@@ -240,6 +258,15 @@ export default function CustomerContactsTab({ customerId, workAddressId }: Props
                     <td className="px-4 py-3 text-right">
                       {c.is_primary && <span className="mr-3 rounded-full bg-[#14B8A6]/10 px-2 py-0.5 text-xs font-semibold text-[#14B8A6]">Primary contact</span>}
                       <button onClick={() => startEdit(c)} className="font-semibold text-[#14B8A6] hover:underline">Edit</button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteContact(c)}
+                        disabled={deletingId === c.id}
+                        className="ml-3 inline-flex items-center gap-1 font-semibold text-rose-600 hover:underline disabled:opacity-50"
+                      >
+                        <Trash2 className="size-3.5" />
+                        {deletingId === c.id ? 'Deleting...' : 'Delete'}
+                      </button>
                     </td>
                   </tr>
                 ))

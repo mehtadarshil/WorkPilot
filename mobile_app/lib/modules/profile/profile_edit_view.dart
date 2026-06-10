@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import 'profile_edit_controller.dart';
 import 'widgets/profile_avatar_button.dart';
@@ -69,7 +70,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
                 _photoSection(),
                 const SizedBox(height: 24),
                 _sectionTitle('Contact'),
-                _field(controller.fullNameC, 'Display name'),
+                _field(controller.fullNameC, 'Display name', capitalizeWords: true),
                 _field(controller.emailC, 'Email', keyboard: TextInputType.emailAddress),
                 _field(controller.mobileC, 'Mobile number', keyboard: TextInputType.phone),
                 _field(controller.phoneC, 'Work phone', keyboard: TextInputType.phone),
@@ -88,11 +89,11 @@ class ProfileEditView extends GetView<ProfileEditController> {
                 }),
                 const SizedBox(height: 16),
                 _sectionTitle('Address & notes'),
-                _field(controller.addressC, 'Address', maxLines: 3),
+                _field(controller.addressC, 'Address', maxLines: 3, capitalizeWords: true),
                 _field(controller.notesC, 'Notes', maxLines: 4),
                 const SizedBox(height: 16),
                 _sectionTitle('Next of kin'),
-                _field(controller.kinNameC, 'Name'),
+                _field(controller.kinNameC, 'Name', capitalizeWords: true),
                 _field(controller.kinPhoneC, 'Phone', keyboard: TextInputType.phone),
                 _field(controller.kinRelC, 'Relationship'),
                 if (controller.error.value.isNotEmpty) ...[
@@ -193,6 +194,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
     String label, {
     int maxLines = 1,
     TextInputType? keyboard,
+    bool capitalizeWords = false,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -200,6 +202,9 @@ class ProfileEditView extends GetView<ProfileEditController> {
         controller: c,
         maxLines: maxLines,
         keyboardType: keyboard,
+        textCapitalization:
+            capitalizeWords ? TextCapitalization.words : TextCapitalization.none,
+        inputFormatters: capitalizeWords ? const [capitalizeWordsFormatter] : null,
         style: GoogleFonts.inter(color: Colors.white),
         decoration: InputDecoration(
           labelText: label,

@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/utils/text_formatters.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../data/repositories/customers_repository.dart';
 import 'helpers.dart';
@@ -130,12 +131,16 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                   const SizedBox(height: 10),
                   TextField(
                     controller: firstC,
+                    textCapitalization: TextCapitalization.words,
+                    inputFormatters: const [capitalizeWordsFormatter],
                     style: GoogleFonts.inter(color: Colors.white),
                     decoration: customerInputDecoration('First name'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: surC,
+                    textCapitalization: TextCapitalization.words,
+                    inputFormatters: const [capitalizeWordsFormatter],
                     style: GoogleFonts.inter(color: Colors.white),
                     decoration: customerInputDecoration('Surname *'),
                   ),
@@ -213,6 +218,34 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
       } else {
         await _repo.updateContact(widget.customerId, id, payload);
       }
+      await _load();
+    } on ApiException catch (e) {
+      Get.snackbar('Error', e.message);
+    }
+  }
+
+  Future<void> _deleteContact(Map<String, dynamic> contact) async {
+    final id = (contact['id'] as num?)?.toInt();
+    if (id == null || id <= 0) return;
+    final name = '${ctStr(contact, 'title')} ${ctStr(contact, 'first_name')} ${ctStr(contact, 'surname')}'.trim();
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete contact?'),
+        content: Text('Remove ${name.isEmpty ? 'this contact' : name} from this customer?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) return;
+    try {
+      await _repo.deleteContact(widget.customerId, id);
       await _load();
     } on ApiException catch (e) {
       Get.snackbar('Error', e.message);
@@ -316,6 +349,12 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                                           padding: const EdgeInsets.only(left: 8),
                                           child: metaChip('PRIMARY'),
                                         ),
+                                      IconButton(
+                                        tooltip: 'Delete contact',
+                                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                                        color: const Color(0xFFFCA5A5),
+                                        onPressed: () => _deleteContact(r),
+                                      ),
                                       Icon(Icons.chevron_right_rounded, color: AppColors.whiteOverlay(0.35)),
                                     ],
                                   ),
@@ -628,18 +667,18 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
               children: [
                 Text(id == null ? 'New branch' : 'Edit branch', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
                 const SizedBox(height: 14),
-                TextField(controller: name, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Branch name *')),
+                TextField(controller: name, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Branch name *')),
                 const SizedBox(height: 10),
-                TextField(controller: line1, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 1 *')),
+                TextField(controller: line1, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 1 *')),
                 const SizedBox(height: 10),
-                TextField(controller: line2, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 2')),
+                TextField(controller: line2, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 2')),
                 const SizedBox(height: 10),
-                TextField(controller: line3, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 3')),
+                TextField(controller: line3, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 3')),
                 const SizedBox(height: 10),
-                TextField(controller: town, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Town')),
+                TextField(controller: town, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Town')),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  value: county.isEmpty ? null : county,
+                  initialValue: county.isEmpty ? null : county,
                   decoration: customerInputDecoration('County'),
                   hint: Text('Select county', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45))),
                   items: [

@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 
+import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
 import '../../data/models/job_report_models.dart';
 import '../../data/repositories/mobile_repository.dart';
@@ -25,9 +26,13 @@ class JobReportController extends GetxController {
   final RxBool submitting = false.obs;
   /// When true, opened from a completed visit — read-only answers, no submit.
   final RxBool readonlyMode = false.obs;
-  /// 0 = answer form, 1 = change job stage (then confirm submit).
+  /// 0 = answer form, 1 = change job stage, 2 = optional completion docs.
   final RxInt flowStep = 0.obs;
   final RxString selectedNextJobState = 'completed'.obs;
+  final RxBool showCompletionActions = false.obs;
+  final RxBool submittedOffline = false.obs;
+  final Rxn<JobReportBundle> reportBundle = Rxn<JobReportBundle>();
+  final RxBool loadingSiteReportTemplates = false.obs;
   final RxMap<int, String> textByQuestionId = <int, String>{}.obs;
   final RxMap<int, String> imageByQuestionId = <int, String>{}.obs;
   final Map<int, SignatureController> signatureControllers = {};
@@ -107,6 +112,7 @@ class JobReportController extends GetxController {
     errorMessage.value = '';
     try {
       final bundle = await _mobile.fetchDiaryJobReport(diaryId);
+      reportBundle.value = bundle;
       questions.assignAll(bundle.questions);
       for (final q in bundle.questions) {
         final existing = bundle.answersByQuestionId[q.id];
@@ -267,14 +273,27 @@ class JobReportController extends GetxController {
         if (Get.isRegistered<DiaryEventDetailController>()) {
           await Get.find<DiaryEventDetailController>().load();
         }
-        Get.back();
-        Get.snackbar(
-          'Visit',
-          'Job report submitted and job stage updated.',
-          snackPosition: SnackPosition.BOTTOM,
-          margin: const EdgeInsets.all(16),
-          borderRadius: 12,
-        );
+        if (_shouldOfferCompletionActions()) {
+          submittedOffline.value = false;
+          showCompletionActions.value = true;
+          flowStep.value = 2;
+          Get.snackbar(
+            'Visit',
+            'Job report submitted and job stage updated.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16),
+            borderRadius: 12,
+          );
+        } else {
+          Get.back();
+          Get.snackbar(
+            'Visit',
+            'Job report submitted and job stage updated.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16),
+            borderRadius: 12,
+          );
+        }
       } else {
         if (Get.isRegistered<DiaryEventDetailController>()) {
           final dc = Get.find<DiaryEventDetailController>();
@@ -289,10 +308,18 @@ class JobReportController extends GetxController {
           h.patchDiaryEventInWeekList(diaryId, 'completed');
           h.applyOptimisticTimesheetFromDiaryStatus('completed');
         }
-        Get.back();
+        if (_shouldOfferCompletionActions()) {
+          submittedOffline.value = true;
+          showCompletionActions.value = true;
+          flowStep.value = 2;
+        } else {
+          Get.back();
+        }
         Get.snackbar(
           'Visit',
-          'Job report saved offline — will sync when you are back online.',
+          submittedOffline.value
+              ? 'Job report saved offline — sync before generating certificates or site reports.'
+              : 'Job report saved offline — will sync when you are back online.',
           snackPosition: SnackPosition.BOTTOM,
           margin: const EdgeInsets.all(16),
           borderRadius: 12,
@@ -329,4 +356,108 @@ class JobReportController extends GetxController {
   }
 
   TextEditingController? textControllerFor(int questionId) => textControllers[questionId];
+
+  bool _shouldOfferCompletionActions() {
+    if (selectedNextJobState.value != 'completed') return false;
+    final bundle = reportBundle.value;
+    if (bundle?.isQuotationVisit == true) return false;
+    final customerId = bundle?.customerId;
+    return customerId != null && customerId > 0 && bundle!.jobId > 0;
+  }
+
+  Map<String, dynamic> completionContextArgs() {
+    final bundle = reportBundle.value;
+    return <String, dynamic>{
+      'customerId': bundle?.customerId,
+      'workAddressId': bundle?.workAddressId,
+      'jobId': bundle?.jobId,
+      'jobNumber': bundle?.jobNumber,
+      'customerName': bundle?.customerFullName,
+      'jobTitle': bundle?.jobTitle,
+    };
+  }
+
+  void finishCompletionFlow() {
+    Get.back();
+  }
+
+  Future<void> openCertificatePicker() async {
+    if (submittedOffline.value) {
+      Get.snackbar(
+        'Offline',
+        'Sync your job report before generating a certificate.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+      return;
+    }
+    final args = completionContextArgs();
+    if (args['customerId'] == null) return;
+    await Get.toNamed(AppRoutes.certificateTypePicker, arguments: args);
+  }
+
+  Future<List<Map<String, dynamic>>> loadSiteReportTemplates() async {
+    loadingSiteReportTemplates.value = true;
+    try {
+      return await _mobile.fetchMobileSiteReportTemplates();
+    } finally {
+      loadingSiteReportTemplates.value = false;
+    }
+  }
+
+  Future<void> createSiteReportWithTemplate(int templateId) async {
+    if (submittedOffline.value) {
+      Get.snackbar(
+        'Offline',
+        'Sync your job report before generating a site report.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+      return;
+    }
+    final bundle = reportBundle.value;
+    final customerId = bundle?.customerId;
+    if (customerId == null || customerId <= 0) return;
+    try {
+      final res = await _mobile.createSiteReport(
+        customerId: customerId,
+        templateId: templateId,
+        workAddressId: bundle?.workAddressId,
+        jobId: bundle?.jobId,
+      );
+      final report = res['report'];
+      final reportMap = report is Map ? Map<String, dynamic>.from(report) : null;
+      final reportId = reportMap?['id'];
+      final rid = reportId is int ? reportId : (reportId is num ? reportId.toInt() : null);
+      if (rid == null) {
+        throw Exception('Site report was created but no id was returned.');
+      }
+      await Get.toNamed(
+        AppRoutes.siteReportEditor,
+        arguments: <String, dynamic>{
+          'customer_id': customerId,
+          'work_address_id': bundle?.workAddressId,
+          'report_id': rid,
+        },
+      );
+    } on ApiException catch (e) {
+      Get.snackbar(
+        'Site report',
+        e.message,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Site report',
+        e.toString(),
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    }
+  }
 }

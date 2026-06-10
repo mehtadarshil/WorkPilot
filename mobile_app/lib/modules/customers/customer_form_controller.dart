@@ -100,7 +100,7 @@ class CustomerFormController extends GetxController {
       if (postcode.text.trim().isNotEmpty) 'postcode': postcode.text.trim(),
       if (landline.text.trim().isNotEmpty) 'landline': landline.text.trim(),
       if (country.text.trim().isNotEmpty) 'country': country.text.trim(),
-      if (notes.text.trim().isNotEmpty) 'notes': notes.text.trim(),
+      'notes': notes.text.trim(),
       'status': status.value,
       'customer_type_id': customerTypeId.value,
     };

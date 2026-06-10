@@ -18,6 +18,7 @@ class OpenJobSummary {
     required this.updatedAt,
     this.startDate,
     this.deadline,
+    this.chargeType,
   });
 
   factory OpenJobSummary.fromJson(Map<String, dynamic> json) {
@@ -39,6 +40,7 @@ class OpenJobSummary {
       updatedAt: json['updated_at'] as String? ?? '',
       startDate: json['start_date'] as String?,
       deadline: json['deadline'] as String?,
+      chargeType: json['charge_type'] as String?,
     );
   }
 
@@ -59,4 +61,5 @@ class OpenJobSummary {
   final String updatedAt;
   final String? startDate;
   final String? deadline;
+  final String? chargeType;
 }

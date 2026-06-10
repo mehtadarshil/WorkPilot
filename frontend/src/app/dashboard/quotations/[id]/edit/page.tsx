@@ -3,12 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import Image from 'next/image';
+import { ArrowLeft, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
 import ImportCustomerSelect, { type ImportCustomerOption } from '../../../ImportCustomerSelect';
 import WorkAddressSelect from '../../../WorkAddressSelect';
 
-type LineItemForm = { description: string; quantity: number; unit_price: number };
+type LineItemImage = {
+  stored_filename?: string;
+  original_filename: string;
+  content_type: string;
+  byte_size: number;
+  data_url?: string | null;
+  content_base64?: string;
+  filename?: string;
+};
+
+type LineItemForm = { description: string; quantity: number; unit_price: number; images: LineItemImage[] };
 
 interface QuotationDetail {
   id: number;
@@ -26,7 +37,7 @@ interface QuotationDetail {
   billing_address: string | null;
   quotation_work_address_id?: number | null;
   state: string;
-  line_items: { description: string; quantity: number; unit_price: number }[];
+  line_items: { description: string; quantity: number; unit_price: number; images?: LineItemImage[] }[];
 }
 
 type CustomerRow = ImportCustomerOption & { email?: string };
@@ -44,6 +55,28 @@ const QUOTATION_STATES = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'expired', label: 'Expired' },
 ] as const;
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = r.result as string;
+      const i = s.indexOf(',');
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    r.onerror = () => reject(new Error('Could not read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ''));
+    r.onerror = () => reject(new Error('Could not preview file'));
+    r.readAsDataURL(file);
+  });
+}
 
 export default function EditQuotationPage() {
   const router = useRouter();
@@ -67,7 +100,7 @@ export default function EditQuotationPage() {
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [state, setState] = useState('draft');
   const skipNextWorkFetchReset = useRef(false);
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0 }]);
+  const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
 
   const load = useCallback(async () => {
@@ -106,8 +139,9 @@ export default function EditQuotationPage() {
               description: li.description,
               quantity: li.quantity,
               unit_price: li.unit_price,
+              images: li.images ?? [],
             }))
-          : [{ description: '', quantity: 1, unit_price: 0 }];
+          : [{ description: '', quantity: 1, unit_price: 0, images: [] }];
       setLineItems(items);
       const tp =
         q.subtotal > 0 ? Math.round((q.tax_amount / q.subtotal) * 10000) / 100 : 0;
@@ -186,10 +220,43 @@ export default function EditQuotationPage() {
     });
   };
 
-  const addLine = () => setLineItems((p) => [...p, { description: '', quantity: 1, unit_price: 0 }]);
+  const addLine = () => setLineItems((p) => [...p, { description: '', quantity: 1, unit_price: 0, images: [] }]);
   const removeLine = (i: number) => {
     if (lineItems.length <= 1) return;
     setLineItems((p) => p.filter((_, idx) => idx !== i));
+  };
+
+  const addLineImages = async (lineIndex: number, files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const selected = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|gif|webp)$/i.test(f.name));
+    if (selected.length === 0) return;
+    const images = await Promise.all(
+      selected.map(async (file) => ({
+        original_filename: file.name || 'image',
+        filename: file.name || 'image',
+        content_type: file.type || 'image/jpeg',
+        byte_size: file.size,
+        content_base64: await readFileAsBase64(file),
+        data_url: await readFileAsDataUrl(file),
+      })),
+    );
+    setLineItems((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+      next[lineIndex] = { ...current, images: [...(current.images ?? []), ...images].slice(0, 8) };
+      return next;
+    });
+  };
+
+  const removeLineImage = (lineIndex: number, imageIndex: number) => {
+    setLineItems((prev) => {
+      const next = [...prev];
+      const current = next[lineIndex];
+      if (!current) return prev;
+      next[lineIndex] = { ...current, images: current.images.filter((_, idx) => idx !== imageIndex) };
+      return next;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -221,6 +288,14 @@ export default function EditQuotationPage() {
           description: li.description.trim(),
           quantity: li.quantity,
           unit_price: li.unit_price,
+          images: (li.images ?? []).map((image) => ({
+            stored_filename: image.stored_filename,
+            original_filename: image.original_filename,
+            content_type: image.content_type,
+            byte_size: image.byte_size,
+            filename: image.filename,
+            content_base64: image.content_base64,
+          })),
         })),
         tax_percentage: taxPercentage,
       };
@@ -504,8 +579,11 @@ export default function EditQuotationPage() {
                         type="number"
                         step="0.01"
                         min={0}
-                        value={li.quantity}
-                        onChange={(e) => updateLine(i, 'quantity', parseFloat(e.target.value) || 0)}
+                        value={li.quantity === 0 ? '' : li.quantity}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          updateLine(i, 'quantity', isNaN(val) ? 0 : val);
+                        }}
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>
@@ -515,8 +593,11 @@ export default function EditQuotationPage() {
                         type="number"
                         step="0.01"
                         min={0}
-                        value={li.unit_price}
-                        onChange={(e) => updateLine(i, 'unit_price', parseFloat(e.target.value) || 0)}
+                        value={li.unit_price === 0 ? '' : li.unit_price}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                          updateLine(i, 'unit_price', isNaN(val) ? 0 : val);
+                        }}
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>
@@ -529,6 +610,43 @@ export default function EditQuotationPage() {
                     >
                       <Trash2 className="size-4" />
                     </button>
+                    <div className="sm:col-span-4">
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {(li.images ?? []).map((image, imageIndex) => (
+                          <div key={`${image.stored_filename ?? image.original_filename}-${imageIndex}`} className="group relative h-20 w-24 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                            {image.data_url ? (
+                              <Image src={image.data_url} alt={image.original_filename} fill unoptimized className="object-cover" />
+                            ) : (
+                              <div className="flex h-full items-center justify-center px-2 text-center text-[10px] text-slate-400">
+                                {image.original_filename}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeLineImage(i, imageIndex)}
+                              className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-rose-600 opacity-0 shadow-sm transition group-hover:opacity-100"
+                              aria-label="Remove image"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <label className="inline-flex h-20 w-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-[11px] font-semibold text-slate-500 hover:border-[#14B8A6] hover:text-[#14B8A6]">
+                          <ImagePlus className="size-4" />
+                          Add photos
+                          <input
+                            type="file"
+                            accept="image/*,.heic,.heif"
+                            multiple
+                            className="hidden"
+                            onChange={(event) => {
+                              void addLineImages(i, event.target.files);
+                              event.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

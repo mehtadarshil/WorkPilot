@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import 'customer_tabs/helpers.dart';
@@ -39,6 +40,9 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
   final _mobile = TextEditingController();
   final _email = TextEditingController();
   final _uprn = TextEditingController();
+  final _keyInfo = TextEditingController();
+  final _latitude = TextEditingController();
+  final _longitude = TextEditingController();
 
   String _branchName = '';
   String _title = 'Mr';
@@ -77,6 +81,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
       _mobile.text = ctStr(e, 'mobile');
       _email.text = ctStr(e, 'email');
       _uprn.text = ctStr(e, 'uprn');
+      _keyInfo.text = ctStr(e, 'key_info');
       final t = ctStr(e, 'title');
       _title = t.isEmpty ? 'Mr' : (_titles.contains(t) ? t : 'Mr');
       _prefersPhone = e['prefers_phone'] == true;
@@ -84,6 +89,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
       _prefersEmail = e['prefers_email'] == true;
       _prefersLetter = e['prefers_letter'] == true;
       _isActive = e['is_active'] != false;
+      if (e['latitude'] != null) _latitude.text = e['latitude'].toString();
+      if (e['longitude'] != null) _longitude.text = e['longitude'].toString();
     }
     _loadBranches();
   }
@@ -136,6 +143,9 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
     _mobile.dispose();
     _email.dispose();
     _uprn.dispose();
+    _keyInfo.dispose();
+    _latitude.dispose();
+    _longitude.dispose();
     super.dispose();
   }
 
@@ -167,7 +177,10 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
       'prefers_email': _prefersEmail,
       'prefers_letter': _prefersLetter,
       'uprn': _trimOrNull(_uprn.text),
+      'key_info': _keyInfo.text.trim(),
       'is_active': _isActive,
+      'latitude': _latitude.text.trim().isNotEmpty ? double.tryParse(_latitude.text.trim()) : null,
+      'longitude': _longitude.text.trim().isNotEmpty ? double.tryParse(_longitude.text.trim()) : null,
     };
   }
 
@@ -286,7 +299,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                             child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))),
                           )
                         : DropdownButtonFormField<String>(
-                            value: _branchName.isEmpty ? '' : _branchName,
+                            initialValue: _branchName.isEmpty ? '' : _branchName,
                             decoration: customerInputDecoration(''),
                             items: _branchDropdownItems(),
                             onChanged: _saving ? null : (v) => setState(() => _branchName = v ?? ''),
@@ -297,6 +310,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _landlord,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('Please Enter Landlord'),
                     ),
@@ -313,6 +328,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _name,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('e.g. Main site, Flat 2, Office'),
                     ),
@@ -322,6 +339,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _addressLine1,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),
@@ -331,6 +350,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _addressLine2,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),
@@ -340,6 +361,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _addressLine3,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),
@@ -349,6 +372,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _town,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),
@@ -358,6 +383,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _county,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('County / city'),
                     ),
@@ -380,6 +407,65 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('Unique property reference'),
                     ),
+                    const SizedBox(height: 12),
+                    Text('KEY INFO', style: _labelStyle()),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _keyInfo,
+                      enabled: !_saving,
+                      maxLines: 5,
+                      minLines: 3,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: customerInputDecoration(
+                        'Access notes, parking, alarm codes, hazards, preferred entrance...',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('COORDINATES (OPTIONAL)', style: _labelStyle()),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Add GPS coordinates for precise map navigation',
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.4)),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('LATITUDE', style: _labelStyle()),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: _latitude,
+                                enabled: !_saving,
+                                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                style: GoogleFonts.inter(color: Colors.white),
+                                decoration: customerInputDecoration('e.g. 51.5074'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('LONGITUDE', style: _labelStyle()),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: _longitude,
+                                enabled: !_saving,
+                                keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                                style: GoogleFonts.inter(color: Colors.white),
+                                decoration: customerInputDecoration('e.g. -0.1278'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -391,7 +477,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     Text('TITLE', style: _labelStyle()),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
-                      value: _title,
+                      initialValue: _title,
                       decoration: customerInputDecoration(''),
                       items: _titles.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
                       onChanged: _saving ? null : (v) => setState(() => _title = v ?? 'Mr'),
@@ -402,6 +488,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _firstName,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('First name'),
                     ),
@@ -411,6 +499,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _surname,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),
@@ -420,6 +510,8 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                     TextField(
                       controller: _companyName,
                       enabled: !_saving,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: const [capitalizeWordsFormatter],
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration(''),
                     ),

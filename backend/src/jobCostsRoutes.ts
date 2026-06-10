@@ -27,6 +27,17 @@ type CostLine = {
   proof_files?: ProofFile[];
 };
 
+type RateConfig = {
+  default_hourly_rate: number;
+  default_rate_name: string | null;
+  travel_hourly_rate: number;
+  on_site_hourly_rate: number;
+  travel_override: number | null;
+  on_site_override: number | null;
+  updated_at: string | null;
+  updated_by_name: string | null;
+};
+
 type ProofFile = {
   stored_filename: string;
   original_filename: string;
@@ -95,6 +106,16 @@ async function ensureSchema(pool: Pool): Promise<void> {
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_job_cost_entries_job_id ON job_cost_entries(job_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_job_cost_entries_diary_event_id ON job_cost_entries(diary_event_id) WHERE diary_event_id IS NOT NULL');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_cost_rate_overrides (
+      job_id INTEGER PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+      travel_hourly_rate DECIMAL(14,2),
+      on_site_hourly_rate DECIMAL(14,2),
+      notes TEXT,
+      updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }
 
 async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, write = false): Promise<boolean> {
@@ -121,7 +142,46 @@ async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, wri
   return (r.rowCount ?? 0) > 0;
 }
 
+async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> {
+  const rateResult = await pool.query(
+    `SELECT COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
+            lr.name AS default_rate_name,
+            o.travel_hourly_rate,
+            o.on_site_hourly_rate,
+            o.updated_at,
+            COALESCE(u.full_name, u.email) AS updated_by_name
+     FROM jobs j
+     LEFT JOIN customers c ON c.id = j.customer_id
+     LEFT JOIN LATERAL (
+       SELECT name, basic_rate_per_hr
+       FROM price_book_labour_rates
+       WHERE price_book_id = c.price_book_id
+       ORDER BY id ASC
+       LIMIT 1
+     ) lr ON true
+     LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
+     LEFT JOIN users u ON u.id = o.updated_by
+     WHERE j.id = $1`,
+    [jobId],
+  );
+  const row = rateResult.rows[0] ?? {};
+  const defaultRate = n(row.default_hourly_rate);
+  const travelOverride = row.travel_hourly_rate == null ? null : n(row.travel_hourly_rate);
+  const onSiteOverride = row.on_site_hourly_rate == null ? null : n(row.on_site_hourly_rate);
+  return {
+    default_hourly_rate: defaultRate,
+    default_rate_name: row.default_rate_name ? String(row.default_rate_name) : null,
+    travel_hourly_rate: travelOverride ?? defaultRate,
+    on_site_hourly_rate: onSiteOverride ?? defaultRate,
+    travel_override: travelOverride,
+    on_site_override: onSiteOverride,
+    updated_at: iso(row.updated_at),
+    updated_by_name: row.updated_by_name ? String(row.updated_by_name) : null,
+  };
+}
+
 async function buildJobCostPayload(pool: Pool, jobId: number) {
+  const rateConfig = await getJobRateConfig(pool, jobId);
   const manual = await pool.query(
     `SELECT e.id, e.cost_type, e.description, e.amount, e.currency, e.notes, e.proof_files, e.created_at,
             COALESCE(u.full_name, u.email) AS created_by_name
@@ -135,20 +195,10 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
   const timesheet = await pool.query(
     `SELECT te.id, te.clock_in, te.clock_out, te.segment_type,
             EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::numeric AS duration_seconds,
-            o.full_name AS officer_full_name,
-            COALESCE(lr.basic_rate_per_hr, 0)::numeric AS hourly_rate
+            o.full_name AS officer_full_name
      FROM timesheet_entries te
      INNER JOIN diary_events d ON d.id = te.diary_event_id
-     INNER JOIN jobs j ON j.id = d.job_id
      LEFT JOIN officers o ON o.id = te.officer_id
-     LEFT JOIN customers c ON c.id = j.customer_id
-     LEFT JOIN LATERAL (
-       SELECT basic_rate_per_hr
-       FROM price_book_labour_rates
-       WHERE price_book_id = c.price_book_id
-       ORDER BY id ASC
-       LIMIT 1
-     ) lr ON true
      WHERE d.job_id = $1
      ORDER BY te.clock_in ASC`,
     [jobId],
@@ -207,11 +257,12 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
   for (const row of timesheet.rows) {
     const seconds = n(row.duration_seconds);
     const hours = seconds / 3600;
-    const rate = n(row.hourly_rate);
+    const isTravel = row.segment_type === 'travelling';
+    const rate = isTravel ? rateConfig.travel_hourly_rate : rateConfig.on_site_hourly_rate;
     lines.push({
       id: `timesheet-${row.id}`,
       source: 'timesheet',
-      label: `${row.segment_type === 'travelling' ? 'Travel time' : 'On-site time'}${row.officer_full_name ? ` · ${row.officer_full_name}` : ''}`,
+      label: `${isTravel ? 'Travel time' : 'On-site time'}${row.officer_full_name ? ` · ${row.officer_full_name}` : ''}`,
       description: `${iso(row.clock_in) ?? ''}${row.clock_out ? ` to ${iso(row.clock_out) ?? ''}` : ' to open'}`,
       quantity: hours,
       unit_amount: rate,
@@ -276,6 +327,7 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
   }, {});
 
   return {
+    rate_config: rateConfig,
     summary: {
       total: Math.round(lines.reduce((acc, line) => acc + line.amount, 0) * 100) / 100,
       manual_total: bySource.manual ?? 0,
@@ -305,6 +357,58 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
       return res.json(await buildJobCostPayload(pool, jobId));
     } catch (error) {
       console.error('Get job costs error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/jobs/:id/costs/rates', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    if (jobId == null) return res.status(400).json({ message: 'Invalid job id' });
+    const user = (req as AuthReq).user!;
+    const body = req.body as Record<string, unknown>;
+    if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'PATCH')) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+
+    const parseNullableRate = (raw: unknown): number | null | undefined => {
+      if (raw === undefined) return undefined;
+      if (raw === null || raw === '') return null;
+      const value = typeof raw === 'number' ? raw : parseFloat(String(raw));
+      if (!Number.isFinite(value) || value < 0) return undefined;
+      return Math.round(value * 100) / 100;
+    };
+    const travelRate = parseNullableRate(body.travel_hourly_rate);
+    const onSiteRate = parseNullableRate(body.on_site_hourly_rate);
+    const reset = body.reset_to_default === true;
+
+    if (!reset && travelRate === undefined && onSiteRate === undefined) {
+      return res.status(400).json({ message: 'Provide a valid travel or on-site hourly rate' });
+    }
+
+    try {
+      if (!(await canAccessJob(pool, jobId, user, true))) return res.status(404).json({ message: 'Job not found' });
+      if (reset) {
+        await pool.query('DELETE FROM job_cost_rate_overrides WHERE job_id = $1', [jobId]);
+      } else {
+        const existing = await pool.query('SELECT travel_hourly_rate, on_site_hourly_rate FROM job_cost_rate_overrides WHERE job_id = $1', [jobId]);
+        const currentTravel = existing.rows[0]?.travel_hourly_rate == null ? null : n(existing.rows[0].travel_hourly_rate);
+        const currentOnSite = existing.rows[0]?.on_site_hourly_rate == null ? null : n(existing.rows[0].on_site_hourly_rate);
+        const nextTravel = travelRate === undefined ? currentTravel : travelRate;
+        const nextOnSite = onSiteRate === undefined ? currentOnSite : onSiteRate;
+        await pool.query(
+          `INSERT INTO job_cost_rate_overrides (job_id, travel_hourly_rate, on_site_hourly_rate, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, NOW())
+           ON CONFLICT (job_id) DO UPDATE SET
+             travel_hourly_rate = EXCLUDED.travel_hourly_rate,
+             on_site_hourly_rate = EXCLUDED.on_site_hourly_rate,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = NOW()`,
+          [jobId, nextTravel, nextOnSite, user.userId],
+        );
+      }
+      return res.json({ rate_config: await getJobRateConfig(pool, jobId) });
+    } catch (error) {
+      console.error('Update job cost rates error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });

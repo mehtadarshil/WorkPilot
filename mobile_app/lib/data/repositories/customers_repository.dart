@@ -186,7 +186,7 @@ class CustomersRepository extends GetxService {
     final res = await _api.get<Map<String, dynamic>>(
       '/customers/$customerId/contacts',
       queryParameters: <String, dynamic>{
-        if (search != null && search!.trim().isNotEmpty) 'search': search!.trim(),
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
         if (workAddressId != null) 'work_address_id': workAddressId,
       },
     );
@@ -212,6 +212,10 @@ class CustomersRepository extends GetxService {
     );
   }
 
+  Future<void> deleteContact(int customerId, int contactId) async {
+    await _api.delete<void>('/customers/$customerId/contacts/$contactId');
+  }
+
   Future<List<Map<String, dynamic>>> getBranches(
     int customerId, {
     String? search,
@@ -219,7 +223,7 @@ class CustomersRepository extends GetxService {
     final res = await _api.get<Map<String, dynamic>>(
       '/customers/$customerId/branches',
       queryParameters: <String, dynamic>{
-        if (search != null && search!.trim().isNotEmpty) 'search': search!.trim(),
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
       },
     );
     final raw = res.data?['branches'];
@@ -256,8 +260,8 @@ class CustomersRepository extends GetxService {
     final res = await _api.get<Map<String, dynamic>>(
       '/customers/$customerId/work-addresses',
       queryParameters: <String, dynamic>{
-        if (status != null && status!.trim().isNotEmpty) 'status': status!.trim(),
-        if (search != null && search!.trim().isNotEmpty) 'search': search!.trim(),
+        if (status != null && status.trim().isNotEmpty) 'status': status.trim(),
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
       },
     );
     final raw = res.data?['work_addresses'];
@@ -416,10 +420,10 @@ class CustomersRepository extends GetxService {
     final res = await _api.get<Map<String, dynamic>>(
       '/customers/$customerId/communications',
       queryParameters: <String, dynamic>{
-        if (search != null && search!.trim().isNotEmpty) 'search': search!.trim(),
-        if (type != null && type!.trim().isNotEmpty) 'type': type!.trim(),
-        if (fromDate != null && fromDate!.trim().isNotEmpty) 'from_date': fromDate!.trim(),
-        if (toDate != null && toDate!.trim().isNotEmpty) 'to_date': toDate!.trim(),
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (type != null && type.trim().isNotEmpty) 'type': type.trim(),
+        if (fromDate != null && fromDate.trim().isNotEmpty) 'from_date': fromDate.trim(),
+        if (toDate != null && toDate.trim().isNotEmpty) 'to_date': toDate.trim(),
         if (workAddressId != null) 'work_address_id': workAddressId,
       },
     );
@@ -479,5 +483,46 @@ class CustomersRepository extends GetxService {
 
   Future<void> deleteSpecificNote(int customerId, int noteId) async {
     await _api.delete<void>('/customers/$customerId/specific-notes/$noteId');
+  }
+
+  Future<List<Map<String, dynamic>>> uploadSpecificNoteImage(
+    int customerId,
+    int noteId, {
+    required String filename,
+    required String contentType,
+    required List<int> bytes,
+  }) async {
+    final res = await _api.post<Map<String, dynamic>>(
+      '/customers/$customerId/specific-notes/$noteId/media',
+      data: <String, dynamic>{
+        'filename': filename,
+        'content_type': contentType.trim().isEmpty ? 'image/jpeg' : contentType.trim(),
+        'content_base64': base64Encode(bytes),
+      },
+    );
+    final raw = res.data?['media'];
+    if (raw is! List) return [];
+    return raw
+        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .toList();
+  }
+
+  Future<void> deleteSpecificNoteMedia(
+    int customerId,
+    int noteId,
+    String storedFilename,
+  ) async {
+    await _api.delete<void>(
+      '/customers/$customerId/specific-notes/$noteId/media/${Uri.encodeComponent(storedFilename)}',
+    );
+  }
+
+  Future<Uint8List> getSpecificNoteMediaBytes(String filePath) async {
+    final path = filePath.startsWith('/api/') ? filePath.substring(4) : filePath;
+    final res = await _api.getBytes(path);
+    final d = res.data;
+    if (d == null) return Uint8List(0);
+    if (d is Uint8List) return d;
+    return Uint8List.fromList(List<int>.from(d));
   }
 }

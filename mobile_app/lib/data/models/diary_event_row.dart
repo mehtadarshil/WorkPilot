@@ -19,6 +19,7 @@ class DiaryEventRow {
     this.isQuotationVisit = false,
     this.jobNumber,
     this.description,
+    this.chargeType,
   });
 
   factory DiaryEventRow.fromJson(Map<String, dynamic> json) {
@@ -48,6 +49,7 @@ class DiaryEventRow {
       isQuotationVisit: json['is_quotation_visit'] == true,
       jobNumber: json['job_number'] as String?,
       description: json['description'] as String?,
+      chargeType: json['charge_type'] as String?,
     );
   }
 
@@ -69,6 +71,7 @@ class DiaryEventRow {
   final bool isQuotationVisit;
   final String? jobNumber;
   final String? description;
+  final String? chargeType;
 
   String get displayContactName {
     final s = siteContactName?.trim();
@@ -104,6 +107,7 @@ class DiaryEventRow {
         'is_quotation_visit': isQuotationVisit,
         if (jobNumber != null) 'job_number': jobNumber,
         if (description != null) 'description': description,
+        if (chargeType != null) 'charge_type': chargeType,
       };
 
   DiaryEventRow copyWith({
@@ -129,6 +133,7 @@ class DiaryEventRow {
       isQuotationVisit: isQuotationVisit,
       jobNumber: jobNumber,
       description: description,
+      chargeType: chargeType ?? this.chargeType,
     );
   }
 }

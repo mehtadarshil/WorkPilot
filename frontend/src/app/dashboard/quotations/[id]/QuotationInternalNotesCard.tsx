@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Lock, Trash2, ImagePlus, X } from 'lucide-react';
+import { Lock, Trash2, ImagePlus, X, Pencil, Check } from 'lucide-react';
 import dayjs from 'dayjs';
-import { postJson, deleteRequest, getBlob } from '../../../apiClient';
+import { postJson, patchJson, deleteRequest, getBlob } from '../../../apiClient';
 
 export type QuotationInternalNoteMedia = {
   stored_filename: string;
@@ -84,21 +84,89 @@ function InternalNoteImage({ filePath, alt, token }: { filePath: string; alt: st
   );
 }
 
+/** Inline edit row for a single note */
+function NoteEditRow({
+  note,
+  quotationId,
+  authToken,
+  onSaved,
+  onCancel,
+}: {
+  note: QuotationInternalNote;
+  quotationId: string;
+  authToken: string;
+  onSaved: (noteId: number, newBody: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(note.body);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!text.trim()) { setErr('Note cannot be empty'); return; }
+    setSaving(true);
+    setErr(null);
+    try {
+      await patchJson(`/quotations/${quotationId}/internal-notes/${note.id}`, { body: text.trim() }, authToken);
+      onSaved(note.id, text.trim());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={4}
+        className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-300/30"
+        disabled={saving}
+      />
+      {err && <p className="text-xs font-medium text-rose-600">{err}</p>}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+        >
+          <Check className="size-3.5" />
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={saving}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <X className="size-3.5" />
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   quotationId: string;
   notes: QuotationInternalNote[];
   authToken: string;
   onAppendNote: (note: QuotationInternalNote) => void;
   onRemoveNote: (noteId: number) => void;
+  onUpdateNote: (noteId: number, newBody: string) => void;
 };
 
 type PendingImage = { id: string; file: File; previewUrl: string };
 
-export default function QuotationInternalNotesCard({ quotationId, notes, authToken, onAppendNote, onRemoveNote }: Props) {
+export default function QuotationInternalNotesCard({ quotationId, notes, authToken, onAppendNote, onRemoveNote, onUpdateNote }: Props) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<PendingImage[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const addPendingFiles = useCallback((list: FileList | File[]) => {
@@ -271,39 +339,65 @@ export default function QuotationInternalNotesCard({ quotationId, notes, authTok
         {notes.length === 0 ? (
           <p className="text-sm text-slate-500">No internal notes yet.</p>
         ) : (
-          <ul className="max-h-96 space-y-3 overflow-y-auto pr-1">
+          <ul className="max-h-[600px] space-y-3 overflow-y-auto pr-1">
             {notes.map((n) => (
               <li key={n.id} className="rounded-lg border border-amber-100 bg-white/90 p-3 text-sm shadow-sm">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    {n.body.trim() ? <p className="whitespace-pre-wrap text-slate-800">{n.body}</p> : null}
-                    {n.media && n.media.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {n.media.map((m) => (
-                          <InternalNoteImage
-                            key={m.stored_filename}
-                            filePath={m.file_path}
-                            alt={m.original_filename || 'Attachment'}
-                            token={authToken}
-                          />
-                        ))}
+                {editingId === n.id ? (
+                  <NoteEditRow
+                    note={n}
+                    quotationId={quotationId}
+                    authToken={authToken}
+                    onSaved={(noteId, newBody) => {
+                      onUpdateNote(noteId, newBody);
+                      setEditingId(null);
+                    }}
+                    onCancel={() => setEditingId(null)}
+                  />
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        {n.body.trim() ? <p className="whitespace-pre-wrap text-slate-800">{n.body}</p> : null}
+                        {n.media && n.media.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {n.media.map((m) => (
+                              <InternalNoteImage
+                                key={m.stored_filename}
+                                filePath={m.file_path}
+                                alt={m.original_filename || 'Attachment'}
+                                token={authToken}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    title="Delete note"
-                    disabled={deletingId === n.id}
-                    onClick={() => removeNote(n.id)}
-                    className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-                <p className="mt-2 text-[11px] font-medium text-slate-400">
-                  {dayjs(n.created_at).format('D MMM YYYY, HH:mm')}
-                  {n.created_by_label ? ` · ${n.created_by_label}` : ''}
-                </p>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          title="Edit note"
+                          disabled={deletingId === n.id}
+                          onClick={() => setEditingId(n.id)}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50"
+                        >
+                          <Pencil className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete note"
+                          disabled={deletingId === n.id}
+                          onClick={() => removeNote(n.id)}
+                          className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[11px] font-medium text-slate-400">
+                      {dayjs(n.created_at).format('D MMM YYYY, HH:mm')}
+                      {n.created_by_label ? ` · ${n.created_by_label}` : ''}
+                    </p>
+                  </>
+                )}
               </li>
             ))}
           </ul>

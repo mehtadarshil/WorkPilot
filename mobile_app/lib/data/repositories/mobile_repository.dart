@@ -9,6 +9,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/services/storage_service.dart';
 import '../models/diary_event_detail.dart';
 import '../models/diary_event_row.dart';
+import '../models/electrical_certificate_models.dart';
 import '../models/job_report_history_models.dart';
 import '../models/job_report_models.dart';
 import '../models/mobile_home_response.dart';
@@ -742,16 +743,99 @@ class MobileRepository extends BaseRepository {
   Future<Map<String, dynamic>> createSiteReport({
     required int customerId,
     required int templateId,
+    int? workAddressId,
+    int? jobId,
+    String? reportTitle,
   }) async {
     final res = await api.post<Map<String, dynamic>>(
       '/customers/$customerId/site-reports',
       data: <String, dynamic>{
         'template_id': templateId,
-        'work_address_id': null,
-        'job_id': null,
+        if (workAddressId != null) 'work_address_id': workAddressId,
+        if (jobId != null) 'job_id': jobId,
+        if (reportTitle != null && reportTitle.trim().isNotEmpty)
+          'report_title': reportTitle.trim(),
       },
     );
     return Map<String, dynamic>.from(res.data ?? {});
+  }
+
+  // ─── Electrical certificates (job completion) ───
+  Future<ElectricalCertificate> createElectricalCertificate({
+    required int customerId,
+    required String typeSlug,
+    int? workAddressId,
+    int? jobId,
+    String? jobNumber,
+  }) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/electrical-certificates',
+      data: <String, dynamic>{
+        'customer_id': customerId,
+        'type_slug': typeSlug,
+        if (workAddressId != null) 'work_address_id': workAddressId,
+        if (jobId != null) 'job_id': jobId,
+        if (jobNumber != null && jobNumber.trim().isNotEmpty) 'job_number': jobNumber.trim(),
+      },
+    );
+    return ElectricalCertificate.fromJson(Map<String, dynamic>.from(res.data ?? {}));
+  }
+
+  Future<ElectricalCertificate> fetchElectricalCertificate(int id) async {
+    final res = await api.get<Map<String, dynamic>>('/electrical-certificates/$id');
+    return ElectricalCertificate.fromJson(Map<String, dynamic>.from(res.data ?? {}));
+  }
+
+  Future<ElectricalCertificate> patchElectricalCertificate(
+    int id, {
+    Map<String, dynamic>? document,
+    String? status,
+  }) async {
+    final res = await api.patch<Map<String, dynamic>>(
+      '/electrical-certificates/$id',
+      data: <String, dynamic>{
+        if (document != null) 'document': document,
+        if (status != null) 'status': status,
+      },
+    );
+    return ElectricalCertificate.fromJson(Map<String, dynamic>.from(res.data ?? {}));
+  }
+
+  Future<List<ValidationIssue>> validateElectricalCertificate(int id) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/electrical-certificates/$id/validate',
+      data: const <String, dynamic>{},
+    );
+    final raw = res.data?['issues'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => ValidationIssue.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  Future<List<int>> fetchElectricalCertificatePdf(int id) async {
+    final res = await api.getBytes('/electrical-certificates/$id/pdf');
+    return res.data ?? [];
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCertificateEngineers() async {
+    final res = await api.get<Map<String, dynamic>>('/electrical-certificates/engineers');
+    final raw = res.data?['engineers'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMobileSiteReportTemplates() async {
+    final res = await api.get<Map<String, dynamic>>('/mobile/site-report-templates');
+    final raw = res.data?['templates'];
+    if (raw is! List) return [];
+    return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
+  }
+
+  Future<JobCompletionDocuments> fetchJobCompletionDocuments(int jobId) async {
+    final res = await api.get<Map<String, dynamic>>('/mobile/jobs/$jobId/completion-documents');
+    return JobCompletionDocuments.fromJson(Map<String, dynamic>.from(res.data ?? {}));
   }
 
   Future<void> postSiteReportTemplate(Map<String, dynamic> payload) async {

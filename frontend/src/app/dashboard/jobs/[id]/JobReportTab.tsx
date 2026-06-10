@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getJson } from '../../../apiClient';
 import { format } from 'date-fns';
 import { ClipboardCheck, FileImage, FileVideo, Paperclip, User, Calendar } from 'lucide-react';
+import AuthenticatedDiaryFilePreview from './AuthenticatedDiaryFilePreview';
 
 interface ReportAnswer {
   question_id: number;
@@ -36,69 +37,6 @@ interface Submission {
   officer_full_name: string | null;
   answers: ReportAnswer[];
   extra_submissions: ExtraSubmission[];
-}
-
-const DEFAULT_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
-function fileUrlFromApiPath(filePath: string) {
-  const base = DEFAULT_API_BASE.replace(/\/$/, '');
-  return `${base}${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
-}
-
-function AuthenticatedFilePreview({ filePath, contentType, kind, token }: { filePath: string; contentType: string; kind: string; token: string | null }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const lastBlobRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setObjectUrl(null);
-    setFailed(false);
-    if (lastBlobRef.current) {
-      URL.revokeObjectURL(lastBlobRef.current);
-      lastBlobRef.current = null;
-    }
-    void (async () => {
-      try {
-        const r = await fetch(fileUrlFromApiPath(filePath), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!r.ok) throw new Error('fetch failed');
-        const blob = await r.blob();
-        if (cancelled) return;
-        const u = URL.createObjectURL(blob);
-        lastBlobRef.current = u;
-        setObjectUrl(u);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (lastBlobRef.current) {
-        URL.revokeObjectURL(lastBlobRef.current);
-        lastBlobRef.current = null;
-      }
-    };
-  }, [filePath, token]);
-
-  if (failed) {
-    return <span className="text-xs text-rose-600">Could not load</span>;
-  }
-  if (!objectUrl) {
-    return <span className="text-xs text-slate-400">Loading…</span>;
-  }
-  if (kind === 'video' || contentType.startsWith('video/')) {
-    return (
-      <video
-        src={objectUrl}
-        controls
-        className="max-h-64 w-full max-w-md rounded border border-slate-200 bg-black"
-      />
-    );
-  }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={objectUrl} alt="" className="max-h-52 rounded-md border border-slate-200 object-contain bg-slate-50" />;
 }
 
 function renderAnswer(q: { question_type: string; prompt: string }, raw: string | undefined): ReactNode {
@@ -270,7 +208,7 @@ export default function JobReportTab({ jobId, token }: Props) {
                                 <span className="truncate max-w-[200px]">{m.original_filename}</span>
                               </div>
                             )}
-                            <AuthenticatedFilePreview
+                            <AuthenticatedDiaryFilePreview
                               filePath={m.file_path}
                               contentType={m.content_type}
                               kind={m.kind}

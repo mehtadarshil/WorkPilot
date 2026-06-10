@@ -53,6 +53,10 @@ import '../../modules/sites/sites_list_view.dart';
 import '../../modules/site_reports/site_reports_list_binding.dart';
 import '../../modules/site_reports/site_reports_list_view.dart';
 import '../../modules/site_reports/site_report_editor_view.dart';
+import '../../modules/certificates/certificate_editor_binding.dart';
+import '../../modules/certificates/certificate_editor_view.dart';
+import '../../modules/certificates/certificate_type_picker_binding.dart';
+import '../../modules/certificates/certificate_type_picker_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -198,6 +202,16 @@ class AppPages {
     GetPage<void>(
       name: AppRoutes.siteReportEditor,
       page: () => const SiteReportEditorView(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.certificateTypePicker,
+      page: () => const CertificateTypePickerView(),
+      binding: CertificateTypePickerBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.certificateEditor,
+      page: () => const CertificateEditorView(),
+      binding: CertificateEditorBinding(),
     ),
   ];
 }

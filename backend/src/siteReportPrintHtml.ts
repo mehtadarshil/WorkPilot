@@ -59,10 +59,18 @@ function passFailLabel(raw: string): string {
   return m[raw] ?? raw;
 }
 
+function formatDateDdMmYyyy(value: string): string {
+  const t = value.trim();
+  // Accept YYYY-MM-DD (HTML date input) and YYYY/MM/DD; pass through other formats unchanged.
+  const m = /^(\d{4})[-/](\d{2})[-/](\d{2})$/.exec(t);
+  if (!m) return value;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 function formatFieldValue(field: SiteReportTemplateField, value: string): string {
   if (field.type === 'yes_no_na') return value ? yesNoLabel(value) : '—';
   if (field.type === 'pass_fail') return value ? passFailLabel(value) : '—';
-  if (field.type === 'date') return value ? escapeHtml(value) : '—';
+  if (field.type === 'date') return value ? escapeHtml(formatDateDdMmYyyy(value)) : '—';
   if (field.type === 'textarea') return value ? nl2br(value) : '—';
   if (field.type === 'text') return value ? escapeHtml(value) : '—';
   return '';

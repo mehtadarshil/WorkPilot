@@ -449,7 +449,7 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     `SELECT i.*, c.full_name AS customer_full_name, c.email AS customer_email, c.phone AS customer_phone,
       c.address_line_1, c.address_line_2, c.town, c.county, c.postcode,
       c.address, c.city, c.region, c.country,
-      j.customer_reference AS job_customer_reference
+      j.customer_reference AS job_customer_reference, j.work_address_id AS job_work_address_id
      FROM invoices i
      JOIN customers c ON c.id = i.customer_id
      LEFT JOIN jobs j ON j.id = i.job_id
@@ -464,9 +464,16 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
 
   let workSiteName: string | null = null;
   let workSiteAddrOnly: string | null = null;
-  if (inv.invoice_work_address_id) {
+  let workAddressIdToUse = inv.invoice_work_address_id;
+  
+  // If invoice doesn't have its own work address but is linked to a job with a work address, use that
+  if (!workAddressIdToUse && inv.job_id && inv.job_work_address_id) {
+    workAddressIdToUse = inv.job_work_address_id;
+  }
+  
+  if (workAddressIdToUse) {
     const waRes = await pool.query('SELECT * FROM customer_work_addresses WHERE id = $1 AND customer_id = $2', [
-      inv.invoice_work_address_id,
+      workAddressIdToUse,
       inv.customer_id,
     ]);
     if ((waRes.rowCount ?? 0) > 0) {

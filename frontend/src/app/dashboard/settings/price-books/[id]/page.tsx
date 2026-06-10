@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { getJson, postJson, patchJson, deleteRequest } from '../../../../apiClient';
-import { ArrowLeft, Save, Plus } from 'lucide-react';
+import { deleteRequest, getJson, postJson, putJson } from '../../../../apiClient';
+import { ArrowLeft, Plus } from 'lucide-react';
 
 interface PriceBookItem {
   id: number;
@@ -53,6 +53,7 @@ export default function PriceBookConfigPage() {
   const [lBasicRate, setLBasicRate] = useState<number>(0);
   const [lNominal, setLNominal] = useState('Sales');
   const [lRounding, setLRounding] = useState('Rounded up to nearest 15 min');
+  const [editingLabourId, setEditingLabourId] = useState<number | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -62,7 +63,7 @@ export default function PriceBookConfigPage() {
     try {
       const res = await getJson<PriceBookDetails>(`/settings/price-books/${pbId}/details`, token);
       setData(res);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch details');
     } finally {
       setLoading(false);
@@ -87,8 +88,8 @@ export default function PriceBookConfigPage() {
       setUnitPrice(0);
       setPrice(0);
       fetchDetails();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to add item');
     }
   };
 
@@ -97,8 +98,8 @@ export default function PriceBookConfigPage() {
     try {
       await deleteRequest(`/settings/price-books/${pbId}/items/${itemId}`, token);
       fetchDetails();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete item');
     }
   };
 
@@ -113,15 +114,47 @@ export default function PriceBookConfigPage() {
         nominal_code: lNominal,
         rounding_rule: lRounding
       }, token);
-      setAddingLabour(false);
-      setLName('');
-      setLDesc('');
-      setLBasicRate(0);
-      setLNominal('Sales');
-      setLRounding('Rounded up to nearest 15 min');
+      resetLabourForm();
       fetchDetails();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to add labour rate');
+    }
+  };
+
+  const startEditLabour = (rate: LabourRate) => {
+    setAddingLabour(false);
+    setEditingLabourId(rate.id);
+    setLName(rate.name);
+    setLDesc(rate.description || '');
+    setLBasicRate(Number(rate.basic_rate_per_hr || 0));
+    setLNominal(rate.nominal_code || 'Sales');
+    setLRounding(rate.rounding_rule || 'Rounded up to nearest 15 min');
+  };
+
+  const resetLabourForm = () => {
+    setAddingLabour(false);
+    setEditingLabourId(null);
+    setLName('');
+    setLDesc('');
+    setLBasicRate(0);
+    setLNominal('Sales');
+    setLRounding('Rounded up to nearest 15 min');
+  };
+
+  const handleUpdateLabour = async () => {
+    if (!token || !editingLabourId || !lName.trim()) return;
+    try {
+      await putJson(`/settings/price-books/${pbId}/labour-rates/${editingLabourId}`, {
+        name: lName.trim(),
+        description: lDesc.trim() || null,
+        basic_rate_per_hr: lBasicRate,
+        nominal_code: lNominal,
+        rounding_rule: lRounding
+      }, token);
+      resetLabourForm();
+      fetchDetails();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update labour rate');
     }
   };
 
@@ -130,8 +163,8 @@ export default function PriceBookConfigPage() {
     try {
       await deleteRequest(`/settings/price-books/${pbId}/labour-rates/${rateId}`, token);
       fetchDetails();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete labour rate');
     }
   };
 
@@ -241,7 +274,7 @@ export default function PriceBookConfigPage() {
                           </tr>
                         )}
                         {data.items.length === 0 && !addingItem && (
-                           <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No pricing items added yet. Click "Add item" to create one.</td></tr>
+                           <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No pricing items added yet. Use Add item to create one.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -254,8 +287,8 @@ export default function PriceBookConfigPage() {
                         <h2 className="text-[15px] font-bold text-slate-800">Add Labour Rates</h2>
                         <p className="text-xs text-slate-500 mt-1">Configure individual labour rates for this price book.</p>
                     </div>
-                    {!addingLabour && (
-                      <button onClick={() => setAddingLabour(true)} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
+                    {!addingLabour && editingLabourId == null && (
+                      <button onClick={() => { resetLabourForm(); setAddingLabour(true); }} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
                         <Plus className="size-4" /> Add labour rate
                       </button>
                     )}
@@ -275,19 +308,54 @@ export default function PriceBookConfigPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {data.labour_rates.map((rate) => (
-                          <tr key={rate.id} className="hover:bg-slate-50 transition-colors group">
-                            <td className="px-6 py-4 font-medium text-slate-900">{rate.name}</td>
-                            <td className="px-6 py-4 text-slate-500">{rate.description || '—'}</td>
-                            <td className="px-6 py-4 text-slate-900 font-medium">£ {Number(rate.basic_rate_per_hr).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-slate-500">{rate.nominal_code || '—'}</td>
-                            <td className="px-6 py-4 text-slate-500">{rate.rounding_rule || '—'}</td>
-                            <td className="px-6 py-4 text-right">
-                              <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button className="text-sm font-semibold text-slate-400 hover:text-slate-600">Edit</button>
-                                <button onClick={() => handleDeleteLabour(rate.id)} className="text-sm font-semibold text-rose-500 hover:underline">Delete</button>
-                              </div>
-                            </td>
-                          </tr>
+                          editingLabourId === rate.id ? (
+                            <tr key={rate.id} className="bg-emerald-50/20">
+                              <td className="px-6 py-3">
+                                <input type="text" autoFocus value={lName} onChange={e => setLName(e.target.value)} className={inputClass} placeholder="e.g. Regular Rate" />
+                              </td>
+                              <td className="px-6 py-3">
+                                <input type="text" value={lDesc} onChange={e => setLDesc(e.target.value)} className={inputClass} placeholder="Hourly charge" />
+                              </td>
+                              <td className="px-6 py-3 min-w-[120px]">
+                                <input type="number" min="0" step="0.01" value={lBasicRate} onChange={e => setLBasicRate(Number(e.target.value))} className={inputClass} />
+                              </td>
+                              <td className="px-6 py-3 min-w-[160px]">
+                                <select value={lNominal} onChange={e => setLNominal(e.target.value)} className={inputClass}>
+                                  <option>Sales</option>
+                                  <option>Cost of Sales</option>
+                                  <option>Overhead</option>
+                                </select>
+                              </td>
+                              <td className="px-6 py-3 min-w-[200px]">
+                                <select value={lRounding} onChange={e => setLRounding(e.target.value)} className={inputClass}>
+                                  <option>Rounded up to nearest 15 min</option>
+                                  <option>Rounded up to nearest 30 min</option>
+                                  <option>Rounded up to nearest 60 min</option>
+                                  <option>Exact minute</option>
+                                </select>
+                              </td>
+                              <td className="px-6 py-3">
+                                <div className="flex items-center justify-end gap-3">
+                                  <button onClick={resetLabourForm} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                                  <button onClick={handleUpdateLabour} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            <tr key={rate.id} className="hover:bg-slate-50 transition-colors group">
+                              <td className="px-6 py-4 font-medium text-slate-900">{rate.name}</td>
+                              <td className="px-6 py-4 text-slate-500">{rate.description || '—'}</td>
+                              <td className="px-6 py-4 text-slate-900 font-medium">£ {Number(rate.basic_rate_per_hr).toFixed(2)}</td>
+                              <td className="px-6 py-4 text-slate-500">{rate.nominal_code || '—'}</td>
+                              <td className="px-6 py-4 text-slate-500">{rate.rounding_rule || '—'}</td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => startEditLabour(rate)} className="text-sm font-semibold text-slate-400 hover:text-slate-600">Edit</button>
+                                  <button onClick={() => handleDeleteLabour(rate.id)} className="text-sm font-semibold text-rose-500 hover:underline">Delete</button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
                         ))}
                         {addingLabour && (
                           <tr className="bg-emerald-50/20">
@@ -316,7 +384,7 @@ export default function PriceBookConfigPage() {
                                </select>
                              </td>
                              <td className="px-6 py-3 flex items-center justify-end gap-3 mt-1.5">
-                               <button onClick={() => setAddingLabour(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                               <button onClick={resetLabourForm} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
                                <button onClick={handleAddLabour} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
                              </td>
                           </tr>

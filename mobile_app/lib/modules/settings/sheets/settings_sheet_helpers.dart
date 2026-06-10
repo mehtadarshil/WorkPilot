@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/utils/text_formatters.dart';
 import '../../../core/values/app_colors.dart';
 
 InputDecoration sheetInputDeco({String hint = ''}) {
@@ -42,12 +43,16 @@ Widget sheetTextField(
   int maxLines = 1,
   TextInputType keyboard = TextInputType.text,
   bool enabled = true,
+  bool capitalizeWords = false,
 }) {
   return TextField(
     controller: c,
     maxLines: maxLines,
     keyboardType: keyboard,
     enabled: enabled,
+    textCapitalization:
+        capitalizeWords ? TextCapitalization.words : TextCapitalization.none,
+    inputFormatters: capitalizeWords ? const [capitalizeWordsFormatter] : null,
     style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
     decoration: sheetInputDeco(hint: hint),
   );

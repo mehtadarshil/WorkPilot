@@ -16,6 +16,7 @@ import { FireExtinguisherCertificateEditor } from '../components/FireExtinguishe
 import { EmergencyLightingCertificateEditor } from '../components/EmergencyLightingCertificateEditor';
 import { ElectricalInstallationCertificateEditor } from '../components/ElectricalInstallationCertificateEditor';
 import { MinorWorksCertificateEditor } from '../components/MinorWorksCertificateEditor';
+import { CertificateRenewalReminderCard } from '../components/CertificateRenewalReminderCard';
 
 export default function CertificateEditorLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -69,25 +70,28 @@ export default function CertificateEditorLayout({ children }: { children: React.
 
   return (
     <CertificateEditorProvider initial={certificate}>
-      {certificate.type_slug === 'portable_appliance_test' ? (
-        <PatCertificateEditor />
-      ) : certificate.type_slug === 'fi_insp_2025' ? (
-        <FireAlarmCertificateEditor />
-      ) : certificate.type_slug === 'dfi_insp_2019_a1' ? (
-        <DomesticFireAlarmCertificateEditor />
-      ) : certificate.type_slug === 'dfi_inst_2019_a1' ? (
-        <DomesticFireAlarmInstCertificateEditor />
-      ) : certificate.type_slug === 'fi_extinsp_5306' ? (
-        <FireExtinguisherCertificateEditor />
-      ) : certificate.type_slug === 'em_pir_2025' ? (
-        <EmergencyLightingCertificateEditor />
-      ) : certificate.type_slug === 'eic_18e_a3' ? (
-        <ElectricalInstallationCertificateEditor>{children}</ElectricalInstallationCertificateEditor>
-      ) : certificate.type_slug === 'mwc_18e_a3' ? (
-        <MinorWorksCertificateEditor>{children}</MinorWorksCertificateEditor>
-      ) : (
-        <CertificateEditorShell>{children}</CertificateEditorShell>
-      )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <CertificateRenewalReminderCard />
+        {certificate.type_slug === 'portable_appliance_test' ? (
+          <PatCertificateEditor />
+        ) : certificate.type_slug === 'fi_insp_2025' ? (
+          <FireAlarmCertificateEditor />
+        ) : certificate.type_slug === 'dfi_insp_2019_a1' ? (
+          <DomesticFireAlarmCertificateEditor />
+        ) : certificate.type_slug === 'dfi_inst_2019_a1' ? (
+          <DomesticFireAlarmInstCertificateEditor />
+        ) : certificate.type_slug === 'fi_extinsp_5306' ? (
+          <FireExtinguisherCertificateEditor />
+        ) : certificate.type_slug === 'em_pir_2025' ? (
+          <EmergencyLightingCertificateEditor />
+        ) : certificate.type_slug === 'eic_18e_a3' ? (
+          <ElectricalInstallationCertificateEditor>{children}</ElectricalInstallationCertificateEditor>
+        ) : certificate.type_slug === 'mwc_18e_a3' ? (
+          <MinorWorksCertificateEditor>{children}</MinorWorksCertificateEditor>
+        ) : (
+          <CertificateEditorShell>{children}</CertificateEditorShell>
+        )}
+      </div>
     </CertificateEditorProvider>
   );
 }

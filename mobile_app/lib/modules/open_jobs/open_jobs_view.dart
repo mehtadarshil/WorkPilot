@@ -32,6 +32,20 @@ class OpenJobsView extends GetView<OpenJobsController> {
             onPressed: Get.back,
           ),
         ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () async {
+            // Direct to customers list so user can choose a customer first,
+            // or we could go straight to customer new job flow.
+            // Since customerNewJob requires a customer ID, navigating to CRMList/CustomersList first is optimal.
+            final r = await Get.toNamed(AppRoutes.customersList);
+            if (r == true) {
+              await controller.load();
+            }
+          },
+          backgroundColor: AppColors.primary,
+          icon: const Icon(Icons.add_rounded),
+          label: Text('New Job', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        ),
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -241,6 +255,38 @@ class _OpenJobListTile extends StatelessWidget {
                               height: 1.25,
                             ),
                           ),
+                          if (job.chargeType != null && job.chargeType != 'chargeable') ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: job.chargeType == 'free'
+                                    ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                    : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: job.chargeType == 'free'
+                                      ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                      : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                job.chargeType == 'free' ? 'FREE OF CHARGE' : 'CALL BACK',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: job.chargeType == 'free'
+                                      ? const Color(0xFF34D399)
+                                      : const Color(0xFFFBBF24),
+                                ),
+                              ),
+                            ),
+                          ],
                           if (job.description != null &&
                               job.description!.trim().isNotEmpty) ...[
                             const SizedBox(height: 6),

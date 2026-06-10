@@ -132,7 +132,7 @@ class _CompanySettingsSheetState extends State<CompanySettingsSheet> {
             ),
           ),
         sheetFieldLabel('Company name'),
-        sheetTextField(_nameCtrl, hint: 'WorkPilot'),
+        sheetTextField(_nameCtrl, hint: 'WorkPilot', capitalizeWords: true),
         sheetFieldLabel('Company website'),
         sheetTextField(_websiteCtrl, hint: 'https://example.com', keyboard: TextInputType.url),
         Row(
@@ -153,7 +153,7 @@ class _CompanySettingsSheetState extends State<CompanySettingsSheet> {
           ],
         ),
         sheetFieldLabel('Company address'),
-        sheetTextField(_addressCtrl, hint: 'Street, City, Country', maxLines: 3),
+        sheetTextField(_addressCtrl, hint: 'Street, City, Country', maxLines: 3, capitalizeWords: true),
         Row(
           children: [
             Expanded(

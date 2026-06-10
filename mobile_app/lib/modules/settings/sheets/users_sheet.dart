@@ -173,7 +173,7 @@ class _UsersSheetState extends State<UsersSheet> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.slate900),
           ),
           sheetFieldLabel('Full name *'),
-          sheetTextField(_nameCtrl, hint: 'John Doe'),
+          sheetTextField(_nameCtrl, hint: 'John Doe', capitalizeWords: true),
           sheetFieldLabel('Email *'),
           sheetTextField(_emailCtrl, hint: 'john@company.com', keyboard: TextInputType.emailAddress),
           sheetFieldLabel('Phone'),

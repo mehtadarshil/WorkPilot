@@ -862,10 +862,39 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                      ],
+                      if (next.chargeType != null && next.chargeType != 'chargeable') ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: next.chargeType == 'free'
+                                ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: next.chargeType == 'free'
+                                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                  : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            next.chargeType == 'free' ? 'FREE OF CHARGE' : 'CALL BACK',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                              color: next.chargeType == 'free'
+                                  ? const Color(0xFF34D399)
+                                  : const Color(0xFFFBBF24),
+                            ),
+                          ),
+                        ),
                       ],
                     ],
                   ),
-                  if ((next.jobNumber ?? '').trim().isNotEmpty || next.isQuotationVisit)
+                  if ((next.jobNumber ?? '').trim().isNotEmpty || next.isQuotationVisit || (next.chargeType != null && next.chargeType != 'chargeable'))
                     const SizedBox(height: 4),
                   Text(
                     next.title ?? 'Job',

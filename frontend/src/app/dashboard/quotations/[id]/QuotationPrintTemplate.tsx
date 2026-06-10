@@ -48,6 +48,10 @@ export type QuotationPrintModel = {
     unit_price: number;
     amount: number;
     sort_order: number;
+    images?: {
+      original_filename: string;
+      data_url?: string | null;
+    }[];
   }[];
 };
 
@@ -128,7 +132,7 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
           <div className="flex items-center gap-4">
             <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
               {s?.company_logo ? (
-                <img src={s.company_logo} alt={companyName} className="h-full w-full object-contain" />
+                <Image src={s.company_logo} alt={companyName} fill unoptimized className="object-contain" />
               ) : (
                 <Image src="/logo.jpg" alt={companyName} fill className="object-contain" />
               )}
@@ -240,7 +244,26 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
             <tbody className="divide-y divide-slate-100">
               {quotation.line_items.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">{item.description}</td>
+                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">
+                    <div>{item.description}</div>
+                    {item.images?.some((image) => image.data_url) ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {item.images.map((image, index) =>
+                          image.data_url ? (
+                            <Image
+                              key={`${image.original_filename}-${index}`}
+                              src={image.data_url}
+                              alt={image.original_filename}
+                              width={96}
+                              height={80}
+                              unoptimized
+                              className="h-20 w-24 rounded-lg border border-slate-200 object-cover"
+                            />
+                          ) : null,
+                        )}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-5 py-4 text-right text-sm font-medium text-slate-500">{item.quantity}</td>
                   <td className="px-5 py-4 text-right text-sm font-medium text-slate-500">
                     {formatCurrency(item.unit_price, quotation.currency)}

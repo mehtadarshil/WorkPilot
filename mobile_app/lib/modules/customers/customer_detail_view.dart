@@ -7,6 +7,7 @@ import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import 'customer_detail_controller.dart';
 import 'customer_tab_widgets.dart';
+import 'customer_tabs/customer_notes_tab.dart';
 import 'customer_tabs/helpers.dart';
 
 String _workAddressTabLabel(Map<String, dynamic>? cust) {
@@ -20,7 +21,7 @@ List<String> _detailTabKeys(CustomerDetailController c) {
   final cust = c.customer.value;
   final wid = c.scopedWorkAddressId.value;
   final allowBranches = cust == null || cust['customer_type_allow_branches'] != false;
-  final keys = <String>['all_works', 'communications', 'contacts'];
+  final keys = <String>['all_works', 'notes', 'communications', 'contacts'];
   if (wid != null) {
     keys.add('invoices');
   }
@@ -38,6 +39,8 @@ String _tabChipLabel(String key, Map<String, dynamic>? cust) {
   switch (key) {
     case 'all_works':
       return 'All works';
+    case 'notes':
+      return 'Notes';
     case 'communications':
       return 'Communications';
     case 'contacts':
@@ -231,6 +234,37 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
+                            if (ctStr(preview, 'key_info').isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.whiteOverlay(0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'KEY INFO',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.8,
+                                        color: const Color(0xFFFBBF24),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      ctStr(preview, 'key_info'),
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.82), height: 1.35),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ],
                       ),
@@ -238,6 +272,23 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                     TextButton(
                       onPressed: () => _c.exitWorkAddressScope(),
                       child: Text('All sites', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
+                    ),
+                    TextButton(
+                      onPressed: preview == null
+                          ? null
+                          : () async {
+                              final result = await Get.toNamed<dynamic>(
+                                AppRoutes.customerWorkAddressForm,
+                                arguments: <String, dynamic>{
+                                  'customerId': _c.customerId,
+                                  'workAddress': preview,
+                                },
+                              );
+                              if (result == true) {
+                                await _c.enterWorkAddressScope(scoped);
+                              }
+                            },
+                      child: Text('Edit', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
                     ),
                   ],
                 ),
@@ -255,6 +306,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
     switch (key) {
       case 'all_works':
         return CustomerAllWorksTab(controller: _c);
+      case 'notes':
+        return CustomerNotesTab(controller: _c);
       case 'communications':
         return CustomerCommsTab(customerId: id, workAddressId: wid);
       case 'contacts':

@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getJson, postJson } from '../../apiClient';
-import { FileText, Loader2, ArrowLeft, Plus, X } from 'lucide-react';
+import { deleteRequest, getJson, postJson } from '../../apiClient';
+import { FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import CustomerSiteReportTab from '../customers/[id]/CustomerSiteReportTab';
@@ -41,6 +41,7 @@ export default function SiteReportsList({ token }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SiteReportRow | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -119,6 +120,22 @@ export default function SiteReportsList({ token }: Props) {
       setCreateError(e instanceof Error ? e.message : 'Failed to create report');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDelete = async (report: SiteReportRow) => {
+    const title = report.report_title || report.template_name || `Report #${report.id}`;
+    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    setDeletingId(report.id);
+    setError(null);
+    try {
+      await deleteRequest(`/customers/${report.customer_id}/site-report/${report.id}`, token);
+      setReports((prev) => prev.filter((r) => r.id !== report.id));
+      if (selectedReport?.id === report.id) setSelectedReport(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete site report');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -294,13 +311,28 @@ export default function SiteReportsList({ token }: Props) {
                     {dayjs(r.updated_at).format('D MMM YYYY HH:mm')}
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedReport(r)}
-                      className="font-bold text-[#14B8A6] hover:text-[#119f8e]"
-                    >
-                      Open
-                    </button>
+                    <div className="inline-flex items-center justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReport(r)}
+                        className="font-bold text-[#14B8A6] hover:text-[#119f8e]"
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingId === r.id}
+                        onClick={() => void handleDelete(r)}
+                        className="inline-flex items-center gap-1 font-bold text-rose-600 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingId === r.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-3.5" />
+                        )}
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

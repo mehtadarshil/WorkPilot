@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/diary_event_detail.dart';
+import '../certificates/certificate_catalog.dart';
 import 'diary_event_detail_controller.dart';
 import 'diary_extra_submissions_panel.dart';
 import 'diary_technical_notes_panel.dart';
@@ -207,6 +208,10 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                   );
                                 },
                               ),
+                              if (!d.isQuotationVisit) ...[
+                                const SizedBox(height: 12),
+                                _JobCompletionDocumentsPanel(controller: controller),
+                              ],
                               if (d.isQuotationVisit) ...[
                                 const SizedBox(height: 12),
                                 _CreateQuotationBanner(
@@ -322,7 +327,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 children: [
                                   _accentTitle('Site information'),
                                   const SizedBox(height: 12),
-                                  _NavigableAddress(address: d.fullSiteAddress),
+                                  _NavigableAddress(address: d.fullSiteAddress, lat: d.siteLatitude, lon: d.siteLongitude),
                                   if (!hideContacts &&
                                       _siteContactName(
                                         d,
@@ -458,6 +463,52 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                   if (d.jobNumber != null && d.jobNumber!.trim().isNotEmpty)
                                     _kv('Job number', d.jobNumber!.trim()),
                                   _kv('Job title', d.title ?? '—'),
+                                  if (d.chargeType != null && d.chargeType != 'chargeable') ...[
+                                    Text(
+                                      'Charge option',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.slate400,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 3.5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: d.chargeType == 'free'
+                                                ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                                : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: d.chargeType == 'free'
+                                                  ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                                                  : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            d.chargeType == 'free' ? 'FREE OF CHARGE' : 'CALL BACK',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: 0.5,
+                                              color: d.chargeType == 'free'
+                                                  ? const Color(0xFF34D399)
+                                                  : const Color(0xFFFBBF24),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                  ],
                                   if (d.description != null &&
                                       d.description!.trim().isNotEmpty)
                                     _kv('Job description', d.description!),
@@ -954,6 +1005,127 @@ class _SubmittedJobReportBanner extends StatelessWidget {
   }
 }
 
+class _JobCompletionDocumentsPanel extends StatelessWidget {
+  const _JobCompletionDocumentsPanel({required this.controller});
+
+  final DiaryEventDetailController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (controller.completionDocumentsLoading.value) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+          ),
+        );
+      }
+      final docs = controller.completionDocuments.value;
+      final err = controller.completionDocumentsError.value;
+      if (docs == null && err.isEmpty) return const SizedBox.shrink();
+      if (docs == null) {
+        return Text(
+          err,
+          style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+        );
+      }
+      if (docs.certificates.isEmpty && docs.siteReports.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return _DetailGlassPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Job documents',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (docs.certificates.isNotEmpty) ...[
+              Text(
+                'Certificates',
+                style: GoogleFonts.inter(
+                  color: AppColors.slate400,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final cert in docs.certificates)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: const Icon(Icons.verified_outlined, color: AppColors.primary, size: 20),
+                  title: Text(
+                    cert.certificateNumber,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    certificateTypeForSlug(cert.typeSlug).shortLabel,
+                    style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                  onTap: () => Get.toNamed(
+                    AppRoutes.certificateEditor,
+                    arguments: {'id': cert.id},
+                  ),
+                ),
+            ],
+            if (docs.siteReports.isNotEmpty) ...[
+              if (docs.certificates.isNotEmpty) const SizedBox(height: 8),
+              Text(
+                'Site reports',
+                style: GoogleFonts.inter(
+                  color: AppColors.slate400,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final report in docs.siteReports)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: const Icon(Icons.description_outlined, color: AppColors.primary, size: 20),
+                  title: Text(
+                    report.reportTitle?.trim().isNotEmpty == true
+                        ? report.reportTitle!
+                        : (report.templateName ?? 'Site report'),
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: report.certificateNumber?.trim().isNotEmpty == true
+                      ? Text(
+                          report.certificateNumber!,
+                          style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                        )
+                      : null,
+                  trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                  onTap: () {
+                    final customerId = docs.customerId ?? controller.detail.value?.customerId;
+                    if (customerId == null) return;
+                    Get.toNamed(
+                      AppRoutes.siteReportEditor,
+                      arguments: <String, dynamic>{
+                        'customer_id': customerId,
+                        'work_address_id': docs.workAddressId,
+                        'report_id': report.id,
+                      },
+                    );
+                  },
+                ),
+            ],
+          ],
+        ),
+      );
+    });
+  }
+}
+
 class _CreateQuotationBanner extends StatelessWidget {
   const _CreateQuotationBanner({
     required this.onTap,
@@ -1318,9 +1490,11 @@ Widget _kv(String k, String v) {
   );
 }
 
-void _showNavigationSheet(BuildContext context, String address) {
+void _showNavigationSheet(BuildContext context, String address, {double? lat, double? lon}) {
   if (address.trim().isEmpty || address.trim() == '—') return;
   final encoded = Uri.encodeComponent(address.trim());
+  final bool hasCoords = lat != null && lon != null && lat != 0.0 && lon != 0.0;
+
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.gradientStart,
@@ -1328,67 +1502,176 @@ void _showNavigationSheet(BuildContext context, String address) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (ctx) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Navigate to',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                address.trim(),
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: AppColors.slate300,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.apple, color: Colors.white),
-                title: Text('Apple Maps', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                onTap: () {
-                  _tryLaunchUri(Uri.parse('https://maps.apple.com/?q=$encoded'));
-                  Navigator.pop(ctx);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.map_outlined, color: Colors.white),
-                title: Text('Google Maps', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                onTap: () {
-                  _tryLaunchUri(Uri.parse('https://maps.google.com/?q=$encoded'));
-                  Navigator.pop(ctx);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.local_taxi_outlined, color: Colors.white),
-                title: Text('Waze', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                onTap: () {
-                  _tryLaunchUri(Uri.parse('https://waze.com/ul?q=$encoded'));
-                  Navigator.pop(ctx);
-                },
-              ),
-            ],
-          ),
-        ),
-      );
+      return _NavigationAppSheet(address: address, encoded: encoded, lat: lat, lon: lon, hasCoords: hasCoords);
     },
   );
 }
 
-class _NavigableAddress extends StatelessWidget {
-  const _NavigableAddress({required this.address});
+class _NavigationAppSheet extends StatefulWidget {
+  const _NavigationAppSheet({
+    required this.address,
+    required this.encoded,
+    required this.lat,
+    required this.lon,
+    required this.hasCoords,
+  });
   final String address;
+  final String encoded;
+  final double? lat;
+  final double? lon;
+  final bool hasCoords;
+
+  @override
+  State<_NavigationAppSheet> createState() => _NavigationAppSheetState();
+}
+
+class _NavigationAppSheetState extends State<_NavigationAppSheet> {
+  // Map of app info: name, icon, native URI, fallback web URI
+  late List<_MapApp> _apps;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _buildAndCheck();
+  }
+
+  Future<void> _buildAndCheck() async {
+    final lat = widget.lat;
+    final lon = widget.lon;
+    final enc = widget.encoded;
+    final hasCoords = widget.hasCoords;
+
+    final candidates = <_MapApp>[
+      _MapApp(
+        name: 'Apple Maps',
+        icon: Icons.apple,
+        uri: hasCoords
+            ? Uri.parse('maps://?daddr=$lat,$lon&dirflg=d')
+            : Uri.parse('maps://?q=$enc'),
+        fallbackUri: Uri.parse('https://maps.apple.com/?q=$enc'),
+      ),
+      _MapApp(
+        name: 'Google Maps',
+        icon: Icons.map_outlined,
+        uri: hasCoords
+            ? Uri.parse('comgooglemaps://?daddr=$lat,$lon&directionsmode=driving')
+            : Uri.parse('comgooglemaps://?q=$enc'),
+        fallbackUri: Uri.parse('https://maps.google.com/?q=$enc'),
+      ),
+      _MapApp(
+        name: 'Waze',
+        icon: Icons.navigation_outlined,
+        uri: hasCoords
+            ? Uri.parse('waze://?ll=$lat,$lon&navigate=yes')
+            : Uri.parse('waze://?q=$enc&navigate=yes'),
+        fallbackUri: Uri.parse('https://waze.com/ul?q=$enc'),
+      ),
+    ];
+
+    final available = <_MapApp>[];
+    for (final app in candidates) {
+      final canNative = await canLaunchUrl(app.uri);
+      available.add(app.copyWith(available: canNative));
+    }
+
+    if (mounted) {
+      setState(() {
+        _apps = available;
+        _loaded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Navigate to',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.address.trim(),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.slate300,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 16),
+            if (!_loaded)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+              )
+            else
+              ..._apps.map((app) => ListTile(
+                    leading: Icon(app.icon, color: app.available ? Colors.white : AppColors.slate400),
+                    title: Text(
+                      app.name + (app.available ? '' : ' (not installed)'),
+                      style: GoogleFonts.inter(
+                        color: app.available ? Colors.white : AppColors.slate400,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: app.available
+                        ? () {
+                            launchUrl(app.uri, mode: LaunchMode.externalApplication);
+                            Navigator.pop(context);
+                          }
+                        : () {
+                            launchUrl(app.fallbackUri, mode: LaunchMode.externalApplication);
+                            Navigator.pop(context);
+                          },
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapApp {
+  const _MapApp({
+    required this.name,
+    required this.icon,
+    required this.uri,
+    required this.fallbackUri,
+    this.available = false,
+  });
+  final String name;
+  final IconData icon;
+  final Uri uri;
+  final Uri fallbackUri;
+  final bool available;
+
+  _MapApp copyWith({bool? available}) => _MapApp(
+        name: name,
+        icon: icon,
+        uri: uri,
+        fallbackUri: fallbackUri,
+        available: available ?? this.available,
+      );
+}
+
+
+class _NavigableAddress extends StatelessWidget {
+  const _NavigableAddress({required this.address, this.lat, this.lon});
+  final String address;
+  final double? lat;
+  final double? lon;
 
   @override
   Widget build(BuildContext context) {
@@ -1409,7 +1692,7 @@ class _NavigableAddress extends StatelessWidget {
           const SizedBox(width: 8),
           _GlassIconButton(
             icon: Icons.navigation_outlined,
-            onPressed: () => _showNavigationSheet(context, address),
+            onPressed: () => _showNavigationSheet(context, address, lat: lat, lon: lon),
           ),
         ],
       ],

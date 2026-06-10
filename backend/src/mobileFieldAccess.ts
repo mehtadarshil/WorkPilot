@@ -1,4 +1,7 @@
+import type { NextFunction, Request, Response } from 'express';
 import type { TenantPermissionKey } from './tenantPermissions';
+import type { TenantAuthUser } from './tenantAccess';
+import { tenantCrmAccessAllowed } from './tenantAccess';
 import {
   emptyPermissions,
   normalizePermissionsJson,
@@ -67,4 +70,33 @@ export function canUseTeamDiaryScope(u: FieldMobileJwtUser): boolean {
     return p.jobs === true || p.scheduling === true;
   }
   return false;
+}
+
+/** Field officers on the mobile app may read/write job-linked certificates and site reports. */
+export function tenantCrmOrMobileJobDocsAccessAllowed(
+  user: TenantAuthUser | undefined,
+  permission: TenantPermissionKey,
+  method: string,
+  req: { get(name: string): string | undefined },
+): boolean {
+  if (tenantCrmAccessAllowed(user, permission, method)) return true;
+  if (!user || user.role !== 'OFFICER') return false;
+  if (!isMobileWorkPilotClient(req)) return false;
+  if (!fieldMobileHasJobs(user)) return false;
+  if (user.tenantScopeUserId == null || !Number.isFinite(user.tenantScopeUserId)) return false;
+  const m = (method || 'GET').toUpperCase();
+  const allowed = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH'];
+  if (!allowed.includes(m)) return false;
+  if (permission === 'certifications' || permission === 'customers') return true;
+  return false;
+}
+
+export function requireTenantCrmOrMobileJobDocs(permission: TenantPermissionKey) {
+  return (req: Request & { user?: TenantAuthUser }, res: Response, next: NextFunction): void => {
+    if (!tenantCrmOrMobileJobDocsAccessAllowed(req.user, permission, req.method, req)) {
+      res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+      return;
+    }
+    next();
+  };
 }

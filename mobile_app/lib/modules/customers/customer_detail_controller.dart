@@ -84,6 +84,8 @@ class CustomerDetailController extends GetxController {
     if (key == null || key.isEmpty) return;
     const webToInternal = <String, String>{
       'All works': 'all_works',
+      'Notes': 'notes',
+      'Technical notes': 'notes',
       'Communications': 'communications',
       'Contacts': 'contacts',
       'Invoices': 'invoices',
