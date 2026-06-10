@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
+import { getSpacesBuffer, putSpacesFile, spacesKey, spacesObjectExists, spacesObjectUrl } from './spacesStorage';
 
 function getCustomerSiteReportImagesArchiveRootDir(): string {
   const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_ARCHIVE_DIR?.trim();
@@ -56,6 +57,48 @@ export async function findCustomerSiteReportImageFile(
   }
 
   return null;
+}
+
+export function customerSiteReportImageSpacesKey(customerId: number, reportId: number, storedFilename: string): string {
+  return spacesKey('customer-site-report-images', customerId, reportId, path.basename(storedFilename));
+}
+
+export async function uploadCustomerSiteReportImageToSpaces(
+  customerId: number,
+  reportId: number,
+  storedFilename: string,
+  sourcePath: string,
+  contentType?: string | null,
+): Promise<{ spacesKey: string; fileUrl: string | null }> {
+  const key = customerSiteReportImageSpacesKey(customerId, reportId, storedFilename);
+  await putSpacesFile(key, sourcePath, contentType).catch((error) => {
+    console.error('Upload customer site report image to Spaces error:', error);
+  });
+  return { spacesKey: key, fileUrl: spacesObjectUrl(key) };
+}
+
+export async function loadCustomerSiteReportImageBuffer(
+  customerId: number,
+  reportId: number,
+  storedFilename: string,
+): Promise<Buffer | null> {
+  const key = customerSiteReportImageSpacesKey(customerId, reportId, storedFilename);
+  const fromSpaces = await getSpacesBuffer(key);
+  if (fromSpaces) return fromSpaces;
+
+  const fullPath = await findCustomerSiteReportImageFile(customerId, reportId, storedFilename);
+  if (!fullPath) return null;
+  return fs.readFile(fullPath);
+}
+
+export async function customerSiteReportImageExists(
+  customerId: number,
+  reportId: number,
+  storedFilename: string,
+): Promise<boolean> {
+  const key = customerSiteReportImageSpacesKey(customerId, reportId, storedFilename);
+  if (await spacesObjectExists(key)) return true;
+  return (await findCustomerSiteReportImageFile(customerId, reportId, storedFilename)) != null;
 }
 
 export async function mirrorCustomerSiteReportImageFile(

@@ -1,7 +1,6 @@
-import fs from 'fs/promises';
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
-import { findCustomerSiteReportImageFile } from './customerSiteReportImageStorage';
+import { loadCustomerSiteReportImageBuffer } from './customerSiteReportImageStorage';
 import type {
   SiteReportSectionImageRow,
   SiteReportTemplateDefinition,
@@ -90,9 +89,8 @@ async function loadImageDataUrlMap(
   );
   for (const r of rows.rows) {
     try {
-      const full = await findCustomerSiteReportImageFile(customerId, reportId, r.stored_filename);
-      if (!full) continue;
-      const buf = await fs.readFile(full);
+      const buf = await loadCustomerSiteReportImageBuffer(customerId, reportId, r.stored_filename);
+      if (!buf) continue;
       const ct = (r.content_type || 'image/jpeg').split(';')[0].trim() || 'image/jpeg';
       map.set(Number(r.id), `data:${ct};base64,${buf.toString('base64')}`);
     } catch {

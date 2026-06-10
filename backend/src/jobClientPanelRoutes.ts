@@ -1,29 +1,13 @@
 import type { Request, Response, Application, RequestHandler } from 'express';
 import type { Pool } from 'pg';
 import path from 'path';
-import fs from 'fs/promises';
+import { readFile } from 'fs/promises';
 import crypto from 'crypto';
-import { createReadStream } from 'fs';
 import { applyTemplateVars, wrapEmailHtml, formatFromHeader, type EmailSettingsPayload } from './emailHelpers';
 import { PdfRenderUnavailableError, renderHtmlReportToPdf } from './jobClientReportPdf';
 import { getTenantScopeUserId, requireTenantCrmAccess } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
-
-function getJobClientFilesRootDir(): string {
-  const raw = process.env.JOB_CLIENT_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'job-client-submissions');
-}
-
-function getDiaryExtraSubmissionsRootDir(): string {
-  const raw = process.env.DIARY_EXTRA_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'diary-extra-submissions');
-}
-
-async function ensureJobClientSubmissionDir(jobId: number, submissionId: number): Promise<string> {
-  const dir = path.join(getJobClientFilesRootDir(), String(jobId), String(submissionId));
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
-}
+import { loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 
 function escapeHtml(s: string): string {
   return s
@@ -503,7 +487,6 @@ async function createJobClientShareSubmission(
       [job.id, submitterName, submitterEmail, JSON.stringify(selection), pdfToken],
     );
     const submissionId = ins.rows[0].id;
-    const outDir = await ensureJobClientSubmissionDir(job.id, submissionId);
 
     const reportRows: string[] = [];
     for (const qid of reportQuestionIds) {
@@ -519,18 +502,13 @@ async function createJobClientShareSubmission(
     const mediaCells: string[] = [];
 
     for (const ek of extraKeys) {
-      const src = path.join(
-        getDiaryExtraSubmissionsRootDir(),
-        String(diaryEventId),
-        String(ek.extra_submission_id),
-        ek.stored_filename,
-      );
-      const stat = await fs.stat(src).catch(() => null);
-      if (!stat?.isFile()) return { ok: false, status: 400, message: 'Missing file on server' };
+      const srcFile = await loadWorkpilotFile('diary-extra-submissions', [diaryEventId, ek.extra_submission_id], ek.stored_filename);
+      if (!srcFile) return { ok: false, status: 400, message: 'Missing file on server' };
       const ext = path.extname(ek.stored_filename).slice(0, 32) || '.bin';
       const newName = `ex_${copyIdx}_${crypto.randomBytes(4).toString('hex')}${ext}`;
       copyIdx += 1;
-      await fs.copyFile(src, path.join(outDir, newName));
+      const srcBuf = srcFile.buffer ?? (srcFile.fullPath ? await readFile(srcFile.fullPath) : null);
+      if (!srcBuf) return { ok: false, status: 400, message: 'Missing file on server' };
       const pubUrl = `${appBase}/api/public/job-client-media/${pdfToken}/${encodeURIComponent(newName)}`;
       const meta = await pool.query<{ media: unknown }>(
         'SELECT media FROM diary_event_extra_submissions WHERE id = $1',
@@ -545,12 +523,21 @@ async function createJobClientShareSubmission(
           : String(item?.content_type || '').startsWith('video/')
             ? 'video'
             : 'image';
+      const uploaded = await writeWorkpilotFile(
+        'job-client-submissions',
+        [job.id, submissionId],
+        newName,
+        srcBuf,
+        typeof item?.content_type === 'string' ? item.content_type : undefined,
+      );
       mediaJson.push({
         stored_filename: newName,
         original_filename: orig,
         content_type: item?.content_type ?? '',
         kind,
-        byte_size: stat.size,
+        byte_size: srcFile.size,
+        spaces_key: uploaded.spacesKey,
+        file_url: uploaded.fileUrl,
       });
       if (kind === 'video') {
         mediaCells.push(
@@ -935,10 +922,10 @@ export function mountJobClientPanelRoutes(app: Application, deps: JobClientPanel
       if ((s.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Not found' });
       const { id: sid, job_id: jobId } = s.rows[0];
       const decoded = decodeURIComponent(file);
-      const fullPath = path.join(getJobClientFilesRootDir(), String(jobId), String(sid), path.basename(decoded));
-      const stat = await fs.stat(fullPath).catch(() => null);
-      if (!stat?.isFile()) return res.status(404).json({ message: 'Not found' });
-      const ext = path.extname(fullPath).toLowerCase();
+      const safeFile = path.basename(decoded);
+      const stored = await loadWorkpilotFile('job-client-submissions', [jobId, sid], safeFile);
+      if (!stored) return res.status(404).json({ message: 'Not found' });
+      const ext = path.extname(safeFile).toLowerCase();
       const ct =
         ext === '.png'
           ? 'image/png'
@@ -949,9 +936,7 @@ export function mountJobClientPanelRoutes(app: Application, deps: JobClientPanel
               : ext === '.mp4' || ext === '.mov' || ext === '.webm'
                 ? 'video/' + ext.slice(1)
                 : 'image/jpeg';
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Content-Length', String(stat.size));
-      return createReadStream(fullPath).pipe(res);
+      return sendWorkpilotFile(res, stored, ct);
     } catch (e) {
       console.error('job client media', e);
       return res.status(500).json({ message: 'Error' });

@@ -2,9 +2,9 @@ import type { Application, Request, Response } from 'express';
 import type { Pool } from 'pg';
 import crypto from 'crypto';
 import path from 'path';
-import fs from 'fs/promises';
 import { getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
+import { getWorkpilotFileRootDir, loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -47,8 +47,7 @@ type ProofFile = {
 };
 
 function getJobCostProofRoot(): string {
-  const raw = process.env.JOB_COST_PROOF_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'job-cost-proofs');
+  return getWorkpilotFileRootDir('job-cost-proofs');
 }
 
 function parseId(raw: unknown): number | null {
@@ -444,18 +443,18 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
           [jobId, diaryEventId, costType, description, amount, notes, user.userId],
         );
         const entryId = ins.rows[0].id;
-        const dir = path.join(getJobCostProofRoot(), String(jobId), String(entryId));
-        await fs.mkdir(dir, { recursive: true });
         const proofJson = [];
         for (const file of proof) {
           const ext = path.extname(file.original).slice(0, 24) || '.bin';
           const stored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-          await fs.writeFile(path.join(dir, stored), file.buf);
+          const uploaded = await writeWorkpilotFile('job-cost-proofs', [jobId, entryId], stored, file.buf, file.contentType);
           proofJson.push({
             stored_filename: stored,
             original_filename: file.original,
             content_type: file.contentType,
             byte_size: file.buf.length,
+            spaces_key: uploaded.spacesKey,
+            file_url: uploaded.fileUrl,
           });
         }
         await client.query('UPDATE job_cost_entries SET proof_files = $1::jsonb WHERE id = $2', [JSON.stringify(proofJson), entryId]);
@@ -489,9 +488,11 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
       const proof = Array.isArray(r.rows[0].proof_files) ? r.rows[0].proof_files : [];
       const meta = proof.find((p: Record<string, unknown>) => String(p.stored_filename) === filename) as Record<string, unknown> | undefined;
       if (!meta) return res.status(404).json({ message: 'Proof not found' });
-      res.setHeader('Content-Type', String(meta.content_type || 'application/octet-stream'));
-      res.setHeader('Content-Disposition', `inline; filename="${cleanFilename(String(meta.original_filename || 'proof'))}"`);
-      return res.sendFile(path.join(getJobCostProofRoot(), String(jobId), String(costId), filename));
+      const file = await loadWorkpilotFile('job-cost-proofs', [jobId, costId], filename);
+      if (!file) return res.status(404).json({ message: 'Proof not found' });
+      return sendWorkpilotFile(res, file, String(meta.content_type || 'application/octet-stream'), {
+        disposition: `inline; filename="${cleanFilename(String(meta.original_filename || 'proof'))}"`,
+      });
     } catch (error) {
       console.error('Get job cost proof error:', error);
       return res.status(500).json({ message: 'Internal server error' });

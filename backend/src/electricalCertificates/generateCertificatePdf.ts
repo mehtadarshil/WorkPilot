@@ -3,6 +3,7 @@ import { renderHtmlReportToPdf } from '../jobClientReportPdf';
 import { loadCompanyBranding } from './companyBranding';
 import { buildCertificatePdfHtml } from './certificatePdfHtml';
 import { coerceDocument } from './documentDefaults';
+import { resolveCertificateDocumentFileRefs } from './certificateFileStorage';
 
 export async function generateElectricalCertificatePdfBuffer(
   pool: Pool,
@@ -16,7 +17,7 @@ export async function generateElectricalCertificatePdfBuffer(
     documentRaw: unknown;
   },
 ): Promise<{ pdf: Buffer; filenameBase: string }> {
-  const document = coerceDocument(params.documentRaw);
+  const document = coerceDocument(await resolveCertificateDocumentFileRefs(params.certificateId, params.documentRaw));
   const branding = await loadCompanyBranding(pool, params.ownerUserId);
   const html = buildCertificatePdfHtml({
     certificateNumber: params.certificateNumber,

@@ -16,6 +16,8 @@ import {
 } from './patDefaults';
 import { generateElectricalCertificatePdfBuffer } from './generateCertificatePdf';
 import { PdfRenderUnavailableError } from '../jobClientReportPdf';
+import { sendInlineWorkpilotFile } from '../inlineBlobStorage';
+import { storeCertificateDocumentInlineFiles } from './certificateFileStorage';
 import {
   loadCertificateTeamMembers,
   memberCanBeSignedBy,
@@ -739,15 +741,27 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       },
     };
 
+    const storedDocument = await storeCertificateDocumentInlineFiles(id, document);
     await pool.query(
       `UPDATE electrical_certificates
        SET document = $2::jsonb, updated_at = NOW(), updated_by = $3
        WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $4'}`,
-      isSuperAdmin ? [id, JSON.stringify(document), userId] : [id, JSON.stringify(document), userId, userId],
+      isSuperAdmin ? [id, JSON.stringify(storedDocument), userId] : [id, JSON.stringify(storedDocument), userId, userId],
     );
 
     const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
     return res.json({ certificate: cert });
+  });
+
+  app.get('/api/electrical-certificates/:id/files/:file', ...guard, async (req: Request, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    const file = typeof req.params.file === 'string' ? decodeURIComponent(req.params.file) : '';
+    if (!Number.isFinite(id) || !file || file.includes('..')) return res.status(400).json({ message: 'Invalid request' });
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+    const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
+    if (!cert) return res.status(404).json({ message: 'Certificate not found' });
+    return sendInlineWorkpilotFile(res, 'electrical-certificate-files', [id], file);
   });
 
   app.get('/api/electrical-certificates/:id/pdf', ...guard, async (req: Request, res: Response) => {
@@ -940,6 +954,11 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
         ],
       );
       const newId = (ins.rows[0] as { id: number }).id;
+      const storedDoc = await storeCertificateDocumentInlineFiles(newId, doc);
+      await pool.query('UPDATE electrical_certificates SET document = $1::jsonb WHERE id = $2', [
+        JSON.stringify(storedDoc),
+        newId,
+      ]);
       const cert = await loadCertificate(pool, newId, userId, isSuperAdmin);
       return res.status(201).json({ certificate: cert });
     } catch (e) {
@@ -1036,7 +1055,10 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       values.push(body.status);
     }
     if (body.document) {
-      const nextDocument = withProtectedPatSignatureFields(coerceDocument(body.document), existing.document);
+      const nextDocument = await storeCertificateDocumentInlineFiles(
+        id,
+        withProtectedPatSignatureFields(coerceDocument(body.document), existing.document),
+      );
       updates.push(`document = $${idx++}::jsonb`);
       values.push(JSON.stringify(nextDocument));
     }

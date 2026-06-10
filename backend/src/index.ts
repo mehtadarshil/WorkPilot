@@ -85,11 +85,25 @@ import { PdfRenderUnavailableError } from './jobClientReportPdf';
 import { authLimiter } from './middleware/rateLimiters';
 import {
   ensureCustomerSiteReportImageDir,
-  findCustomerSiteReportImageFile,
+  loadCustomerSiteReportImageBuffer,
   mirrorCustomerSiteReportImageFile,
   removeCustomerSiteReportImageDirs,
   removeCustomerSiteReportImageFile,
+  uploadCustomerSiteReportImageToSpaces,
 } from './customerSiteReportImageStorage';
+import {
+  ensureWorkpilotFileDir,
+  findLocalWorkpilotFile,
+  getWorkpilotFileReadRootDirs,
+  getWorkpilotFileRootDir,
+  loadWorkpilotFile,
+  sendWorkpilotFile,
+  sendWorkpilotFileWithRange,
+  workpilotFileKey,
+  workpilotFileUrl,
+  writeWorkpilotFile,
+} from './workpilotFileStorage';
+import { sendInlineWorkpilotFile, storeInlineDataUrlAsWorkpilotFile } from './inlineBlobStorage';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -100,28 +114,18 @@ const CUSTOMER_FILE_MAX_BYTES = (() => {
 })();
 
 function getCustomerFilesRootDir(): string {
-  const raw = process.env.CUSTOMER_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-files');
+  return getWorkpilotFileRootDir('customer-files');
 }
 
 const DIARY_EXTRA_MAX_FILES = 8;
 const DIARY_EXTRA_FILE_MAX_BYTES = 6 * 1024 * 1024;
 
 function getDiaryExtraSubmissionsRootDir(): string {
-  const raw = process.env.DIARY_EXTRA_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'diary-extra-submissions');
+  return getWorkpilotFileRootDir('diary-extra-submissions');
 }
 
 function getDiaryExtraSubmissionsReadRootDirs(): string[] {
-  const configured = process.env.DIARY_EXTRA_FILES_DIR?.trim();
-  const roots = configured
-    ? [path.resolve(configured)]
-    : [
-        getDiaryExtraSubmissionsRootDir(),
-        path.resolve(process.cwd(), 'backend', 'data', 'diary-extra-submissions'),
-        path.resolve(process.cwd(), '..', 'data', 'diary-extra-submissions'),
-      ];
-  return Array.from(new Set(roots));
+  return getWorkpilotFileReadRootDirs('diary-extra-submissions');
 }
 
 async function ensureDiaryExtraSubmissionDir(diaryEventId: number, submissionId: number): Promise<string> {
@@ -131,20 +135,11 @@ async function ensureDiaryExtraSubmissionDir(diaryEventId: number, submissionId:
 }
 
 function getDiaryTechnicalNotesRootDir(): string {
-  const raw = process.env.DIARY_TECHNICAL_NOTE_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'diary-technical-notes');
+  return getWorkpilotFileRootDir('diary-technical-notes');
 }
 
 function getDiaryTechnicalNotesReadRootDirs(): string[] {
-  const configured = process.env.DIARY_TECHNICAL_NOTE_FILES_DIR?.trim();
-  const roots = configured
-    ? [path.resolve(configured)]
-    : [
-        getDiaryTechnicalNotesRootDir(),
-        path.resolve(process.cwd(), 'backend', 'data', 'diary-technical-notes'),
-        path.resolve(process.cwd(), '..', 'data', 'diary-technical-notes'),
-      ];
-  return Array.from(new Set(roots));
+  return getWorkpilotFileReadRootDirs('diary-technical-notes');
 }
 
 async function ensureDiaryTechnicalNoteDir(diaryEventId: number, noteId: number): Promise<string> {
@@ -180,13 +175,11 @@ async function ensureCustomerFilesDir(customerId: number): Promise<string> {
 }
 
 function getCustomerSpecificNoteMediaRootDir(): string {
-  const raw = process.env.CUSTOMER_SPECIFIC_NOTE_MEDIA_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-specific-note-media');
+  return getWorkpilotFileRootDir('customer-specific-note-media');
 }
 
 function getQuotationLineItemImagesRootDir(): string {
-  const raw = process.env.QUOTATION_LINE_ITEM_IMAGES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'quotation-line-item-images');
+  return getWorkpilotFileRootDir('quotation-line-item-images');
 }
 
 async function ensureQuotationLineItemImagesDir(quotationId: number): Promise<string> {
@@ -237,8 +230,7 @@ const QUOTATION_INTERNAL_NOTE_MAX_FILES = DIARY_EXTRA_MAX_FILES;
 const QUOTATION_INTERNAL_NOTE_FILE_MAX_BYTES = DIARY_EXTRA_FILE_MAX_BYTES;
 
 function getQuotationInternalNotesRootDir(): string {
-  const raw = process.env.QUOTATION_INTERNAL_NOTE_FILES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'quotation-internal-notes');
+  return getWorkpilotFileRootDir('quotation-internal-notes');
 }
 
 async function ensureQuotationInternalNoteDir(quotationId: number, noteId: number): Promise<string> {
@@ -257,6 +249,8 @@ type QuotationLineItemImageMeta = {
   original_filename: string;
   content_type: string;
   byte_size: number;
+  spaces_key?: string;
+  file_url?: string | null;
 };
 
 type QuotationLineItemInput = {
@@ -283,6 +277,8 @@ function existingQuotationLineImages(raw: unknown): QuotationLineItemImageMeta[]
         ? m.content_type.trim().slice(0, 255)
         : 'application/octet-stream',
       byte_size: typeof m.byte_size === 'number' && Number.isFinite(m.byte_size) ? Math.max(0, Math.round(m.byte_size)) : 0,
+      spaces_key: typeof m.spaces_key === 'string' ? m.spaces_key : undefined,
+      file_url: typeof m.file_url === 'string' ? m.file_url : undefined,
     });
   }
   return out;
@@ -337,19 +333,27 @@ async function normalizeQuotationLineImage(
 async function prepareQuotationLineImages(quotationId: number, raw: unknown): Promise<QuotationLineItemImageMeta[]> {
   if (!Array.isArray(raw)) return [];
   if (raw.length > 8) throw new Error('At most 8 images per quotation line item');
-  const dir = await ensureQuotationLineItemImagesDir(quotationId);
   const out: QuotationLineItemImageMeta[] = [];
   for (const rawItem of raw) {
     if (!rawItem || typeof rawItem !== 'object') throw new Error('Invalid line item image');
     const prepared = await normalizeQuotationLineImage(rawItem as Record<string, unknown>);
+    let uploaded: { spacesKey: string; fileUrl: string | null } | null = null;
     if (prepared.buffer) {
-      await fs.writeFile(path.join(dir, prepared.stored_filename), prepared.buffer);
+      uploaded = await writeWorkpilotFile(
+        'quotation-line-item-images',
+        [quotationId],
+        prepared.stored_filename,
+        prepared.buffer,
+        prepared.content_type,
+      );
     }
     out.push({
       stored_filename: prepared.stored_filename,
       original_filename: prepared.original_filename,
       content_type: prepared.content_type,
       byte_size: prepared.byte_size,
+      spaces_key: uploaded?.spacesKey ?? workpilotFileKey('quotation-line-item-images', [quotationId], prepared.stored_filename),
+      file_url: uploaded?.fileUrl ?? workpilotFileUrl('quotation-line-item-images', [quotationId], prepared.stored_filename) ?? undefined,
     });
   }
   return out;
@@ -357,21 +361,25 @@ async function prepareQuotationLineImages(quotationId: number, raw: unknown): Pr
 
 async function shapeQuotationLineItemImages(quotationId: number, raw: unknown): Promise<Array<QuotationLineItemImageMeta & { data_url: string | null }>> {
   const images = existingQuotationLineImages(raw);
-  const root = getQuotationLineItemImagesRootDir();
   const out: Array<QuotationLineItemImageMeta & { data_url: string | null }> = [];
   for (const image of images) {
     let dataUrl: string | null = null;
     try {
-      const fullPath = path.join(root, String(quotationId), image.stored_filename);
-      const rel = path.relative(root, fullPath);
-      if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
-        const data = await fs.readFile(fullPath);
+      const file = await loadWorkpilotFile('quotation-line-item-images', [quotationId], image.stored_filename);
+      if (file?.buffer || file?.fullPath) {
+        const data = file.buffer ?? await fs.readFile(file.fullPath!);
         dataUrl = `data:${image.content_type || 'application/octet-stream'};base64,${data.toString('base64')}`;
       }
     } catch {
       dataUrl = null;
     }
-    out.push({ ...image, data_url: dataUrl });
+    out.push({
+      stored_filename: image.stored_filename,
+      original_filename: image.original_filename,
+      content_type: image.content_type,
+      byte_size: image.byte_size,
+      data_url: dataUrl,
+    });
   }
   return out;
 }
@@ -1135,10 +1143,14 @@ async function initDb() {
       stored_filename VARCHAR(255) NOT NULL,
       content_type VARCHAR(255),
       byte_size BIGINT NOT NULL,
+      spaces_key TEXT,
+      file_url TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
   `);
+  await pool.query(`ALTER TABLE customer_files ADD COLUMN IF NOT EXISTS spaces_key TEXT`);
+  await pool.query(`ALTER TABLE customer_files ADD COLUMN IF NOT EXISTS file_url TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_files_customer_id ON customer_files(customer_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_files_work_address_id ON customer_files(work_address_id) WHERE work_address_id IS NOT NULL`);
 
@@ -1168,10 +1180,14 @@ async function initDb() {
       original_filename VARCHAR(500) NOT NULL,
       content_type VARCHAR(255),
       byte_size BIGINT NOT NULL,
+      spaces_key TEXT,
+      file_url TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
   `);
+  await pool.query(`ALTER TABLE customer_site_report_images ADD COLUMN IF NOT EXISTS spaces_key TEXT`);
+  await pool.query(`ALTER TABLE customer_site_report_images ADD COLUMN IF NOT EXISTS file_url TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_site_report_images_report_id ON customer_site_report_images(report_id)`);
 
   await pool.query(`
@@ -2435,6 +2451,39 @@ function jobReportAnswerIsPresent(value: unknown): boolean {
   const t = value.trim();
   if (t.length < 4) return false;
   return true;
+}
+
+function isJobReportFileQuestionType(questionType: string): boolean {
+  const t = questionType.toLowerCase().trim();
+  return t === 'customer_signature' || t === 'officer_signature' || t === 'before_photo' || t === 'after_photo';
+}
+
+function jobReportAnswerFilePath(diaryEventId: number, questionId: number, filename: string): string {
+  return `/diary-events/${diaryEventId}/job-report-answers/${questionId}/files/${encodeURIComponent(filename)}`;
+}
+
+async function storeJobReportAnswerValue(
+  diaryEventId: number,
+  questionId: number,
+  questionType: string,
+  value: string,
+): Promise<string> {
+  const trimmed = value.trim();
+  if (!isJobReportFileQuestionType(questionType) || !trimmed.startsWith('data:')) return trimmed;
+  const stored = await storeInlineDataUrlAsWorkpilotFile(
+    'job-report-answer-files',
+    [diaryEventId, questionId],
+    questionType,
+    trimmed,
+  );
+  return stored ? jobReportAnswerFilePath(diaryEventId, questionId, stored.filename) : trimmed;
+}
+
+async function storeBrandingLogoValue(userId: number, scope: 'invoice' | 'quotation', value: string | null | undefined): Promise<string | null | undefined> {
+  if (typeof value !== 'string' || !value.startsWith('data:')) return value;
+  const stored = await storeInlineDataUrlAsWorkpilotFile('branding-assets', [scope, userId], 'company_logo', value);
+  if (!stored) return value;
+  return workpilotFileUrl('branding-assets', [scope, userId], stored.filename) ?? value;
 }
 
 /** Allowed `jobs.state` values after an officer submits a job report (visit completed). */
@@ -4238,9 +4287,13 @@ app.post('/api/customers/:id/specific-notes/:noteId/media', authenticate, requir
     );
     if ((note.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
 
-    const dir = await ensureCustomerSpecificNoteMediaDir(customerId, noteId);
-    const fullPath = path.join(dir, storedFilename);
-    await fs.writeFile(fullPath, uploadBuf);
+    const uploaded = await writeWorkpilotFile(
+      'customer-specific-note-media',
+      [customerId, noteId],
+      storedFilename,
+      uploadBuf,
+      uploadContentType || 'application/octet-stream',
+    );
 
     const media = Array.isArray(note.rows[0].media) ? [...(note.rows[0].media as Record<string, unknown>[])] : [];
     media.push({
@@ -4248,6 +4301,8 @@ app.post('/api/customers/:id/specific-notes/:noteId/media', authenticate, requir
       original_filename: originalFilename,
       content_type: uploadContentType || 'application/octet-stream',
       byte_size: uploadBuf.length,
+      spaces_key: uploaded.spacesKey,
+      file_url: uploaded.fileUrl,
       uploaded_at: new Date().toISOString(),
       created_by: userId,
     });
@@ -4285,14 +4340,11 @@ app.get('/api/customers/:id/specific-notes/:noteId/media/:file/content', authent
     const list = Array.isArray(note.rows[0].media) ? (note.rows[0].media as Record<string, unknown>[]) : [];
     const meta = list.find((m) => String(m.stored_filename ?? '') === fileName);
     if (!meta) return res.status(404).json({ message: 'Image not found' });
-    const root = getCustomerSpecificNoteMediaRootDir();
-    const fullPath = path.join(root, String(customerId), String(noteId), fileName);
-    const rel = path.relative(root, fullPath);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return res.status(400).json({ message: 'Invalid path' });
-    const data = await fs.readFile(fullPath);
-    res.setHeader('Content-Type', String(meta.content_type ?? 'application/octet-stream'));
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    return res.send(data);
+    const file = await loadWorkpilotFile('customer-specific-note-media', [customerId, noteId], fileName);
+    if (!file) return res.status(404).json({ message: 'Image not found' });
+    return sendWorkpilotFile(res, file, String(meta.content_type ?? 'application/octet-stream'), {
+      cacheControl: 'private, max-age=3600',
+    });
   } catch (error) {
     console.error('Get customer note media error:', error);
     return res.status(404).json({ message: 'Image not found' });
@@ -4325,7 +4377,6 @@ app.delete('/api/customers/:id/specific-notes/:noteId/media/:file', authenticate
       noteId,
       customerId,
     ]);
-    await fs.unlink(path.join(getCustomerSpecificNoteMediaRootDir(), String(customerId), String(noteId), fileName)).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer note media error:', error);
@@ -4349,7 +4400,6 @@ app.delete('/api/customers/:id/specific-notes/:noteId', authenticate, requireTen
       isSuperAdmin ? [noteId, customerId] : [noteId, customerId, userId],
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
-    await fs.rm(path.join(getCustomerSpecificNoteMediaRootDir(), String(customerId), String(noteId)), { recursive: true, force: true }).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer note error:', error);
@@ -8234,20 +8284,22 @@ app.post(
         content_type: string;
         kind: string;
         byte_size: number;
+        spaces_key?: string;
+        file_url?: string | null;
       }[] = [];
 
-      const dir = await ensureDiaryExtraSubmissionDir(diaryEventId, submissionId);
       for (const d of decoded) {
         const ext = path.extname(d.original).slice(0, 32) || (d.kind === 'video' ? '.mp4' : '.jpg');
         const storedFilename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-        const fullPath = path.join(dir, storedFilename);
-        await fs.writeFile(fullPath, d.buf);
+        const uploaded = await writeWorkpilotFile('diary-extra-submissions', [diaryEventId, submissionId], storedFilename, d.buf, d.contentType);
         mediaJson.push({
           stored_filename: storedFilename,
           original_filename: d.original,
           content_type: d.contentType,
           kind: d.kind,
           byte_size: d.buf.length,
+          spaces_key: uploaded.spacesKey,
+          file_url: uploaded.fileUrl,
         });
       }
 
@@ -8261,7 +8313,11 @@ app.post(
         id: submissionId,
         message: 'Submission saved',
         media: mediaJson.map((m) => ({
-          ...m,
+          stored_filename: m.stored_filename,
+          original_filename: m.original_filename,
+          content_type: m.content_type,
+          kind: m.kind,
+          byte_size: m.byte_size,
           file_path: `/diary-events/${diaryEventId}/extra-submissions/${submissionId}/files/${encodeURIComponent(m.stored_filename)}`,
         })),
       });
@@ -8645,20 +8701,22 @@ app.post(
         content_type: string;
         kind: string;
         byte_size: number;
+        spaces_key?: string;
+        file_url?: string | null;
       }[] = [];
 
-      const dir = await ensureDiaryTechnicalNoteDir(diaryEventId, noteId);
       for (const d of decoded) {
         const ext = path.extname(d.original).slice(0, 32) || '.jpg';
         const storedFilename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-        const fullPath = path.join(dir, storedFilename);
-        await fs.writeFile(fullPath, d.buf);
+        const uploaded = await writeWorkpilotFile('diary-technical-notes', [diaryEventId, noteId], storedFilename, d.buf, d.contentType);
         mediaJson.push({
           stored_filename: storedFilename,
           original_filename: d.original,
           content_type: d.contentType,
           kind: 'image',
           byte_size: d.buf.length,
+          spaces_key: uploaded.spacesKey,
+          file_url: uploaded.fileUrl,
         });
       }
 
@@ -8671,7 +8729,11 @@ app.post(
         id: noteId,
         message: 'Technical note saved',
         media: mediaJson.map((m) => ({
-          ...m,
+          stored_filename: m.stored_filename,
+          original_filename: m.original_filename,
+          content_type: m.content_type,
+          kind: m.kind,
+          byte_size: m.byte_size,
           file_path: `/diary-events/${diaryEventId}/technical-notes/${noteId}/files/${encodeURIComponent(m.stored_filename)}`,
         })),
       });
@@ -8686,6 +8748,52 @@ app.post(
     } finally {
       client.release();
     }
+  },
+);
+
+app.get(
+  '/api/diary-events/:id/job-report-answers/:questionId/files/:file',
+  authenticate,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const eid = parseInt(String(req.params.id), 10);
+    const qid = parseInt(String(req.params.questionId), 10);
+    const fileParam = req.params.file;
+    const fileName = typeof fileParam === 'string' ? decodeURIComponent(fileParam) : '';
+    if (!Number.isFinite(eid) || !Number.isFinite(qid) || !fileName || fileName.includes('..') || path.isAbsolute(fileName)) {
+      return res.status(400).json({ message: 'Invalid request' });
+    }
+
+    const role = req.user!.role;
+    const tokenOfficerId = req.user!.officerId ?? null;
+    const access = await pool.query<{
+      officer_id: number | null;
+      job_officer_id: number | null;
+      job_created_by: number | null;
+      is_diary_officer: boolean;
+      is_job_officer: boolean;
+    }>(
+      `SELECT d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
+       FROM diary_events d
+       INNER JOIN jobs j ON j.id = d.job_id
+       INNER JOIN job_report_answers a ON a.diary_event_id = d.id AND a.question_id = $3
+       WHERE d.id = $1`,
+      [eid, tokenOfficerId, qid],
+    );
+    if ((access.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Not found' });
+    const acc = access.rows[0];
+    const isSuperAdmin = role === 'SUPER_ADMIN';
+    if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
+      const ok = acc.officer_id === tokenOfficerId || acc.job_officer_id === tokenOfficerId || acc.is_diary_officer || acc.is_job_officer;
+      if (!ok) return res.status(403).json({ message: 'Forbidden' });
+    } else if (role === 'OFFICER') {
+      return res.status(403).json({ message: 'Forbidden' });
+    } else if (!isSuperAdmin && acc.job_created_by !== getTenantScopeUserId(req.user!)) {
+      return res.status(404).json({ message: 'Not found' });
+    }
+
+    return sendInlineWorkpilotFile(res, 'job-report-answer-files', [eid, qid], fileName);
   },
 );
 
@@ -8736,9 +8844,6 @@ app.get(
     }
 
     try {
-      const found = await findDiaryStoredFile(getDiaryExtraSubmissionsReadRootDirs(), eid, sid, fileName);
-      if (!found) return res.status(404).json({ message: 'File not found' });
-      const { fullPath, size: fileSize } = found;
       const m = await pool.query<{ media: unknown }>(
         'SELECT media FROM diary_event_extra_submissions WHERE id = $1 AND diary_event_id = $2',
         [sid, eid],
@@ -8747,64 +8852,9 @@ app.get(
       const list = m.rows[0].media as { stored_filename?: string; content_type?: string }[];
       const meta = Array.isArray(list) ? list.find((x) => x.stored_filename === fileName) : null;
       const ct = meta?.content_type && String(meta.content_type).trim() ? String(meta.content_type) : 'application/octet-stream';
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      res.setHeader('Accept-Ranges', 'bytes');
-
-      /** AVPlayer / video_player use small Range probes; full-body 200 breaks CoreMedia (-12939). */
-      const rangeRaw = req.headers.range;
-      if (typeof rangeRaw === 'string') {
-        const m = /^bytes=(.+)$/i.exec(rangeRaw.trim());
-        if (m) {
-          const spec = m[1].trim();
-          let start = 0;
-          let end = fileSize - 1;
-          let parsed = false;
-          if (spec.startsWith('-')) {
-            const suffix = parseInt(spec.slice(1), 10);
-            if (Number.isFinite(suffix) && suffix > 0) {
-              start = Math.max(0, fileSize - suffix);
-              end = fileSize - 1;
-              parsed = true;
-            }
-          } else {
-            const dash = spec.indexOf('-');
-            if (dash >= 0) {
-              const a = spec.slice(0, dash);
-              const b = spec.slice(dash + 1);
-              start = a === '' ? 0 : parseInt(a, 10);
-              end = b === '' ? fileSize - 1 : parseInt(b, 10);
-              if (!Number.isFinite(start) || start < 0) start = 0;
-              if (!Number.isFinite(end)) end = fileSize - 1;
-              parsed = true;
-            }
-          }
-          if (parsed) {
-            if (start >= fileSize || end < start) {
-              res.status(416);
-              res.setHeader('Content-Range', `bytes */${fileSize}`);
-              return res.end();
-            }
-            if (end >= fileSize) end = fileSize - 1;
-            const chunkSize = end - start + 1;
-            res.status(206);
-            res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-            res.setHeader('Content-Length', String(chunkSize));
-            const stream = createReadStream(fullPath, { start, end });
-            stream.on('error', () => {
-              if (!res.writableEnded) res.destroy();
-            });
-            return stream.pipe(res);
-          }
-        }
-      }
-
-      res.setHeader('Content-Length', String(fileSize));
-      const stream = createReadStream(fullPath);
-      stream.on('error', () => {
-        if (!res.writableEnded) res.destroy();
-      });
-      return stream.pipe(res);
+      const found = await loadWorkpilotFile('diary-extra-submissions', [eid, sid], fileName);
+      if (!found) return res.status(404).json({ message: 'File not found' });
+      return sendWorkpilotFileWithRange(res, found, ct, req.headers.range, { cacheControl: 'private, max-age=3600' });
     } catch {
       return res.status(404).json({ message: 'File not found' });
     }
@@ -8857,9 +8907,6 @@ app.get(
     }
 
     try {
-      const found = await findDiaryStoredFile(getDiaryTechnicalNotesReadRootDirs(), eid, sid, fileName);
-      if (!found) return res.status(404).json({ message: 'File not found' });
-      const { fullPath, size: fileSize } = found;
       const m = await pool.query<{ media: unknown }>(
         `SELECT n.media
          FROM customer_specific_notes n
@@ -8873,10 +8920,9 @@ app.get(
       const list = m.rows[0].media as { stored_filename?: string; content_type?: string }[];
       const meta = Array.isArray(list) ? list.find((x) => x.stored_filename === fileName) : null;
       const ct = meta?.content_type && String(meta.content_type).trim() ? String(meta.content_type) : 'application/octet-stream';
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      res.setHeader('Content-Length', String(fileSize));
-      return createReadStream(fullPath).pipe(res);
+      const found = await loadWorkpilotFile('diary-technical-notes', [eid, sid], fileName);
+      if (!found) return res.status(404).json({ message: 'File not found' });
+      return sendWorkpilotFile(res, found, ct, { cacheControl: 'private, max-age=3600' });
     } catch {
       return res.status(404).json({ message: 'File not found' });
     }
@@ -9773,6 +9819,7 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
     for (const q of questions) {
       const v = answerMap.get(q.id);
       if (v !== undefined && jobReportAnswerIsPresent(v)) {
+        const storedValue = await storeJobReportAnswerValue(diaryEventId, q.id, q.question_type, v);
         await client.query(
           `INSERT INTO job_report_answers (diary_event_id, question_id, value, prompt_snapshot, question_type_snapshot, helper_text_snapshot, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -9785,7 +9832,7 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
           [
             diaryEventId,
             q.id,
-            v.trim(),
+            storedValue,
             q.prompt,
             q.question_type,
             q.helper_text != null && String(q.helper_text).trim() ? String(q.helper_text).trim() : null,
@@ -10205,6 +10252,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
     for (const q of questions) {
       const v = answerMap.get(q.id);
       if (jobReportAnswerIsPresent(v)) {
+        const storedValue = await storeJobReportAnswerValue(diaryEventId, q.id, q.question_type, v!);
         await client.query(
           `INSERT INTO job_report_answers (diary_event_id, question_id, value, prompt_snapshot, question_type_snapshot, helper_text_snapshot, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -10217,7 +10265,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
           [
             diaryEventId,
             q.id,
-            v!.trim(),
+            storedValue,
             q.prompt,
             q.question_type,
             q.helper_text != null && String(q.helper_text).trim() ? String(q.helper_text).trim() : null,
@@ -14500,6 +14548,8 @@ app.get('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotations'
               content_type?: string;
               kind?: string;
               byte_size?: number;
+              spaces_key?: string;
+              file_url?: string | null;
             };
             return {
               stored_filename: item.stored_filename,
@@ -14733,21 +14783,23 @@ app.post('/api/quotations/:id/internal-notes', authenticate, requireTenantCrmAcc
       content_type: string;
       kind: string;
       byte_size: number;
+      spaces_key?: string;
+      file_url?: string | null;
     }[] = [];
 
     if (decoded.length > 0) {
-      const dir = await ensureQuotationInternalNoteDir(quotationId, noteId);
       for (const d of decoded) {
         const ext = path.extname(d.original).slice(0, 32) || '.jpg';
         const storedFilename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-        const fullPath = path.join(dir, storedFilename);
-        await fs.writeFile(fullPath, d.buf);
+        const uploaded = await writeWorkpilotFile('quotation-internal-notes', [quotationId, noteId], storedFilename, d.buf, d.contentType);
         mediaJson.push({
           stored_filename: storedFilename,
           original_filename: d.original,
           content_type: d.contentType,
           kind: 'image',
           byte_size: d.buf.length,
+          spaces_key: uploaded.spacesKey,
+          file_url: uploaded.fileUrl,
         });
       }
       await client.query(`UPDATE quotation_internal_notes SET media = $1::jsonb WHERE id = $2`, [JSON.stringify(mediaJson), noteId]);
@@ -14812,8 +14864,6 @@ app.delete('/api/quotations/:id/internal-notes/:noteId', authenticate, requireTe
 
     const del = await pool.query('DELETE FROM quotation_internal_notes WHERE id = $1 AND quotation_id = $2', [noteId, quotationId]);
     if ((del.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Note not found' });
-    const noteDir = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId));
-    await fs.rm(noteDir, { recursive: true, force: true }).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete quotation internal note error:', error);
@@ -14885,16 +14935,10 @@ app.get(
       const meta = Array.isArray(list) ? list.find((x) => x.stored_filename === fileName) : null;
       if (!meta) return res.status(404).json({ message: 'Not found' });
 
-      const fullPath = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId), fileName);
-      if (!fullPath.startsWith(getQuotationInternalNotesRootDir())) {
-        return res.status(400).json({ message: 'Invalid path' });
-      }
-      const st = await fs.stat(fullPath);
       const ct = meta.content_type && String(meta.content_type).trim() ? String(meta.content_type) : 'application/octet-stream';
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
-      res.setHeader('Content-Length', String(st.size));
-      return createReadStream(fullPath).pipe(res);
+      const file = await loadWorkpilotFile('quotation-internal-notes', [quotationId, noteId], fileName);
+      if (!file) return res.status(404).json({ message: 'File not found' });
+      return sendWorkpilotFile(res, file, ct, { cacheControl: 'private, max-age=3600' });
     } catch {
       return res.status(404).json({ message: 'File not found' });
     }
@@ -15802,7 +15846,11 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, requireAnyPermi
   const companyAddress = typeof body.company_address === 'string' ? body.company_address.trim() || null : undefined;
   const companyPhone = typeof body.company_phone === 'string' ? body.company_phone.trim() || null : undefined;
   const companyEmail = typeof body.company_email === 'string' ? body.company_email.trim() || null : undefined;
-  const companyLogo = typeof body.company_logo === 'string' ? (body.company_logo.trim() || null) : undefined;
+  const companyLogo = await storeBrandingLogoValue(
+    userId,
+    'quotation',
+    typeof body.company_logo === 'string' ? body.company_logo.trim() || null : undefined,
+  );
   const companyWebsite = typeof body.company_website === 'string' ? body.company_website.trim() || null : undefined;
   const companyTaxId = typeof body.company_tax_id === 'string' ? body.company_tax_id.trim() || null : undefined;
   const taxLabel = typeof body.tax_label === 'string' ? body.tax_label.trim() || 'Tax' : undefined;
@@ -15928,7 +15976,11 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
   const companyAddress = typeof body.company_address === 'string' ? body.company_address.trim() || null : undefined;
   const companyPhone = typeof body.company_phone === 'string' ? body.company_phone.trim() || null : undefined;
   const companyEmail = typeof body.company_email === 'string' ? body.company_email.trim() || null : undefined;
-  const companyLogo = typeof body.company_logo === 'string' ? (body.company_logo.trim() || null) : undefined;
+  const companyLogo = await storeBrandingLogoValue(
+    userId,
+    'invoice',
+    typeof body.company_logo === 'string' ? body.company_logo.trim() || null : undefined,
+  );
   const companyWebsite = typeof body.company_website === 'string' ? body.company_website.trim() || null : undefined;
   const companyTaxId = typeof body.company_tax_id === 'string' ? body.company_tax_id.trim() || null : undefined;
   const taxLabel = typeof body.tax_label === 'string' ? body.tax_label.trim() || 'Tax' : undefined;
@@ -18325,7 +18377,7 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
     }
 
     const result = await pool.query(
-      `SELECT f.id, f.customer_id, f.work_address_id, f.original_filename, f.content_type, f.byte_size, f.created_at, f.created_by,
+      `SELECT f.id, f.customer_id, f.work_address_id, f.original_filename, f.stored_filename, f.content_type, f.byte_size, f.created_at, f.created_by,
               COALESCE(u.full_name, u.email, 'User') AS created_by_name
        FROM customer_files f
        LEFT JOIN users u ON u.id = f.created_by
@@ -18361,6 +18413,7 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
         customer_id: Number(r.customer_id),
         work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
         original_filename: String(r.original_filename ?? ''),
+        stored_filename: String(r.stored_filename ?? ''),
         content_type: (r.content_type as string) ?? null,
         byte_size: Number(r.byte_size),
         created_at: (r.created_at as Date).toISOString(),
@@ -18444,16 +18497,20 @@ app.post('/api/customers/:customerId/files', authenticate, requireTenantCrmAcces
 
     const workAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, body.work_address_id);
 
-    const dir = await ensureCustomerFilesDir(customerId);
-    const fullPath = path.join(dir, storedFilename);
-    await fs.writeFile(fullPath, uploadBuf);
+    const uploaded = await writeWorkpilotFile(
+      'customer-files',
+      [customerId],
+      storedFilename,
+      uploadBuf,
+      uploadContentType || 'application/octet-stream',
+    );
 
     try {
       const inserted = await pool.query(
-        `INSERT INTO customer_files (customer_id, work_address_id, original_filename, stored_filename, content_type, byte_size, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO customer_files (customer_id, work_address_id, original_filename, stored_filename, content_type, byte_size, spaces_key, file_url, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, created_at`,
-        [customerId, workAddressId, originalFilename, storedFilename, uploadContentType, uploadBuf.length, userId],
+        [customerId, workAddressId, originalFilename, storedFilename, uploadContentType, uploadBuf.length, uploaded.spacesKey, uploaded.fileUrl, userId],
       );
       return res.status(201).json({
         file: {
@@ -18462,7 +18519,6 @@ app.post('/api/customers/:customerId/files', authenticate, requireTenantCrmAcces
         },
       });
     } catch (dbErr) {
-      await fs.unlink(fullPath).catch(() => {});
       throw dbErr;
     }
   } catch (error) {
@@ -18490,20 +18546,14 @@ app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requir
     }>('SELECT stored_filename, original_filename, content_type FROM customer_files WHERE id = $1 AND customer_id = $2', [fileId, customerId]);
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'File not found' });
 
-    const dir = path.join(getCustomerFilesRootDir(), String(customerId));
-    const fullPath = path.join(dir, row.rows[0].stored_filename);
-    let data: Buffer;
-    try {
-      data = await fs.readFile(fullPath);
-    } catch {
-      return res.status(404).json({ message: 'File not found on disk' });
-    }
+    const file = await loadWorkpilotFile('customer-files', [customerId], row.rows[0].stored_filename);
+    if (!file) return res.status(404).json({ message: 'File not found' });
 
     const ct = row.rows[0].content_type || 'application/octet-stream';
-    res.setHeader('Content-Type', ct);
     const asciiName = String(row.rows[0].original_filename).replace(/[^\x20-\x7E]/g, '_') || 'download';
-    res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"`);
-    return res.send(data);
+    return sendWorkpilotFile(res, file, ct, {
+      disposition: `attachment; filename="${asciiName}"`,
+    });
   } catch (error) {
     console.error('Download customer file error:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -18528,8 +18578,6 @@ app.delete('/api/customers/:customerId/files/:fileId', authenticate, requireTena
     );
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'File not found' });
 
-    const fullPath = path.join(getCustomerFilesRootDir(), String(customerId), row.rows[0].stored_filename);
-    await fs.unlink(fullPath).catch(() => {});
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer file error:', error);
@@ -19315,14 +19363,15 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
     const dir = await ensureCustomerSiteReportImageDir(customerId, reportId);
     const fullPath = path.join(dir, storedFilename);
     await fs.writeFile(fullPath, uploadBuf);
+    const uploaded = await uploadCustomerSiteReportImageToSpaces(customerId, reportId, storedFilename, fullPath, uploadContentType);
     await mirrorCustomerSiteReportImageFile(customerId, reportId, storedFilename, fullPath);
 
     try {
       const inserted = await pool.query(
-        `INSERT INTO customer_site_report_images (report_id, stored_filename, original_filename, content_type, byte_size, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO customer_site_report_images (report_id, stored_filename, original_filename, content_type, byte_size, spaces_key, file_url, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id, created_at`,
-        [reportId, storedFilename, originalFilename, uploadContentType, uploadBuf.length, userId],
+        [reportId, storedFilename, originalFilename, uploadContentType, uploadBuf.length, uploaded.spacesKey, uploaded.fileUrl, userId],
       );
       return res.status(201).json({
         image: {
@@ -19331,7 +19380,6 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
         },
       });
     } catch (dbErr) {
-      await fs.unlink(fullPath).catch(() => {});
       throw dbErr;
     }
   } catch (error) {
@@ -19368,15 +19416,8 @@ app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/conten
     );
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Image not found' });
 
-    const fullPath = await findCustomerSiteReportImageFile(customerId, reportId, row.rows[0].stored_filename);
-    if (!fullPath) return res.status(404).json({ message: 'Image not found on disk' });
-
-    let data: Buffer;
-    try {
-      data = await fs.readFile(fullPath);
-    } catch {
-      return res.status(404).json({ message: 'Image not found on disk' });
-    }
+    const data = await loadCustomerSiteReportImageBuffer(customerId, reportId, row.rows[0].stored_filename);
+    if (!data) return res.status(404).json({ message: 'Image not found on disk' });
 
     const ct = row.rows[0].content_type || 'application/octet-stream';
     res.setHeader('Content-Type', ct);

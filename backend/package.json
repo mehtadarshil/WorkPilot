@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
+    "migrate:spaces": "ts-node src/scripts/migrateFilesToSpacesAndDb.ts",
+    "migrate:spaces:dry-run": "ts-node src/scripts/migrateFilesToSpacesAndDb.ts --dry-run",
     "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -14,6 +16,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1066.0",
     "@types/nodemailer": "^7.0.11",
     "axios": "^1.14.0",
     "bcryptjs": "^2.4.3",

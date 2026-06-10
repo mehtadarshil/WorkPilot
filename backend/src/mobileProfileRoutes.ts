@@ -1,8 +1,7 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { Pool } from 'pg';
-import fs from 'fs/promises';
 import path from 'path';
-import { createReadStream } from 'fs';
+import { getWorkpilotFileRootDir, loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 type AuthReq = Request & {
   user?: {
     userId: number;
@@ -15,8 +14,7 @@ type AuthReq = Request & {
 const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 function getProfilePhotosRoot(): string {
-  const raw = process.env.WORKPILOT_MOBILE_PROFILE_PHOTOS_DIR;
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'mobile-profile-photos');
+  return getWorkpilotFileRootDir('mobile-profile-photos');
 }
 
 function profilePhotoDir(kind: 'officer' | 'user', id: number): string {
@@ -86,7 +84,7 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
     const r = await pool.query(
       `SELECT id, full_name, email, phone, mobile_phone, landline_phone, department, role_position, state,
               profile_address, profile_notes, next_of_kin_name, next_of_kin_phone, next_of_kin_relationship,
-              profile_photo_filename
+              profile_photo_filename, profile_photo_url
        FROM officers WHERE id = $1`,
       [subject.id],
     );
@@ -94,7 +92,7 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
   }
   const r = await pool.query(
     `SELECT id, email, full_name, phone, mobile_phone, landline_phone, address AS profile_address, notes AS profile_notes,
-            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename
+            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename, profile_photo_url
      FROM users WHERE id = $1`,
     [subject.id],
   );
@@ -226,14 +224,8 @@ export function mountMobileProfileRoutes(
       if (!subject) return res.status(404).json({ message: 'Profile not found' });
 
       if (body.remove === true) {
-        const row = await loadProfileRow(pool, subject);
-        const prev =
-          row && typeof row.profile_photo_filename === 'string' ? row.profile_photo_filename.trim() : '';
-        if (prev) {
-          await fs.unlink(path.join(profilePhotoDir(subject.kind, subject.id), path.basename(prev))).catch(() => {});
-        }
         const table = subject.kind === 'officer' ? 'officers' : 'users';
-        await pool.query(`UPDATE ${table} SET profile_photo_filename = NULL WHERE id = $1`, [subject.id]);
+        await pool.query(`UPDATE ${table} SET profile_photo_filename = NULL, profile_photo_url = NULL WHERE id = $1`, [subject.id]);
         const updated = await loadProfileRow(pool, subject);
         return res.json({
           profile: rowToProfilePayload(subject, updated ?? {}),
@@ -246,14 +238,15 @@ export function mountMobileProfileRoutes(
         return res.status(400).json({ message: 'Invalid image (use JPEG, PNG, or WebP under 5MB)' });
       }
 
-      const dir = profilePhotoDir(subject.kind, subject.id);
-      await fs.mkdir(dir, { recursive: true });
       const filename = `photo.${parsed.ext}`;
-      const fullPath = path.join(dir, filename);
-      await fs.writeFile(fullPath, parsed.buf);
+      const uploaded = await writeWorkpilotFile('mobile-profile-photos', [`${subject.kind}_${subject.id}`], filename, parsed.buf, `image/${parsed.ext === 'jpg' ? 'jpeg' : parsed.ext}`);
 
       const table = subject.kind === 'officer' ? 'officers' : 'users';
-      await pool.query(`UPDATE ${table} SET profile_photo_filename = $1 WHERE id = $2`, [filename, subject.id]);
+      await pool.query(`UPDATE ${table} SET profile_photo_filename = $1, profile_photo_url = $2 WHERE id = $3`, [
+        filename,
+        uploaded.fileUrl,
+        subject.id,
+      ]);
       if (subject.kind === 'officer') {
         await pool.query(`UPDATE officers SET updated_at = NOW() WHERE id = $1`, [subject.id]);
       }
@@ -276,15 +269,12 @@ export function mountMobileProfileRoutes(
       const fn =
         row && typeof row.profile_photo_filename === 'string' ? path.basename(row.profile_photo_filename.trim()) : '';
       if (!fn) return res.status(404).json({ message: 'No photo' });
-      const fullPath = path.join(profilePhotoDir(subject.kind, subject.id), fn);
-      const stat = await fs.stat(fullPath).catch(() => null);
-      if (!stat?.isFile()) return res.status(404).json({ message: 'Not found' });
-      const ext = path.extname(fullPath).toLowerCase();
+      const file = await loadWorkpilotFile('mobile-profile-photos', [`${subject.kind}_${subject.id}`], fn);
+      if (!file) return res.status(404).json({ message: 'Not found' });
+      const ext = path.extname(fn).toLowerCase();
       const ct =
         ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-      res.setHeader('Content-Type', ct);
-      res.setHeader('Content-Length', String(stat.size));
-      return createReadStream(fullPath).pipe(res);
+      return sendWorkpilotFile(res, file, ct);
     } catch (e) {
       console.error('mobile profile photo get', e);
       return res.status(500).json({ message: 'Internal server error' });
@@ -302,6 +292,7 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'next_of_kin_phone VARCHAR(50)',
     'next_of_kin_relationship VARCHAR(100)',
     'profile_photo_filename VARCHAR(255)',
+    'profile_photo_url TEXT',
   ];
   for (const def of officerCols) {
     await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS ${def}`);
@@ -313,6 +304,7 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'next_of_kin_phone VARCHAR(50)',
     'next_of_kin_relationship VARCHAR(100)',
     'profile_photo_filename VARCHAR(255)',
+    'profile_photo_url TEXT',
   ];
   for (const def of userCols) {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${def}`);
