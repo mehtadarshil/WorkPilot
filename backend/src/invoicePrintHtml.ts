@@ -436,6 +436,7 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     invoice_work_address_id: number | null;
     customer_reference: string | null;
     job_customer_reference: string | null;
+    job_work_address_id: number | null;
     invoice_date: Date;
     due_date: Date;
     subtotal: string;
