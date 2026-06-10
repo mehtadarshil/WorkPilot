@@ -183,7 +183,9 @@ export default function JobCostsTab({ jobId, token }: Props) {
     const onSite = onSiteRateInput.trim();
     const travelNumber = travel === '' ? null : Number(travel);
     const onSiteNumber = onSite === '' ? null : Number(onSite);
-    if ((travel !== '' && (!Number.isFinite(travelNumber) || travelNumber < 0)) || (onSite !== '' && (!Number.isFinite(onSiteNumber) || onSiteNumber < 0))) {
+    const invalidTravelRate = travelNumber !== null && (!Number.isFinite(travelNumber) || travelNumber < 0);
+    const invalidOnSiteRate = onSiteNumber !== null && (!Number.isFinite(onSiteNumber) || onSiteNumber < 0);
+    if (invalidTravelRate || invalidOnSiteRate) {
       setError('Rates must be positive numbers, or blank to use the price book default.');
       return;
     }
