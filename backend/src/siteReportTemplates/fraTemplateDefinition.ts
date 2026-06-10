@@ -16,7 +16,7 @@ export function getFraTemplateDefinition(): SiteReportTemplateDefinition {
       id: 'client_header',
       title: 'Client details',
       omit_from_pdf: true,
-      helper_text: 'Client name and property address are filled from WorkPilot on the customer report screen.',
+      helper_text: 'Client name is filled from WorkPilot. Property address can be edited for this report.',
       fields: [
         f('client_name_display', 'Client name', 'static_text', {
           content: '(Pulled from WorkPilot — shown in the report header above.)',

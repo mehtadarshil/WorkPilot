@@ -63,10 +63,18 @@ export function CustomerSiteReportSectionView({
         {sec.fields.map((field) => (
           <div key={field.id} className="space-y-1.5">
             {field.label ? <label className="block text-sm font-semibold text-slate-800">{field.label}</label> : null}
-            {sec.id === 'client_header' && (field.id === 'client_name_display' || field.id === 'property_address_display') ? (
+            {sec.id === 'client_header' && field.id === 'client_name_display' ? (
               <div className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-sm text-slate-800 whitespace-pre-wrap">
-                {field.id === 'client_name_display' ? clientDisplayName : siteAddressLabel}
+                {clientDisplayName}
               </div>
+            ) : sec.id === 'client_header' && field.id === 'property_address_display' ? (
+              <textarea
+                value={values[field.id] ?? siteAddressLabel}
+                onChange={(e) => h.setFieldValue(field.id, e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 resize-y min-h-[72px]"
+                placeholder="Enter property address"
+              />
             ) : field.type === 'image' ? (
               <SiteReportFieldImageList
                 rows={fieldImages[field.id] || []}

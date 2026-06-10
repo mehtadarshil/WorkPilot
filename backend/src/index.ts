@@ -83,6 +83,12 @@ import { normalizeCustomerImageUpload } from './imageUploadNormalize';
 import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
 import { authLimiter } from './middleware/rateLimiters';
+import {
+  ensureCustomerSiteReportImageDir,
+  findCustomerSiteReportImageFile,
+  removeCustomerSiteReportImageDirs,
+  removeCustomerSiteReportImageFile,
+} from './customerSiteReportImageStorage';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -210,17 +216,6 @@ function shapeCustomerSpecificNoteMedia(customerId: number, noteId: number, raw:
     });
   }
   return shaped;
-}
-
-function getCustomerSiteReportImagesRootDir(): string {
-  const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-site-report-images');
-}
-
-async function ensureCustomerSiteReportImageDir(customerId: number, reportId: number): Promise<string> {
-  const dir = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId));
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
 }
 
 async function assertSiteReportTemplateImageIdsBelongToReport(
@@ -19066,8 +19061,7 @@ app.delete('/api/customers/:customerId/site-report/:reportId', authenticate, req
     );
     if ((deleted.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
 
-    const dir = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId));
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await removeCustomerSiteReportImageDirs(customerId, reportId);
     return res.json({ message: 'Report deleted' });
   } catch (error) {
     console.error('Delete customer site report error:', error);
@@ -19372,7 +19366,9 @@ app.get('/api/customers/:customerId/site-report/:reportId/images/:imageId/conten
     );
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Image not found' });
 
-    const fullPath = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId), row.rows[0].stored_filename);
+    const fullPath = await findCustomerSiteReportImageFile(customerId, reportId, row.rows[0].stored_filename);
+    if (!fullPath) return res.status(404).json({ message: 'Image not found on disk' });
+
     let data: Buffer;
     try {
       data = await fs.readFile(fullPath);
@@ -19413,8 +19409,7 @@ app.delete('/api/customers/:customerId/site-report/:reportId/images/:imageId', a
     );
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Image not found' });
 
-    const fullPath = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId), row.rows[0].stored_filename);
-    await fs.unlink(fullPath).catch(() => {});
+    await removeCustomerSiteReportImageFile(customerId, reportId, row.rows[0].stored_filename);
     return res.status(204).send();
   } catch (error) {
     console.error('Delete customer site report image error:', error);

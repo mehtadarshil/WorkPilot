@@ -578,13 +578,15 @@ export default function CustomerSiteReportTab({
     }
   };
 
+  const propertyAddressForReport = values.property_address_display?.trim() || siteAddressLabel;
+
   const printHeader = useMemo(
     () => ({
       client: clientDisplayName,
-      site: siteAddressLabel,
+      site: propertyAddressForReport,
       title: reportTitle.trim() || template?.definition.report_title_default?.trim() || 'Report',
     }),
-    [clientDisplayName, siteAddressLabel, reportTitle, template?.definition.report_title_default],
+    [clientDisplayName, propertyAddressForReport, reportTitle, template?.definition.report_title_default],
   );
 
   if (loading) {

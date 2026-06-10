@@ -1,7 +1,7 @@
-import path from 'path';
 import fs from 'fs/promises';
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
+import { findCustomerSiteReportImageFile } from './customerSiteReportImageStorage';
 import type {
   SiteReportSectionImageRow,
   SiteReportTemplateDefinition,
@@ -76,11 +76,6 @@ function formatFieldValue(field: SiteReportTemplateField, value: string): string
   return '';
 }
 
-function getCustomerSiteReportImagesRootDir(): string {
-  const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_DIR?.trim();
-  return raw ? path.resolve(raw) : path.resolve(process.cwd(), 'data', 'customer-site-report-images');
-}
-
 async function loadImageDataUrlMap(
   pool: Pool,
   customerId: number,
@@ -93,10 +88,10 @@ async function loadImageDataUrlMap(
     `SELECT id, stored_filename, content_type FROM customer_site_report_images WHERE report_id = $1 AND id = ANY($2::int[])`,
     [reportId, imageIds],
   );
-  const root = getCustomerSiteReportImagesRootDir();
   for (const r of rows.rows) {
-    const full = path.join(root, String(customerId), String(reportId), r.stored_filename);
     try {
+      const full = await findCustomerSiteReportImageFile(customerId, reportId, r.stored_filename);
+      if (!full) continue;
       const buf = await fs.readFile(full);
       const ct = (r.content_type || 'image/jpeg').split(';')[0].trim() || 'image/jpeg';
       map.set(Number(r.id), `data:${ct};base64,${buf.toString('base64')}`);
@@ -468,6 +463,10 @@ export async function getCustomerSiteReportPrintHtml(
       .map((x) => (typeof x === 'string' ? x.trim() : ''))
       .filter(Boolean)
       .join(', ');
+  }
+  const propertyAddressOverride = doc.values?.property_address_display;
+  if (typeof propertyAddressOverride === 'string' && propertyAddressOverride.trim()) {
+    siteLine = propertyAddressOverride.trim();
   }
 
   const reportTitle =
