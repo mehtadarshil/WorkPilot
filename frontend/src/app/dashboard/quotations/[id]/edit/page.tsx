@@ -8,6 +8,8 @@ import { ArrowLeft, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
 import ImportCustomerSelect, { type ImportCustomerOption } from '../../../ImportCustomerSelect';
 import WorkAddressSelect from '../../../WorkAddressSelect';
+import QuotationInternalCostingCard from '../../QuotationInternalCostingCard';
+import QuotationInternalNotesCard, { type QuotationInternalNote } from '../QuotationInternalNotesCard';
 
 type LineItemImage = {
   stored_filename?: string;
@@ -38,6 +40,7 @@ interface QuotationDetail {
   quotation_work_address_id?: number | null;
   state: string;
   line_items: { description: string; quantity: number; unit_price: number; images?: LineItemImage[] }[];
+  internal_notes?: QuotationInternalNote[];
 }
 
 type CustomerRow = ImportCustomerOption & { email?: string };
@@ -82,11 +85,13 @@ export default function EditQuotationPage() {
   const router = useRouter();
   const params = useParams();
   const id = typeof params?.id === 'string' ? params.id : '';
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [internalNotes, setInternalNotes] = useState<QuotationInternalNote[]>([]);
 
   const [quotationNumber, setQuotationNumber] = useState('');
   const [customerId, setCustomerId] = useState<number | null>(null);
@@ -135,6 +140,7 @@ export default function EditQuotationPage() {
       }
       skipNextWorkFetchReset.current = true;
       setState(q.state);
+      setInternalNotes(q.internal_notes ?? []);
       const items =
         q.line_items.length > 0
           ? q.line_items.map((li) => ({
@@ -226,6 +232,18 @@ export default function EditQuotationPage() {
   const removeLine = (i: number) => {
     if (lineItems.length <= 1) return;
     setLineItems((p) => p.filter((_, idx) => idx !== i));
+  };
+
+  const appendInternalNote = (note: QuotationInternalNote) => {
+    setInternalNotes((prev) => [note, ...prev]);
+  };
+
+  const removeInternalNote = (noteId: number) => {
+    setInternalNotes((prev) => prev.filter((note) => note.id !== noteId));
+  };
+
+  const updateInternalNote = (noteId: number, newBody: string) => {
+    setInternalNotes((prev) => prev.map((note) => (note.id === noteId ? { ...note, body: newBody } : note)));
   };
 
   const addLineImages = async (lineIndex: number, files: FileList | null) => {
@@ -350,14 +368,14 @@ export default function EditQuotationPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <h1 className="text-2xl font-bold text-slate-900">Edit quotation</h1>
           <p className="mt-1 text-sm text-slate-500">Update line items, dates, and status for this quotation.</p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</div>}
 
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]">
               <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block text-sm">
@@ -679,24 +697,6 @@ export default function EditQuotationPage() {
                 </div>
               </div>
             </div>
-              </div>
-
-              <aside className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:sticky lg:top-4 lg:self-start">
-                <label className="block text-sm">
-                  <span className="font-semibold text-slate-800">Service notes</span>
-                  <span className="mt-1 block text-xs text-slate-500">
-                    Notes shown on the quotation, PDF, and customer link.
-                  </span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={14}
-                    className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                    placeholder="Add service notes..."
-                  />
-                </label>
-              </aside>
-            </div>
 
             <div className="flex flex-wrap gap-3 border-t border-slate-100 pt-4">
               <button
@@ -714,7 +714,35 @@ export default function EditQuotationPage() {
                 Cancel
               </button>
             </div>
+              </div>
+
+              <aside className="space-y-6 lg:sticky lg:top-4 lg:self-start">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Office use only</p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-900">Internal costing and notes</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Private to your team. Not shown on the quotation PDF or customer link.
+                  </p>
+                </div>
+
+                {token ? (
+                  <>
+                    <QuotationInternalCostingCard quotationId={id} authToken={token} currency={currency} />
+
+                    <QuotationInternalNotesCard
+                      quotationId={id}
+                      authToken={token}
+                      notes={internalNotes}
+                      onAppendNote={appendInternalNote}
+                      onRemoveNote={removeInternalNote}
+                      onUpdateNote={updateInternalNote}
+                    />
+                  </>
+                ) : null}
+              </aside>
+            </div>
           </form>
+
         </div>
       </div>
     </div>

@@ -27,6 +27,17 @@ export type SiteReportTemplateSection = {
   allow_section_images?: boolean;
   /** When true, this section is shown on the customer report screen but omitted from generated PDFs */
   omit_from_pdf?: boolean;
+  /** When true, users can add multiple instances of this section (e.g. one card per fire door). */
+  repeatable?: boolean;
+  /** Singular label for each instance card, e.g. "Door". */
+  repeat_label?: string;
+  /** Label for the add button, e.g. "Add door". */
+  add_label?: string;
+};
+
+export type SiteReportRepeatableInstance = {
+  id: string;
+  values: Record<string, string>;
 };
 
 export type SiteReportTemplateFooter = {
@@ -50,7 +61,14 @@ export type TemplateSiteReportDocument = {
   section_images?: Record<string, SiteReportSectionImageRow[]>;
   /** Images keyed by template field id (e.g. photo fields, signatures) */
   field_images?: Record<string, SiteReportSectionImageRow[]>;
+  /** Repeatable section instances keyed by section id. */
+  repeatable_values?: Record<string, SiteReportRepeatableInstance[]>;
 };
+
+/** Scoped field-image key for a repeatable section instance field. */
+export function scopedRepeatableFieldKey(sectionId: string, instanceId: string, fieldId: string): string {
+  return `repeat:${sectionId}:${instanceId}:${fieldId}`;
+}
 
 export type SiteReportSectionImageRow = {
   id: string;

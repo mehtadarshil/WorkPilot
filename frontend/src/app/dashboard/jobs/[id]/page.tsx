@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { deleteRequest, getJson, patchJson, postJson } from '../../../apiClient';
+import { deleteRequest, getBlob, getJson, patchJson, postJson } from '../../../apiClient';
 import JobOfficeTasksTab from './JobOfficeTasksTab';
 import JobReportTab from './JobReportTab';
 import JobClientPanelTab from './JobClientPanelTab';
@@ -11,7 +11,7 @@ import JobNotesTab from './JobNotesTab';
 import JobCostsTab from './JobCostsTab';
 import JobDynamicReportsTab from './JobDynamicReportsTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
-import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key, ChevronDown, Download } from 'lucide-react';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 
@@ -68,6 +68,7 @@ interface JobDetails {
   pricing_items?: { id: number; item_name: string; quantity: number; unit_price: number; total: number; vat_rate: number }[];
   officers?: { id: number; full_name: string; is_primary?: boolean }[];
   is_quotation_visit?: boolean;
+  charge_type?: string;
 }
 
 interface DiaryEvent {
@@ -89,6 +90,8 @@ interface DiaryEvent {
   site_contact_name?: string | null;
   site_contact_email?: string | null;
   site_contact_phone?: string | null;
+  charge_type?: string;
+  is_free_job?: boolean;
 }
 
 interface Invoice {
@@ -403,6 +406,10 @@ export default function JobDetailsPage() {
   const [diaryAbortReasonPick, setDiaryAbortReasonPick] = useState('');
   const [diaryAbortReasonLoad, setDiaryAbortReasonLoad] = useState(false);
   const [diaryAbortSubmitting, setDiaryAbortSubmitting] = useState(false);
+  const [quickLinksOpen, setQuickLinksOpen] = useState(false);
+  const [togglingChargeType, setTogglingChargeType] = useState(false);
+  const [downloadingStatement, setDownloadingStatement] = useState(false);
+  const quickLinksRef = useRef<HTMLDivElement>(null);
 
   const visitTimesheetTravelSeconds = useMemo(
     () =>
@@ -449,6 +456,17 @@ export default function JobDetailsPage() {
   useEffect(() => {
     fetchJobDetails();
   }, [fetchJobDetails]);
+
+  useEffect(() => {
+    if (!quickLinksOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (quickLinksRef.current && !quickLinksRef.current.contains(e.target as Node)) {
+        setQuickLinksOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [quickLinksOpen]);
 
   useEffect(() => {
     if (!viewingEvent || !token) {
@@ -601,6 +619,49 @@ export default function JobDetailsPage() {
       alert(err instanceof Error ? err.message : 'Failed to update job status');
     } finally {
       setUpdatingState(false);
+    }
+  };
+
+  const handleToggleChargeType = async () => {
+    if (!token || !job || togglingChargeType) return;
+    const next = job.charge_type === 'free' ? 'chargeable' : 'free';
+    setTogglingChargeType(true);
+    try {
+      await patchJson(`/jobs/${id}`, { charge_type: next }, token);
+      setJob({ ...job, charge_type: next });
+      setDiaryEvents((prev) =>
+        prev.map((e) => ({
+          ...e,
+          charge_type: next,
+          is_free_job: next === 'free',
+        })),
+      );
+      setQuickLinksOpen(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update job charge type');
+    } finally {
+      setTogglingChargeType(false);
+    }
+  };
+
+  const handleDownloadStatement = async () => {
+    if (!token || !job || downloadingStatement) return;
+    setDownloadingStatement(true);
+    try {
+      const blob = await getBlob(`/jobs/${id}/statement.pdf`, token);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `job-${String(job.id).padStart(4, '0')}-statement.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setQuickLinksOpen(false);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to download statement');
+    } finally {
+      setDownloadingStatement(false);
     }
   };
 
@@ -770,8 +831,8 @@ export default function JobDetailsPage() {
       </header>
 
       {/* Tabs Menu */}
-      <div className="bg-white border-b border-slate-200 px-6 pt-2 flex items-end justify-between overflow-x-auto no-scrollbar">
-        <div className="flex gap-1">
+      <div className="bg-white border-b border-slate-200 px-6 pt-2 flex items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto no-scrollbar">
           {tabs.map(tab => (
             <button 
               key={tab} 
@@ -791,10 +852,40 @@ export default function JobDetailsPage() {
             </button>
           ))}
         </div>
-        <div className="pb-2">
-           <select className="border border-slate-200 text-xs rounded bg-white px-3 py-1.5 font-bold text-slate-600 outline-none hover:border-slate-300">
-             <option>Quick links</option>
-           </select>
+        <div className="relative shrink-0 pb-2" ref={quickLinksRef}>
+          <button
+            type="button"
+            onClick={() => setQuickLinksOpen((open) => !open)}
+            className="inline-flex items-center gap-1.5 border border-slate-200 text-xs rounded bg-white px-3 py-1.5 font-bold text-slate-600 outline-none hover:border-slate-300"
+          >
+            Quick links
+            <ChevronDown className={`size-3.5 transition-transform ${quickLinksOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {quickLinksOpen && (
+            <div className="absolute right-0 top-full z-30 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+              <button
+                type="button"
+                disabled={togglingChargeType}
+                onClick={() => void handleToggleChargeType()}
+                className="block w-full px-4 py-2 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {togglingChargeType
+                  ? 'Updating…'
+                  : job.charge_type === 'free'
+                    ? 'Paid Job'
+                    : 'Free Job'}
+              </button>
+              <button
+                type="button"
+                disabled={downloadingStatement}
+                onClick={() => void handleDownloadStatement()}
+                className="flex w-full items-center gap-2 px-4 py-2 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <Download className="size-3.5 shrink-0 text-slate-500" />
+                {downloadingStatement ? 'Downloading…' : 'Full Statement'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -805,6 +896,11 @@ export default function JobDetailsPage() {
         {job.is_quotation_visit && (
           <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
             Quotation Visit
+          </span>
+        )}
+        {job.charge_type === 'free' && (
+          <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+            Free Job
           </span>
         )}
         <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{job.description_name || job.title}</strong></span>
@@ -1300,7 +1396,14 @@ export default function JobDetailsPage() {
                                       <User className="size-4" />
                                    </div>
                                    <div>
-                                     <p className="font-bold text-slate-800">{evt.officer_full_name || 'Unassigned'}</p>
+                                     <div className="flex flex-wrap items-center gap-2">
+                                       <p className="font-bold text-slate-800">{evt.officer_full_name || 'Unassigned'}</p>
+                                       {(evt.is_free_job || evt.charge_type === 'free' || job.charge_type === 'free') && (
+                                         <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                                           Free job
+                                         </span>
+                                       )}
+                                     </div>
                                      <p className="text-slate-500 text-[12px]">{dayjs(start).format('dddd D MMMM YYYY')}</p>
                                      <p className="text-slate-500 text-[12px]">{evt.duration_minutes} mins ({dayjs(start).format('h:mm a')} to {dayjs(end).format('h:mm a')})</p>
                                    </div>

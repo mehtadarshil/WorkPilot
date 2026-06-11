@@ -24,6 +24,14 @@ export type SiteReportTemplateSection = {
   allow_section_images?: boolean;
   /** Shown on screen only; omitted from PDF (e.g. client lines that duplicate the PDF header) */
   omit_from_pdf?: boolean;
+  repeatable?: boolean;
+  repeat_label?: string;
+  add_label?: string;
+};
+
+export type SiteReportRepeatableInstance = {
+  id: string;
+  values: Record<string, string>;
 };
 
 export type SiteReportTemplateFooter = {
@@ -52,7 +60,35 @@ export type TemplateSiteReportDocument = {
   values: Record<string, string>;
   section_images?: Record<string, SiteReportSectionImageRow[]>;
   field_images?: Record<string, SiteReportSectionImageRow[]>;
+  repeatable_values?: Record<string, SiteReportRepeatableInstance[]>;
 };
+
+export function scopedRepeatableFieldKey(sectionId: string, instanceId: string, fieldId: string): string {
+  return `repeat:${sectionId}:${instanceId}:${fieldId}`;
+}
+
+export function coerceRepeatableInstances(raw: unknown): SiteReportRepeatableInstance[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SiteReportRepeatableInstance[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const id = typeof o.id === 'string' && o.id.trim() ? o.id.trim() : `inst_${i}`;
+    const values: Record<string, string> = {};
+    if (o.values && typeof o.values === 'object') {
+      for (const [k, v] of Object.entries(o.values as Record<string, unknown>)) {
+        values[k] = typeof v === 'string' ? v : v != null ? String(v) : '';
+      }
+    }
+    out.push({ id, values });
+  }
+  return out;
+}
+
+export function newRepeatableInstance(): SiteReportRepeatableInstance {
+  return { id: newKey('door'), values: {} };
+}
 
 export const SITE_REPORT_FIELD_TYPE_OPTIONS: { value: SiteReportFieldType; label: string; hint: string }[] = [
   { value: 'text', label: 'Short text', hint: 'Single line answer' },
@@ -159,6 +195,9 @@ export function coerceSiteReportDefinition(raw: unknown): SiteReportTemplateDefi
     const helper_text = typeof s.helper_text === 'string' ? s.helper_text : undefined;
     const allow_section_images = s.allow_section_images === true;
     const omit_from_pdf = s.omit_from_pdf === true;
+    const repeatable = s.repeatable === true;
+    const repeat_label = typeof s.repeat_label === 'string' && s.repeat_label.trim() ? s.repeat_label.trim() : undefined;
+    const add_label = typeof s.add_label === 'string' && s.add_label.trim() ? s.add_label.trim() : undefined;
     const fieldsRaw = Array.isArray(s.fields) ? s.fields : [];
     const fields = fieldsRaw.map(parseField).filter(Boolean) as SiteReportTemplateField[];
     if (fields.length === 0) fields.push(newTemplateField());
@@ -169,6 +208,9 @@ export function coerceSiteReportDefinition(raw: unknown): SiteReportTemplateDefi
       ...(helper_text ? { helper_text } : {}),
       ...(allow_section_images ? { allow_section_images: true } : {}),
       ...(omit_from_pdf ? { omit_from_pdf: true } : {}),
+      ...(repeatable ? { repeatable: true } : {}),
+      ...(repeat_label ? { repeat_label } : {}),
+      ...(add_label ? { add_label } : {}),
     };
   };
 

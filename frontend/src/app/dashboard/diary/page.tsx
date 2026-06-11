@@ -40,6 +40,8 @@ interface DiaryEvent {
   customer_full_name: string;
   customer_address: string;
   site_contact_name?: string | null;
+  charge_type?: string;
+  is_free_job?: boolean;
 }
 
 interface Officer {
@@ -496,6 +498,11 @@ export default function DiaryPage() {
                                         <div className="truncate text-slate-600">
                                           {evt.site_contact_name?.trim() || evt.customer_full_name}
                                         </div>
+                                        {(evt.is_free_job || evt.charge_type === 'free') && (
+                                          <span className="mt-0.5 inline-block rounded bg-emerald-100 px-1 py-px text-[9px] font-bold uppercase text-emerald-800">
+                                            Free job
+                                          </span>
+                                        )}
                                       </div>
                                     );
                                   })}
@@ -614,6 +621,11 @@ export default function DiaryPage() {
                                     <div className="mt-0.5 truncate text-slate-600">
                                       {evt.site_contact_name?.trim() || evt.customer_full_name}
                                     </div>
+                                    {(evt.is_free_job || evt.charge_type === 'free') && (
+                                      <span className="mt-0.5 inline-block w-fit rounded bg-emerald-100 px-1 py-px text-[9px] font-bold uppercase text-emerald-800">
+                                        Free job
+                                      </span>
+                                    )}
                                     <div className="truncate text-slate-500">
                                       {evt.customer_address || 'Address not listed'}
                                     </div>

@@ -29,6 +29,9 @@ function normalizeSection(raw: unknown, index: number): SiteReportTemplateSectio
     if (nf) fields.push(nf);
   }
   const omit_from_pdf = o.omit_from_pdf === true;
+  const repeatable = o.repeatable === true;
+  const repeat_label = typeof o.repeat_label === 'string' && o.repeat_label.trim() ? o.repeat_label.trim().slice(0, 80) : undefined;
+  const add_label = typeof o.add_label === 'string' && o.add_label.trim() ? o.add_label.trim().slice(0, 80) : undefined;
   return {
     id,
     title,
@@ -36,6 +39,9 @@ function normalizeSection(raw: unknown, index: number): SiteReportTemplateSectio
     ...(helper_text ? { helper_text } : {}),
     ...(allow_section_images ? { allow_section_images: true } : {}),
     ...(omit_from_pdf ? { omit_from_pdf: true } : {}),
+    ...(repeatable ? { repeatable: true } : {}),
+    ...(repeat_label ? { repeat_label } : {}),
+    ...(add_label ? { add_label } : {}),
   };
 }
 

@@ -7,8 +7,10 @@ import type {
   SiteReportTemplateField,
   SiteReportTemplateSection,
 } from './siteReportTemplates/types';
-import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
+import type { SiteReportRepeatableInstance, TemplateSiteReportDocument } from './siteReportTemplates/types';
+import { scopedRepeatableFieldKey } from './siteReportTemplates/types';
 import { normalizeTemplateSiteReportDocument } from './siteReportTemplates/documentNormalize';
+import { repeatableFieldHasEntry, repeatableInstanceHasContent } from './siteReportTemplates/repeatableHelpers';
 
 type SectionImages = NonNullable<TemplateSiteReportDocument['section_images']>;
 type FieldImages = NonNullable<TemplateSiteReportDocument['field_images']>;
@@ -211,13 +213,14 @@ function renderFieldBlock(
   overrides: Record<string, string>,
   fieldImages: FieldImages | undefined,
   imageMap: Map<number, string>,
+  imageFieldKey?: string,
 ): string {
   if (field.type === 'static_text') {
     return `<div class="static">${field.content ? nl2br(field.content) : ''}</div>`;
   }
   const labelHtml = field.label ? `<div class="label">${escapeHtml(field.label)}</div>` : '';
   if (field.type === 'image' || field.type === 'signature') {
-    const imgs = renderFieldImagesHtml(field.id, fieldImages, imageMap);
+    const imgs = renderFieldImagesHtml(imageFieldKey ?? field.id, fieldImages, imageMap);
     const body = imgs || '<div class="value">—</div>';
     return `<div class="field">${labelHtml}${body}</div>`;
   }
@@ -257,6 +260,7 @@ export function buildSiteReportPrintHtml(input: {
   const values = document.values || {};
   const sectionImages = document.section_images || {};
   const fieldImages = document.field_images || {};
+  const repeatableValues = document.repeatable_values || {};
 
   const logoBlock = logoUrl
     ? `<img class="logo" src=${JSON.stringify(logoUrl)} alt="" crossorigin="anonymous" />`
@@ -269,6 +273,35 @@ export function buildSiteReportPrintHtml(input: {
   const sectionsHtml: string[] = [];
   for (const sec of definition.sections) {
     if (sec.omit_from_pdf) continue;
+
+    if (sec.repeatable) {
+      const instances = repeatableValues[sec.id] || [];
+      const instanceBlocks: string[] = [];
+      const repeatLabel = sec.repeat_label?.trim() || 'Item';
+      instances.forEach((instance: SiteReportRepeatableInstance, index: number) => {
+        if (!repeatableInstanceHasContent(sec, instance, fieldImages)) return;
+        const fieldsHtml: string[] = [];
+        for (const f of sec.fields) {
+          if (!repeatableFieldHasEntry(f, instance, sec.id, fieldImages)) continue;
+          const scopedKey = scopedRepeatableFieldKey(sec.id, instance.id, f.id);
+          fieldsHtml.push(renderFieldBlock(f, instance.values, {}, fieldImages, imageMap, scopedKey));
+        }
+        if (fieldsHtml.length === 0) return;
+        const title =
+          instance.values.door_location?.trim() ||
+          instance.values.fire_door_rating?.trim() ||
+          `${repeatLabel} ${index + 1}`;
+        instanceBlocks.push(
+          `<div class="repeat-card"><h3 class="repeat-title">${escapeHtml(title)}</h3><div class="fields">${fieldsHtml.join('')}</div></div>`,
+        );
+      });
+      if (instanceBlocks.length === 0) continue;
+      sectionsHtml.push(
+        `<section class="sec"><h2 class="sec-title">${escapeHtml(sec.title)}</h2>${sec.helper_text ? `<p class="helper">${nl2br(sec.helper_text)}</p>` : ''}${instanceBlocks.join('')}</section>`,
+      );
+      continue;
+    }
+
     if (!sectionHasAnyUserContent(sec, values, headerOverrides, fieldImages, sectionImages)) continue;
     const fieldsHtml: string[] = [];
     for (const f of sec.fields) {
@@ -312,6 +345,8 @@ export function buildSiteReportPrintHtml(input: {
     .keyline .k { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 4px; }
     .keyline .v { font-weight: 600; color: #0f172a; white-space: pre-wrap; }
     section.sec { margin-bottom: 22px; page-break-inside: avoid; }
+    .repeat-card { margin-bottom: 16px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafbfc; page-break-inside: avoid; }
+    h3.repeat-title { font-size: 10.5pt; font-weight: 800; margin: 0 0 10px; color: #0f172a; }
     h2.sec-title { font-size: 11.5pt; font-weight: 800; margin: 0 0 10px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
     p.helper { margin: 0 0 12px; font-size: 9.5pt; color: #475569; }
     .fields { display: flex; flex-direction: column; gap: 12px; }

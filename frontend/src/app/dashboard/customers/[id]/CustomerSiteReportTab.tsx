@@ -9,8 +9,9 @@ import type {
   SiteReportTemplateSection,
   TemplateSiteReportDocument,
   SiteReportSectionImageRow,
+  SiteReportRepeatableInstance,
 } from '@/lib/siteReportTemplateTypes';
-import { applyApplianceResultTotals } from '@/lib/siteReportTemplateTypes';
+import { applyApplianceResultTotals, coerceRepeatableInstances, newRepeatableInstance } from '@/lib/siteReportTemplateTypes';
 import {
   IMAGE_MAX_BYTES,
   collectImageIds,
@@ -21,6 +22,7 @@ import {
 } from './customerSiteReportShared';
 import CustomerSiteReportRenewalCard, { type SiteReportRenewalState } from './CustomerSiteReportRenewalCard';
 import { CustomerSiteReportSectionView } from './CustomerSiteReportSectionView';
+import { CustomerSiteReportRepeatableSectionView } from './CustomerSiteReportRepeatableSectionView';
 import CustomerSiteReportsList from './CustomerSiteReportsList';
 
 interface ReportPayload {
@@ -89,6 +91,7 @@ export default function CustomerSiteReportTab({
   const [values, setValues] = useState<Record<string, string>>({});
   const [sectionImages, setSectionImages] = useState<Record<string, SiteReportSectionImageRow[]>>({});
   const [fieldImages, setFieldImages] = useState<Record<string, SiteReportSectionImageRow[]>>({});
+  const [repeatableValues, setRepeatableValues] = useState<Record<string, SiteReportRepeatableInstance[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
@@ -185,6 +188,11 @@ export default function CustomerSiteReportTab({
       setValues(res.report.document.values || {});
       setSectionImages(res.report.document.section_images || {});
       setFieldImages(res.report.document.field_images || {});
+      setRepeatableValues(
+        Object.fromEntries(
+          Object.entries(res.report.document.repeatable_values || {}).map(([k, v]) => [k, coerceRepeatableInstances(v)]),
+        ),
+      );
       await hydrateImageUrls(res.report.document, res.report.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load report');
@@ -247,6 +255,7 @@ export default function CustomerSiteReportTab({
       nextValues: Record<string, string>,
       nextSectionImages: Record<string, SiteReportSectionImageRow[]>,
       nextFieldImages: Record<string, SiteReportSectionImageRow[]>,
+      nextRepeatableValues: Record<string, SiteReportRepeatableInstance[]>,
       titleOverride?: string,
     ) => {
       if (!token || !report) throw new Error('Not ready');
@@ -258,6 +267,7 @@ export default function CustomerSiteReportTab({
         values: valuesToPersist,
         section_images: nextSectionImages,
         field_images: nextFieldImages,
+        repeatable_values: nextRepeatableValues,
       };
       const body = {
         report_id: report.id,
@@ -283,6 +293,11 @@ export default function CustomerSiteReportTab({
       setValues(res.report.document.values || {});
       setSectionImages(res.report.document.section_images || {});
       setFieldImages(res.report.document.field_images || {});
+      setRepeatableValues(
+        Object.fromEntries(
+          Object.entries(res.report.document.repeatable_values || {}).map(([k, v]) => [k, coerceRepeatableInstances(v)]),
+        ),
+      );
       await hydrateImageUrls(res.report.document, res.report.id);
     },
     [token, report, reportTitle, customerId, workAddressId, hydrateImageUrls],
@@ -294,7 +309,7 @@ export default function CustomerSiteReportTab({
     setSaveOk(false);
     setError(null);
     try {
-      await persist(values, sectionImages, fieldImages);
+      await persist(values, sectionImages, fieldImages, repeatableValues);
       await loadReports();
       setSaveOk(true);
       window.setTimeout(() => setSaveOk(false), 2500);
@@ -307,6 +322,48 @@ export default function CustomerSiteReportTab({
 
   const setFieldValue = (id: string, v: string) => {
     setValues((prev) => applyApplianceResultTotals({ ...prev, [id]: v }));
+  };
+
+  const setRepeatableInstanceValue = (sectionId: string, instanceId: string, fieldId: string, v: string) => {
+    setRepeatableValues((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] || []).map((inst) =>
+        inst.id === instanceId ? { ...inst, values: { ...inst.values, [fieldId]: v } } : inst,
+      ),
+    }));
+  };
+
+  const addRepeatableInstance = (sectionId: string) => {
+    setRepeatableValues((prev) => ({
+      ...prev,
+      [sectionId]: [...(prev[sectionId] || []), newRepeatableInstance()],
+    }));
+  };
+
+  const removeRepeatableInstance = (section: SiteReportTemplateSection, instanceId: string) => {
+    const prefix = `repeat:${section.id}:${instanceId}:`;
+    setRepeatableValues((prev) => ({
+      ...prev,
+      [section.id]: (prev[section.id] || []).filter((inst) => inst.id !== instanceId),
+    }));
+    setFieldImages((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(prefix)) delete next[key];
+      }
+      return next;
+    });
+  };
+
+  const copyRepeatableInstance = (sectionId: string, instance: SiteReportRepeatableInstance) => {
+    const copy: SiteReportRepeatableInstance = {
+      id: newRepeatableInstance().id,
+      values: { ...instance.values },
+    };
+    setRepeatableValues((prev) => ({
+      ...prev,
+      [sectionId]: [...(prev[sectionId] || []), copy],
+    }));
   };
 
   const uploadSectionImage = async (sectionKey: string, file: File) => {
@@ -331,7 +388,7 @@ export default function CustomerSiteReportTab({
         ...sectionImages,
         [sectionKey]: [...(sectionImages[sectionKey] || []), row],
       };
-      await persist(values, next, fieldImages);
+      await persist(values, next, fieldImages, repeatableValues);
       try {
         const blob = await getBlob(
           `/customers/${customerId}/site-report/${report.id}/images/${imageId}/content`,
@@ -354,7 +411,7 @@ export default function CustomerSiteReportTab({
     const nextList = (sectionImages[sectionKey] || []).filter((x) => x.id !== row.id);
     const next = { ...sectionImages, [sectionKey]: nextList };
     try {
-      await persist(values, next, fieldImages);
+      await persist(values, next, fieldImages, repeatableValues);
       await deleteRequest(`/customers/${customerId}/site-report/${report.id}/images/${row.image_id}`, token);
       const u = imageUrlsRef.current.get(row.image_id);
       if (u) URL.revokeObjectURL(u);
@@ -401,7 +458,7 @@ export default function CustomerSiteReportTab({
         ...fieldImages,
         [fieldId]: [...(fieldImages[fieldId] || []), row],
       };
-      await persist(values, sectionImages, next);
+      await persist(values, sectionImages, next, repeatableValues);
       try {
         const blob = await getBlob(
           `/customers/${customerId}/site-report/${report.id}/images/${imageId}/content`,
@@ -424,7 +481,7 @@ export default function CustomerSiteReportTab({
     const nextList = (fieldImages[fieldId] || []).filter((x) => x.id !== row.id);
     const next = { ...fieldImages, [fieldId]: nextList };
     try {
-      await persist(values, sectionImages, next);
+      await persist(values, sectionImages, next, repeatableValues);
       await deleteRequest(`/customers/${customerId}/site-report/${report.id}/images/${row.image_id}`, token);
       const u = imageUrlsRef.current.get(row.image_id);
       if (u) URL.revokeObjectURL(u);
@@ -460,7 +517,7 @@ export default function CustomerSiteReportTab({
         note: '',
       };
       const next = { ...fieldImages, [fieldId]: [row] };
-      await persist(values, sectionImages, next);
+      await persist(values, sectionImages, next, repeatableValues);
       for (const old of prev) {
         if (old.image_id === imageId) continue;
         try {
@@ -494,7 +551,7 @@ export default function CustomerSiteReportTab({
     setError(null);
     try {
       const next = { ...fieldImages, [fieldId]: [] };
-      await persist(values, sectionImages, next);
+      await persist(values, sectionImages, next, repeatableValues);
       for (const old of prev) {
         try {
           await deleteRequest(`/customers/${customerId}/site-report/${report.id}/images/${old.image_id}`, token);
@@ -752,22 +809,39 @@ export default function CustomerSiteReportTab({
       ) : null}
 
       <div className="space-y-8">
-        {def.sections.map((sec) => (
-          <CustomerSiteReportSectionView
-            key={sec.id}
-            sec={sec}
-            variant="default"
-            clientDisplayName={clientDisplayName}
-            siteAddressLabel={siteAddressLabel}
-            values={values}
-            sectionImages={sectionImages}
-            fieldImages={fieldImages}
-            uploadingKey={uploadingKey}
-            signatureBusyFieldId={signatureBusyFieldId}
-            imageUrlFor={imageUrlFor}
-            h={sectionHandlers}
-          />
-        ))}
+        {def.sections.map((sec) =>
+          sec.repeatable ? (
+            <CustomerSiteReportRepeatableSectionView
+              key={sec.id}
+              sec={sec}
+              instances={repeatableValues[sec.id] || []}
+              fieldImages={fieldImages}
+              uploadingKey={uploadingKey}
+              signatureBusyFieldId={signatureBusyFieldId}
+              imageUrlFor={imageUrlFor}
+              h={sectionHandlers}
+              onAddInstance={() => addRepeatableInstance(sec.id)}
+              onRemoveInstance={(instanceId) => removeRepeatableInstance(sec, instanceId)}
+              onCopyInstance={(instance) => copyRepeatableInstance(sec.id, instance)}
+              onSetInstanceValue={(instanceId, fieldId, value) => setRepeatableInstanceValue(sec.id, instanceId, fieldId, value)}
+            />
+          ) : (
+            <CustomerSiteReportSectionView
+              key={sec.id}
+              sec={sec}
+              variant="default"
+              clientDisplayName={clientDisplayName}
+              siteAddressLabel={siteAddressLabel}
+              values={values}
+              sectionImages={sectionImages}
+              fieldImages={fieldImages}
+              uploadingKey={uploadingKey}
+              signatureBusyFieldId={signatureBusyFieldId}
+              imageUrlFor={imageUrlFor}
+              h={sectionHandlers}
+            />
+          ),
+        )}
       </div>
 
       {footerSection ? (

@@ -69,12 +69,14 @@ import {
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
+import { generateJobStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
 import { normalizeTemplateSiteReportDocument, collectTemplateDocumentImageIds } from './siteReportTemplates/documentNormalize';
 import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
 import { parseSiteReportTemplateDefinition } from './siteReportTemplates/validateDefinition';
 import {
   ensureDrainBlockingReportTemplate,
+  ensureFireDoorSurveyTemplate,
   ensureFireRiskAssessmentTemplate,
   fetchTemplateDefinition,
 } from './siteReportTemplates/seedAndFetch';
@@ -1225,6 +1227,7 @@ async function initDb() {
     if (!Number.isFinite(tenantAdminId)) continue;
     await ensureFireRiskAssessmentTemplate(pool, tenantAdminId);
     await ensureDrainBlockingReportTemplate(pool, tenantAdminId);
+    await ensureFireDoorSurveyTemplate(pool, tenantAdminId);
   }
 
   await pool.query(
@@ -3771,6 +3774,7 @@ app.get('/api/mobile/site-report-templates', authenticate, requireFieldMobileJob
   try {
     await ensureFireRiskAssessmentTemplate(pool, userId);
     await ensureDrainBlockingReportTemplate(pool, userId);
+    await ensureFireDoorSurveyTemplate(pool, userId);
     const rows = await pool.query<{ id: number; name: string; slug: string }>(
       `SELECT id, name, slug FROM site_report_templates
        WHERE ${isSuperAdmin ? 'TRUE' : 'created_by = $1'}
@@ -8119,7 +8123,11 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
       deOfficersByEvent.set(or.diary_event_id, list);
     }
-    const events = rows.map((r: any) => ({ ...r, officers: deOfficersByEvent.get(r.diary_id) || [] }));
+    const events = rows.map((r: any) => ({
+      ...r,
+      is_free_job: r.charge_type === 'free',
+      officers: deOfficersByEvent.get(r.diary_id) || [],
+    }));
     res.json({ events });
   } catch (error) {
     console.error('get diary events error:', error);
@@ -9330,6 +9338,7 @@ app.get(
     try {
       await ensureFireRiskAssessmentTemplate(pool, uid);
       await ensureDrainBlockingReportTemplate(pool, uid);
+      await ensureFireDoorSurveyTemplate(pool, uid);
       await pool.query(
         `DELETE FROM site_report_templates WHERE created_by = $1 AND slug = 'portable-appliance-test-certificate'`,
         [uid],
@@ -11182,6 +11191,8 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
     }
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
+              j.charge_type,
+              (j.charge_type = 'free') AS is_free_job,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
                 NULLIF(TRIM(j.contact_name), ''),
@@ -11205,6 +11216,40 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
   } catch (error) {
     console.error('get job diary events error:', error);
     res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/jobs/:id/statement.pdf', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid job id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const jobCheck = await pool.query<{ created_by: number | null; job_number: string | null }>(
+      'SELECT created_by, job_number FROM jobs WHERE id = $1',
+      [id],
+    );
+    if ((jobCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+    if (!isSuperAdmin && jobCheck.rows[0].created_by !== userId) {
+      return res.status(404).json({ message: 'Job not found' });
+    }
+
+    const pdf = await generateJobStatementPdfBuffer(pool, id);
+    const jobNum = jobCheck.rows[0].job_number?.trim() || String(id).padStart(4, '0');
+    const safeTail = `job-${jobNum.replace(/[^\w.-]+/g, '_')}-statement`.slice(0, 80);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTail}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error) {
+    if (error instanceof PdfRenderUnavailableError) {
+      return res.status(503).json({ message: error.message });
+    }
+    console.error('Job statement PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 

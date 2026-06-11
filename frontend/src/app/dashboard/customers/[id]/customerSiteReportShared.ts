@@ -77,3 +77,7 @@ export function collectImageIds(doc: TemplateSiteReportDocument): number[] {
   }
   return [...s];
 }
+
+export function scopedRepeatableFieldKey(sectionId: string, instanceId: string, fieldId: string): string {
+  return `repeat:${sectionId}:${instanceId}:${fieldId}`;
+}

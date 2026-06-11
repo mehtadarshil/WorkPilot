@@ -47,6 +47,8 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
   final Map<String, bool> _signatureBusy = {};
   final Map<String, TextEditingController> _imageCaptionCtr = {};
   final Map<String, TextEditingController> _imageNoteCtr = {};
+  final Map<String, List<Map<String, dynamic>>> _repeatableInstances = {};
+  final Map<String, bool> _repeatableCollapsed = {};
   TextEditingController? _titleCtr;
 
   @override
@@ -77,16 +79,25 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     _imageNoteCtr.clear();
     _titleCtr?.dispose();
     _titleCtr = null;
+    _repeatableInstances.clear();
+    _repeatableCollapsed.clear();
   }
+
+  String _scopedRepeatableFieldKey(String sectionId, String instanceId, String fieldId) =>
+      'repeat:$sectionId:$instanceId:$fieldId';
+
+  String _repeatableCtrlKey(String sectionId, String instanceId, String fieldId) =>
+      '$sectionId|$instanceId|$fieldId';
 
   Map<String, dynamic> _jsonClone(Map<String, dynamic> m) =>
       Map<String, dynamic>.from(jsonDecode(jsonEncode(m)) as Map);
 
-  void _collectFields(Map<String, dynamic> def, List<Map<String, dynamic>> out) {
+  void _collectFields(Map<String, dynamic> def, List<Map<String, dynamic>> out, {bool includeRepeatable = false}) {
     final sections = def['sections'];
     if (sections is List) {
       for (final s in sections) {
         if (s is! Map) continue;
+        if (!includeRepeatable && s['repeatable'] == true) continue;
         final fields = s['fields'];
         if (fields is List) {
           for (final f in fields) {
@@ -158,6 +169,43 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
 
       final titleText = (reportMap['report_title'] as String?)?.trim() ?? '';
       _titleCtr = TextEditingController(text: titleText);
+
+      _repeatableInstances.clear();
+      final repeatableRaw = doc is Map ? doc['repeatable_values'] : null;
+      if (repeatableRaw is Map) {
+        for (final entry in repeatableRaw.entries) {
+          final sectionId = entry.key.toString();
+          final list = entry.value;
+          if (list is! List) continue;
+          final instances = <Map<String, dynamic>>[];
+          for (final item in list) {
+            if (item is! Map) continue;
+            final inst = Map<String, dynamic>.from(item);
+            final instanceId = inst['id']?.toString() ?? '';
+            if (instanceId.isEmpty) continue;
+            instances.add(inst);
+            final vals = inst['values'];
+            final valueMap = vals is Map
+                ? vals.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+                : <String, String>{};
+            final sectionFields = _sectionFields(defMap, sectionId);
+            for (final f in sectionFields) {
+              final fieldId = (f['id'] as String?) ?? '';
+              if (fieldId.isEmpty) continue;
+              final type = (f['type'] as String?) ?? 'text';
+              if (type == 'static_text' || type == 'image' || type == 'signature') continue;
+              final ctrlKey = _repeatableCtrlKey(sectionId, instanceId, fieldId);
+              final cur = valueMap[fieldId] ?? '';
+              if (type == 'yes_no_na' || type == 'pass_fail') {
+                _yesNo[ctrlKey] = cur.isEmpty ? null : cur;
+              } else {
+                _textCtr[ctrlKey] = TextEditingController(text: cur);
+              }
+            }
+          }
+          _repeatableInstances[sectionId] = instances;
+        }
+      }
 
       for (final f in fields) {
         final id = (f['id'] as String?) ?? '';
@@ -551,12 +599,41 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
       final values = Map<String, dynamic>.from((doc['values'] as Map?) ?? {});
       for (final e in _textCtr.entries) {
+        if (e.key.contains('|')) continue;
         values[e.key] = e.value.text;
       }
       for (final e in _yesNo.entries) {
+        if (e.key.contains('|')) continue;
         values[e.key] = e.value ?? '';
       }
       doc['values'] = values;
+
+      final repeatableOut = <String, dynamic>{};
+      for (final entry in _repeatableInstances.entries) {
+        final sectionId = entry.key;
+        final sectionFields = _templateDef != null ? _sectionFields(_templateDef!, sectionId) : <Map<String, dynamic>>[];
+        final list = <Map<String, dynamic>>[];
+        for (final inst in entry.value) {
+          final instanceId = inst['id']?.toString() ?? '';
+          if (instanceId.isEmpty) continue;
+          final instValues = <String, dynamic>{};
+          for (final f in sectionFields) {
+            final fieldId = (f['id'] as String?) ?? '';
+            if (fieldId.isEmpty) continue;
+            final type = (f['type'] as String?) ?? 'text';
+            if (type == 'static_text' || type == 'image' || type == 'signature') continue;
+            final ctrlKey = _repeatableCtrlKey(sectionId, instanceId, fieldId);
+            if (type == 'yes_no_na' || type == 'pass_fail') {
+              instValues[fieldId] = _yesNo[ctrlKey] ?? '';
+            } else {
+              instValues[fieldId] = _textCtr[ctrlKey]?.text ?? '';
+            }
+          }
+          list.add({'id': instanceId, 'values': instValues});
+        }
+        repeatableOut[sectionId] = list;
+      }
+      doc['repeatable_values'] = repeatableOut;
 
       final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
       for (final entry in fieldImages.entries) {
@@ -690,7 +767,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           ),
           if (_templateDef != null && _templateDef!['sections'] is List)
             for (final sec in (_templateDef!['sections'] as List))
-              if (sec is Map) ..._sectionWidgets(Map<String, dynamic>.from(sec)),
+              if (sec is Map)
+                if (sec['repeatable'] == true)
+                  ..._repeatableSectionWidgets(Map<String, dynamic>.from(sec))
+                else
+                  ..._sectionWidgets(Map<String, dynamic>.from(sec)),
           if (_templateDef != null && _templateDef!['footer'] is Map)
             if ((_templateDef!['footer']['fields'] as List?)?.isNotEmpty == true)
               ..._sectionWidgets(Map<String, dynamic>.from(_templateDef!['footer'])),
@@ -702,6 +783,161 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         ],
       ),
     );
+  }
+
+  List<Map<String, dynamic>> _sectionFields(Map<String, dynamic> def, String sectionId) {
+    final sections = def['sections'];
+    if (sections is! List) return [];
+    for (final s in sections) {
+      if (s is! Map) continue;
+      if ((s['id'] as String?) != sectionId) continue;
+      final fields = s['fields'];
+      if (fields is! List) return [];
+      return fields.whereType<Map>().map((f) => Map<String, dynamic>.from(f)).toList();
+    }
+    return [];
+  }
+
+  void _addRepeatableInstance(String sectionId, List<Map<String, dynamic>> sectionFields) {
+    final instanceId = 'door_${DateTime.now().millisecondsSinceEpoch}';
+    final inst = <String, dynamic>{'id': instanceId, 'values': <String, dynamic>{}};
+    setState(() {
+      final list = List<Map<String, dynamic>>.from(_repeatableInstances[sectionId] ?? []);
+      list.add(inst);
+      _repeatableInstances[sectionId] = list;
+      for (final f in sectionFields) {
+        final fieldId = (f['id'] as String?) ?? '';
+        if (fieldId.isEmpty) continue;
+        final type = (f['type'] as String?) ?? 'text';
+        if (type == 'static_text' || type == 'image' || type == 'signature') continue;
+        final ctrlKey = _repeatableCtrlKey(sectionId, instanceId, fieldId);
+        if (type == 'yes_no_na' || type == 'pass_fail') {
+          _yesNo[ctrlKey] = null;
+        } else {
+          _textCtr[ctrlKey] = TextEditingController();
+        }
+      }
+    });
+  }
+
+  void _removeRepeatableInstance(String sectionId, String instanceId, List<Map<String, dynamic>> sectionFields) {
+    setState(() {
+      _repeatableInstances[sectionId] = (_repeatableInstances[sectionId] ?? [])
+          .where((inst) => inst['id']?.toString() != instanceId)
+          .toList();
+      for (final f in sectionFields) {
+        final fieldId = (f['id'] as String?) ?? '';
+        if (fieldId.isEmpty) continue;
+        final ctrlKey = _repeatableCtrlKey(sectionId, instanceId, fieldId);
+        _textCtr.remove(ctrlKey)?.dispose();
+        _yesNo.remove(ctrlKey);
+        _sigCtr.remove(_scopedRepeatableFieldKey(sectionId, instanceId, fieldId))?.dispose();
+      }
+      _repeatableCollapsed.remove('$sectionId|$instanceId');
+    });
+  }
+
+  List<Widget> _repeatableSectionWidgets(Map<String, dynamic> sec) {
+    final sectionId = (sec['id'] as String?) ?? '';
+    final title = (sec['title'] as String?) ?? 'Section';
+    final repeatLabel = (sec['repeat_label'] as String?)?.trim().isNotEmpty == true
+        ? (sec['repeat_label'] as String).trim()
+        : 'Item';
+    final addLabel = (sec['add_label'] as String?)?.trim().isNotEmpty == true
+        ? (sec['add_label'] as String).trim()
+        : 'Add ${repeatLabel.toLowerCase()}';
+    final fields = sec['fields'];
+    final sectionFields = fields is List
+        ? fields.whereType<Map>().map((f) => Map<String, dynamic>.from(f)).toList()
+        : <Map<String, dynamic>>[];
+    final instances = _repeatableInstances[sectionId] ?? [];
+
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 24, bottom: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 4),
+                  const Divider(color: AppColors.primary, thickness: 1),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _addRepeatableInstance(sectionId, sectionFields),
+              icon: const Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
+              label: Text(addLabel, style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+      if (instances.isEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'No $repeatLabel entries yet.',
+            style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13),
+          ),
+        ),
+      for (int i = 0; i < instances.length; i++)
+        () {
+          final inst = instances[i];
+          final instanceId = inst['id']?.toString() ?? '';
+          if (instanceId.isEmpty) return const SizedBox.shrink();
+          final collapseKey = '$sectionId|$instanceId';
+          final collapsed = _repeatableCollapsed[collapseKey] == true;
+          final doorTitle = _textCtr[_repeatableCtrlKey(sectionId, instanceId, 'door_location')]?.text.trim();
+          final cardTitle = (doorTitle != null && doorTitle.isNotEmpty) ? doorTitle : '$repeatLabel ${i + 1}';
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: AppColors.whiteOverlay(0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.whiteOverlay(0.1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ListTile(
+                  dense: true,
+                  title: Text(cardTitle, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, color: AppColors.slate300),
+                        onPressed: () => setState(() => _repeatableCollapsed[collapseKey] = !collapsed),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
+                        onPressed: () => _removeRepeatableInstance(sectionId, instanceId, sectionFields),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!collapsed)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Column(
+                      children: [
+                        for (final f in sectionFields)
+                          ..._fieldWidgets(
+                            f,
+                            storageKey: _scopedRepeatableFieldKey(sectionId, instanceId, (f['id'] as String?) ?? ''),
+                            ctrlKey: _repeatableCtrlKey(sectionId, instanceId, (f['id'] as String?) ?? ''),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }(),
+    ];
   }
 
   List<Widget> _sectionWidgets(Map<String, dynamic> sec) {
@@ -734,8 +970,14 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     ];
   }
 
-  List<Widget> _fieldWidgets(Map<String, dynamic> f) {
+  List<Widget> _fieldWidgets(
+    Map<String, dynamic> f, {
+    String? storageKey,
+    String? ctrlKey,
+  }) {
     final id = (f['id'] as String?) ?? '';
+    final key = storageKey ?? id;
+    final controlKey = ctrlKey ?? id;
     final label = (f['label'] as String?) ?? id;
     final type = (f['type'] as String?) ?? 'text';
     if (id.isEmpty) return [];
@@ -775,10 +1017,10 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     );
 
     if (type == 'image') {
-      final busy = _signatureBusy[id] == true;
+      final busy = _signatureBusy[key] == true;
       final doc = _report?['document'];
       final fieldImages = doc is Map ? doc['field_images'] : null;
-      final list = fieldImages is Map ? fieldImages[id] : null;
+      final list = fieldImages is Map ? fieldImages[key] : null;
       final List<dynamic> rows = list is List ? list : [];
 
       final Widget imageListContent;
@@ -858,7 +1100,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                         ),
                       if (imageId != null)
                         TextButton.icon(
-                          onPressed: () => _removeImageRow(id, rowId, imageId),
+                          onPressed: () => _removeImageRow(key, rowId, imageId),
                           icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary, size: 18),
                           label: Text('Remove image', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
                         ),
@@ -867,7 +1109,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 );
               }(),
             OutlinedButton.icon(
-              onPressed: () => _pickImageSource(context, id),
+              onPressed: () => _pickImageSource(context, key),
               icon: const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 16),
               label: Text('Add photo', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
@@ -888,11 +1130,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     }
 
     if (type == 'signature') {
-      final busy = _signatureBusy[id] == true;
+      final busy = _signatureBusy[key] == true;
       int? imageId;
       final doc = _report?['document'];
       final fieldImages = doc is Map ? doc['field_images'] : null;
-      final list = fieldImages is Map ? fieldImages[id] : null;
+      final list = fieldImages is Map ? fieldImages[key] : null;
       if (list is List && list.isNotEmpty) {
         final first = list.first;
         if (first is Map) {
@@ -924,7 +1166,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               ),
             ),
             TextButton.icon(
-              onPressed: () => _clearSignature(id, imageId!),
+              onPressed: () => _clearSignature(key, imageId!),
               icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
               label: Text('Clear signature', style: GoogleFonts.inter(color: AppColors.primary)),
             ),
@@ -937,7 +1179,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         );
       } else {
         final sig = _sigCtr.putIfAbsent(
-          id,
+          key,
           () => SignatureController(
             penStrokeWidth: 2.5,
             penColor: Colors.black87,
@@ -963,7 +1205,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 ),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: () => _uploadSignature(id),
+                  onPressed: () => _uploadSignature(key),
                   icon: const Icon(Icons.check_rounded, color: AppColors.primary),
                   label: Text('Save signature', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold)),
                 ),
@@ -989,7 +1231,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: DropdownButtonFormField<String>(
-            value: _yesNo[id] != null && _yesNo[id]!.isNotEmpty ? _yesNo[id] : null,
+            value: _yesNo[controlKey] != null && _yesNo[controlKey]!.isNotEmpty ? _yesNo[controlKey] : null,
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.whiteOverlay(0.06),
@@ -1002,7 +1244,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               for (final o in opts.where((x) => x.isNotEmpty))
                 DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
             ],
-            onChanged: (v) => setState(() => _yesNo[id] = v),
+            onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),
         ),
       ];
@@ -1015,7 +1257,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: DropdownButtonFormField<String>(
-            value: _yesNo[id] != null && _yesNo[id]!.isNotEmpty ? _yesNo[id] : null,
+            value: _yesNo[controlKey] != null && _yesNo[controlKey]!.isNotEmpty ? _yesNo[controlKey] : null,
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.whiteOverlay(0.06),
@@ -1028,14 +1270,14 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               for (final o in opts.where((x) => x.isNotEmpty))
                 DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
             ],
-            onChanged: (v) => setState(() => _yesNo[id] = v),
+            onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),
         ),
       ];
     }
 
     if (type == 'date') {
-      final c = _textCtr[id];
+      final c = _textCtr[controlKey];
       if (c == null) return [];
       return [
         labelWidget,
@@ -1082,7 +1324,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       ];
     }
 
-    final c = _textCtr[id];
+    final c = _textCtr[controlKey];
     if (c == null) return [];
 
     final maxLines = type == 'textarea' ? 5 : 1;

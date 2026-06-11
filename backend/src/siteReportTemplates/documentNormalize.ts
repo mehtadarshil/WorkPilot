@@ -1,4 +1,5 @@
-import type { SiteReportSectionImageRow, TemplateSiteReportDocument } from './types';
+import { coerceRepeatableInstances } from './repeatableHelpers';
+import type { SiteReportRepeatableInstance, SiteReportSectionImageRow, TemplateSiteReportDocument } from './types';
 
 function applyApplianceResultTotals(values: Record<string, string>): Record<string, string> {
   let hasApplianceStatus = false;
@@ -62,6 +63,7 @@ export function normalizeTemplateSiteReportDocument(raw: unknown, templateId: nu
     values: {},
     section_images: {},
     field_images: {},
+    repeatable_values: {},
   };
   if (!raw || typeof raw !== 'object') return base;
   const o = raw as Record<string, unknown>;
@@ -90,7 +92,21 @@ export function normalizeTemplateSiteReportDocument(raw: unknown, templateId: nu
       }
     }
     const field_images = o.field_images && typeof o.field_images === 'object' ? normalizeFieldImagesMap(o.field_images) : {};
-    return { mode: 'template_v1', template_id: tid, values: applyApplianceResultTotals(values), section_images, field_images };
+    const repeatable_values: Record<string, SiteReportRepeatableInstance[]> = {};
+    if (o.repeatable_values && typeof o.repeatable_values === 'object') {
+      for (const [sk, arr] of Object.entries(o.repeatable_values as Record<string, unknown>)) {
+        const sectionKey = sk.slice(0, 120);
+        repeatable_values[sectionKey] = coerceRepeatableInstances(arr);
+      }
+    }
+    return {
+      mode: 'template_v1',
+      template_id: tid,
+      values: applyApplianceResultTotals(values),
+      section_images,
+      field_images,
+      repeatable_values,
+    };
   }
   return base;
 }
