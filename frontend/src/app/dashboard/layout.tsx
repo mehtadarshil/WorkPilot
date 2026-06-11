@@ -75,6 +75,7 @@ function showSettingsNav(user: StoredUser): boolean {
 function redirectToLogin(router: ReturnType<typeof useRouter>, message: string) {
   if (typeof window !== 'undefined') {
     window.localStorage.removeItem('wp_token');
+    window.localStorage.removeItem('wp_refresh_token');
     window.localStorage.removeItem('wp_user');
   }
   const q = new URLSearchParams({ error: message });
@@ -107,6 +108,7 @@ export default function DashboardLayout({
     }
     if (parsed.role === 'OFFICER') {
       window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_refresh_token');
       window.localStorage.removeItem('wp_user');
       router.replace('/login?reason=field&error=Field+accounts+must+use+the+WorkPilot+mobile+app.');
       return;
@@ -144,6 +146,7 @@ export default function DashboardLayout({
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_refresh_token');
       window.localStorage.removeItem('wp_user');
     }
     router.replace('/login');

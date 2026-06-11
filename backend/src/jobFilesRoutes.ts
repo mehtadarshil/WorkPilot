@@ -463,7 +463,7 @@ export function mountJobFilesRoutes(app: Application, deps: JobFilesRouteDeps): 
         for (const cert of certRows.rows) {
           files.push({
             id: `electrical_cert_${cert.id}`,
-            source: 'Electrical certificates',
+            source: 'Certificates',
             source_detail: `${cert.type_slug.replace(/_/g, ' ')} · ${cert.status.replace(/_/g, ' ')}`,
             label: `${cert.certificate_number}.pdf`,
             kind: 'pdf',

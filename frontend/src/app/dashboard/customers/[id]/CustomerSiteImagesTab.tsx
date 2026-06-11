@@ -16,7 +16,7 @@ interface CustomerFileRow {
   created_at: string;
   created_by: number | null;
   created_by_name: string;
-  kind?: 'uploaded' | 'electrical_certificate';
+  kind?: 'uploaded' | 'electrical_certificate' | 'site_report';
   href?: string;
   source_label?: string;
 }
@@ -40,7 +40,7 @@ function formatBytes(n: number | null): string {
 }
 
 function fileContentPath(customerId: string, file: CustomerFileRow): string {
-  return file.kind === 'electrical_certificate' && file.href
+  return (file.kind === 'electrical_certificate' || file.kind === 'site_report') && file.href
     ? file.href
     : `/customers/${customerId}/files/${file.id}/content`;
 }
@@ -169,7 +169,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
 
   const removeFile = async (f: CustomerFileRow) => {
     if (!token) return;
-    if (f.kind === 'electrical_certificate') return;
+    if (f.kind === 'electrical_certificate' || f.kind === 'site_report') return;
     if (!window.confirm(`Delete "${f.original_filename}"?`)) return;
     setError(null);
     try {

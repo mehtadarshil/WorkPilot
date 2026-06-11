@@ -102,7 +102,7 @@ export const PERMISSION_UI_GROUPS: readonly {
   {
     id: 'compliance',
     title: 'Certificates & compliance',
-    description: 'Electrical certificates, site reports, and staff certification compliance.',
+    description: 'Certificates, site reports, and staff certification compliance.',
     keys: ['certifications'],
   },
   {
@@ -165,7 +165,7 @@ export const PERMISSION_HINTS: Record<TenantPermissionKey, string> = {
   quotations: 'Build and send quotations.',
   invoices: 'Issue invoices and payment-related views.',
   scheduling: 'Calendar, diary visits, and dispatch (also drives field visit list on the app when linked).',
-  certifications: 'Electrical certificates, site/FRA reports, and officer compliance records.',
+  certifications: 'Certificates, site/FRA reports, and officer compliance records.',
   parts_catalog: 'Parts lists and kits used on jobs.',
   field_users: 'Field officers list, mobile access, and job assignment pickers.',
   settings_company: 'Company logo, address, branding, and document defaults.',

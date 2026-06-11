@@ -114,5 +114,13 @@ class MinorWorksCertificateEditor extends StatelessWidget {
         ),
       ],
     ),
+    CertificateSectionSpec(
+      key: 'boards',
+      label: 'Boards & Circuits',
+    ),
+    CertificateSectionSpec(
+      key: 'appendix',
+      label: 'Appendix & Photos',
+    ),
   ];
 }

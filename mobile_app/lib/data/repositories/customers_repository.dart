@@ -409,6 +409,17 @@ class CustomersRepository extends GetxService {
     return Uint8List.fromList(List<int>.from(d));
   }
 
+  Future<Uint8List> getFileBytesByHref(String href) async {
+    final trimmed = href.trim();
+    if (trimmed.isEmpty) return Uint8List(0);
+    final path = trimmed.startsWith('/api/') ? trimmed.substring(4) : trimmed;
+    final res = await _api.getBytes(path);
+    final d = res.data;
+    if (d == null) return Uint8List(0);
+    if (d is Uint8List) return d;
+    return Uint8List.fromList(List<int>.from(d));
+  }
+
   Future<Map<String, dynamic>> getCommunications(
     int customerId, {
     String? search,

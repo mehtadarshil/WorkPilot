@@ -193,9 +193,9 @@ export async function getCustomerServiceReminderSchedule(
       if (!Number.isFinite(intervalN) || intervalN < 1) intervalN = 1;
       if (!SERVICE_REMINDER_INTERVAL_UNITS.has(intervalU)) intervalU = 'years';
 
-      let earlyN = ck.reminder_early_n != null ? Math.trunc(Number(ck.reminder_early_n)) : 14;
+      let earlyN = ck.reminder_early_n != null ? Math.trunc(Number(ck.reminder_early_n)) : 30;
       let earlyU = (ck.reminder_early_unit || 'days').trim().toLowerCase();
-      if (!Number.isFinite(earlyN) || earlyN < 1) earlyN = 14;
+      if (!Number.isFinite(earlyN) || earlyN < 1) earlyN = 30;
       if (!SERVICE_REMINDER_EARLY_UNITS.has(earlyU)) earlyU = 'days';
 
       const anchorDay = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()));
@@ -330,8 +330,8 @@ export async function getCustomerServiceReminderSchedule(
     if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
     if (intervalYears > 10) intervalYears = 10;
 
-    let earlyDays = report.renewal_early_days != null ? Math.trunc(Number(report.renewal_early_days)) : 14;
-    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    let earlyDays = report.renewal_early_days != null ? Math.trunc(Number(report.renewal_early_days)) : 30;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 30;
     if (earlyDays > 120) earlyDays = 120;
 
     let nextDue = addCalendarInterval(anchor, intervalYears, 'years');
@@ -470,8 +470,8 @@ export async function getCustomerServiceReminderSchedule(
     let intervalYears = cert.renewal_interval_years != null ? Math.trunc(Number(cert.renewal_interval_years)) : 1;
     if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
     if (intervalYears > 10) intervalYears = 10;
-    let earlyDays = cert.renewal_early_days != null ? Math.trunc(Number(cert.renewal_early_days)) : 14;
-    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    let earlyDays = cert.renewal_early_days != null ? Math.trunc(Number(cert.renewal_early_days)) : 30;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 30;
     if (earlyDays > 120) earlyDays = 120;
 
     let nextDue = addCalendarInterval(anchor, intervalYears, 'years');

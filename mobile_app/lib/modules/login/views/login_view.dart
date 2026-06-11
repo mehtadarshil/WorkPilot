@@ -83,7 +83,9 @@ class LoginView extends GetView<LoginController> {
                             _EmailField(),
                             const SizedBox(height: 18),
                             _PasswordField(),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 12),
+                            _RememberMeCheckbox(),
+                            const SizedBox(height: 12),
                             _ErrorBanner(),
                             const SizedBox(height: 28),
                             _SignInButton(),
@@ -503,5 +505,53 @@ class _FooterHint extends StatelessWidget {
         color: AppColors.slate500,
       ),
     );
+  }
+}
+
+class _RememberMeCheckbox extends GetView<LoginController> {
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      return InkWell(
+        onTap: controller.toggleRememberMe,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: controller.rememberMe.value,
+                  onChanged: (val) {
+                    controller.rememberMe.value = val ?? false;
+                  },
+                  activeColor: AppColors.primary,
+                  checkColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  side: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Remember me',
+                style: GoogleFonts.inter(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }

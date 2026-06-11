@@ -19,6 +19,7 @@ class CertificateEditorController extends GetxController {
   late final int certificateId;
   final Rxn<ElectricalCertificate> certificate = Rxn<ElectricalCertificate>();
   final RxMap<String, dynamic> document = <String, dynamic>{}.obs;
+  final RxMap<String, dynamic> companyBranding = <String, dynamic>{}.obs;
   final RxList<ValidationIssue> validationIssues = <ValidationIssue>[].obs;
   final RxList<Map<String, dynamic>> engineers = <Map<String, dynamic>>[].obs;
   final RxBool loading = true.obs;
@@ -55,6 +56,7 @@ class CertificateEditorController extends GetxController {
       document.assignAll(deepCloneDocument(cert.document));
       activeSectionKey.value = defaultSectionFor(cert.typeSlug);
       await loadEngineers();
+      await loadBranding();
     } on ApiException catch (e) {
       errorMessage.value = e.message;
     } catch (e) {
@@ -70,6 +72,70 @@ class CertificateEditorController extends GetxController {
     } catch (_) {
       engineers.clear();
     }
+  }
+
+  Future<void> loadBranding() async {
+    try {
+      final branding = await _mobile.fetchCertificateBranding();
+      companyBranding.assignAll(branding);
+
+      if (branding.isNotEmpty && (certificate.value?.typeSlug == 'eic_18e_a3' || document['typeSlug'] == 'eic_18e_a3')) {
+        final eic = document['electricalInstallation'] as Map<String, dynamic>?;
+        if (eic != null) {
+          final nextEic = deepCloneDocument(eic);
+          final design = nextEic['design'] as Map<String, dynamic>? ?? {};
+          final constr = nextEic['construction'] as Map<String, dynamic>? ?? {};
+          final insp = nextEic['inspection'] as Map<String, dynamic>? ?? {};
+
+          design['designer1'] = withCompanyDefaults(Map<String, dynamic>.from(design['designer1'] ?? {}));
+          if (design['designer2NotApplicable'] != true) {
+            design['designer2'] = withCompanyDefaults(Map<String, dynamic>.from(design['designer2'] ?? {}));
+          }
+          constr['constructorSignatory'] = withCompanyDefaults(Map<String, dynamic>.from(constr['constructorSignatory'] ?? {}));
+          insp['inspector'] = withCompanyDefaults(Map<String, dynamic>.from(insp['inspector'] ?? {}));
+
+          nextEic['design'] = design;
+          nextEic['construction'] = constr;
+          nextEic['inspection'] = insp;
+
+          updatePath('electricalInstallation', nextEic);
+        }
+      }
+    } catch (_) {
+      companyBranding.clear();
+    }
+  }
+
+  Map<String, dynamic> withCompanyDefaults(Map<String, dynamic> value) {
+    if (companyBranding.isEmpty) return value;
+    final valCompany = (value['company'] ?? '').toString().trim();
+    final valPhone = (value['phone'] ?? '').toString().trim();
+    final valAddress = (value['address'] ?? '').toString().trim();
+    final valPostcode = (value['postcode'] ?? '').toString().trim();
+
+    final valueAddress = splitUkPostcode(valAddress);
+    final brandingAddress = splitUkPostcode((companyBranding['company_address'] ?? '').toString());
+    final address = valueAddress['address']!.isNotEmpty ? valueAddress['address']! : brandingAddress['address']!;
+
+    return {
+      ...value,
+      'company': valCompany.isNotEmpty ? valCompany : (companyBranding['company_name'] ?? '').toString(),
+      'phone': valPhone.isNotEmpty ? valPhone : (companyBranding['company_phone'] ?? '').toString(),
+      'address': address,
+      'postcode': valPostcode.isNotEmpty 
+          ? valPostcode 
+          : (valueAddress['postcode']!.isNotEmpty ? valueAddress['postcode']! : brandingAddress['postcode']!),
+    };
+  }
+
+  Map<String, String> splitUkPostcode(String raw) {
+    final trimmed = raw.trim();
+    final regExp = RegExp(r'\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b$', caseSensitive: false);
+    final match = regExp.firstMatch(trimmed);
+    if (match == null) return {'address': trimmed, 'postcode': ''};
+    final postcode = match.group(1)!.toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
+    final address = trimmed.substring(0, match.start).replaceAll(RegExp(r'[,\s]+$'), '');
+    return {'address': address, 'postcode': postcode};
   }
 
   Future<void> save() async {

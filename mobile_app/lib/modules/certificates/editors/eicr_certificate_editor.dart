@@ -70,6 +70,14 @@ class EicrCertificateEditor extends StatelessWidget {
       scheduleItems: inspectionScheduleItems,
     ),
     CertificateSectionSpec(
+      key: 'observations',
+      label: 'Observations',
+    ),
+    CertificateSectionSpec(
+      key: 'boards',
+      label: 'Boards & Circuits',
+    ),
+    CertificateSectionSpec(
       key: 'declaration',
       label: 'Declaration',
       fields: [
@@ -95,14 +103,7 @@ class EicrCertificateEditor extends StatelessWidget {
     ),
     CertificateSectionSpec(
       key: 'appendix',
-      label: 'Appendix',
-      fields: [
-        JsonFieldSpec(
-          path: 'appendix.content',
-          label: 'Appendix notes',
-          maxLines: 6,
-        ),
-      ],
+      label: 'Appendix & Photos',
     ),
   ];
 }

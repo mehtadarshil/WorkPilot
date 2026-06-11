@@ -133,6 +133,25 @@ class CrmListView extends GetView<CrmListController> {
             onPressed: Get.back,
           ),
         ),
+        floatingActionButton: controller.module == 'jobs'
+            ? FloatingActionButton.extended(
+                onPressed: () async {
+                  final r = await Get.toNamed(AppRoutes.customerNewJob);
+                  if (r == true) {
+                    controller.reloadFromStart();
+                  }
+                },
+                backgroundColor: AppColors.primary,
+                icon: const Icon(Icons.add_rounded, color: Colors.white),
+                label: Text(
+                  'New Job',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            : null,
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(

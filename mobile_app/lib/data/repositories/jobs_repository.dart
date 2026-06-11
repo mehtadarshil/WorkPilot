@@ -310,4 +310,32 @@ class JobsRepository extends BaseRepository {
   Future<void> deleteJobReportItem(int jobId, int reportId, int itemId) async {
     await api.delete<void>('/jobs/$jobId/reports/$reportId/items/$itemId');
   }
+
+  Future<Map<String, dynamic>> postCustomerSiteReportImage(
+    int customerId,
+    int reportId, {
+    required String filename,
+    required String contentType,
+    required String contentBase64,
+  }) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/customers/$customerId/site-report/$reportId/images',
+      data: <String, dynamic>{
+        'filename': filename,
+        'content_type': contentType,
+        'content_base64': contentBase64,
+      },
+    );
+    return _asMap(res.data);
+  }
+
+  Future<void> deleteCustomerSiteReportImage(int customerId, int reportId, int imageId) async {
+    await api.delete<void>('/customers/$customerId/site-report/$reportId/images/$imageId');
+  }
+
+  Future<List<int>> getCustomerSiteReportImageBytes(int customerId, int reportId, int imageId) async {
+    final res = await api.getBytes('/customers/$customerId/site-report/$reportId/images/$imageId/content');
+    return res.data ?? [];
+  }
 }
+

@@ -77,7 +77,8 @@ export async function ensureElectricalCertificateSchema(pool: Pool): Promise<voi
   await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_reminder_enabled BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_anchor_date DATE`);
   await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_interval_years INTEGER NOT NULL DEFAULT 1`);
-  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 14`);
+  await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 30`);
+  await pool.query(`ALTER TABLE electrical_certificates ALTER COLUMN renewal_early_days SET DEFAULT 30`);
   await pool.query(`ALTER TABLE electrical_certificates ADD COLUMN IF NOT EXISTS renewal_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL`);
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_electrical_certificates_renewal ON electrical_certificates (customer_id)
@@ -408,7 +409,7 @@ function mapRow(row: Record<string, unknown>) {
           ? row.renewal_anchor_date.slice(0, 10)
           : null,
     renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
-    renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+    renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 30)),
     renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
   };
 }
@@ -1116,7 +1117,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const intervalYearsRaw = Number(body.renewal_interval_years);
     const earlyDaysRaw = Number(body.renewal_early_days);
     const intervalYears = Math.max(1, Math.min(10, Number.isFinite(intervalYearsRaw) ? Math.trunc(intervalYearsRaw) : 1));
-    const earlyDays = Math.max(1, Math.min(120, Number.isFinite(earlyDaysRaw) ? Math.trunc(earlyDaysRaw) : 14));
+    const earlyDays = Math.max(1, Math.min(120, Number.isFinite(earlyDaysRaw) ? Math.trunc(earlyDaysRaw) : 30));
     const renewalJobId =
       body.renewal_job_id === undefined || body.renewal_job_id === null || body.renewal_job_id === ''
         ? null

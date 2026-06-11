@@ -20,6 +20,16 @@ class StorageService extends GetxService {
     }
   }
 
+  String? get refreshToken => _box.read(AppConstants.storageRefreshToken) as String?;
+
+  Future<void> setRefreshToken(String? value) async {
+    if (value == null || value.isEmpty) {
+      await _box.remove(AppConstants.storageRefreshToken);
+    } else {
+      await _box.write(AppConstants.storageRefreshToken, value);
+    }
+  }
+
   String? get userJson => _box.read(AppConstants.storageUserJson) as String?;
 
   Future<void> setUserJson(String? value) async {
@@ -32,6 +42,7 @@ class StorageService extends GetxService {
 
   Future<void> clearSession() async {
     await _box.remove(AppConstants.storageAuthToken);
+    await _box.remove(AppConstants.storageRefreshToken);
     await _box.remove(AppConstants.storageUserJson);
     await clearOfflineCaches();
     if (Get.isRegistered<OfflineQueueService>()) {

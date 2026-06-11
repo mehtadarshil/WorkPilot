@@ -346,7 +346,7 @@ export default function ElectricalCertificatesPage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Certificates</h1>
-          <p className="text-sm text-slate-600">Electrical certificates and site reports</p>
+          <p className="text-sm text-slate-600">Certificates and site reports</p>
         </div>
         {activeTab === 'certificates' && (
           <button
@@ -370,7 +370,7 @@ export default function ElectricalCertificatesPage() {
               : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          Electrical Certificates
+          Certificates
         </button>
         <button
           type="button"

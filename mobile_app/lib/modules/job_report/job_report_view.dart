@@ -618,7 +618,7 @@ class _CompletionActionsBody extends StatelessWidget {
               _CompletionActionCard(
                 icon: Icons.verified_outlined,
                 title: 'Generate Certificate',
-                subtitle: 'Create an electrical certificate linked to this job',
+                subtitle: 'Create a certificate linked to this job',
                 onTap: controller.submittedOffline.value ? null : controller.openCertificatePicker,
               ),
               const SizedBox(height: 12),

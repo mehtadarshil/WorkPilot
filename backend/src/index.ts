@@ -791,6 +791,7 @@ if (isProduction && (!jwtSecretEnv || jwtSecretEnv.length < 32)) {
 }
 const JWT_SECRET = jwtSecretEnv || 'dev-only-workpilot-jwt-secret-do-not-use-in-prod';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
 
 async function initDb() {
   await pool.query(`
@@ -1234,8 +1235,9 @@ async function initDb() {
     `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_interval_years INTEGER NOT NULL DEFAULT 1`,
   );
   await pool.query(
-    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 14`,
+    `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_early_days INTEGER NOT NULL DEFAULT 30`,
   );
+  await pool.query(`ALTER TABLE customer_site_reports ALTER COLUMN renewal_early_days SET DEFAULT 30`);
   await pool.query(
     `ALTER TABLE customer_site_reports ADD COLUMN IF NOT EXISTS renewal_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL`,
   );
@@ -1961,6 +1963,24 @@ async function initDb() {
   await pool.query(`ALTER TABLE quotation_internal_notes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()`);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_internal_cost_items (
+      id SERIAL PRIMARY KEY,
+      quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+      section VARCHAR(20) NOT NULL CHECK (section IN ('material', 'labour')),
+      item VARCHAR(500) NOT NULL DEFAULT '',
+      supplier VARCHAR(500) NOT NULL DEFAULT '',
+      supplier_link VARCHAR(2000) NOT NULL DEFAULT '',
+      unit_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+      quantity DECIMAL(14,2) NOT NULL DEFAULT 0,
+      total DECIMAL(14,2) NOT NULL DEFAULT 0,
+      sort_order INT NOT NULL DEFAULT 0
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_quotation_internal_cost_items_quotation_id ON quotation_internal_cost_items(quotation_id)`,
+  );
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS job_client_report_default_questions (
       id SERIAL PRIMARY KEY,
       sort_order INT NOT NULL DEFAULT 0,
@@ -2482,8 +2502,67 @@ async function storeBrandingLogoValue(userId: number, scope: 'invoice' | 'quotat
   if (typeof value !== 'string' || !value.startsWith('data:')) return value;
   const stored = await storeInlineDataUrlAsWorkpilotFile('branding-assets', [scope, userId], 'company_logo', value);
   if (!stored) return value;
-  return workpilotFileUrl('branding-assets', [scope, userId], stored.filename) ?? value;
+  return brandingLogoPublicPath(scope, userId, stored.filename);
 }
+
+function brandingLogoPublicPath(scope: 'invoice' | 'quotation', userId: number, filename: string): string {
+  return `/api/branding-assets/${scope}/${userId}/${encodeURIComponent(path.basename(filename))}`;
+}
+
+function normalizeStoredBrandingLogoValue(userId: number, scope: 'invoice' | 'quotation', value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/api/branding-assets/')) return trimmed;
+
+  try {
+    const pathname = trimmed.startsWith('http://') || trimmed.startsWith('https://')
+      ? new URL(trimmed).pathname
+      : trimmed;
+    const parts = pathname.split('/').map((p) => decodeURIComponent(p)).filter(Boolean);
+    const brandingIndex = parts.findIndex((p) => p === 'branding-assets');
+    if (
+      brandingIndex >= 0 &&
+      parts[brandingIndex + 1] === scope &&
+      parts[brandingIndex + 2] === String(userId) &&
+      parts[brandingIndex + 3]
+    ) {
+      return brandingLogoPublicPath(scope, userId, parts[brandingIndex + 3]);
+    }
+  } catch {
+    /* keep manually entered URLs unchanged */
+  }
+
+  return trimmed;
+}
+
+function imageContentTypeFromFilename(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.svg') return 'image/svg+xml';
+  return 'image/jpeg';
+}
+
+app.get('/api/branding-assets/:scope/:userId/:file', async (req: Request, res: Response) => {
+  const scope = req.params.scope === 'invoice' || req.params.scope === 'quotation' ? req.params.scope : null;
+  const userId = parseInt(String(req.params.userId), 10);
+  const fileName = typeof req.params.file === 'string' ? path.basename(decodeURIComponent(req.params.file)) : '';
+  if (!scope || !Number.isFinite(userId) || userId <= 0 || !fileName) {
+    return res.status(400).json({ message: 'Invalid branding asset request' });
+  }
+
+  try {
+    const file = await loadWorkpilotFile('branding-assets', [scope, userId], fileName);
+    if (!file) return res.status(404).json({ message: 'File not found' });
+    return sendWorkpilotFile(res, file, imageContentTypeFromFilename(fileName), {
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+  } catch {
+    return res.status(404).json({ message: 'File not found' });
+  }
+});
 
 /** Allowed `jobs.state` values after an officer submits a job report (visit completed). */
 const POST_REPORT_NEXT_JOB_STATES = new Set<string>([
@@ -2678,7 +2757,7 @@ app.get('/api/health', async (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => {
-  const { email, password } = req.body as { email?: string; password?: string };
+  const { email, password, rememberMe } = req.body as { email?: string; password?: string; rememberMe?: boolean };
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required' });
@@ -2745,6 +2824,15 @@ app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => 
 
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
+      let refreshToken: string | undefined;
+      if (rememberMe) {
+        refreshToken = jwt.sign(
+          { userId: user.id, role: user.role, type: 'refresh' },
+          JWT_SECRET,
+          { expiresIn: JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions,
+        );
+      }
+
       const responseUser: Record<string, unknown> = {
         id: user.id,
         email: user.email,
@@ -2762,6 +2850,7 @@ app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => 
       }
       return res.json({
         token,
+        ...(refreshToken ? { refreshToken } : {}),
         user: responseUser,
       });
     }
@@ -2816,8 +2905,18 @@ app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => 
 
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
 
+    let refreshToken: string | undefined;
+    if (rememberMe) {
+      refreshToken = jwt.sign(
+        { userId: officer.id, role: 'OFFICER', type: 'refresh' },
+        JWT_SECRET,
+        { expiresIn: JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions,
+      );
+    }
+
     return res.json({
       token,
+      ...(refreshToken ? { refreshToken } : {}),
       user: {
         id: officer.id,
         email: officer.email,
@@ -2831,6 +2930,128 @@ app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => 
   } catch (error) {
     console.error('Login error:', error);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/auth/refresh', authLimiter, async (req: Request, res: Response) => {
+  const { refreshToken } = req.body as { refreshToken?: string };
+  if (!refreshToken) {
+    return res.status(400).json({ message: 'Refresh token is required' });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_SECRET) as { userId: number; role: string; type?: string };
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+
+    if (decoded.role === 'OFFICER') {
+      const officerResult = await pool.query<{
+        id: number;
+        email: string;
+        full_name: string;
+        state: string;
+        permissions: unknown;
+        linked_user_id: number | null;
+        created_by: number | null;
+      }>(
+        `SELECT id, email, full_name, state, permissions, linked_user_id, created_by FROM officers
+         WHERE id = $1`,
+        [decoded.userId],
+      );
+
+      if ((officerResult.rowCount ?? 0) === 0) {
+        return res.status(401).json({ message: 'Officer not found' });
+      }
+
+      const officer = officerResult.rows[0];
+      if (officer.state !== 'active') {
+        return res.status(403).json({ message: 'This account is not active. Contact your administrator.' });
+      }
+
+      const offPerm = permissionsFromDb(officer.permissions);
+      const tenantScopeUserId =
+        officer.created_by != null && Number.isFinite(officer.created_by) ? officer.created_by : undefined;
+
+      const payload: JwtPayload = {
+        userId: officer.id,
+        email: officer.email,
+        role: 'OFFICER',
+        officerId: officer.id,
+        permissions: offPerm,
+        ...(tenantScopeUserId != null ? { tenantScopeUserId } : {}),
+      };
+
+      const newToken = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+      const newRefreshToken = jwt.sign(
+        { userId: officer.id, role: 'OFFICER', type: 'refresh' },
+        JWT_SECRET,
+        { expiresIn: JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions,
+      );
+
+      return res.json({
+        token: newToken,
+        refreshToken: newRefreshToken,
+      });
+    } else {
+      const result = await pool.query<DbUser>(
+        `SELECT id, email, role, full_name, company_name, phone, service_plan, status, address, notes,
+                tenant_admin_id, permissions
+         FROM users WHERE id = $1`,
+        [decoded.userId],
+      );
+
+      if ((result.rowCount ?? 0) === 0) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      const user = result.rows[0];
+      if (user.status === 'SUSPENDED') {
+        return res.status(403).json({ message: 'This account is suspended.' });
+      }
+
+      const tenantScopeUserId =
+        user.role === 'STAFF' && user.tenant_admin_id != null ? user.tenant_admin_id : user.id;
+      const permObj =
+        user.role === 'STAFF' || user.role === 'ADMIN' ? permissionsFromDb(user.permissions) : null;
+
+      let linkedOfficerId: number | undefined;
+      if (user.role === 'ADMIN' || user.role === 'STAFF') {
+        const lo = await pool.query<{ id: number }>(
+          `SELECT id FROM officers WHERE linked_user_id = $1 LIMIT 1`,
+          [user.id],
+        );
+        if ((lo.rowCount ?? 0) > 0) linkedOfficerId = lo.rows[0].id;
+      }
+
+      const payload: JwtPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        tenantScopeUserId,
+        tenantAdminId: user.role === 'STAFF' ? (user.tenant_admin_id ?? null) : null,
+        permissions: permObj,
+        ...(linkedOfficerId != null ? { officerId: linkedOfficerId } : {}),
+      };
+
+      const newToken = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+      const newRefreshToken = jwt.sign(
+        { userId: user.id, role: user.role, type: 'refresh' },
+        JWT_SECRET,
+        { expiresIn: JWT_REFRESH_EXPIRES_IN } as jwt.SignOptions,
+      );
+
+      return res.json({
+        token: newToken,
+        refreshToken: newRefreshToken,
+      });
+    }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Refresh token has expired' });
+    }
+    console.error('Refresh token error:', error);
+    return res.status(401).json({ message: 'Invalid refresh token' });
   }
 });
 
@@ -11934,7 +12155,7 @@ async function getInvoiceSettings(userId: number): Promise<{
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
       company_email: (row.company_email as string) ?? null,
-      company_logo: (row.company_logo as string) ?? null,
+      company_logo: normalizeStoredBrandingLogoValue(userId, 'invoice', row.company_logo),
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
@@ -12180,9 +12401,9 @@ async function runAutomatedServiceReminders(pool: Pool): Promise<{ sent: number;
         if (!Number.isFinite(intervalN) || intervalN < 1) intervalN = 1;
         if (!SERVICE_REMINDER_INTERVAL_UNITS.has(intervalU)) intervalU = 'years';
 
-        let earlyN = ck.reminder_early_n != null ? Math.trunc(Number(ck.reminder_early_n)) : 14;
+        let earlyN = ck.reminder_early_n != null ? Math.trunc(Number(ck.reminder_early_n)) : 30;
         let earlyU = (ck.reminder_early_unit || 'days').trim().toLowerCase();
-        if (!Number.isFinite(earlyN) || earlyN < 1) earlyN = 14;
+        if (!Number.isFinite(earlyN) || earlyN < 1) earlyN = 30;
         if (!SERVICE_REMINDER_EARLY_UNITS.has(earlyU)) earlyU = 'days';
 
         const anchorDay = new Date(
@@ -14319,7 +14540,7 @@ async function getQuotationSettings(userId: number): Promise<{
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
       company_email: (row.company_email as string) ?? null,
-      company_logo: (row.company_logo as string) ?? null,
+      company_logo: normalizeStoredBrandingLogoValue(userId, 'quotation', row.company_logo),
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
@@ -14997,6 +15218,198 @@ app.get(
     }
   },
 );
+
+function shapeQuotationInternalCostRow(row: {
+  id: number;
+  section: string;
+  item: string;
+  supplier: string;
+  supplier_link: string;
+  unit_cost: string;
+  quantity: string;
+  total: string;
+  sort_order: number;
+}) {
+  return {
+    id: row.id,
+    section: row.section,
+    item: row.item,
+    supplier: row.supplier,
+    supplier_link: row.supplier_link,
+    unit_cost: parseFloat(row.unit_cost),
+    quantity: parseFloat(row.quantity),
+    total: parseFloat(row.total),
+    sort_order: row.sort_order,
+  };
+}
+
+function quotationInternalCostSubtotals(items: { section: string; total: number }[]) {
+  const materials_subtotal = items
+    .filter((i) => i.section === 'material')
+    .reduce((sum, i) => sum + i.total, 0);
+  const labour_subtotal = items
+    .filter((i) => i.section === 'labour')
+    .reduce((sum, i) => sum + i.total, 0);
+  return {
+    materials_subtotal,
+    labour_subtotal,
+    combined_total: materials_subtotal + labour_subtotal,
+  };
+}
+
+app.get('/api/quotations/:id/internal-costs', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    if (!canAccessQuotation(qCheck.rows[0], userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+    const result = await pool.query<{
+      id: number;
+      section: string;
+      item: string;
+      supplier: string;
+      supplier_link: string;
+      unit_cost: string;
+      quantity: string;
+      total: string;
+      sort_order: number;
+    }>(
+      `SELECT id, section, item, supplier, supplier_link, unit_cost, quantity, total, sort_order
+       FROM quotation_internal_cost_items
+       WHERE quotation_id = $1
+       ORDER BY section ASC, sort_order ASC, id ASC`,
+      [quotationId],
+    );
+    const items = result.rows.map(shapeQuotationInternalCostRow);
+    return res.json({ items, ...quotationInternalCostSubtotals(items) });
+  } catch (error) {
+    console.error('Get quotation internal costs error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.put('/api/quotations/:id/internal-costs', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const quotationId = parseInt(String(idParam), 10);
+  if (!Number.isFinite(quotationId)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as { items?: unknown };
+  if (!body || !Array.isArray(body.items)) {
+    return res.status(400).json({ message: 'items array is required' });
+  }
+  if (body.items.length > 200) {
+    return res.status(400).json({ message: 'Too many internal cost rows' });
+  }
+
+  type ParsedCostItem = {
+    section: 'material' | 'labour';
+    item: string;
+    supplier: string;
+    supplier_link: string;
+    unit_cost: number;
+    quantity: number;
+    total: number;
+    sort_order: number;
+  };
+
+  const parsed: ParsedCostItem[] = [];
+  for (const raw of body.items) {
+    if (!raw || typeof raw !== 'object') {
+      return res.status(400).json({ message: 'Invalid cost item' });
+    }
+    const row = raw as Record<string, unknown>;
+    const sectionRaw = typeof row.section === 'string' ? row.section.trim().toLowerCase() : '';
+    if (sectionRaw !== 'material' && sectionRaw !== 'labour') {
+      return res.status(400).json({ message: 'Each item needs section material or labour' });
+    }
+    const item = typeof row.item === 'string' ? row.item.trim().slice(0, 500) : '';
+    const supplier = typeof row.supplier === 'string' ? row.supplier.trim().slice(0, 500) : '';
+    const supplierLink = typeof row.supplier_link === 'string' ? row.supplier_link.trim().slice(0, 2000) : '';
+    const unitCost = typeof row.unit_cost === 'number' && Number.isFinite(row.unit_cost) ? Math.max(0, row.unit_cost) : 0;
+    const quantity = typeof row.quantity === 'number' && Number.isFinite(row.quantity) ? Math.max(0, row.quantity) : 0;
+    const sortOrder = typeof row.sort_order === 'number' && Number.isFinite(row.sort_order) ? Math.trunc(row.sort_order) : parsed.length;
+    const isEmpty = item.length === 0 && supplier.length === 0 && supplierLink.length === 0 && unitCost === 0 && quantity === 0;
+    if (isEmpty) continue;
+    const total = Math.round(unitCost * quantity * 100) / 100;
+    parsed.push({
+      section: sectionRaw,
+      item,
+      supplier,
+      supplier_link: supplierLink,
+      unit_cost: unitCost,
+      quantity,
+      total,
+      sort_order: sortOrder,
+    });
+  }
+
+  const client = await pool.connect();
+  try {
+    const qCheck = await client.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [quotationId]);
+    if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+    if (!canAccessQuotation(qCheck.rows[0], userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+
+    await client.query('BEGIN');
+    await client.query('DELETE FROM quotation_internal_cost_items WHERE quotation_id = $1', [quotationId]);
+    for (const row of parsed) {
+      await client.query(
+        `INSERT INTO quotation_internal_cost_items
+         (quotation_id, section, item, supplier, supplier_link, unit_cost, quantity, total, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          quotationId,
+          row.section,
+          row.item,
+          row.supplier,
+          row.supplier_link,
+          row.unit_cost,
+          row.quantity,
+          row.total,
+          row.sort_order,
+        ],
+      );
+    }
+    await client.query('COMMIT');
+
+    const result = await pool.query<{
+      id: number;
+      section: string;
+      item: string;
+      supplier: string;
+      supplier_link: string;
+      unit_cost: string;
+      quantity: string;
+      total: string;
+      sort_order: number;
+    }>(
+      `SELECT id, section, item, supplier, supplier_link, unit_cost, quantity, total, sort_order
+       FROM quotation_internal_cost_items
+       WHERE quotation_id = $1
+       ORDER BY section ASC, sort_order ASC, id ASC`,
+      [quotationId],
+    );
+    const items = result.rows.map(shapeQuotationInternalCostRow);
+    return res.json({ items, ...quotationInternalCostSubtotals(items) });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* */
+    }
+    console.error('Save quotation internal costs error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
 
 app.get('/api/quotations/:id/email-compose', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -17094,7 +17507,7 @@ app.post('/api/settings/service-checklist', authenticate, requireAdmin, requireP
   try {
     const result = await pool.query(
       `INSERT INTO service_checklist_items (name, sort_order, is_active, created_by, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit)
-       VALUES ($1, $2, $3, $4, 1, 'years', 14, 'days')
+       VALUES ($1, $2, $3, $4, 1, 'years', 30, 'days')
        RETURNING id, name, sort_order, is_active, reminder_interval_n, reminder_interval_unit, reminder_early_n, reminder_early_unit,
                  customer_reminder_weeks_before, customer_email_subject, customer_email_body_html, created_at, updated_at`,
       [name, sortOrder, isActive, userId],
@@ -18462,6 +18875,28 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
       certParams,
     );
 
+    const siteReportParams: unknown[] = [customerId];
+    let siteReportWhere = 'WHERE r.customer_id = $1';
+    if (workAddressId && Number.isFinite(workAddressId)) {
+      siteReportWhere += ` AND r.work_address_id = $${siteReportParams.length + 1}`;
+      siteReportParams.push(workAddressId);
+    } else {
+      siteReportWhere += ' AND r.work_address_id IS NULL';
+    }
+    if (!isSuperAdmin) {
+      siteReportWhere += ` AND r.created_by = $${siteReportParams.length + 1}`;
+      siteReportParams.push(userId);
+    }
+    const siteReportResult = await pool.query(
+      `SELECT r.id, r.customer_id, r.work_address_id, r.report_title, r.certificate_number, r.updated_at, r.updated_by,
+              t.name AS template_name
+       FROM customer_site_reports r
+       LEFT JOIN site_report_templates t ON t.id = r.template_id
+       ${siteReportWhere}
+       ORDER BY r.updated_at DESC`,
+      siteReportParams,
+    );
+
     return res.json({
       files: [
         ...result.rows.map((r: Record<string, unknown>) => ({
@@ -18491,6 +18926,23 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
           href: `/electrical-certificates/${Number(r.id)}/pdf`,
           source_label: String(r.type_slug ?? '').replace(/_/g, ' '),
         })),
+        ...siteReportResult.rows.map((r: Record<string, unknown>) => {
+          const title = String(r.report_title || r.template_name || `Site report ${r.id}`).trim();
+          return {
+            id: `site_report_${Number(r.id)}`,
+            customer_id: Number(r.customer_id),
+            work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
+            original_filename: `${title.replace(/[/\\]/g, '_') || `site-report-${r.id}`}.pdf`,
+            content_type: 'application/pdf',
+            byte_size: null,
+            created_at: (r.updated_at as Date).toISOString(),
+            created_by: r.updated_by != null ? Number(r.updated_by) : null,
+            created_by_name: 'Generated site report',
+            kind: 'site_report' as const,
+            href: `/customers/${customerId}/site-report/${Number(r.id)}/pdf`,
+            source_label: r.certificate_number ? `Certificate ${String(r.certificate_number)}` : 'Site report PDF',
+          };
+        }),
       ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
     });
   } catch (error) {
@@ -18854,7 +19306,7 @@ app.post('/api/customers/:customerId/site-reports', authenticate, requireTenantC
         renewal_reminder_enabled: false,
         renewal_anchor_date: null,
         renewal_interval_years: 1,
-        renewal_early_days: 14,
+        renewal_early_days: 30,
         renewal_job_id: null,
       },
       template: { id: templateId, definition: def },
@@ -19009,7 +19461,7 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         renewal_reminder_enabled: r.renewal_reminder_enabled === true,
         renewal_anchor_date: anchorYmd || null,
         renewal_interval_years: Math.max(1, Math.min(10, Number(r.renewal_interval_years) || 1)),
-        renewal_early_days: Math.max(1, Math.min(120, Number(r.renewal_early_days) || 14)),
+        renewal_early_days: Math.max(1, Math.min(120, Number(r.renewal_early_days) || 30)),
         renewal_job_id: r.renewal_job_id != null ? Number(r.renewal_job_id) : null,
       },
       template: { id: tid, definition: def },
@@ -19135,7 +19587,7 @@ app.put('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
         renewal_reminder_enabled: row.renewal_reminder_enabled === true,
         renewal_anchor_date: anchorYmdPut || null,
         renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
-        renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+        renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 30)),
         renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
       },
       template: { id: tid, definition: def },
@@ -19244,7 +19696,7 @@ app.patch(
         : typeof body.renewal_early_days === 'string' && String(body.renewal_early_days).trim()
           ? parseInt(String(body.renewal_early_days).trim(), 10)
           : 14;
-    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+    if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 30;
     if (earlyDays > 120) earlyDays = 120;
 
     const jobRaw = body.renewal_job_id;
@@ -19345,7 +19797,7 @@ app.patch(
           renewal_reminder_enabled: row.renewal_reminder_enabled === true,
           renewal_anchor_date: anchorOut || null,
           renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
-          renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 14)),
+          renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 30)),
           renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
         },
         template: { id: tid, definition: def },

@@ -38,7 +38,7 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
   final _picker = ImagePicker();
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
-  int? _busyId;
+  String? _busyKey;
 
   @override
   void initState() {
@@ -75,6 +75,13 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
   bool _isImage(Map<String, dynamic> r) {
     return ctStr(r, 'content_type').toLowerCase().startsWith('image/');
   }
+
+  bool _isGenerated(Map<String, dynamic> r) {
+    final kind = ctStr(r, 'kind');
+    return kind == 'electrical_certificate' || kind == 'site_report';
+  }
+
+  String _rowKey(Map<String, dynamic> r) => '${r['id']}';
 
   Future<void> _uploadBytes(String name, String contentType, List<int> bytes) async {
     if (bytes.length > _kMaxUploadBytes) {
@@ -192,16 +199,20 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
   }
 
   Future<void> _downloadAndOpen(Map<String, dynamic> r) async {
+    final key = _rowKey(r);
+    final href = ctStr(r, 'href');
     final id = (r['id'] as num?)?.toInt() ?? 0;
-    if (id <= 0) return;
-    setState(() => _busyId = id);
+    if (href.isEmpty && id <= 0) return;
+    setState(() => _busyKey = key);
     try {
-      final bytes = await _repo.getCustomerFileBytes(widget.customerId, id);
+      final bytes = href.isNotEmpty
+          ? await _repo.getFileBytesByHref(href)
+          : await _repo.getCustomerFileBytes(widget.customerId, id);
       if (bytes.isEmpty) throw StateError('Empty file');
       final dir = await getTemporaryDirectory();
       final raw = ctStr(r, 'original_filename').replaceAll(RegExp(r'[/\\]'), '_');
       final safe = raw.isEmpty ? 'file' : raw;
-      final f = File('${dir.path}/wp_cust_${widget.customerId}_${id}_$safe');
+      final f = File('${dir.path}/wp_cust_${widget.customerId}_${key.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}_$safe');
       await f.writeAsBytes(bytes, flush: true);
       await OpenFilex.open(f.path);
     } on ApiException catch (e) {
@@ -209,11 +220,12 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
     } catch (e) {
       Get.snackbar('File', e.toString());
     } finally {
-      if (mounted) setState(() => _busyId = null);
+      if (mounted) setState(() => _busyKey = null);
     }
   }
 
   Future<void> _delete(Map<String, dynamic> r) async {
+    if (_isGenerated(r)) return;
     final id = (r['id'] as num?)?.toInt() ?? 0;
     if (id <= 0) return;
     final name = ctStr(r, 'original_filename');
@@ -363,7 +375,8 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                   else
                     ..._rows.map((r) {
                       final id = (r['id'] as num?)?.toInt() ?? 0;
-                      final busy = _busyId == id;
+                      final busy = _busyKey == _rowKey(r);
+                      final generated = _isGenerated(r);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Material(
@@ -407,7 +420,9 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '${ctStr(r, 'content_type')} · ${_bytesLabel(r['byte_size'])}',
+                                          generated
+                                              ? '${ctStr(r, 'created_by_name')} · ${ctStr(r, 'source_label')}'
+                                              : '${ctStr(r, 'content_type')} · ${_bytesLabel(r['byte_size'])}',
                                           style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
                                         ),
                                         const SizedBox(height: 2),
@@ -426,7 +441,7 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                     },
                                     itemBuilder: (_) => [
                                       const PopupMenuItem(value: 'open', child: Text('Open / save')),
-                                      const PopupMenuItem(value: 'del', child: Text('Delete')),
+                                      if (!generated) const PopupMenuItem(value: 'del', child: Text('Delete')),
                                     ],
                                   ),
                                 ],

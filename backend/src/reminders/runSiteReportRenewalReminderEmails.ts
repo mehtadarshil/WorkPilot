@@ -249,8 +249,8 @@ export async function runSiteReportRenewalReminderEmails(
       if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
       if (intervalYears > 10) intervalYears = 10;
 
-      let earlyDays = row.renewal_early_days != null ? Math.trunc(Number(row.renewal_early_days)) : 14;
-      if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+      let earlyDays = row.renewal_early_days != null ? Math.trunc(Number(row.renewal_early_days)) : 30;
+      if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 30;
       if (earlyDays > 120) earlyDays = 120;
 
       const anchorDay = new Date(`${anchorYmd}T00:00:00.000Z`);
@@ -490,8 +490,8 @@ export async function runSiteReportRenewalReminderEmails(
       let intervalYears = row.renewal_interval_years != null ? Math.trunc(Number(row.renewal_interval_years)) : 1;
       if (!Number.isFinite(intervalYears) || intervalYears < 1) intervalYears = 1;
       if (intervalYears > 10) intervalYears = 10;
-      let earlyDays = row.renewal_early_days != null ? Math.trunc(Number(row.renewal_early_days)) : 14;
-      if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 14;
+      let earlyDays = row.renewal_early_days != null ? Math.trunc(Number(row.renewal_early_days)) : 30;
+      if (!Number.isFinite(earlyDays) || earlyDays < 1) earlyDays = 30;
       if (earlyDays > 120) earlyDays = 120;
 
       let nextDue = addCalendarInterval(anchorDay, intervalYears, 'years');

@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import { useState } from 'react';
 import dayjs from 'dayjs';
 
 export type QuotationPrintSettings = {
@@ -62,6 +62,27 @@ function formatDate(iso: string | null): string {
 
 function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount);
+}
+
+function CompanyLogo({ src, companyName }: { src?: string | null; companyName: string }) {
+  const [failed, setFailed] = useState(false);
+  const logoSrc = src?.trim();
+  if (logoSrc && !failed) {
+    return (
+      <img
+        src={logoSrc}
+        alt={companyName}
+        className="h-full w-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <span className="flex h-full w-full items-center justify-center text-xl font-black text-slate-400">
+      {(companyName.trim()[0] || 'W').toUpperCase()}
+    </span>
+  );
 }
 
 function normalizeAddressWs(s: string): string {
@@ -131,11 +152,7 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
             <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-              {s?.company_logo ? (
-                <Image src={s.company_logo} alt={companyName} fill unoptimized className="object-contain" />
-              ) : (
-                <Image src="/logo.jpg" alt={companyName} fill className="object-contain" />
-              )}
+              <CompanyLogo src={s?.company_logo} companyName={companyName} />
             </div>
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-slate-900">{companyName}</h2>

@@ -124,7 +124,7 @@ export default function JobDescriptionsSettings() {
       m[it.id] = {
         interval_n: it.reminder_interval_n ?? 1,
         interval_u: it.reminder_interval_unit || 'years',
-        early_n: it.reminder_early_n ?? 14,
+        early_n: it.reminder_early_n ?? 30,
         early_u: it.reminder_early_unit || 'days',
         customer_weeks:
           it.customer_reminder_weeks_before != null && Number.isFinite(it.customer_reminder_weeks_before)
@@ -166,8 +166,8 @@ export default function JobDescriptionsSettings() {
       fetchDescriptions();
       if (editingId === id) resetForm();
       if (showPricingFor === id) setShowPricingFor(null);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to delete');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
     }
   };
 
@@ -213,8 +213,8 @@ export default function JobDescriptionsSettings() {
       setPiVat(20);
       setPiQty(1);
       fetchPricingItems(showPricingFor);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to add');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add');
     }
   };
 
@@ -223,8 +223,8 @@ export default function JobDescriptionsSettings() {
     try {
       await deleteRequest(`/settings/job-descriptions/${showPricingFor}/pricing-items/${itemId}`, token);
       fetchPricingItems(showPricingFor);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to delete');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
     }
   };
 
@@ -358,7 +358,7 @@ export default function JobDescriptionsSettings() {
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col h-fit">
           <div className="p-6 border-b border-slate-200">
             <h3 className="text-lg font-bold text-slate-900">Existing job descriptions</h3>
-            <p className="text-sm text-slate-500 mt-1">These templates are shown in the "Description" dropdown when adding a new job.</p>
+            <p className="text-sm text-slate-500 mt-1">These templates are shown in the &quot;Description&quot; dropdown when adding a new job.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">

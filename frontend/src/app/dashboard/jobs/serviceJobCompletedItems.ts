@@ -60,7 +60,7 @@ function intervalLabel(n: number, unit: string): string {
 export function formatChecklistReminderSummary(item: ServiceChecklistReminderFields): string {
   const inN = item.reminder_interval_n ?? 1;
   const inU = item.reminder_interval_unit || 'years';
-  const eN = item.reminder_early_n ?? 14;
+  const eN = item.reminder_early_n ?? 30;
   const eU = item.reminder_early_unit || 'days';
   return `Repeat every ${intervalLabel(inN, inU)}; first reminder up to ${intervalLabel(eN, eU)} before due`;
 }

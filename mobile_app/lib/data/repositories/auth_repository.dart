@@ -7,12 +7,14 @@ class AuthRepository extends BaseRepository {
   Future<LoginResponse> login({
     required String email,
     required String password,
+    bool rememberMe = false,
   }) async {
     final res = await api.post<Map<String, dynamic>>(
       '/auth/login',
       data: <String, dynamic>{
         'email': email.trim(),
         'password': password,
+        'rememberMe': rememberMe,
       },
     );
     final data = res.data;

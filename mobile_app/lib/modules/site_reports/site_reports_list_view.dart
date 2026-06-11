@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
+import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/mobile_repository.dart';
 import 'site_reports_list_controller.dart';
 
@@ -43,9 +44,37 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
 
   Future<void> _showCreateSheet(BuildContext context) async {
     final mobile = Get.find<MobileRepository>();
+    final customersRepo = Get.find<CustomersRepository>();
     List<Map<String, dynamic>> customers = [];
+    List<Map<String, dynamic>> workAddresses = [];
     List<Map<String, dynamic>> templates = [];
     String? error;
+
+    int? mapId(Map<String, dynamic> row) {
+      final raw = row['id'];
+      return raw is int ? raw : (raw is num ? raw.toInt() : null);
+    }
+
+    String siteLabel(Map<String, dynamic> row) {
+      final name = (row['name'] as String?)?.trim();
+      final branch = (row['branch_name'] as String?)?.trim();
+      final company = (row['company_name'] as String?)?.trim();
+      final line1 = (row['address_line_1'] as String?)?.trim();
+      final town = (row['town'] as String?)?.trim();
+      final postcode = (row['postcode'] as String?)?.trim();
+      final titles = [name, branch, company].whereType<String>().where((p) => p.isNotEmpty).toList();
+      final title = titles.isEmpty ? null : titles.first;
+      final address = [line1, town, postcode].whereType<String>().where((p) => p.isNotEmpty).join(', ');
+      if (title != null && address.isNotEmpty) return '$title - $address';
+      if (title != null) return title;
+      return address.isNotEmpty ? address : 'Work address';
+    }
+
+    Future<List<Map<String, dynamic>>> loadWorkAddresses(int? customerId) async {
+      if (customerId == null) return [];
+      return customersRepo.getWorkAddresses(customerId);
+    }
+
     try {
       final cRes = await mobile.fetchCrmListPage(module: 'customers', page: 1);
       customers = cRes.items;
@@ -57,11 +86,17 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
     if (!context.mounted) return;
 
     int? selectedCustomerId;
+    int? selectedWorkAddressId;
     int? selectedTemplateId;
     if (customers.isNotEmpty) {
-      final raw = customers.first['id'];
-      selectedCustomerId = raw is int ? raw : (raw is num ? raw.toInt() : null);
+      selectedCustomerId = mapId(customers.first);
+      try {
+        workAddresses = await loadWorkAddresses(selectedCustomerId);
+      } catch (_) {
+        workAddresses = [];
+      }
     }
+    if (!context.mounted) return;
     if (templates.isNotEmpty) {
       final raw = templates.first['id'];
       selectedTemplateId = raw is int ? raw : (raw is num ? raw.toInt() : null);
@@ -179,11 +214,74 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 ),
                               );
                             }).toList(),
-                            onChanged: (v) => setState(() => selectedCustomerId = v),
+                            onChanged: (v) async {
+                              setState(() {
+                                selectedCustomerId = v;
+                                selectedWorkAddressId = null;
+                                workAddresses = [];
+                              });
+                              final rows = await loadWorkAddresses(v);
+                              if (ctx2.mounted) {
+                                setState(() => workAddresses = rows);
+                              }
+                            },
                           ),
                         ),
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    Text(
+                      'Site / work address',
+                      style: GoogleFonts.inter(
+                        color: AppColors.slate400,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.whiteOverlay(0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int?>(
+                          value: selectedWorkAddressId,
+                          dropdownColor: const Color(0xFF1E293B),
+                          isExpanded: true,
+                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          items: [
+                            DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text(
+                                workAddresses.isEmpty ? 'No site selected' : 'No site selected (customer level)',
+                                style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                              ),
+                            ),
+                            ...workAddresses.map((wa) {
+                              final wid = mapId(wa);
+                              return DropdownMenuItem<int?>(
+                                value: wid,
+                                child: Text(
+                                  siteLabel(wa),
+                                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }),
+                          ],
+                          onChanged: (v) => setState(() => selectedWorkAddressId = v),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Selecting a site links this report to that work address Files tab.',
+                      style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11),
+                    ),
                     const SizedBox(height: 16),
                     if (templates.isEmpty && error == null)
                       Text(
@@ -241,6 +339,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 final res = await mobile.createSiteReport(
                                   customerId: selectedCustomerId!,
                                   templateId: selectedTemplateId!,
+                                  workAddressId: selectedWorkAddressId,
                                 );
                                 final report = res['report'] as Map?;
                                 final reportId = report?['id'];
@@ -253,6 +352,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                     arguments: <String, dynamic>{
                                       'customer_id': selectedCustomerId,
                                       'report_id': rid,
+                                      if (selectedWorkAddressId != null) 'work_address_id': selectedWorkAddressId,
                                     },
                                   );
                                 }

@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fieldWebNotice, setFieldWebNotice] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -70,16 +71,18 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const data = await postJson<LoginResponse>('/auth/login', { email, password });
+      const data = await postJson<LoginResponse & { refreshToken?: string }>('/auth/login', { email, password, rememberMe });
 
       if (data.user.role === 'OFFICER') {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem('wp_token', data.token);
+          if (data.refreshToken) window.localStorage.setItem('wp_refresh_token', data.refreshToken);
           window.localStorage.setItem('wp_user', JSON.stringify(data.user));
         }
         setError('Field accounts use the WorkPilot mobile app. Download the app and sign in with the same email and password.');
         if (typeof window !== 'undefined') {
           window.localStorage.removeItem('wp_token');
+          window.localStorage.removeItem('wp_refresh_token');
           window.localStorage.removeItem('wp_user');
         }
         return;
@@ -87,6 +90,11 @@ export default function LoginPage() {
 
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('wp_token', data.token);
+        if (data.refreshToken) {
+          window.localStorage.setItem('wp_refresh_token', data.refreshToken);
+        } else {
+          window.localStorage.removeItem('wp_refresh_token');
+        }
         window.localStorage.setItem('wp_user', JSON.stringify(data.user));
       }
 
@@ -228,6 +236,18 @@ export default function LoginPage() {
                   </AnimatePresence>
                 </button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between mt-2 select-none">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="size-4 rounded border-slate-800 bg-slate-900 text-emerald-400 accent-emerald-400 focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-xs text-slate-300 font-medium">Remember me</span>
+              </label>
             </div>
 
             <motion.div

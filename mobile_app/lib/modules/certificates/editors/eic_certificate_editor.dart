@@ -127,6 +127,10 @@ class EicCertificateEditor extends StatelessWidget {
       ],
     ),
     CertificateSectionSpec(
+      key: 'signatories',
+      label: 'Signatories',
+    ),
+    CertificateSectionSpec(
       key: 'supply',
       label: 'Supply',
       fields: [
@@ -142,6 +146,14 @@ class EicCertificateEditor extends StatelessWidget {
       label: 'Inspection schedule',
       schedulePath: 'inspectionSchedule',
       scheduleItems: inspectionScheduleItems,
+    ),
+    CertificateSectionSpec(
+      key: 'boards',
+      label: 'Boards & Circuits',
+    ),
+    CertificateSectionSpec(
+      key: 'appendix',
+      label: 'Appendix & Photos',
     ),
   ];
 }

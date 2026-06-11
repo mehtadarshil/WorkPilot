@@ -24,9 +24,11 @@ class LoginController extends GetxController {
 
   final obscurePassword = true.obs;
   final isLoading = false.obs;
+  final rememberMe = true.obs;
   final errorMessage = RxnString();
 
   void togglePasswordVisibility() => obscurePassword.toggle();
+  void toggleRememberMe() => rememberMe.toggle();
 
   String? validateEmail(String? value) {
     final v = value?.trim() ?? '';
@@ -49,8 +51,10 @@ class LoginController extends GetxController {
       final res = await _auth.login(
         email: emailController.text,
         password: passwordController.text,
+        rememberMe: rememberMe.value,
       );
       await _storage.setAuthToken(res.token);
+      await _storage.setRefreshToken(res.refreshToken);
       await _storage.setUserJson(jsonEncode(res.user));
       Get.offAllNamed(AppRoutes.home);
     } on ApiException catch (e) {

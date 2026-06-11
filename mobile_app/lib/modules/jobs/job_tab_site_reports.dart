@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:signature/signature.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
@@ -38,6 +42,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
 
   final Map<String, TextEditingController> _textCtr = {};
   final Map<String, String?> _yesNo = {};
+  final Map<String, SignatureController> _sigCtr = {};
+  final Map<int, Uint8List> _imageCache = {};
+  final Map<String, bool> _signatureBusy = {};
+  final Map<String, TextEditingController> _imageCaptionCtr = {};
+  final Map<String, TextEditingController> _imageNoteCtr = {};
   TextEditingController? _titleCtr;
 
   @override
@@ -52,6 +61,20 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     }
     _textCtr.clear();
     _yesNo.clear();
+    for (final c in _sigCtr.values) {
+      c.dispose();
+    }
+    _sigCtr.clear();
+    _imageCache.clear();
+    _signatureBusy.clear();
+    for (final c in _imageCaptionCtr.values) {
+      c.dispose();
+    }
+    _imageCaptionCtr.clear();
+    for (final c in _imageNoteCtr.values) {
+      c.dispose();
+    }
+    _imageNoteCtr.clear();
     _titleCtr?.dispose();
     _titleCtr = null;
   }
@@ -151,6 +174,8 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         }
       }
 
+      final fieldImages = doc is Map ? (doc['field_images'] as Map?) : null;
+
       if (!mounted) return;
       setState(() {
         _report = reportMap;
@@ -159,12 +184,358 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         _workAddressId = waId;
         _reportId = (reportMap['id'] as num?)?.toInt();
       });
+
+      if (fieldImages != null && _reportId != null) {
+        for (final entry in fieldImages.entries) {
+          final list = entry.value;
+          if (list is List) {
+            for (final item in list) {
+              if (item is Map) {
+                final imageId = (item['image_id'] as num?)?.toInt();
+                final rowId = item['id']?.toString() ?? '';
+                final caption = item['description']?.toString() ?? '';
+                final note = item['note']?.toString() ?? '';
+                if (rowId.isNotEmpty) {
+                  _imageCaptionCtr[rowId] = TextEditingController(text: caption);
+                  _imageNoteCtr[rowId] = TextEditingController(text: note);
+                }
+                if (imageId != null) {
+                  unawaited(_loadImageBytes(cid, _reportId!, imageId));
+                }
+              }
+            }
+          }
+        }
+      }
     } on ApiException catch (e) {
       if (mounted) setState(() => _err = e.message);
     } catch (e) {
       if (mounted) setState(() => _err = '$e');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadImageBytes(int customerId, int reportId, int imageId) async {
+    if (_imageCache.containsKey(imageId)) return;
+    try {
+      final jobs = Get.find<JobsRepository>();
+      final bytes = await jobs.getCustomerSiteReportImageBytes(customerId, reportId, imageId);
+      if (mounted) {
+        setState(() {
+          _imageCache[imageId] = Uint8List.fromList(bytes);
+        });
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _uploadSignature(String fieldId) async {
+    final sig = _sigCtr[fieldId];
+    if (sig == null || sig.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please draw a signature first.')));
+      return;
+    }
+    final cid = _customerId;
+    final rid = _reportId;
+    final rep = _report;
+    if (cid == null || rid == null || rep == null) return;
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final bytes = await sig.toPngBytes();
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('Failed to generate PNG bytes from signature.');
+      }
+      final jobs = Get.find<JobsRepository>();
+      final b64 = base64Encode(bytes);
+      final filename = 'signature_${DateTime.now().millisecondsSinceEpoch}.png';
+
+      final res = await jobs.postCustomerSiteReportImage(
+        cid,
+        rid,
+        filename: filename,
+        contentType: 'image/png',
+        contentBase64: b64,
+      );
+
+      final image = res['image'];
+      final imageId = image is Map ? (image['id'] as num?)?.toInt() : null;
+      if (imageId == null) {
+        throw Exception('Upload succeeded but no image ID was returned.');
+      }
+
+      final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      final row = <String, dynamic>{
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'image_id': imageId,
+        'description': 'Signature',
+        'note': '',
+      };
+      fieldImages[fieldId] = [row];
+      doc['field_images'] = fieldImages;
+
+      final title = _titleCtr?.text.trim();
+      await jobs.putCustomerSiteReport(
+        cid,
+        <String, dynamic>{
+          'report_id': rid,
+          if (_workAddressId != null) 'work_address_id': _workAddressId,
+          'document': doc,
+          if (title != null && title.isNotEmpty) 'report_title': title,
+        },
+      );
+
+      setState(() {
+        _imageCache[imageId] = bytes;
+        _report = {
+          ...rep,
+          'document': doc,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signature saved.')));
+    } on ApiException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      setState(() {
+        _signatureBusy[fieldId] = false;
+      });
+    }
+  }
+
+  Future<void> _clearSignature(String fieldId, int imageId) async {
+    final cid = _customerId;
+    final rid = _reportId;
+    final rep = _report;
+    if (cid == null || rid == null || rep == null) return;
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final jobs = Get.find<JobsRepository>();
+      await jobs.deleteCustomerSiteReportImage(cid, rid, imageId);
+
+      final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      fieldImages[fieldId] = [];
+      doc['field_images'] = fieldImages;
+
+      final title = _titleCtr?.text.trim();
+      await jobs.putCustomerSiteReport(
+        cid,
+        <String, dynamic>{
+          'report_id': rid,
+          if (_workAddressId != null) 'work_address_id': _workAddressId,
+          'document': doc,
+          if (title != null && title.isNotEmpty) 'report_title': title,
+        },
+      );
+
+      setState(() {
+        _imageCache.remove(imageId);
+        _sigCtr[fieldId]?.clear();
+        _report = {
+          ...rep,
+          'document': doc,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signature cleared.')));
+    } on ApiException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      setState(() {
+        _signatureBusy[fieldId] = false;
+      });
+    }
+  }
+
+  Future<void> _pickImageSource(BuildContext context, String fieldId) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xF21E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: Colors.white),
+              title: Text('Gallery', style: GoogleFonts.inter(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadImage(fieldId, ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_rounded, color: Colors.white),
+              title: Text('Camera', style: GoogleFonts.inter(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadImage(fieldId, ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadImage(String fieldId, ImageSource source) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: source,
+      maxWidth: 2000,
+      imageQuality: 82,
+    );
+    if (file == null) return;
+
+    final cid = _customerId;
+    final rid = _reportId;
+    final rep = _report;
+    if (cid == null || rid == null || rep == null) return;
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final bytes = await file.readAsBytes();
+      final name = file.name;
+      final path = name.toLowerCase();
+      final mime = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      final b64 = base64Encode(bytes);
+
+      final jobs = Get.find<JobsRepository>();
+      final res = await jobs.postCustomerSiteReportImage(
+        cid,
+        rid,
+        filename: name,
+        contentType: mime,
+        contentBase64: b64,
+      );
+
+      final image = res['image'];
+      final imageId = image is Map ? (image['id'] as num?)?.toInt() : null;
+      if (imageId == null) {
+        throw Exception('Upload succeeded but no image ID was returned.');
+      }
+
+      final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      final list = List<dynamic>.from(fieldImages[fieldId] ?? []);
+      
+      final rowId = DateTime.now().millisecondsSinceEpoch.toString();
+      final row = <String, dynamic>{
+        'id': rowId,
+        'image_id': imageId,
+        'description': '',
+        'note': '',
+      };
+      
+      list.add(row);
+      fieldImages[fieldId] = list;
+      doc['field_images'] = fieldImages;
+
+      // Update controllers immediately
+      _imageCaptionCtr[rowId] = TextEditingController(text: '');
+      _imageNoteCtr[rowId] = TextEditingController(text: '');
+
+      final title = _titleCtr?.text.trim();
+      await jobs.putCustomerSiteReport(
+        cid,
+        <String, dynamic>{
+          'report_id': rid,
+          if (_workAddressId != null) 'work_address_id': _workAddressId,
+          'document': doc,
+          if (title != null && title.isNotEmpty) 'report_title': title,
+        },
+      );
+
+      setState(() {
+        _imageCache[imageId] = bytes;
+        _report = {
+          ...rep,
+          'document': doc,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image uploaded.')));
+    } on ApiException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      setState(() {
+        _signatureBusy[fieldId] = false;
+      });
+    }
+  }
+
+  Future<void> _removeImageRow(String fieldId, String rowId, int imageId) async {
+    final cid = _customerId;
+    final rid = _reportId;
+    final rep = _report;
+    if (cid == null || rid == null || rep == null) return;
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final jobs = Get.find<JobsRepository>();
+      await jobs.deleteCustomerSiteReportImage(cid, rid, imageId);
+
+      final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      final list = List<dynamic>.from(fieldImages[fieldId] ?? []);
+      list.removeWhere((item) => item is Map && item['id']?.toString() == rowId);
+      fieldImages[fieldId] = list;
+      doc['field_images'] = fieldImages;
+
+      _imageCaptionCtr[rowId]?.dispose();
+      _imageCaptionCtr.remove(rowId);
+      _imageNoteCtr[rowId]?.dispose();
+      _imageNoteCtr.remove(rowId);
+
+      final title = _titleCtr?.text.trim();
+      await jobs.putCustomerSiteReport(
+        cid,
+        <String, dynamic>{
+          'report_id': rid,
+          if (_workAddressId != null) 'work_address_id': _workAddressId,
+          'document': doc,
+          if (title != null && title.isNotEmpty) 'report_title': title,
+        },
+      );
+
+      setState(() {
+        _imageCache.remove(imageId);
+        _report = {
+          ...rep,
+          'document': doc,
+        };
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image removed.')));
+    } on ApiException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      setState(() {
+        _signatureBusy[fieldId] = false;
+      });
     }
   }
 
@@ -186,6 +557,30 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         values[e.key] = e.value ?? '';
       }
       doc['values'] = values;
+
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      for (final entry in fieldImages.entries) {
+        final list = entry.value;
+        if (list is List) {
+          for (int i = 0; i < list.length; i++) {
+            final item = list[i];
+            if (item is Map) {
+              final itemMap = Map<String, dynamic>.from(item);
+              final rowId = itemMap['id']?.toString() ?? '';
+              if (rowId.isNotEmpty) {
+                if (_imageCaptionCtr.containsKey(rowId)) {
+                  itemMap['description'] = _imageCaptionCtr[rowId]!.text;
+                }
+                if (_imageNoteCtr.containsKey(rowId)) {
+                  itemMap['note'] = _imageNoteCtr[rowId]!.text;
+                }
+                list[i] = itemMap;
+              }
+            }
+          }
+        }
+      }
+      doc['field_images'] = fieldImages;
 
       final title = _titleCtr?.text.trim();
       await jobs.putCustomerSiteReport(
@@ -293,13 +688,12 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Photos and signatures are best managed on the web dashboard.',
-            style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          for (final f in fields) ..._fieldWidgets(f),
+          if (_templateDef != null && _templateDef!['sections'] is List)
+            for (final sec in (_templateDef!['sections'] as List))
+              if (sec is Map) ..._sectionWidgets(Map<String, dynamic>.from(sec)),
+          if (_templateDef != null && _templateDef!['footer'] is Map)
+            if ((_templateDef!['footer']['fields'] as List?)?.isNotEmpty == true)
+              ..._sectionWidgets(Map<String, dynamic>.from(_templateDef!['footer'])),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _saving ? null : _save,
@@ -310,17 +704,280 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     );
   }
 
+  List<Widget> _sectionWidgets(Map<String, dynamic> sec) {
+    final title = (sec['title'] as String?) ?? (sec['id'] == 'footer' ? 'Footer' : '');
+    final fields = sec['fields'];
+    if (fields is! List || fields.isEmpty) return [];
+
+    return [
+      if (title.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 24, bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Divider(color: AppColors.primary, thickness: 1),
+            ],
+          ),
+        ),
+      for (final f in fields)
+        if (f is Map) ..._fieldWidgets(Map<String, dynamic>.from(f)),
+    ];
+  }
+
   List<Widget> _fieldWidgets(Map<String, dynamic> f) {
     final id = (f['id'] as String?) ?? '';
     final label = (f['label'] as String?) ?? id;
     final type = (f['type'] as String?) ?? 'text';
-    if (id.isEmpty || type == 'static_text') return [];
+    if (id.isEmpty) return [];
 
-    if (type == 'image' || type == 'signature') {
+    if (type == 'static_text') {
+      final content = (f['content'] as String?) ?? '';
       return [
         Padding(
+          padding: const EdgeInsets.only(bottom: 12, top: 4),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.whiteOverlay(0.04),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.whiteOverlay(0.08)),
+            ),
+            child: Text(
+              content,
+              style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13, height: 1.4),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final labelWidget = Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          color: Colors.white,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+
+    if (type == 'image') {
+      final busy = _signatureBusy[id] == true;
+      final doc = _report?['document'];
+      final fieldImages = doc is Map ? doc['field_images'] : null;
+      final list = fieldImages is Map ? fieldImages[id] : null;
+      final List<dynamic> rows = list is List ? list : [];
+
+      final Widget imageListContent;
+      if (busy) {
+        imageListContent = const SizedBox(
+          height: 80,
+          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        );
+      } else {
+        imageListContent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final row in rows)
+              if (row is Map) () {
+                final rowId = row['id']?.toString() ?? '';
+                final imageId = (row['image_id'] as num?)?.toInt();
+                final bytes = imageId != null ? _imageCache[imageId] : null;
+                final capCtr = _imageCaptionCtr[rowId];
+                final noteCtr = _imageNoteCtr[rowId];
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.whiteOverlay(0.03),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (bytes != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.memory(
+                            bytes,
+                            height: 140,
+                            width: double.infinity,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      else
+                        const SizedBox(
+                          height: 100,
+                          child: Center(child: Text('Loading preview...', style: TextStyle(color: Colors.white60))),
+                        ),
+                      const SizedBox(height: 8),
+                      if (capCtr != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: TextField(
+                            controller: capCtr,
+                            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                            decoration: InputDecoration(
+                              labelText: 'Caption (e.g. Before work)',
+                              labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                              filled: true,
+                              fillColor: AppColors.whiteOverlay(0.03),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      if (noteCtr != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: TextField(
+                            controller: noteCtr,
+                            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                            decoration: InputDecoration(
+                              labelText: 'Short note (optional)',
+                              labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                              filled: true,
+                              fillColor: AppColors.whiteOverlay(0.03),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      if (imageId != null)
+                        TextButton.icon(
+                          onPressed: () => _removeImageRow(id, rowId, imageId),
+                          icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary, size: 18),
+                          label: Text('Remove image', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
+                        ),
+                    ],
+                  ),
+                );
+              }(),
+            OutlinedButton.icon(
+              onPressed: () => _pickImageSource(context, id),
+              icon: const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 16),
+              label: Text('Add photo', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.whiteOverlay(0.25)),
+              ),
+            ),
+          ],
+        );
+      }
+
+      return [
+        labelWidget,
+        Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: Text('$label — attach on web', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 13)),
+          child: imageListContent,
+        ),
+      ];
+    }
+
+    if (type == 'signature') {
+      final busy = _signatureBusy[id] == true;
+      int? imageId;
+      final doc = _report?['document'];
+      final fieldImages = doc is Map ? doc['field_images'] : null;
+      final list = fieldImages is Map ? fieldImages[id] : null;
+      if (list is List && list.isNotEmpty) {
+        final first = list.first;
+        if (first is Map) {
+          imageId = (first['image_id'] as num?)?.toInt();
+        }
+      }
+
+      final Widget content;
+      if (busy) {
+        content = const SizedBox(
+          height: 120,
+          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        );
+      } else if (imageId != null && _imageCache.containsKey(imageId)) {
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Image.memory(
+                _imageCache[imageId]!,
+                height: 120,
+                width: double.infinity,
+                fit: BoxFit.contain,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _clearSignature(id, imageId!),
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
+              label: Text('Clear signature', style: GoogleFonts.inter(color: AppColors.primary)),
+            ),
+          ],
+        );
+      } else if (imageId != null) {
+        content = const SizedBox(
+          height: 120,
+          child: Center(child: Text('Loading signature...', style: TextStyle(color: Colors.white60))),
+        );
+      } else {
+        final sig = _sigCtr.putIfAbsent(
+          id,
+          () => SignatureController(
+            penStrokeWidth: 2.5,
+            penColor: Colors.black87,
+            exportBackgroundColor: Colors.white,
+          ),
+        );
+        content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Signature(
+                controller: sig,
+                height: 150,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: sig.clear,
+                  child: Text('Clear pad', style: GoogleFonts.inter(color: AppColors.slate400)),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _uploadSignature(id),
+                  icon: const Icon(Icons.check_rounded, color: AppColors.primary),
+                  label: Text('Save signature', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+
+      return [
+        labelWidget,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: content,
         ),
       ];
     }
@@ -328,24 +985,98 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     if (type == 'yes_no_na') {
       const opts = ['yes', 'no', 'na', 'not_determined', ''];
       return [
+        labelWidget,
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: DropdownButtonFormField<String>(
             value: _yesNo[id] != null && _yesNo[id]!.isNotEmpty ? _yesNo[id] : null,
             decoration: InputDecoration(
-              labelText: label,
-              labelStyle: GoogleFonts.inter(color: AppColors.slate400),
               filled: true,
               fillColor: AppColors.whiteOverlay(0.06),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
             dropdownColor: const Color(0xFF1E293B),
+            style: GoogleFonts.inter(color: Colors.white),
             items: [
-              const DropdownMenuItem(value: null, child: Text('—')),
+              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
               for (final o in opts.where((x) => x.isNotEmpty))
-                DropdownMenuItem(value: o, child: Text(o)),
+                DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
             ],
             onChanged: (v) => setState(() => _yesNo[id] = v),
+          ),
+        ),
+      ];
+    }
+
+    if (type == 'pass_fail') {
+      const opts = ['pass', 'fail', 'not_determined', ''];
+      return [
+        labelWidget,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DropdownButtonFormField<String>(
+            value: _yesNo[id] != null && _yesNo[id]!.isNotEmpty ? _yesNo[id] : null,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppColors.whiteOverlay(0.06),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            dropdownColor: const Color(0xFF1E293B),
+            style: GoogleFonts.inter(color: Colors.white),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
+              for (final o in opts.where((x) => x.isNotEmpty))
+                DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
+            ],
+            onChanged: (v) => setState(() => _yesNo[id] = v),
+          ),
+        ),
+      ];
+    }
+
+    if (type == 'date') {
+      final c = _textCtr[id];
+      if (c == null) return [];
+      return [
+        labelWidget,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: TextField(
+            controller: c,
+            readOnly: true,
+            style: GoogleFonts.inter(color: Colors.white),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppColors.whiteOverlay(0.06),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              suffixIcon: const Icon(Icons.calendar_month_rounded, color: AppColors.slate400),
+            ),
+            onTap: () async {
+              final initial = DateTime.tryParse(c.text) ?? DateTime.now();
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: initial,
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: const ColorScheme.dark(
+                        primary: AppColors.primary,
+                        onPrimary: Colors.white,
+                        surface: Color(0xFF1E293B),
+                        onSurface: Colors.white,
+                      ),
+                      dialogBackgroundColor: const Color(0xFF0F172A),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+              if (picked != null) {
+                c.text = picked.toIso8601String().split('T')[0];
+              }
+            },
           ),
         ),
       ];
@@ -356,6 +1087,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
 
     final maxLines = type == 'textarea' ? 5 : 1;
     return [
+      labelWidget,
       Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: TextField(
@@ -363,8 +1095,6 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           maxLines: maxLines,
           style: GoogleFonts.inter(color: Colors.white),
           decoration: InputDecoration(
-            labelText: label,
-            labelStyle: GoogleFonts.inter(color: AppColors.slate400),
             filled: true,
             fillColor: AppColors.whiteOverlay(0.06),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

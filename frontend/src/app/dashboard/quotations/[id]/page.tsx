@@ -6,8 +6,6 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   Send,
-  DollarSign,
-  Clock,
   Printer,
   Check,
   X,
@@ -29,8 +27,8 @@ import { getJson, postJson, deleteRequest } from '../../../apiClient';
 import QuotationNotesPanel from './QuotationNotesPanel';
 import QuotationEmailComposer from './QuotationEmailComposer';
 import QuotationPrintTemplate from './QuotationPrintTemplate';
-import QuotationInternalNotesCard from './QuotationInternalNotesCard';
 import type { QuotationInternalNote } from './QuotationInternalNotesCard';
+import QuotationDetailSidebar from './QuotationDetailSidebar';
 
 interface LineItem {
   id: number;
@@ -592,7 +590,7 @@ export default function QuotationDetailPage() {
 
         {/* Main Content */}
         <div className="quotation-page-body min-h-0 flex-1 overflow-y-auto print:overflow-visible">
-          <div className="quotation-page-container mx-auto max-w-6xl p-8 print:p-0">
+          <div className="quotation-page-container mx-auto max-w-[100rem] p-8 print:p-0">
 
             {/* Tabs Toggle */}
             <div className="no-print mb-6 flex gap-1 rounded-xl bg-slate-200/50 p-1 w-fit">
@@ -619,8 +617,8 @@ export default function QuotationDetailPage() {
             )}
 
             {activeTab === 'details' ? (
-              <div className="quotation-print-layout grid grid-cols-1 gap-8 lg:grid-cols-3">
-                <div className="lg:col-span-2">
+              <div className="quotation-print-layout grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(620px,0.9fr)]">
+                <div>
                   <QuotationPrintTemplate
                     quotation={{
                       quotation_number: quotation.quotation_number,
@@ -646,100 +644,21 @@ export default function QuotationDetailPage() {
                   />
                 </div>
 
-                <div className="no-print lg:col-span-1 space-y-6">
-                  {/* Summary Card */}
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900">
-                      <DollarSign className="size-5 text-[#14B8A6]" />
-                      Quotation Summary
-                    </h3>
-                    <div className="space-y-4">
-                      <div className="flex justify-between text-sm py-2 border-b border-slate-50">
-                        <span className="text-slate-500 font-medium">Status</span>
-                        <span className={`font-bold px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider ${stateOpt.color}`}>
-                          {stateOpt.label}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm py-2 border-b border-slate-50">
-                        <span className="text-slate-500 font-medium">Subtotal</span>
-                        <span className="font-bold text-slate-900">{formatCurrency(quotation.subtotal, quotation.currency)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm py-2 border-b border-slate-50">
-                        <span className="text-slate-500 font-medium">{taxLabel}</span>
-                        <span className="font-bold text-slate-900">{formatCurrency(quotation.tax_amount, quotation.currency)}</span>
-                      </div>
-                      <div className="flex justify-between pt-2">
-                        <span className="text-base font-bold text-slate-900">Total</span>
-                        <span className="text-lg font-black text-[#14B8A6]">{formatCurrency(quotation.total_amount, quotation.currency)}</span>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {token ? (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.08 }}
-                    >
-                      <QuotationInternalNotesCard
-                        quotationId={id}
-                        authToken={token}
-                        notes={quotation.internal_notes ?? []}
-                        onAppendNote={(note) =>
-                          setQuotation((q) =>
-                            q ? { ...q, internal_notes: [note, ...(q.internal_notes ?? [])] } : null,
-                          )
-                        }
-                        onRemoveNote={(noteId) =>
-                          setQuotation((q) =>
-                            q
-                              ? {
-                                  ...q,
-                                  internal_notes: (q.internal_notes ?? []).filter((n) => n.id !== noteId),
-                                }
-                              : null,
-                          )
-                        }
-                        onUpdateNote={(noteId, newBody) =>
-                          setQuotation((q) =>
-                            q
-                              ? {
-                                  ...q,
-                                  internal_notes: (q.internal_notes ?? []).map((n) =>
-                                    n.id === noteId ? { ...n, body: newBody } : n,
-                                  ),
-                                }
-                              : null,
-                          )
-                        }
-                      />
-                    </motion.div>
-                  ) : null}
-
-                  {/* Activity Preview */}
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="mb-4 flex items-center justify-between">
-                      <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                        <Clock className="size-5 text-[#14B8A6]" />
-                        Recent Activity
-                      </h3>
-                      <button onClick={() => setActiveTab('notes')} className="text-xs font-bold text-[#14B8A6] hover:underline">View All</button>
-                    </div>
-                    <div className="space-y-4">
-                      {quotation.activities.length === 0 ? (
-                        <p className="text-sm text-slate-400 py-4 text-center italic">No activity yet</p>
-                      ) : (
-                        quotation.activities.slice(0, 5).map((a) => (
-                          <div key={a.id} className="relative pl-6 pb-2 last:pb-0 border-l border-slate-100">
-                            <div className="absolute left-[-5px] top-1.5 size-2.5 rounded-full border-2 border-white bg-[#14B8A6]" />
-                            <p className="text-sm font-bold text-slate-900">{a.action.replace(/_/g, ' ')}</p>
-                            <p className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">{dayjs(a.created_at).fromNow()}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </motion.div>
-                </div>
+                <QuotationDetailSidebar
+                  quotationId={id}
+                  authToken={token}
+                  currency={quotation.currency}
+                  subtotal={quotation.subtotal}
+                  taxAmount={quotation.tax_amount}
+                  totalAmount={quotation.total_amount}
+                  taxLabel={taxLabel}
+                  stateOpt={stateOpt}
+                  internalNotes={quotation.internal_notes ?? []}
+                  activities={quotation.activities}
+                  formatCurrency={formatCurrency}
+                  onViewAllNotes={() => setActiveTab('notes')}
+                  setQuotation={setQuotation}
+                />
               </div>
             ) : (
               <QuotationNotesPanel

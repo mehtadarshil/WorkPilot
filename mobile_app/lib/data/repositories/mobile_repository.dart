@@ -826,6 +826,15 @@ class MobileRepository extends BaseRepository {
     return raw.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList();
   }
 
+  Future<Map<String, dynamic>> fetchCertificateBranding() async {
+    try {
+      final res = await api.get<Map<String, dynamic>>('/electrical-certificates/branding');
+      final raw = res.data?['branding'];
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (_) {}
+    return const {};
+  }
+
   Future<List<Map<String, dynamic>>> fetchMobileSiteReportTemplates() async {
     final res = await api.get<Map<String, dynamic>>('/mobile/site-report-templates');
     final raw = res.data?['templates'];

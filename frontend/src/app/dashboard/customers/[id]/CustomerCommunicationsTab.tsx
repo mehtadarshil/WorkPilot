@@ -61,7 +61,7 @@ interface CustomerFileOption {
   original_filename: string;
   content_type: string | null;
   byte_size: number | null;
-  kind?: 'uploaded' | 'electrical_certificate';
+  kind?: 'uploaded' | 'electrical_certificate' | 'site_report';
   href?: string;
 }
 
@@ -124,7 +124,7 @@ function formatBytes(bytes: number | null): string {
 }
 
 function customerFileContentPath(customerId: string, file: CustomerFileOption): string {
-  return file.kind === 'electrical_certificate' && file.href
+  return (file.kind === 'electrical_certificate' || file.kind === 'site_report') && file.href
     ? file.href
     : `/customers/${customerId}/files/${file.id}/content`;
 }

@@ -7,6 +7,23 @@ interface RequestOptions extends RequestInit {
   authToken?: string | null;
 }
 
+let activeRefreshPromise: Promise<{ token: string; refreshToken?: string }> | null = null;
+
+async function performTokenRefresh(refreshToken: string): Promise<{ token: string; refreshToken?: string }> {
+  const url = `${API_BASE_URL}/auth/refresh`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!response.ok) {
+    throw new Error('Refresh request failed');
+  }
+  return response.json() as Promise<{ token: string; refreshToken?: string }>;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
 
@@ -24,21 +41,64 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers,
   });
 
-  const contentType = response.headers.get('content-type');
-  const isJson = contentType && contentType.includes('application/json');
-  const data = isJson ? await response.json() : null;
+  let contentType = response.headers.get('content-type');
+  let isJson = contentType && contentType.includes('application/json');
+  let data = isJson ? await response.json() : null;
 
   if (!response.ok) {
     const message = (data && (data.message as string)) || 'Unexpected error occurred';
     const isLoginRequest = path === '/auth/login' || path.endsWith('/auth/login');
 
-    if (response.status === 401 && typeof window !== 'undefined' && !isLoginRequest) {
+    if (response.status === 401 && typeof window !== 'undefined' && !isLoginRequest && !path.endsWith('/auth/refresh')) {
+      const refreshToken = window.localStorage.getItem('wp_refresh_token');
+      if (refreshToken) {
+        try {
+          if (!activeRefreshPromise) {
+            activeRefreshPromise = performTokenRefresh(refreshToken);
+          }
+          const refreshData = await activeRefreshPromise;
+          activeRefreshPromise = null;
+
+          window.localStorage.setItem('wp_token', refreshData.token);
+          if (refreshData.refreshToken) {
+            window.localStorage.setItem('wp_refresh_token', refreshData.refreshToken);
+          }
+
+          // Retry the request with the new token
+          const newHeaders = {
+            ...headers,
+            'Authorization': `Bearer ${refreshData.token}`,
+          } as Record<string, string>;
+
+          const retryResponse = await fetch(url, {
+            ...options,
+            headers: newHeaders,
+          });
+
+          const retryContentType = retryResponse.headers.get('content-type');
+          const isRetryJson = retryContentType && retryContentType.includes('application/json');
+          const retryData = isRetryJson ? await retryResponse.json() : null;
+
+          if (!retryResponse.ok) {
+            const retryMessage = (retryData && (retryData.message as string)) || 'Unexpected error occurred';
+            throw new Error(retryMessage);
+          }
+
+          return retryData as T;
+        } catch (refreshError) {
+          activeRefreshPromise = null;
+          console.error('Auto token refresh failed:', refreshError);
+        }
+      }
+
       window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_refresh_token');
       window.localStorage.removeItem('wp_user');
       if (!window.location.pathname.startsWith('/login')) {
-        const q = new URLSearchParams({ error: message });
+        const q = new URLSearchParams({ error: 'Your session has expired. Please sign in again.' });
         window.location.href = `/login?${q.toString()}`;
       }
+      throw new Error('Session expired');
     }
 
     throw new Error(message);
@@ -90,7 +150,33 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
   const url = `${API_BASE_URL}${path}`;
   const headers: HeadersInit = {};
   if (authToken) (headers as Record<string, string>).Authorization = `Bearer ${authToken}`;
-  const response = await fetch(url, { method: 'GET', headers });
+  
+  let response = await fetch(url, { method: 'GET', headers });
+
+  if (response.status === 401 && typeof window !== 'undefined') {
+    const refreshToken = window.localStorage.getItem('wp_refresh_token');
+    if (refreshToken) {
+      try {
+        if (!activeRefreshPromise) {
+          activeRefreshPromise = performTokenRefresh(refreshToken);
+        }
+        const refreshData = await activeRefreshPromise;
+        activeRefreshPromise = null;
+
+        window.localStorage.setItem('wp_token', refreshData.token);
+        if (refreshData.refreshToken) {
+          window.localStorage.setItem('wp_refresh_token', refreshData.refreshToken);
+        }
+
+        (headers as Record<string, string>).Authorization = `Bearer ${refreshData.token}`;
+        response = await fetch(url, { method: 'GET', headers });
+      } catch (err) {
+        activeRefreshPromise = null;
+        console.error('Auto token refresh failed in getBlob:', err);
+      }
+    }
+  }
+
   if (!response.ok) {
     let message = 'Unexpected error occurred';
     try {
@@ -101,6 +187,7 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
     }
     if (response.status === 401 && typeof window !== 'undefined') {
       window.localStorage.removeItem('wp_token');
+      window.localStorage.removeItem('wp_refresh_token');
       window.localStorage.removeItem('wp_user');
       if (!window.location.pathname.startsWith('/login')) {
         const q = new URLSearchParams({ error: message });
@@ -111,4 +198,3 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
   }
   return response.blob();
 }
-

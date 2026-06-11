@@ -175,7 +175,7 @@ export default function CustomerSiteReportTab({
         renewal_reminder_enabled: rp.renewal_reminder_enabled ?? false,
         renewal_anchor_date: rp.renewal_anchor_date ?? null,
         renewal_interval_years: rp.renewal_interval_years ?? 1,
-        renewal_early_days: rp.renewal_early_days ?? 14,
+        renewal_early_days: rp.renewal_early_days ?? 30,
         renewal_job_id: rp.renewal_job_id ?? null,
       });
       setTemplate(res.template);
@@ -276,7 +276,7 @@ export default function CustomerSiteReportTab({
         renewal_reminder_enabled: rp.renewal_reminder_enabled ?? false,
         renewal_anchor_date: rp.renewal_anchor_date ?? null,
         renewal_interval_years: rp.renewal_interval_years ?? 1,
-        renewal_early_days: rp.renewal_early_days ?? 14,
+        renewal_early_days: rp.renewal_early_days ?? 30,
         renewal_job_id: rp.renewal_job_id ?? null,
       });
       setTemplate(res.template);

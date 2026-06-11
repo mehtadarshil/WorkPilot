@@ -4,6 +4,8 @@ import '../certificate_document_utils.dart';
 import '../certificate_editor_controller.dart';
 import '../constants/certificate_schedule_items.dart';
 import '../widgets/cert_form_widgets.dart';
+import 'custom_section_editors.dart';
+import 'boards_list_editor.dart';
 
 class JsonFieldSpec {
   const JsonFieldSpec({
@@ -70,6 +72,32 @@ class GenericCertificateEditor extends StatelessWidget {
     final activeKey = controller.activeSectionKey.value.isEmpty
         ? sections.first.key
         : controller.activeSectionKey.value;
+
+    if (activeKey == 'observations') {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+        child: ObservationsSectionEditor(controller: controller),
+      );
+    }
+    if (activeKey == 'appendix') {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+        child: AppendixSectionEditor(controller: controller),
+      );
+    }
+    if (activeKey == 'signatories') {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+        child: SignatoriesSectionEditor(controller: controller),
+      );
+    }
+    if (activeKey == 'boards' || activeKey == 'circuits') {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+        child: BoardsListEditor(controller: controller),
+      );
+    }
+
     final active = sections.firstWhere(
       (section) => section.key == activeKey,
       orElse: () => sections.first,

@@ -13,7 +13,7 @@ export function CertificateRenewalReminderCard() {
   const [enabled, setEnabled] = useState(certificate.renewal_reminder_enabled);
   const [anchor, setAnchor] = useState(certificate.renewal_anchor_date || '');
   const [intervalYears, setIntervalYears] = useState(String(certificate.renewal_interval_years || 1));
-  const [earlyDays, setEarlyDays] = useState(String(certificate.renewal_early_days || 14));
+  const [earlyDays, setEarlyDays] = useState(String(certificate.renewal_early_days || 30));
   const [linkJobId, setLinkJobId] = useState<number | null>(certificate.renewal_job_id);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function CertificateRenewalReminderCard() {
     setEnabled(certificate.renewal_reminder_enabled);
     setAnchor(certificate.renewal_anchor_date || '');
     setIntervalYears(String(certificate.renewal_interval_years || 1));
-    setEarlyDays(String(certificate.renewal_early_days || 14));
+    setEarlyDays(String(certificate.renewal_early_days || 30));
     setLinkJobId(certificate.renewal_job_id);
   }, [
     certificate.id,
@@ -60,7 +60,7 @@ export function CertificateRenewalReminderCard() {
     let ed = parseInt(earlyDays, 10);
     if (!Number.isFinite(iy) || iy < 1) iy = 1;
     if (iy > 10) iy = 10;
-    if (!Number.isFinite(ed) || ed < 1) ed = 14;
+    if (!Number.isFinite(ed) || ed < 1) ed = 30;
     if (ed > 120) ed = 120;
 
     try {
