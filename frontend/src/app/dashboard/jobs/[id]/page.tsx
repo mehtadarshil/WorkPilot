@@ -11,7 +11,7 @@ import JobNotesTab from './JobNotesTab';
 import JobCostsTab from './JobCostsTab';
 import JobDynamicReportsTab from './JobDynamicReportsTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
-import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key } from 'lucide-react';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 
@@ -32,6 +32,8 @@ interface JobWorkAddress {
   address_line_1: string | null;
   town: string | null;
   postcode: string | null;
+  key_info?: string | null;
+  site_notes?: string | null;
 }
 
 interface JobDetails {
@@ -833,6 +835,28 @@ export default function JobDetailsPage() {
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
+          {job.work_address?.site_notes && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm flex items-start gap-3">
+              <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700 shrink-0">
+                <Info className="size-5" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-bold text-amber-850 uppercase tracking-wider">Site Notes</h4>
+                <p className="mt-1 text-sm text-amber-900 whitespace-pre-wrap font-medium">{job.work_address.site_notes}</p>
+              </div>
+            </div>
+          )}
+          {job.work_address?.key_info && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm flex items-start gap-3">
+              <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700 shrink-0">
+                <Key className="size-5" />
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-bold text-indigo-850 uppercase tracking-wider">Key Info / Access Code</h4>
+                <p className="mt-1 text-sm text-indigo-900 whitespace-pre-wrap font-medium">{job.work_address.key_info}</p>
+              </div>
+            </div>
+          )}
           {activeTab === 'Invoices' ? (
              <div className="space-y-6">
                 {/* Main Invoices Card */}

@@ -7,7 +7,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/routes/app_routes.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/values/app_colors.dart';
+import '../../core/values/app_constants.dart';
 import '../../data/models/diary_event_detail.dart';
 import '../certificates/certificate_catalog.dart';
 import 'diary_event_detail_controller.dart';
@@ -50,6 +52,55 @@ String _formatJobState(String? raw) {
             : '${s[0].toUpperCase()}${s.length > 1 ? s.substring(1).toLowerCase() : ''}',
       )
       .join(' ');
+}
+
+void _showImagePreviewDialog(BuildContext context, int customerId, int fileId) {
+  final tok = Get.find<StorageService>().authToken ?? '';
+  final base = AppConstants.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+  final url = '$base/customers/$customerId/files/$fileId/content';
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final mq = MediaQuery.of(ctx);
+      return Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: mq.size.width * 0.94,
+          height: mq.size.height * 0.82,
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
+                    loadingBuilder: (_, child, prog) {
+                      if (prog == null) return child;
+                      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+                    },
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 String _siteContactName(DiaryEventDetail d) {
@@ -328,6 +379,128 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                   _accentTitle('Site information'),
                                   const SizedBox(height: 12),
                                   _NavigableAddress(address: d.fullSiteAddress, lat: d.siteLatitude, lon: d.siteLongitude),
+                                  if (d.siteNotes != null && d.siteNotes!.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'SITE NOTES',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.amber[200],
+                                              letterSpacing: 1.1,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            d.siteNotes!.trim(),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: AppColors.slate50,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  if (d.keyInfo != null && d.keyInfo!.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.indigo.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.indigo.withOpacity(0.3)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'KEY INFO / ACCESS CODE',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.indigo[200],
+                                              letterSpacing: 1.1,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            d.keyInfo!.trim(),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: AppColors.slate50,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                  if (d.siteImages.isNotEmpty) ...[
+                                    const SizedBox(height: 14),
+                                    Text(
+                                      'SITE PICTURES',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.slate400,
+                                        letterSpacing: 1.1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      height: 88,
+                                      child: ListView.separated(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: d.siteImages.length,
+                                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                        itemBuilder: (context, index) {
+                                          final img = d.siteImages[index];
+                                          final base = AppConstants.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+                                          final url = '$base/customers/${d.customerId}/files/${img.id}/content';
+                                          final tok = Get.find<StorageService>().authToken ?? '';
+                                          return Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              onTap: () {
+                                                _showImagePreviewDialog(context, d.customerId ?? 0, img.id);
+                                              },
+                                              borderRadius: BorderRadius.circular(10),
+                                              child: ClipRRect(
+                                                borderRadius: BorderRadius.circular(10),
+                                                child: AspectRatio(
+                                                  aspectRatio: 1,
+                                                  child: Image.network(
+                                                    url,
+                                                    fit: BoxFit.cover,
+                                                    width: 88,
+                                                    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
+                                                    errorBuilder: (_, __, ___) => Container(
+                                                      color: AppColors.whiteOverlay(0.08),
+                                                      child: const Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                   if (!hideContacts &&
                                       _siteContactName(
                                         d,

@@ -16,6 +16,7 @@ import {
   presetDeskOfficerPermissions,
   presetFieldOfficerPermissions,
   emptyPermissions,
+  normalizePermissions,
 } from '../../../lib/tenantPermissions';
 import type { User } from './UsersSettings';
 
@@ -42,7 +43,8 @@ interface UnifiedTeamSettingsProps {
 
 function permSummary(p: TenantPermissionsMap | null): string {
   if (!p) return '—';
-  const on = TENANT_PERMISSION_KEYS.filter((k) => p[k]).map((k) => PERMISSION_LABELS[k]);
+  const normalized = normalizePermissions(p);
+  const on = TENANT_PERMISSION_KEYS.filter((k) => normalized[k]).map((k) => PERMISSION_LABELS[k]);
   return on.length ? on.slice(0, 4).join(', ') + (on.length > 4 ? '…' : '') : 'None';
 }
 
@@ -115,7 +117,7 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
     setEditRow(m);
     setFormFullName(m.full_name || '');
     setPreset('custom');
-    setPerms(m.permissions ? { ...emptyPermissions(), ...m.permissions } : presetDeskOfficerPermissions());
+    setPerms(m.permissions ? normalizePermissions(m.permissions) : presetDeskOfficerPermissions());
   };
 
   const handleAdd = async (e: React.FormEvent) => {

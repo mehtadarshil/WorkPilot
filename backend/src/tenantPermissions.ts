@@ -88,5 +88,14 @@ export function normalizePermissionsJson(raw: unknown): Record<TenantPermissionK
   for (const k of TENANT_PERMISSION_KEYS) {
     if (obj[k] === true) base[k] = true;
   }
+  if (
+    base.customers &&
+    base.jobs &&
+    base.quotations &&
+    base.invoices &&
+    base.scheduling
+  ) {
+    base.certifications = true;
+  }
   return base;
 }

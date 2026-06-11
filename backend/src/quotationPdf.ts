@@ -271,11 +271,6 @@ export async function generateQuotationPdfBuffer(pool: Pool, quotationId: number
     doc.fontSize(10).fillColor('#0f172a').text('Total', labelX, y);
     doc.fontSize(10).fillColor(accentColor).text(formatMoney(totalAmount, currency), valX, y, { width: 80, align: 'right' });
 
-    if (q.notes?.trim()) {
-      doc.moveDown(2);
-      doc.fontSize(9).fillColor('#64748b').text('Notes');
-      doc.fillColor('#334155').text(q.notes.trim(), { width: 500 });
-    }
     if (terms?.trim()) {
       doc.moveDown(1);
       doc.fontSize(8).fillColor('#64748b').text('Terms & conditions', { width: 500 });

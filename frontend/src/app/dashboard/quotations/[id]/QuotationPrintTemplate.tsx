@@ -250,14 +250,11 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
                       <div className="mt-3 flex flex-wrap gap-2">
                         {item.images.map((image, index) =>
                           image.data_url ? (
-                            <Image
+                            <img
                               key={`${image.original_filename}-${index}`}
                               src={image.data_url}
                               alt={image.original_filename}
-                              width={96}
-                              height={80}
-                              unoptimized
-                              className="h-20 w-24 rounded-lg border border-slate-200 object-cover"
+                              className="max-h-32 max-w-[200px] w-auto h-auto rounded-lg border border-slate-200 object-contain bg-white"
                             />
                           ) : null,
                         )}
@@ -295,12 +292,6 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
         </div>
 
         <div className="mt-12 space-y-6">
-          {quotation.notes && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-8 print-break-avoid">
-              <p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Service Notes</p>
-              <p className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-slate-600">{quotation.notes}</p>
-            </div>
-          )}
           {s?.bank_details && (
             <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-8 print-break-avoid">
               <p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Payment Information</p>

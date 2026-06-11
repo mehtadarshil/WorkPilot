@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
+import '../../data/repositories/mobile_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
 import '../../widgets/searchable_select_field.dart';
 import 'quotation_helpers.dart';
@@ -150,6 +151,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
         if (_customerId != null) {
           await _loadWorkAddresses(_customerId!);
         }
+        await _prefillNotesFromQuotationVisit();
       }
       setState(() => _loading = false);
     } on ApiException catch (e) {
@@ -176,6 +178,22 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
       });
     } catch (_) {
       setState(() => _workAddresses = []);
+    }
+  }
+
+  Future<void> _prefillNotesFromQuotationVisit() async {
+    final diaryId = _diaryEventId;
+    if (diaryId == null || _notesC.text.trim().isNotEmpty) return;
+    try {
+      final result = await Get.find<MobileRepository>().fetchDiaryEventDetail(diaryId);
+      final notes = result.detail.technicalNotes
+          .map((n) => n.notes?.trim() ?? '')
+          .where((n) => n.isNotEmpty)
+          .toList();
+      if (notes.isEmpty) return;
+      _notesC.text = notes.join('\n\n');
+    } catch (_) {
+      // Visit notes are helpful prefill only; quotation creation can continue without them.
     }
   }
 
@@ -354,7 +372,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       _panel(
                         child: DropdownButtonFormField<int?>(
                           isExpanded: true,
-                          value: _workAddressId,
+                          initialValue: _workAddressId,
                           dropdownColor: const Color(0xFF1e293b),
                           style: GoogleFonts.inter(color: Colors.white),
                           decoration: _inputDeco('').copyWith(
@@ -437,7 +455,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                     _panel(
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
-                        value: _currency,
+                        initialValue: _currency,
                         decoration: _inputDeco('Currency'),
                         dropdownColor: const Color(0xFF1e293b),
                         style: GoogleFonts.inter(color: Colors.white),
@@ -450,7 +468,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       _panel(
                         child: DropdownButtonFormField<String>(
                           isExpanded: true,
-                          value: _state,
+                          initialValue: _state,
                           decoration: _inputDeco('Status'),
                           dropdownColor: const Color(0xFF1e293b),
                           style: GoogleFonts.inter(color: Colors.white),
@@ -505,12 +523,34 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                     ),
                     const SizedBox(height: 16),
                     _panel(
-                      child: TextField(
-                        controller: _notesC,
-                        enabled: !_saving,
-                        maxLines: 2,
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: _inputDeco('Internal notes'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Service notes',
+                            style: GoogleFonts.inter(
+                              color: AppColors.whiteOverlay(0.65),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Notes shown on the quotation, PDF, and customer link.',
+                            style: GoogleFonts.inter(
+                              color: AppColors.whiteOverlay(0.45),
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _notesC,
+                            enabled: !_saving,
+                            maxLines: 4,
+                            style: GoogleFonts.inter(color: Colors.white),
+                            decoration: _inputDeco('Add service notes...'),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 20),

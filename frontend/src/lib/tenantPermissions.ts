@@ -36,6 +36,17 @@ export function emptyPermissions(): TenantPermissionsMap {
   return o;
 }
 
+export function normalizePermissions(p?: Partial<Record<TenantPermissionKey, boolean>> | null): TenantPermissionsMap {
+  const o = emptyPermissions();
+  if (p) {
+    for (const k of TENANT_PERMISSION_KEYS) o[k] = p[k] === true;
+  }
+  if (o.customers && o.jobs && o.quotations && o.invoices && o.scheduling) {
+    o.certifications = true;
+  }
+  return o;
+}
+
 export function presetManagerPermissions(): TenantPermissionsMap {
   const o = emptyPermissions();
   for (const k of TENANT_PERMISSION_KEYS) o[k] = true;
@@ -91,7 +102,7 @@ export const PERMISSION_UI_GROUPS: readonly {
   {
     id: 'compliance',
     title: 'Certificates & compliance',
-    description: 'Electrical certificates and staff certification compliance.',
+    description: 'Electrical certificates, site reports, and staff certification compliance.',
     keys: ['certifications'],
   },
   {
@@ -126,7 +137,7 @@ export const PERMISSION_LABELS: Record<TenantPermissionKey, string> = {
   quotations: 'Quotations & proposals',
   invoices: 'Invoices & payments',
   scheduling: 'Diary & dispatch',
-  certifications: 'Certification library',
+  certifications: 'Certificates & reports',
   parts_catalog: 'Parts & kits catalog',
   field_users: 'Field team & assignments',
   settings_company: 'Settings: Company',
@@ -154,7 +165,7 @@ export const PERMISSION_HINTS: Record<TenantPermissionKey, string> = {
   quotations: 'Build and send quotations.',
   invoices: 'Issue invoices and payment-related views.',
   scheduling: 'Calendar, diary visits, and dispatch (also drives field visit list on the app when linked).',
-  certifications: 'Certification types and officer compliance records.',
+  certifications: 'Electrical certificates, site/FRA reports, and officer compliance records.',
   parts_catalog: 'Parts lists and kits used on jobs.',
   field_users: 'Field officers list, mobile access, and job assignment pickers.',
   settings_company: 'Company logo, address, branding, and document defaults.',

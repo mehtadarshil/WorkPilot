@@ -41,6 +41,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
   final _email = TextEditingController();
   final _uprn = TextEditingController();
   final _keyInfo = TextEditingController();
+  final _siteNotes = TextEditingController();
   final _latitude = TextEditingController();
   final _longitude = TextEditingController();
 
@@ -82,6 +83,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
       _email.text = ctStr(e, 'email');
       _uprn.text = ctStr(e, 'uprn');
       _keyInfo.text = ctStr(e, 'key_info');
+      _siteNotes.text = ctStr(e, 'site_notes');
       final t = ctStr(e, 'title');
       _title = t.isEmpty ? 'Mr' : (_titles.contains(t) ? t : 'Mr');
       _prefersPhone = e['prefers_phone'] == true;
@@ -144,6 +146,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
     _email.dispose();
     _uprn.dispose();
     _keyInfo.dispose();
+    _siteNotes.dispose();
     _latitude.dispose();
     _longitude.dispose();
     super.dispose();
@@ -178,6 +181,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
       'prefers_letter': _prefersLetter,
       'uprn': _trimOrNull(_uprn.text),
       'key_info': _keyInfo.text.trim(),
+      'site_notes': _siteNotes.text.trim(),
       'is_active': _isActive,
       'latitude': _latitude.text.trim().isNotEmpty ? double.tryParse(_latitude.text.trim()) : null,
       'longitude': _longitude.text.trim().isNotEmpty ? double.tryParse(_longitude.text.trim()) : null,
@@ -406,6 +410,20 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
                       enabled: !_saving,
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: customerInputDecoration('Unique property reference'),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('SITE NOTES', style: _labelStyle()),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _siteNotes,
+                      enabled: !_saving,
+                      maxLines: 5,
+                      minLines: 3,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: customerInputDecoration(
+                        'Access notes, parking, hazards, preferred entrance...',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text('KEY INFO', style: _labelStyle()),

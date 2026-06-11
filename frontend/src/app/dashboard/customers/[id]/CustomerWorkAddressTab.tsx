@@ -30,6 +30,7 @@ interface WorkAddress {
   prefers_letter: boolean;
   uprn: string | null;
   key_info: string | null;
+  site_notes: string | null;
   is_active: boolean;
   latitude: number | null;
   longitude: number | null;
@@ -67,6 +68,7 @@ type WorkAddressForm = {
   prefers_letter: boolean;
   uprn: string;
   key_info: string;
+  site_notes: string;
   is_active: boolean;
   latitude: string;
   longitude: string;
@@ -95,6 +97,7 @@ const emptyForm: WorkAddressForm = {
   prefers_letter: false,
   uprn: '',
   key_info: '',
+  site_notes: '',
   is_active: true,
   latitude: '',
   longitude: '',
@@ -176,6 +179,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
       prefers_letter: row.prefers_letter,
       uprn: row.uprn || '',
       key_info: row.key_info || '',
+      site_notes: row.site_notes || '',
       is_active: row.is_active,
       latitude: row.latitude != null ? String(row.latitude) : '',
       longitude: row.longitude != null ? String(row.longitude) : '',
@@ -206,6 +210,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
     prefers_letter: form.prefers_letter,
     uprn: form.uprn.trim() || null,
     key_info: form.key_info.trim() || null,
+    site_notes: form.site_notes.trim() || null,
     is_active: form.is_active,
     latitude: form.latitude.trim() !== '' ? parseFloat(form.latitude.trim()) : null,
     longitude: form.longitude.trim() !== '' ? parseFloat(form.longitude.trim()) : null,
@@ -282,6 +287,7 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Town</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">City</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Postcode</th>
+                <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Site notes</th>
                 <th className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide">Key info</th>
                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide">Actions</th>
               </tr>
@@ -300,6 +306,9 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                     <td className="px-4 py-3">{r.town || '-'}</td>
                     <td className="px-4 py-3">{r.county || '-'}</td>
                     <td className="px-4 py-3">{r.postcode || '-'}</td>
+                    <td className="max-w-xs px-4 py-3">
+                      {r.site_notes?.trim() ? <span className="line-clamp-2 text-slate-600">{r.site_notes}</span> : '-'}
+                    </td>
                     <td className="max-w-xs px-4 py-3">
                       {r.key_info?.trim() ? <span className="line-clamp-2 text-slate-600">{r.key_info}</span> : '-'}
                     </td>
@@ -437,12 +446,22 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
                     <input value={form.uprn} onChange={(e) => setForm((f) => ({ ...f, uprn: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
                   <div className="grid grid-cols-[130px_1fr] items-start gap-2">
+                    <label className="pt-2 text-sm text-slate-600">Site notes</label>
+                    <textarea
+                      value={form.site_notes}
+                      onChange={(e) => setForm((f) => ({ ...f, site_notes: e.target.value }))}
+                      rows={3}
+                      placeholder="Access notes, parking, entry codes, hazards, preferred entrance..."
+                      className="resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-[130px_1fr] items-start gap-2">
                     <label className="pt-2 text-sm text-slate-600">Key info</label>
                     <textarea
                       value={form.key_info}
                       onChange={(e) => setForm((f) => ({ ...f, key_info: e.target.value }))}
-                      rows={4}
-                      placeholder="Access notes, parking, alarm codes, hazards, preferred entrance..."
+                      rows={3}
+                      placeholder="Property keys info, alarm key codes..."
                       className="resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                     />
                   </div>

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2 } from 'lucide-react';
 import { getJson } from '../apiClient';
-import type { TenantPermissionKey } from '../../lib/tenantPermissions';
+import { normalizePermissions, type TenantPermissionKey } from '../../lib/tenantPermissions';
 
 interface StoredUser {
   id: number;
@@ -41,6 +41,12 @@ function hasNavPermission(user: StoredUser, key: TenantPermissionKey): boolean {
     return false;
   }
   return false;
+}
+
+function normalizedStoredUser(user: StoredUser): StoredUser {
+  if (user.role === 'ADMIN' && user.permissions == null) return user;
+  if (user.role === 'SUPER_ADMIN') return user;
+  return { ...user, permissions: normalizePermissions(user.permissions) };
 }
 
 function showSettingsNav(user: StoredUser): boolean {
@@ -108,13 +114,14 @@ export default function DashboardLayout({
 
     // Restore session after hydration; localStorage is unavailable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only auth bootstrap
-    setUser(parsed);
+    setUser(normalizedStoredUser(parsed));
     if (parsed.role !== 'ADMIN' && parsed.role !== 'STAFF') return;
 
-    getJson<{ user: Record<string, unknown> }>('/auth/me', token)
+    getJson<{ user: Record<string, unknown>; token?: string }>('/auth/me', token)
       .then((d) => {
         const u = d.user as StoredUser & Record<string, unknown>;
-        const merged: StoredUser = {
+        const refreshedToken = typeof d.token === 'string' ? d.token : null;
+        const merged: StoredUser = normalizedStoredUser({
           ...parsed,
           ...u,
           id: (u.id as number) ?? parsed.id,
@@ -122,7 +129,8 @@ export default function DashboardLayout({
           role: (u.role as StoredUser['role']) ?? parsed.role,
           permissions: (u.permissions as StoredUser['permissions']) ?? parsed.permissions,
           is_tenant_owner: (u.is_tenant_owner as boolean | undefined) ?? parsed.is_tenant_owner,
-        };
+        });
+        if (refreshedToken) window.localStorage.setItem('wp_token', refreshedToken);
         window.localStorage.setItem('wp_user', JSON.stringify(merged));
         setUser(merged);
       })

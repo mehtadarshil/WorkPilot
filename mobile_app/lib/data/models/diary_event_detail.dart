@@ -59,6 +59,9 @@ class DiaryEventDetail {
     this.chargeType,
     this.siteLatitude,
     this.siteLongitude,
+    this.keyInfo,
+    this.siteNotes,
+    this.siteImages = const [],
   });
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
@@ -67,6 +70,16 @@ class DiaryEventDetail {
       throw const FormatException('Missing event object');
     }
     final m = Map<String, dynamic>.from(e);
+    final imagesRaw = m['site_images'];
+    final imagesList = <DiarySiteImage>[];
+    if (imagesRaw is List) {
+      for (final img in imagesRaw) {
+        if (img is Map) {
+          imagesList.add(DiarySiteImage.fromJson(Map<String, dynamic>.from(img)));
+        }
+      }
+    }
+
     final extraRaw = json['extra_submissions'];
     final extraList = <DiaryExtraSubmission>[];
     if (extraRaw is List) {
@@ -155,6 +168,9 @@ class DiaryEventDetail {
       chargeType: m['charge_type'] as String?,
       siteLatitude: m['site_latitude'] != null ? (m['site_latitude'] as num?)?.toDouble() : null,
       siteLongitude: m['site_longitude'] != null ? (m['site_longitude'] as num?)?.toDouble() : null,
+      keyInfo: m['key_info'] as String?,
+      siteNotes: m['site_notes'] as String?,
+      siteImages: imagesList,
     );
   }
 
@@ -201,6 +217,9 @@ class DiaryEventDetail {
   final String? chargeType;
   final double? siteLatitude;
   final double? siteLongitude;
+  final String? keyInfo;
+  final String? siteNotes;
+  final List<DiarySiteImage> siteImages;
 
   String? get primaryOfficerName {
     for (final o in officers) {
@@ -245,6 +264,7 @@ class DiaryEventDetail {
     List<DiaryExtraSubmission>? extraSubmissions,
     List<DiaryExtraSubmission>? technicalNotes,
     String? chargeType,
+    List<DiarySiteImage>? siteImages,
   }) {
     return DiaryEventDetail(
       diaryId: diaryId,
@@ -290,6 +310,35 @@ class DiaryEventDetail {
       chargeType: chargeType ?? this.chargeType,
       siteLatitude: siteLatitude,
       siteLongitude: siteLongitude,
+      keyInfo: keyInfo ?? this.keyInfo,
+      siteNotes: siteNotes ?? this.siteNotes,
+      siteImages: siteImages ?? this.siteImages,
+    );
+  }
+}
+
+class DiarySiteImage {
+  final int id;
+  final String originalFilename;
+  final String? contentType;
+  final int? byteSize;
+  final String createdAt;
+
+  DiarySiteImage({
+    required this.id,
+    required this.originalFilename,
+    this.contentType,
+    this.byteSize,
+    required this.createdAt,
+  });
+
+  factory DiarySiteImage.fromJson(Map<String, dynamic> json) {
+    return DiarySiteImage(
+      id: (json['id'] as num).toInt(),
+      originalFilename: json['original_filename'] as String? ?? '',
+      contentType: json['content_type'] as String?,
+      byteSize: (json['byte_size'] as num?)?.toInt(),
+      createdAt: json['created_at'] as String? ?? '',
     );
   }
 }

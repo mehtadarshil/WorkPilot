@@ -1096,6 +1096,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7)`);
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7)`);
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS key_info TEXT`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS site_notes TEXT`);
   await pool.query(
     `ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS work_address_id INTEGER REFERENCES customer_work_addresses(id) ON DELETE SET NULL`,
   );
@@ -3165,7 +3166,26 @@ app.get('/api/auth/me', authenticate, async (req: AuthenticatedRequest, res: Res
     const tenantScopeUserId =
       db.role === 'STAFF' && db.tenant_admin_id != null ? db.tenant_admin_id : db.id;
       const permObj = db.role === 'STAFF' || db.role === 'ADMIN' ? permissionsFromDb(db.permissions) : null;
+    let linkedOfficerId: number | undefined;
+    if (db.role === 'ADMIN' || db.role === 'STAFF') {
+      const lo = await pool.query<{ id: number }>(
+        `SELECT id FROM officers WHERE linked_user_id = $1 LIMIT 1`,
+        [db.id],
+      );
+      if ((lo.rowCount ?? 0) > 0) linkedOfficerId = lo.rows[0].id;
+    }
+    const refreshedPayload: JwtPayload = {
+      userId: db.id,
+      email: db.email,
+      role: db.role,
+      tenantScopeUserId,
+      tenantAdminId: db.role === 'STAFF' ? (db.tenant_admin_id ?? null) : null,
+      permissions: permObj,
+      ...(linkedOfficerId != null ? { officerId: linkedOfficerId } : {}),
+    };
+    const refreshedToken = jwt.sign(refreshedPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
     return res.json({
+      token: refreshedToken,
       user: {
         id: db.id,
         userId: db.id,
@@ -3174,7 +3194,7 @@ app.get('/api/auth/me', authenticate, async (req: AuthenticatedRequest, res: Res
         tenantScopeUserId,
         tenantAdminId: db.tenant_admin_id ?? null,
         permissions: permObj,
-        officer_id: u.officerId ?? null,
+        officer_id: linkedOfficerId ?? null,
         full_name: db.full_name ?? null,
         company_name: db.company_name ?? null,
         phone: db.phone ?? null,
@@ -6029,6 +6049,8 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
         job_wa_address_line_1?: string | null;
         job_wa_town?: string | null;
         job_wa_postcode?: string | null;
+        job_wa_key_info?: string | null;
+        job_wa_site_notes?: string | null;
       }
     >(
       `SELECT j.*, c.full_name AS customer_full_name, c.email AS customer_email,
@@ -6051,7 +6073,9 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
               wa.branch_name AS job_wa_branch_name,
               wa.address_line_1 AS job_wa_address_line_1,
               wa.town AS job_wa_town,
-              wa.postcode AS job_wa_postcode
+              wa.postcode AS job_wa_postcode,
+              wa.key_info AS job_wa_key_info,
+              wa.site_notes AS job_wa_site_notes
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
@@ -6083,6 +6107,8 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
       job_wa_address_line_1,
       job_wa_town,
       job_wa_postcode,
+      job_wa_key_info,
+      job_wa_site_notes,
       ...jobRest
     } = r;
     const job_contact =
@@ -6111,6 +6137,8 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
             address_line_1: job_wa_address_line_1 != null && String(job_wa_address_line_1).trim() !== '' ? String(job_wa_address_line_1).trim() : null,
             town: job_wa_town != null && String(job_wa_town).trim() !== '' ? String(job_wa_town).trim() : null,
             postcode: job_wa_postcode != null && String(job_wa_postcode).trim() !== '' ? String(job_wa_postcode).trim() : null,
+            key_info: job_wa_key_info != null && String(job_wa_key_info).trim() !== '' ? String(job_wa_key_info).trim() : null,
+            site_notes: job_wa_site_notes != null && String(job_wa_site_notes).trim() !== '' ? String(job_wa_site_notes).trim() : null,
           }
         : null;
 
@@ -7910,6 +7938,8 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               NULLIF(TRIM(wa.postcode), '') AS work_postcode,
               wa.latitude AS work_latitude,
               wa.longitude AS work_longitude,
+              wa.key_info AS work_key_info,
+              wa.site_notes AS work_site_notes,
               NULLIF(TRIM(c.address), '') AS customer_address,
               NULLIF(TRIM(c.address_line_1), '') AS customer_address_line_1,
               NULLIF(TRIM(c.address_line_2), '') AS customer_address_line_2,
@@ -7952,7 +7982,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned = officerId === tokenOfficerId || jobOfficerId === tokenOfficerId;
-      if (!assigned) {
+      if (!assigned && !canUseTeamDiaryScope({ role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
       }
     } else if (role !== 'SUPER_ADMIN') {
@@ -7969,6 +7999,24 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        ORDER BY deo.is_primary DESC, o.full_name`,
       [id]
     );
+
+    let siteImages: unknown[] = [];
+    if (row.customer_id) {
+      const imagesRes = await pool.query(
+        `SELECT id, original_filename, content_type, byte_size, created_at
+         FROM customer_files
+         WHERE customer_id = $1 AND (work_address_id = $2 OR (work_address_id IS NULL AND $2 IS NULL)) AND content_type LIKE 'image/%'
+         ORDER BY created_at DESC`,
+        [row.customer_id, row.job_work_address_id ?? null]
+      );
+      siteImages = imagesRes.rows.map(r => ({
+        id: Number(r.id),
+        original_filename: r.original_filename,
+        content_type: r.content_type,
+        byte_size: r.byte_size != null ? Number(r.byte_size) : null,
+        created_at: r.created_at
+      }));
+    }
 
     const workParts = [
       row.work_address_line_1,
@@ -8149,6 +8197,9 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         site_postcode: pc || null,
         site_latitude: row.work_latitude != null ? parseFloat(String(row.work_latitude)) : null,
         site_longitude: row.work_longitude != null ? parseFloat(String(row.work_longitude)) : null,
+        key_info: row.work_key_info != null && String(row.work_key_info).trim() ? String(row.work_key_info).trim() : null,
+        site_notes: row.work_site_notes != null && String(row.work_site_notes).trim() ? String(row.work_site_notes).trim() : null,
+        site_images: siteImages,
         officer_full_name: row.officer_full_name,
         job_report_question_count: (row.job_report_question_count as number) ?? 0,
         site_contact_name: row.site_contact_name ?? null,
@@ -9615,7 +9666,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
       const assigned =
         row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
-      if (!assigned) {
+      if (!assigned && !canUseTeamDiaryScope({ role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
       }
     }
@@ -9896,7 +9947,7 @@ app.get(
       if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         const assigned =
           row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
-        if (!assigned) {
+        if (!assigned && !canUseTeamDiaryScope({ role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
           return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
         }
       }
@@ -10356,18 +10407,20 @@ app.get('/api/jobs/:id/job-report-history', authenticate, async (req: Authentica
 
     const tokenOfficerId = du1.officerId ?? null;
     if (diaryActsAsFieldOfficer(req, { role: du1.role, officerId: tokenOfficerId, permissions: du1.permissions ?? null })) {
-      const assigned = await pool.query(
-        `SELECT 1 FROM diary_events d
-         INNER JOIN jobs j ON j.id = d.job_id
-         WHERE d.job_id = $1
-           AND (d.officer_id = $2 OR j.officer_id = $2
-                OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
-                OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
-         LIMIT 1`,
-        [jobId, tokenOfficerId],
-      );
-      if ((assigned.rowCount ?? 0) === 0) {
-        return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+      if (!canUseTeamDiaryScope({ role: du1.role, officerId: tokenOfficerId, permissions: du1.permissions ?? null })) {
+        const assigned = await pool.query(
+          `SELECT 1 FROM diary_events d
+           INNER JOIN jobs j ON j.id = d.job_id
+           WHERE d.job_id = $1
+             AND (d.officer_id = $2 OR j.officer_id = $2
+                  OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
+                  OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
+           LIMIT 1`,
+          [jobId, tokenOfficerId],
+        );
+        if ((assigned.rowCount ?? 0) === 0) {
+          return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+        }
       }
     }
 
@@ -10556,19 +10609,21 @@ async function assertJobAccess(
   }
   const tokenOfficerId = u.officerId ?? null;
   if (diaryActsAsFieldOfficer(req, { role: u.role, officerId: tokenOfficerId, permissions: u.permissions ?? null })) {
-    const assigned = await pool.query(
-      `SELECT 1 FROM diary_events d
-       INNER JOIN jobs j ON j.id = d.job_id
-       WHERE d.job_id = $1
-         AND (d.officer_id = $2 OR j.officer_id = $2
-              OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
-              OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
-       LIMIT 1`,
-      [jobId, tokenOfficerId],
-    );
-    if ((assigned.rowCount ?? 0) === 0) {
-      res.status(403).json({ message: 'You can only view diary visits assigned to you' });
-      return false;
+    if (!canUseTeamDiaryScope({ role: u.role, officerId: tokenOfficerId, permissions: u.permissions ?? null })) {
+      const assigned = await pool.query(
+        `SELECT 1 FROM diary_events d
+         INNER JOIN jobs j ON j.id = d.job_id
+         WHERE d.job_id = $1
+           AND (d.officer_id = $2 OR j.officer_id = $2
+                OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2)
+                OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2))
+         LIMIT 1`,
+        [jobId, tokenOfficerId],
+      );
+      if ((assigned.rowCount ?? 0) === 0) {
+        res.status(403).json({ message: 'You can only view diary visits assigned to you' });
+        return false;
+      }
     }
   }
   return true;
@@ -17429,7 +17484,7 @@ app.get('/api/customers/:customerId/contacts', authenticate, requireTenantCrmAcc
     let whereClause = 'WHERE customer_id = $1';
     const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
     if (workAddressId && Number.isFinite(workAddressId)) {
-      whereClause += ` AND work_address_id = $${params.length + 1}`;
+      whereClause += ` AND (work_address_id = $${params.length + 1} OR work_address_id IS NULL)`;
       params.push(workAddressId);
     } else {
       whereClause += ' AND work_address_id IS NULL';
@@ -18015,8 +18070,8 @@ app.post('/api/customers/:customerId/work-addresses', authenticate, requireTenan
     if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
 
     const inserted = await pool.query(
-      `INSERT INTO customer_work_addresses (customer_id, name, branch_name, landlord, title, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode, landline, mobile, email, prefers_phone, prefers_sms, prefers_email, prefers_letter, uprn, is_active, latitude, longitude, key_info, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+      `INSERT INTO customer_work_addresses (customer_id, name, branch_name, landlord, title, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode, landline, mobile, email, prefers_phone, prefers_sms, prefers_email, prefers_letter, uprn, is_active, latitude, longitude, key_info, site_notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
        RETURNING id`,
       [
         customerId, name, str('branch_name'), str('landlord'), str('title'), str('first_name'), str('surname'), str('company_name'),
@@ -18026,6 +18081,7 @@ app.post('/api/customers/:customerId/work-addresses', authenticate, requireTenan
         body.latitude != null && body.latitude !== '' ? parseFloat(String(body.latitude)) : null,
         body.longitude != null && body.longitude !== '' ? parseFloat(String(body.longitude)) : null,
         str('key_info'),
+        str('site_notes'),
         userId,
       ],
     );
@@ -18053,7 +18109,7 @@ app.patch('/api/customers/:customerId/work-addresses/:workAddressId', authentica
     const values: unknown[] = [];
     let idx = 1;
     const str = (k: string) => (typeof body[k] === 'string' ? (body[k] as string).trim() || null : undefined);
-    const textFields = ['name', 'branch_name', 'landlord', 'title', 'first_name', 'surname', 'company_name', 'address_line_1', 'address_line_2', 'address_line_3', 'town', 'county', 'postcode', 'landline', 'mobile', 'email', 'uprn', 'key_info'];
+    const textFields = ['name', 'branch_name', 'landlord', 'title', 'first_name', 'surname', 'company_name', 'address_line_1', 'address_line_2', 'address_line_3', 'town', 'county', 'postcode', 'landline', 'mobile', 'email', 'uprn', 'key_info', 'site_notes'];
     for (const f of textFields) {
       const v = str(f);
       if (v !== undefined) { updates.push(`${f} = $${idx++}`); values.push(v); }
@@ -18145,6 +18201,7 @@ app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers')
         cwa.mobile,
         cwa.email,
         cwa.key_info,
+        cwa.site_notes,
         cwa.is_active,
         false AS is_default_address,
         cwa.created_at
@@ -18181,6 +18238,7 @@ app.get('/api/work-addresses', authenticate, requireTenantCrmAccess('customers')
         c.phone AS mobile,
         c.email,
         NULL::text AS key_info,
+        NULL::text AS site_notes,
         true AS is_active,
         true AS is_default_address,
         c.created_at

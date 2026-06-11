@@ -188,6 +188,63 @@ function WorkAddressKeyInfoEditor({
   );
 }
 
+function WorkAddressSiteNotesEditor({
+  customerId,
+  workAddressId,
+  token,
+  initialSiteNotes,
+  onSaved,
+}: {
+  customerId: string;
+  workAddressId: string;
+  token: string | null;
+  initialSiteNotes: string;
+  onSaved: (siteNotes: string | null) => void;
+}) {
+  const [siteNotes, setSiteNotes] = useState(initialSiteNotes);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    if (!token) return;
+    setSaving(true);
+    setError('');
+    try {
+      const next = siteNotes.trim();
+      await patchJson(`/customers/${customerId}/work-addresses/${workAddressId}`, { site_notes: next }, token);
+      onSaved(next || null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save site notes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-[#14B8A6]/30 bg-white/70 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#14B8A6]">Site notes</p>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded bg-[#14B8A6] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#119f90] disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      <textarea
+        value={siteNotes}
+        onChange={(e) => setSiteNotes(e.target.value)}
+        rows={4}
+        placeholder="Access instructions, parking preferences, site-specific notes..."
+        className="w-full resize-none rounded border border-[#14B8A6]/20 bg-white px-2 py-1.5 text-xs leading-relaxed text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
+      />
+      {error ? <p className="mt-2 text-[11px] text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
 type ServiceReminderScheduleLine = {
   source?: 'service_job' | 'site_report' | 'certificate';
   job_id: number | null;
@@ -252,6 +309,7 @@ interface WorkAddressDetails {
   county?: string | null;
   postcode: string | null;
   key_info?: string | null;
+  site_notes?: string | null;
 }
 
 /** Central London — used when geocoding fails or no address is stored. */
@@ -781,12 +839,20 @@ export default function CustomerDetailsPage() {
                     </div>
                   </div>
                   <WorkAddressKeyInfoEditor
-                    key={`${workAddressDetails.id}-${workAddressDetails.key_info ?? ''}`}
+                    key={`key-${workAddressDetails.id}-${workAddressDetails.key_info ?? ''}`}
                     customerId={id}
                     workAddressId={String(workAddressDetails.id)}
                     token={token}
                     initialKeyInfo={workAddressDetails.key_info ?? ''}
                     onSaved={(keyInfo) => setWorkAddressDetails(prev => prev ? { ...prev, key_info: keyInfo } : prev)}
+                  />
+                  <WorkAddressSiteNotesEditor
+                    key={`notes-${workAddressDetails.id}-${workAddressDetails.site_notes ?? ''}`}
+                    customerId={id}
+                    workAddressId={String(workAddressDetails.id)}
+                    token={token}
+                    initialSiteNotes={workAddressDetails.site_notes ?? ''}
+                    onSaved={(siteNotes) => setWorkAddressDetails(prev => prev ? { ...prev, site_notes: siteNotes } : prev)}
                   />
                 </div>
               </div>

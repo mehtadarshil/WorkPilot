@@ -72,22 +72,24 @@ function formatReportDateTime(iso: string, mode: 'date' | 'datetime'): string {
     if (mode === 'date') {
       return new Intl.DateTimeFormat('en-GB', {
         timeZone: tz,
-        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
         year: 'numeric',
-        month: 'short',
-        day: 'numeric',
       }).format(d);
     }
-    return new Intl.DateTimeFormat('en-GB', {
+    const formattedDate = new Intl.DateTimeFormat('en-GB', {
       timeZone: tz,
-      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
       year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    }).format(d);
+    const formattedTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     }).format(d);
+    return `${formattedDate} ${formattedTime}`;
   } catch {
     return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
   }

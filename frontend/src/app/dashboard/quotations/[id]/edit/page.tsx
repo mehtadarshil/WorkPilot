@@ -94,6 +94,7 @@ export default function EditQuotationPage() {
   const [validUntil, setValidUntil] = useState('');
   const [currency, setCurrency] = useState('GBP');
   const [description, setDescription] = useState('');
+  const [notes, setNotes] = useState('');
   const [billingAddress, setBillingAddress] = useState('');
   const [addressKind, setAddressKind] = useState<'customer' | 'custom'>('customer');
   const [workAddressId, setWorkAddressId] = useState<number | null>(null);
@@ -120,6 +121,7 @@ export default function EditQuotationPage() {
       setValidUntil(q.valid_until.split('T')[0]);
       setCurrency(q.currency);
       setDescription(q.description ?? '');
+      setNotes(q.notes ?? '');
       setWorkAddressId(q.quotation_work_address_id ?? null);
       if (q.quotation_work_address_id) {
         setBillingAddress(q.billing_address ?? '');
@@ -283,6 +285,7 @@ export default function EditQuotationPage() {
         valid_until: validUntil,
         currency: currency.trim(),
         description: description.trim() || null,
+        notes: notes.trim() || null,
         state,
         line_items: validItems.map((li) => ({
           description: li.description.trim(),
@@ -347,13 +350,15 @@ export default function EditQuotationPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto max-w-6xl">
           <h1 className="text-2xl font-bold text-slate-900">Edit quotation</h1>
           <p className="mt-1 text-sm text-slate-500">Update line items, dates, and status for this quotation.</p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</div>}
 
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block text-sm">
                 <span className="font-medium text-slate-700">Quotation number</span>
@@ -553,7 +558,10 @@ export default function EditQuotationPage() {
 
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-semibold text-slate-800">Line items</span>
+                <div>
+                  <span className="text-sm font-semibold text-slate-800">Line items</span>
+                  <p className="text-xs text-slate-500">Each row shows its pricing total while you fill out the quote.</p>
+                </div>
                 <button
                   type="button"
                   onClick={addLine}
@@ -564,7 +572,7 @@ export default function EditQuotationPage() {
               </div>
               <div className="space-y-3 rounded-lg border border-slate-200 p-3">
                 {lineItems.map((li, i) => (
-                  <div key={i} className="grid gap-2 sm:grid-cols-[1fr_80px_100px_auto] sm:items-end">
+                  <div key={i} className="grid gap-2 sm:grid-cols-[1fr_80px_100px_110px_auto] sm:items-end">
                     <label className="text-xs">
                       <span className="text-slate-500">Description</span>
                       <input
@@ -601,6 +609,12 @@ export default function EditQuotationPage() {
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>
+                    <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs">
+                      <span className="block text-slate-500">Line total</span>
+                      <span className="text-sm font-semibold text-slate-900">
+                        {(li.quantity * li.unit_price).toFixed(2)}
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeLine(i)}
@@ -610,7 +624,7 @@ export default function EditQuotationPage() {
                     >
                       <Trash2 className="size-4" />
                     </button>
-                    <div className="sm:col-span-4">
+                    <div className="sm:col-span-5">
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {(li.images ?? []).map((image, imageIndex) => (
                           <div key={`${image.stored_filename ?? image.original_filename}-${imageIndex}`} className="group relative h-20 w-24 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
@@ -664,6 +678,24 @@ export default function EditQuotationPage() {
                   <span className="text-[#14B8A6]">{totalAmount.toFixed(2)}</span>
                 </div>
               </div>
+            </div>
+              </div>
+
+              <aside className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:sticky lg:top-4 lg:self-start">
+                <label className="block text-sm">
+                  <span className="font-semibold text-slate-800">Service notes</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Notes shown on the quotation, PDF, and customer link.
+                  </span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={14}
+                    className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                    placeholder="Add service notes..."
+                  />
+                </label>
+              </aside>
             </div>
 
             <div className="flex flex-wrap gap-3 border-t border-slate-100 pt-4">
