@@ -84,12 +84,10 @@ import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPd
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
 import { authLimiter } from './middleware/rateLimiters';
 import {
-  ensureCustomerSiteReportImageDir,
   loadCustomerSiteReportImageBuffer,
-  mirrorCustomerSiteReportImageFile,
   removeCustomerSiteReportImageDirs,
   removeCustomerSiteReportImageFile,
-  uploadCustomerSiteReportImageToSpaces,
+  uploadCustomerSiteReportImageBufferToSpaces,
 } from './customerSiteReportImageStorage';
 import {
   ensureWorkpilotFileDir,
@@ -19360,11 +19358,7 @@ app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate
     );
     if ((rep.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
 
-    const dir = await ensureCustomerSiteReportImageDir(customerId, reportId);
-    const fullPath = path.join(dir, storedFilename);
-    await fs.writeFile(fullPath, uploadBuf);
-    const uploaded = await uploadCustomerSiteReportImageToSpaces(customerId, reportId, storedFilename, fullPath, uploadContentType);
-    await mirrorCustomerSiteReportImageFile(customerId, reportId, storedFilename, fullPath);
+    const uploaded = await uploadCustomerSiteReportImageBufferToSpaces(customerId, reportId, storedFilename, uploadBuf, uploadContentType);
 
     try {
       const inserted = await pool.query(

@@ -1,16 +1,11 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { getSpacesBuffer, putSpacesFile, spacesKey, spacesObjectExists, spacesObjectUrl } from './spacesStorage';
+import { getSpacesBuffer, putSpacesBuffer, spacesKey, spacesObjectExists, spacesObjectUrl } from './spacesStorage';
 
 function getCustomerSiteReportImagesArchiveRootDir(): string {
   const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_ARCHIVE_DIR?.trim();
   if (raw) return path.resolve(raw);
   return path.resolve(path.dirname(getCustomerSiteReportImagesRootDir()), 'customer-site-report-images-archive');
-}
-
-function getCustomerSiteReportImagesMirrorRootDir(): string | null {
-  const raw = process.env.CUSTOMER_SITE_REPORT_IMAGES_MIRROR_DIR?.trim();
-  return raw ? path.resolve(raw) : null;
 }
 
 export function getCustomerSiteReportImagesRootDir(): string {
@@ -27,12 +22,6 @@ export function getCustomerSiteReportImagesReadRootDirs(): string[] {
     path.resolve(process.cwd(), '..', 'data', 'customer-site-report-images'),
   ];
   return Array.from(new Set(roots));
-}
-
-export async function ensureCustomerSiteReportImageDir(customerId: number, reportId: number): Promise<string> {
-  const dir = path.join(getCustomerSiteReportImagesRootDir(), String(customerId), String(reportId));
-  await fs.mkdir(dir, { recursive: true });
-  return dir;
 }
 
 export async function findCustomerSiteReportImageFile(
@@ -63,17 +52,18 @@ export function customerSiteReportImageSpacesKey(customerId: number, reportId: n
   return spacesKey('customer-site-report-images', customerId, reportId, path.basename(storedFilename));
 }
 
-export async function uploadCustomerSiteReportImageToSpaces(
+export async function uploadCustomerSiteReportImageBufferToSpaces(
   customerId: number,
   reportId: number,
   storedFilename: string,
-  sourcePath: string,
+  buffer: Buffer,
   contentType?: string | null,
 ): Promise<{ spacesKey: string; fileUrl: string | null }> {
   const key = customerSiteReportImageSpacesKey(customerId, reportId, storedFilename);
-  await putSpacesFile(key, sourcePath, contentType).catch((error) => {
-    console.error('Upload customer site report image to Spaces error:', error);
-  });
+  const uploaded = await putSpacesBuffer(key, buffer, contentType);
+  if (!uploaded) {
+    throw new Error('Spaces storage is not configured for customer site report images');
+  }
   return { spacesKey: key, fileUrl: spacesObjectUrl(key) };
 }
 
@@ -99,24 +89,6 @@ export async function customerSiteReportImageExists(
   const key = customerSiteReportImageSpacesKey(customerId, reportId, storedFilename);
   if (await spacesObjectExists(key)) return true;
   return (await findCustomerSiteReportImageFile(customerId, reportId, storedFilename)) != null;
-}
-
-export async function mirrorCustomerSiteReportImageFile(
-  customerId: number,
-  reportId: number,
-  storedFilename: string,
-  sourcePath: string,
-): Promise<void> {
-  const mirrorRoot = getCustomerSiteReportImagesMirrorRootDir();
-  if (!mirrorRoot) return;
-
-  const fileName = path.basename(storedFilename);
-  if (!fileName) return;
-  const mirrorPath = path.join(mirrorRoot, String(customerId), String(reportId), fileName);
-  await fs.mkdir(path.dirname(mirrorPath), { recursive: true });
-  await fs.copyFile(sourcePath, mirrorPath).catch((error) => {
-    console.error('Mirror customer site report image error:', error);
-  });
 }
 
 async function movePathToArchive(sourcePath: string, archivePath: string): Promise<void> {

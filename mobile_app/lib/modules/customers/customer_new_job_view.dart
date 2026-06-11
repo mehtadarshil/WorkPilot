@@ -8,8 +8,12 @@ import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
+import '../../widgets/searchable_select_field.dart';
+import 'customer_new_job_customer_panel.dart';
 import 'customer_new_job_pricing_panel.dart';
 import 'customer_new_job_pricing_row.dart';
+import 'customer_new_job_schedule_section.dart';
+import 'customer_new_job_service_section.dart';
 import 'customer_tabs/helpers.dart';
 import 'customer_tabs/shell.dart';
 
@@ -37,8 +41,11 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
   late int _customerId;
   int? _workAddressId;
   int? _fromQuotationId;
+  bool _customerLocked = false;
 
   Map<String, dynamic>? _customer;
+  List<Map<String, dynamic>> _customers = [];
+  List<Map<String, dynamic>> _workAddresses = [];
   List<Map<String, dynamic>> _jobDescriptions = [];
   List<Map<String, dynamic>> _contacts = [];
   List<Map<String, dynamic>> _businessUnits = [];
@@ -79,11 +86,13 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     final a = Get.arguments;
     if (a is int) {
       _customerId = a;
+      _customerLocked = true;
     } else if (a is Map) {
       final m = Map<String, dynamic>.from(a);
       _customerId = (m['customerId'] as num?)?.toInt() ?? (m['id'] as num?)?.toInt() ?? 0;
       _workAddressId = (m['work_address_id'] as num?)?.toInt();
       _fromQuotationId = (m['from_quotation'] as num?)?.toInt();
+      _customerLocked = _customerId > 0;
     } else {
       _customerId = 0;
     }
@@ -105,33 +114,45 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
   }
 
   Future<void> _load() async {
-    if (_customerId <= 0) {
-      setState(() {
-        _loading = false;
-        _pageError = 'Invalid customer';
-      });
-      return;
-    }
     setState(() {
       _loading = true;
       _pageError = null;
     });
     try {
-      final cust = await _repo.getCustomer(_customerId);
+      final customerData = await _repo.listCustomers(page: 1, limit: 5000);
+      final rawCustomers = customerData['customers'];
+      final customers = rawCustomers is List
+          ? rawCustomers.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+          : <Map<String, dynamic>>[];
       final descs = await _repo.listJobDescriptions();
       final bu = await _repo.listBusinessUnits();
       final ug = await _repo.listUserGroups();
       final sc = await _repo.listServiceChecklistItems();
-      final contacts = await _repo.getContacts(
-        _customerId,
-        workAddressId: _workAddressId,
-      );
 
-      final cn = '${ctStr(cust, 'contact_first_name')} ${ctStr(cust, 'contact_surname')}'.trim();
-      _contactName.text = cn.isNotEmpty ? cn : ctStr(cust, 'full_name');
+      Map<String, dynamic>? cust;
+      var contacts = <Map<String, dynamic>>[];
+      var workAddresses = <Map<String, dynamic>>[];
+      if (_customerId > 0) {
+        cust = await _repo.getCustomer(_customerId);
+        workAddresses = await _repo.getWorkAddresses(_customerId);
+        if (_workAddressId != null && !workAddresses.any((w) => (w['id'] as num?)?.toInt() == _workAddressId)) {
+          _workAddressId = null;
+        }
+        contacts = await _repo.getContacts(
+          _customerId,
+          workAddressId: _workAddressId,
+        );
+
+        final cn = '${ctStr(cust, 'contact_first_name')} ${ctStr(cust, 'contact_surname')}'.trim();
+        if (_contactName.text.trim().isEmpty) {
+          _contactName.text = cn.isNotEmpty ? cn : ctStr(cust, 'full_name');
+        }
+      }
 
       setState(() {
         _customer = cust;
+        _customers = customers;
+        _workAddresses = workAddresses;
         _jobDescriptions = descs;
         _businessUnits = bu;
         _userGroups = ug;
@@ -198,6 +219,79 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     final names = _businessUnits.map((u) => ctStr(u, 'name')).where((n) => n.isNotEmpty).toSet().toList()..sort();
     if (names.isEmpty) return List.from(_fallbackBusinessUnits);
     return names;
+  }
+
+  List<SelectOption<int>> get _customerOptions {
+    final seen = <int>{};
+    return [
+      for (final c in _customers)
+        if ((c['id'] as num?)?.toInt() case final id? when seen.add(id))
+          SelectOption<int>(
+            value: id,
+            label: ctStr(c, 'full_name').isNotEmpty ? ctStr(c, 'full_name') : 'Customer #$id',
+          ),
+    ];
+  }
+
+  List<SelectOption<int>> get _workAddressOptions {
+    final seen = <int>{};
+    return [
+      for (final w in _workAddresses)
+        if ((w['id'] as num?)?.toInt() case final id? when seen.add(id))
+          SelectOption<int>(
+            value: id,
+            label: _workAddressLabel(w, fallback: 'Site #$id'),
+          ),
+    ];
+  }
+
+  Map<String, dynamic>? get _selectedWorkAddress {
+    final id = _workAddressId;
+    if (id == null) return null;
+    for (final row in _workAddresses) {
+      if ((row['id'] as num?)?.toInt() == id) return row;
+    }
+    return null;
+  }
+
+  String _workAddressLabel(Map<String, dynamic> row, {String fallback = 'Site'}) {
+    final name = ctStr(row, 'name');
+    final address = [
+      ctStr(row, 'address_line_1'),
+      ctStr(row, 'address_line_2'),
+      ctStr(row, 'address_line_3'),
+      ctStr(row, 'town'),
+      ctStr(row, 'county'),
+      ctStr(row, 'postcode'),
+    ].where((e) => e.isNotEmpty).join(', ');
+    if (name.isNotEmpty && address.isNotEmpty) return '$name — $address';
+    if (name.isNotEmpty) return name;
+    if (address.isNotEmpty) return address;
+    return fallback;
+  }
+
+  Future<void> _onCustomerChanged(int? id) async {
+    if (id == null || id == _customerId) return;
+    setState(() {
+      _customerId = id;
+      _workAddressId = null;
+      _customer = null;
+      _workAddresses = [];
+      _contacts = [];
+      _jobContactId = null;
+      _contactName.clear();
+    });
+    await _load();
+  }
+
+  Future<void> _onWorkAddressChanged(int? id) async {
+    if (id == _workAddressId) return;
+    setState(() {
+      _workAddressId = id;
+      _contacts = [];
+      _jobContactId = null;
+    });
+    await _load();
   }
 
   Future<void> _onDescriptionChanged(int? id) async {
@@ -322,6 +416,10 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
   }
 
   Future<void> _submit() async {
+    if (_customerId <= 0) {
+      setState(() => _pageError = 'Please choose a customer.');
+      return;
+    }
     if (_descriptionId == null) {
       setState(() => _pageError = 'Please choose a job description.');
       return;
@@ -435,18 +533,6 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
       );
     }
 
-    if (_customerId <= 0 || _customer == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Add job')),
-        body: Center(child: Text(_pageError ?? 'Invalid customer')),
-      );
-    }
-
-    final cust = _customer!;
-    final addressStr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'address_line_2'), ctStr(cust, 'address_line_3'), ctStr(cust, 'town'), ctStr(cust, 'county'), ctStr(cust, 'postcode')]
-        .where((e) => e.isNotEmpty)
-        .join(', ');
-
     final activeChecklist = _serviceChecklist.where((i) => i['is_active'] == true).toList();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -474,17 +560,18 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              customerPanel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Customer: ${ctStr(cust, 'full_name')}', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                    if (addressStr.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text('Address: $addressStr', style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65))),
-                    ],
-                  ],
-                ),
+              CustomerNewJobCustomerPanel(
+                customer: _customer,
+                selectedWorkAddress: _selectedWorkAddress,
+                customerId: _customerId,
+                customerLocked: _customerLocked,
+                saving: _saving,
+                customerOptions: _customerOptions,
+                workAddressOptions: _workAddressOptions,
+                workAddressId: _workAddressId,
+                workAddresses: _workAddresses,
+                onCustomerChanged: _onCustomerChanged,
+                onWorkAddressChanged: _onWorkAddressChanged,
               ),
               if (_pageError != null && _pageError!.isNotEmpty)
                 Padding(
@@ -503,7 +590,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     Text('JOB CONTACT (FROM CONTACTS LIST)', style: _labelStyle()),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int?>(
-                      value: _jobContactId,
+                      initialValue: _jobContactId,
                       decoration: customerInputDecoration(''),
                       hint: Text('None — use name below', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.5))),
                       items: [
@@ -551,7 +638,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     Text('DESCRIPTION *', style: _labelStyle()),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int?>(
-                      value: _descriptionId,
+                      initialValue: _descriptionId,
                       decoration: customerInputDecoration(''),
                       items: [
                         const DropdownMenuItem<int?>(value: null, child: Text('-- Please choose --')),
@@ -596,189 +683,48 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                       decoration: customerInputDecoration('Auto-filled from description template…'),
                     ),
                     const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: _isServiceJob,
-                      onChanged: _saving
-                          ? null
-                          : (v) {
-                              setState(() {
-                                _isServiceJob = v ?? false;
-                                if (!_isServiceJob) _completedServiceItems.clear();
-                              });
-                            },
-                      title: Text('Service job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        'Enable automatic service reminder scheduling for this job type.',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.5)),
-                      ),
-                      activeColor: AppColors.primary,
-                      contentPadding: EdgeInsets.zero,
+                    CustomerNewJobServiceSection(
+                      isServiceJob: _isServiceJob,
+                      saving: _saving,
+                      reminderFrequency: _reminderFrequency,
+                      reminderUnit: _reminderUnit,
+                      reminderUnits: _reminderUnits,
+                      activeChecklist: activeChecklist,
+                      completedServiceItems: _completedServiceItems,
+                      onServiceJobChanged: (value) {
+                        setState(() {
+                          _isServiceJob = value;
+                          if (!_isServiceJob) _completedServiceItems.clear();
+                        });
+                      },
+                      onReminderUnitChanged: (value) => setState(() => _reminderUnit = value ?? 'years'),
+                      onServiceItemChanged: (name, selected) {
+                        setState(() {
+                          if (selected) {
+                            _completedServiceItems.add(name);
+                          } else {
+                            _completedServiceItems.remove(name);
+                          }
+                        });
+                      },
                     ),
-                    if (_isServiceJob) ...[
-                      const SizedBox(height: 12),
-                      customerPanel(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('Service reminder frequency', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _reminderFrequency,
-                                    enabled: !_saving,
-                                    keyboardType: TextInputType.number,
-                                    style: GoogleFonts.inter(color: Colors.white),
-                                    decoration: customerInputDecoration('e.g. 1'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: DropdownButtonFormField<String>(
-                                    value: _reminderUnit,
-                                    decoration: customerInputDecoration('Unit'),
-                                    items: _reminderUnits
-                                        .map((u) => DropdownMenuItem(value: u, child: Text(u[0].toUpperCase() + u.substring(1))))
-                                        .toList(),
-                                    onChanged: _saving ? null : (v) => setState(() => _reminderUnit = v ?? 'years'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'How often should a reminder be triggered for this service job?',
-                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text('COMPLETED SERVICES IN THIS JOB', style: _labelStyle()),
-                      const SizedBox(height: 8),
-                      customerPanel(
-                        padding: const EdgeInsets.all(12),
-                        child: activeChecklist.isEmpty
-                            ? Text(
-                                'No service checklist options configured yet. Add them in Settings → Job Descriptions.',
-                                style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.55)),
-                              )
-                            : Wrap(
-                                spacing: 12,
-                                runSpacing: 8,
-                                children: activeChecklist.map((item) {
-                                  final name = ctStr(item, 'name');
-                                  final sel = _completedServiceItems.contains(name);
-                                  return FilterChip(
-                                    label: Text(name, style: GoogleFonts.inter(fontSize: 12)),
-                                    selected: sel,
-                                    onSelected: _saving
-                                        ? null
-                                        : (on) {
-                                            setState(() {
-                                              if (on) {
-                                                _completedServiceItems.add(name);
-                                              } else {
-                                                _completedServiceItems.remove(name);
-                                              }
-                                            });
-                                          },
-                                    selectedColor: AppColors.primary.withValues(alpha: 0.35),
-                                    checkmarkColor: Colors.white,
-                                  );
-                                }).toList(),
-                              ),
-                      ),
-                    ],
                     const SizedBox(height: 20),
-                    Divider(color: AppColors.whiteOverlay(0.1)),
-                    const SizedBox(height: 12),
-                    Text('EXPECTED COMPLETION DATE', style: _labelStyle()),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _saving ? null : _pickDate,
-                            child: Text(
-                              _expectedDate == null ? 'Pick date' : '${_expectedDate!.year}-${_expectedDate!.month.toString().padLeft(2, '0')}-${_expectedDate!.day.toString().padLeft(2, '0')}',
-                              style: GoogleFonts.inter(color: Colors.white),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: 110,
-                          child: OutlinedButton(
-                            onPressed: _saving ? null : _pickTime,
-                            child: Text(
-                              _expectedTime == null ? 'Time' : _expectedTime!.format(context),
-                              style: GoogleFonts.inter(color: Colors.white),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text('PRIORITY', style: _labelStyle()),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      value: _priority,
-                      decoration: customerInputDecoration(''),
-                      items: const [
-                        DropdownMenuItem(value: 'low', child: Text('Low')),
-                        DropdownMenuItem(value: 'medium', child: Text('Medium')),
-                        DropdownMenuItem(value: 'high', child: Text('High')),
-                        DropdownMenuItem(value: 'critical', child: Text('Critical')),
-                      ],
-                      onChanged: _saving ? null : (v) => setState(() => _priority = v ?? 'medium'),
-                    ),
-                    const SizedBox(height: 16),
-                    Text('USER GROUP', style: _labelStyle()),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String?>(
-                      value: _userGroup,
-                      decoration: customerInputDecoration(''),
-                      hint: const Text('-- Please choose --'),
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('-- Please choose --')),
-                        ..._userGroupChoices.map((n) => DropdownMenuItem<String?>(value: n, child: Text(n))),
-                      ],
-                      onChanged: _saving ? null : (v) => setState(() => _userGroup = v),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('Assign this job to a specific team or user group.', style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45))),
-                    const SizedBox(height: 16),
-                    Text('BUSINESS UNIT', style: _labelStyle()),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String?>(
-                      value: _businessUnit,
-                      decoration: customerInputDecoration(''),
-                      hint: const Text('-- Please choose --'),
-                      items: [
-                        const DropdownMenuItem<String?>(value: null, child: Text('-- Please choose --')),
-                        ..._businessUnitChoices.map((n) => DropdownMenuItem<String?>(value: n, child: Text(n))),
-                      ],
-                      onChanged: _saving ? null : (v) => setState(() => _businessUnit = v),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'When this job is invoiced the system will automatically select this category.',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: _bookIntoDiary,
-                      onChanged: _saving ? null : (v) => setState(() => _bookIntoDiary = v ?? true),
-                      title: Text('Book into diary after adding job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        'Same flag as web; scheduling still happens from the calendar on web.',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.5)),
-                      ),
-                      activeColor: AppColors.primary,
-                      contentPadding: EdgeInsets.zero,
+                    CustomerNewJobScheduleSection(
+                      saving: _saving,
+                      expectedDate: _expectedDate,
+                      expectedTime: _expectedTime,
+                      priority: _priority,
+                      userGroup: _userGroup,
+                      businessUnit: _businessUnit,
+                      userGroupChoices: _userGroupChoices,
+                      businessUnitChoices: _businessUnitChoices,
+                      bookIntoDiary: _bookIntoDiary,
+                      onPickDate: _pickDate,
+                      onPickTime: _pickTime,
+                      onPriorityChanged: (value) => setState(() => _priority = value ?? 'medium'),
+                      onUserGroupChanged: (value) => setState(() => _userGroup = value),
+                      onBusinessUnitChanged: (value) => setState(() => _businessUnit = value),
+                      onBookIntoDiaryChanged: (value) => setState(() => _bookIntoDiary = value ?? true),
                     ),
                     const SizedBox(height: 20),
                     Divider(color: AppColors.whiteOverlay(0.1)),
@@ -802,7 +748,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     const SizedBox(height: 12),
                     Text('JOB PIPELINE', style: _labelStyle()),
                     DropdownButtonFormField<String>(
-                      value: _jobPipeline,
+                      initialValue: _jobPipeline,
                       decoration: customerInputDecoration(''),
                       items: _pipelines.map((p) => DropdownMenuItem(value: p, child: Text(p, overflow: TextOverflow.ellipsis))).toList(),
                       onChanged: _saving ? null : (v) => setState(() => _jobPipeline = v ?? _pipelines.first),

@@ -34,10 +34,7 @@ class OpenJobsView extends GetView<OpenJobsController> {
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () async {
-            // Direct to customers list so user can choose a customer first,
-            // or we could go straight to customer new job flow.
-            // Since customerNewJob requires a customer ID, navigating to CRMList/CustomersList first is optimal.
-            final r = await Get.toNamed(AppRoutes.customersList);
+            final r = await Get.toNamed(AppRoutes.customerNewJob);
             if (r == true) {
               await controller.load();
             }

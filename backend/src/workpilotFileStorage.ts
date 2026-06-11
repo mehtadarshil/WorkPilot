@@ -118,14 +118,14 @@ export async function writeWorkpilotFile(
   contentType?: string | null,
 ): Promise<{ fullPath: string; spacesKey: string; fileUrl: string | null }> {
   const storedFilename = cleanStoredFilename(filename);
-  const dir = await ensureWorkpilotFileDir(category, ...pathParts);
+  const dir = path.join(getWorkpilotFileRootDir(category), ...pathParts.map(cleanPathPart));
   const fullPath = path.join(dir, storedFilename);
-  await fs.writeFile(fullPath, buffer);
 
   const key = workpilotFileKey(category, pathParts, storedFilename);
-  await putSpacesBuffer(key, buffer, contentType).catch((error) => {
-    console.error(`Upload ${category} file to Spaces error:`, error);
-  });
+  const uploaded = await putSpacesBuffer(key, buffer, contentType);
+  if (!uploaded) {
+    throw new Error(`Spaces storage is not configured for ${category}`);
+  }
   return { fullPath, spacesKey: key, fileUrl: spacesObjectUrl(key) };
 }
 

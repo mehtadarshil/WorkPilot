@@ -48,11 +48,24 @@ interface CustomerInfo {
   full_name: string;
   company: string | null;
   address_line_1: string | null;
+  address_line_2?: string | null;
+  address_line_3?: string | null;
   town: string | null;
   county: string | null;
   postcode: string | null;
   contact_first_name: string | null;
   contact_surname: string | null;
+}
+
+interface WorkAddressInfo {
+  id: number;
+  name: string | null;
+  address_line_1: string | null;
+  address_line_2?: string | null;
+  address_line_3?: string | null;
+  town: string | null;
+  county: string | null;
+  postcode: string | null;
 }
 
 interface ServiceChecklistItem {
@@ -140,6 +153,15 @@ function formatContactOptionLabel(c: CustomerContactRow): string {
   return c.email?.trim() ? `${name} (${c.email.trim()})` : name;
 }
 
+function formatWorkAddressLabel(w: WorkAddressInfo): string {
+  const name = w.name?.trim();
+  const address = [w.address_line_1, w.address_line_2, w.address_line_3, w.town, w.county, w.postcode]
+    .filter((x) => x && String(x).trim())
+    .join(', ');
+  if (name && address) return `${name} — ${address}`;
+  return name || address || `Site #${w.id}`;
+}
+
 export default function AddNewJobPage() {
   const router = useRouter();
   const params = useParams();
@@ -165,6 +187,10 @@ export default function AddNewJobPage() {
   const [contactName, setContactName] = useState('');
   const [jobContactId, setJobContactId] = useState<number | null>(null);
   const [customerContacts, setCustomerContacts] = useState<CustomerContactRow[]>([]);
+  const [workAddresses, setWorkAddresses] = useState<WorkAddressInfo[]>([]);
+  const [workAddressId, setWorkAddressId] = useState<string>(() =>
+    workAddressIdParam && /^\d+$/.test(workAddressIdParam) ? workAddressIdParam : '',
+  );
   const [descriptionId, setDescriptionId] = useState<number | ''>('');
   const [skills, setSkills] = useState('');
   const [jobNotes, setJobNotes] = useState('');
@@ -246,26 +272,44 @@ export default function AddNewJobPage() {
     }));
   }, [customerContacts]);
 
+  const workAddressOptions = useMemo((): SearchableSelectOption[] => {
+    return workAddresses.map((w) => ({
+      value: String(w.id),
+      label: formatWorkAddressLabel(w),
+    }));
+  }, [workAddresses]);
+
+  const selectedWorkAddress = useMemo(
+    () => workAddresses.find((w) => String(w.id) === workAddressId) || null,
+    [workAddresses, workAddressId],
+  );
+
   const fetchData = useCallback(async () => {
     if (!token || !customerId) return;
     setLoading(true);
     try {
-      const [custData, descsData, buData, ugData, serviceData] = await Promise.all([
+      const [custData, descsData, buData, ugData, serviceData, workAddressData] = await Promise.all([
         getJson<CustomerInfo>(`/customers/${customerId}`, token),
         getJson<JobDescription[]>('/settings/job-descriptions', token),
         getJson<{ units: {id: number, name: string}[] }>('/settings/business-units', token).catch(() => ({ units: [] })),
         getJson<{ groups: {id: number, name: string}[] }>('/settings/user-groups', token).catch(() => ({ groups: [] })),
         getJson<{ items: ServiceChecklistItem[] }>('/settings/service-checklist', token).catch(() => ({ items: [] })),
+        getJson<{ work_addresses: WorkAddressInfo[] }>(`/customers/${customerId}/work-addresses`, token).catch(() => ({ work_addresses: [] })),
       ]);
       setCustomer(custData);
       setJobDescriptions(descsData || []);
       setBusinessUnitsList(buData.units || []);
       setUserGroupsList(ugData.groups || []);
       setServiceChecklistItems(serviceData.items || []);
+      const activeWorkAddresses = Array.isArray(workAddressData.work_addresses) ? workAddressData.work_addresses : [];
+      setWorkAddresses(activeWorkAddresses);
+      if (workAddressId && !activeWorkAddresses.some((w) => String(w.id) === workAddressId)) {
+        setWorkAddressId('');
+      }
 
       const contactsQuery =
-        workAddressIdParam && /^\d+$/.test(workAddressIdParam)
-          ? `?work_address_id=${encodeURIComponent(workAddressIdParam)}`
+        workAddressId
+          ? `?work_address_id=${encodeURIComponent(workAddressId)}`
           : '';
       const contactsRes = await getJson<{ contacts: CustomerContactRow[] }>(
         `/customers/${customerId}/contacts${contactsQuery}`,
@@ -331,7 +375,7 @@ export default function AddNewJobPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, customerId, isEdit, editJobId, workAddressIdParam]);
+  }, [token, customerId, isEdit, editJobId, workAddressId]);
 
   useEffect(() => {
     fetchData();
@@ -523,8 +567,8 @@ export default function AddNewJobPage() {
     }
 
     const back =
-      workAddressIdParam && !isEdit
-        ? `/dashboard/customers/${customerId}?work_address_id=${encodeURIComponent(workAddressIdParam)}`
+      workAddressId && !isEdit
+        ? `/dashboard/customers/${customerId}?work_address_id=${encodeURIComponent(workAddressId)}`
         : `/dashboard/customers/${customerId}`;
 
     try {
@@ -557,7 +601,7 @@ export default function AddNewJobPage() {
           vat_rate: pi.vat_rate,
           quantity: pi.quantity,
         })),
-        ...(workAddressIdParam && !isEdit ? { work_address_id: Number(workAddressIdParam) } : {}),
+        ...(workAddressId && !isEdit ? { work_address_id: Number(workAddressId) } : {}),
       };
 
       if (isEdit) {
@@ -595,7 +639,12 @@ export default function AddNewJobPage() {
 
   if (loading) return <div className="flex h-full items-center justify-center text-slate-500 font-medium">Loading...</div>;
 
-  const addressStr = customer ? [customer.address_line_1, customer.town, customer.county, customer.postcode].filter(Boolean).join(', ') : '';
+  const addressSource = selectedWorkAddress || customer;
+  const addressStr = addressSource
+    ? [addressSource.address_line_1, addressSource.address_line_2, addressSource.address_line_3, addressSource.town, addressSource.county, addressSource.postcode]
+        .filter(Boolean)
+        .join(', ')
+    : '';
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -619,7 +668,11 @@ export default function AddNewJobPage() {
       <div className="bg-white border-b border-slate-200 px-6 py-3">
         <div className="flex items-center gap-6 text-sm">
           <span className="text-slate-600"><strong className="text-slate-800">Customer:</strong> {customer?.full_name}</span>
-          {addressStr && <span className="text-slate-600"><strong className="text-slate-800">Address:</strong> {addressStr}</span>}
+          {addressStr && (
+            <span className="text-slate-600">
+              <strong className="text-slate-800">{selectedWorkAddress ? 'Work address:' : 'Customer address:'}</strong> {addressStr}
+            </span>
+          )}
         </div>
       </div>
 
@@ -662,6 +715,27 @@ export default function AddNewJobPage() {
 
                 {/* LEFT COLUMN */}
                 <div className="space-y-5">
+                  {!isEdit && (
+                    <div>
+                      <label className={labelClass}>Site / work address (optional)</label>
+                      <SearchableSelect
+                        options={workAddressOptions}
+                        value={workAddressId}
+                        onChange={(v) => {
+                          setWorkAddressId(v || '');
+                          setJobContactId(null);
+                        }}
+                        allowEmpty
+                        emptyButtonLabel="Use customer address"
+                        emptyMenuLabel="Use customer address"
+                        searchPlaceholder="Search work addresses…"
+                        className={inputClass}
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Optional: choose where this job will be carried out.
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <label className={labelClass}>Job contact (from contacts list)</label>
                     <SearchableSelect
