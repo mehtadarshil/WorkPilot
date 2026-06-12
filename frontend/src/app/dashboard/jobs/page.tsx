@@ -11,6 +11,7 @@ import ImportCustomerSelect from '../ImportCustomerSelect';
 
 interface Job {
   id: number;
+  job_number: string | null;
   title: string;
   description: string | null;
   priority: string;
@@ -428,6 +429,9 @@ export default function JobsPage() {
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
+                                  <span className="inline-flex shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
+                                    {j.job_number?.trim() || `#${j.id.toString().padStart(4, '0')}`}
+                                  </span>
                                   <button
                                     onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
                                     className="text-sm font-semibold text-slate-900 hover:text-[#14B8A6] hover:underline text-left block"

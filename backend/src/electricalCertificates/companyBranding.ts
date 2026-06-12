@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { resolveBrandingLogoForPdf } from '../brandingLogoPdf';
 
 export type CompanyBranding = {
   company_name: string;
@@ -44,7 +45,7 @@ export async function loadCompanyBranding(pool: Pool, userId: number): Promise<C
     company_address: (row.company_address as string | null) ?? null,
     company_phone: (row.company_phone as string | null) ?? null,
     company_email: (row.company_email as string | null) ?? null,
-    company_logo: (row.company_logo as string | null) ?? null,
+    company_logo: await resolveBrandingLogoForPdf(row.company_logo as string | null, userId),
     company_website: (row.company_website as string | null) ?? null,
     footer_text: (row.footer_text as string | null) ?? null,
     accent_color: parseHexColor(row.invoice_accent_color, '#14B8A6'),

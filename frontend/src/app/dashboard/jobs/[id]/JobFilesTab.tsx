@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getJson, getBlob } from '../../../apiClient';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { getJson, getBlob, postJson } from '../../../apiClient';
 import {
   AlertCircle,
   Download,
@@ -13,6 +13,7 @@ import {
   FileType,
   Mail,
   Loader2,
+  Upload,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import JobEmailComposer, { type JobEmailPresetAttachment } from './JobEmailComposer';
@@ -55,8 +56,9 @@ export default function JobFilesTab({ jobId, token }: Props) {
   const [emailSession, setEmailSession] = useState(0);
   const [emailInitialAttachments, setEmailInitialAttachments] = useState<JobEmailPresetAttachment[]>([]);
   const [preparingEmail, setPreparingEmail] = useState(false);
-
-  const attachableFiles = useMemo(() => files.filter(canAttachJobFileToEmail), [files]);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchManifest = useCallback(async () => {
     if (!token || !jobId) return;
@@ -72,6 +74,102 @@ export default function JobFilesTab({ jobId, token }: Props) {
       setLoading(false);
     }
   }, [token, jobId]);
+
+  const attachableFiles = useMemo(() => files.filter(canAttachJobFileToEmail), [files]);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const resultStr = reader.result as string;
+        const b64 = resultStr.split(',')[1];
+        try {
+          await postJson(
+            `/jobs/${jobId}/files`,
+            {
+              filename: file.name,
+              content_type: file.type,
+              content_base64: b64,
+            },
+            token
+          );
+          await fetchManifest();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Upload failed');
+        } finally {
+          setUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setError('Failed to read file');
+      setUploading(false);
+    }
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      for (let i = 0; i < droppedFiles.length; i++) {
+        const file = droppedFiles[i];
+        await new Promise<void>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const b64 = (reader.result as string).split(',')[1];
+            try {
+              await postJson(
+                `/jobs/${jobId}/files`,
+                {
+                  filename: file.name,
+                  content_type: file.type,
+                  content_base64: b64,
+                },
+                token
+              );
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        });
+      }
+      await fetchManifest();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }, [jobId, token, fetchManifest]);
 
   useEffect(() => {
     void fetchManifest();
@@ -254,7 +352,23 @@ export default function JobFilesTab({ jobId, token }: Props) {
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div
+      className="relative mx-auto max-w-6xl space-y-4"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#14B8A6] bg-teal-50/90 backdrop-blur-sm transition-all duration-200">
+          <div className="flex flex-col items-center gap-3 text-center p-8">
+            <Upload className="size-12 animate-bounce text-[#14B8A6]" />
+            <h3 className="text-lg font-bold text-slate-800">Drop files to upload</h3>
+            <p className="text-sm text-slate-500 max-w-xs">
+              Release to upload your documents, photos, or videos directly to this job
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div>
           <h2 className="text-base font-black tracking-tight text-slate-800">All job files</h2>
@@ -292,6 +406,21 @@ export default function JobFilesTab({ jobId, token }: Props) {
           >
             {preparingEmail ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
             Compose email
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={handleUploadClick}
+            disabled={loading || !token || uploading}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#14B8A6]/40 bg-[#14B8A6]/10 px-3 py-2 text-xs font-bold text-teal-900 hover:bg-[#14B8A6]/15 disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+            Upload file
           </button>
           <button
             type="button"

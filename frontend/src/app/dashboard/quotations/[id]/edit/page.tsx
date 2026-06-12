@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
 import ImportCustomerSelect, { type ImportCustomerOption } from '../../../ImportCustomerSelect';
 import WorkAddressSelect from '../../../WorkAddressSelect';
@@ -81,6 +81,12 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function resizeLineDescriptionTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(el.scrollHeight, 40)}px`;
+}
+
 export default function EditQuotationPage() {
   const router = useRouter();
   const params = useParams();
@@ -108,6 +114,11 @@ export default function EditQuotationPage() {
   const skipNextWorkFetchReset = useRef(false);
   const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
+  const lineDescriptionRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
+
+  useLayoutEffect(() => {
+    lineDescriptionRefs.current.forEach((el) => resizeLineDescriptionTextarea(el));
+  }, [lineItems, loading]);
 
   const load = useCallback(async () => {
     const token = window.localStorage.getItem('wp_token');
@@ -232,6 +243,17 @@ export default function EditQuotationPage() {
   const removeLine = (i: number) => {
     if (lineItems.length <= 1) return;
     setLineItems((p) => p.filter((_, idx) => idx !== i));
+  };
+
+  const moveLine = (from: number, to: number) => {
+    if (to < 0 || to >= lineItems.length) return;
+    setLineItems((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      if (!item) return prev;
+      next.splice(to, 0, item);
+      return next;
+    });
   };
 
   const appendInternalNote = (note: QuotationInternalNote) => {
@@ -590,59 +612,91 @@ export default function EditQuotationPage() {
               </div>
               <div className="space-y-3 rounded-lg border border-slate-200 p-3">
                 {lineItems.map((li, i) => (
-                  <div key={i} className="grid gap-2 sm:grid-cols-[1fr_80px_100px_110px_auto] sm:items-end">
-                    <label className="text-xs">
+                  <div key={i} className="space-y-2 rounded-lg border border-slate-100 bg-white/60 p-2">
+                    <label className="block text-xs">
                       <span className="text-slate-500">Description</span>
-                      <input
+                      <textarea
+                        ref={(el) => {
+                          lineDescriptionRefs.current[i] = el;
+                          resizeLineDescriptionTextarea(el);
+                        }}
+                        rows={1}
                         value={li.description}
-                        onChange={(e) => updateLine(i, 'description', e.target.value)}
-                        className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
-                      />
-                    </label>
-                    <label className="text-xs">
-                      <span className="text-slate-500">Qty</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        value={li.quantity === 0 ? '' : li.quantity}
                         onChange={(e) => {
-                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                          updateLine(i, 'quantity', isNaN(val) ? 0 : val);
+                          updateLine(i, 'description', e.target.value);
+                          resizeLineDescriptionTextarea(e.target);
                         }}
-                        className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+                        placeholder="Describe this line item"
+                        className="mt-0.5 w-full resize-none overflow-hidden rounded border border-slate-200 px-2 py-1.5 text-sm leading-relaxed outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
                       />
                     </label>
-                    <label className="text-xs">
-                      <span className="text-slate-500">Unit price</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        value={li.unit_price === 0 ? '' : li.unit_price}
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                          updateLine(i, 'unit_price', isNaN(val) ? 0 : val);
-                        }}
-                        className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
-                      />
-                    </label>
-                    <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs">
-                      <span className="block text-slate-500">Line total</span>
-                      <span className="text-sm font-semibold text-slate-900">
-                        {(li.quantity * li.unit_price).toFixed(2)}
-                      </span>
+                    <div className="grid gap-2 sm:grid-cols-[80px_100px_110px_1fr_auto] sm:items-end">
+                      <label className="text-xs">
+                        <span className="text-slate-500">Qty</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          value={li.quantity === 0 ? '' : li.quantity}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateLine(i, 'quantity', isNaN(val) ? 0 : val);
+                          }}
+                          className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="text-xs">
+                        <span className="text-slate-500">Unit price</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          value={li.unit_price === 0 ? '' : li.unit_price}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            updateLine(i, 'unit_price', isNaN(val) ? 0 : val);
+                          }}
+                          className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5 text-xs">
+                        <span className="block text-slate-500">Line total</span>
+                        <span className="text-sm font-semibold text-slate-900">
+                          {(li.quantity * li.unit_price).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="hidden sm:block" />
+                      <div className="flex justify-end gap-1 sm:justify-self-end">
+                        <button
+                          type="button"
+                          onClick={() => moveLine(i, i - 1)}
+                          disabled={i === 0}
+                          className="rounded p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+                          aria-label="Move line up"
+                        >
+                          <ChevronUp className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveLine(i, i + 1)}
+                          disabled={i === lineItems.length - 1}
+                          className="rounded p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+                          aria-label="Move line down"
+                        >
+                          <ChevronDown className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(i)}
+                          disabled={lineItems.length <= 1}
+                          className="rounded p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
+                          aria-label="Remove line"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(i)}
-                      disabled={lineItems.length <= 1}
-                      className="flex justify-end rounded p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
-                      aria-label="Remove line"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                    <div className="sm:col-span-5">
+                    <div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {(li.images ?? []).map((image, imageIndex) => (
                           <div key={`${image.stored_filename ?? image.original_filename}-${imageIndex}`} className="group relative h-20 w-24 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">

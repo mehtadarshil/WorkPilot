@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
 import { loadCustomerSiteReportImageBuffer } from './customerSiteReportImageStorage';
+import { resolveBrandingLogoForPdf } from './brandingLogoPdf';
 import type {
   SiteReportSectionImageRow,
   SiteReportTemplateDefinition,
@@ -26,20 +27,6 @@ function escapeHtml(text: string): string {
 
 function nl2br(text: string): string {
   return escapeHtml(text).replace(/\r\n|\r|\n/g, '<br/>');
-}
-
-function appOrigin(): string {
-  return (process.env.PUBLIC_APP_URL || process.env.APP_ORIGIN || '').replace(/\/+$/, '');
-}
-
-function resolveLogoHref(href: string | null | undefined): string | null {
-  if (!href || !String(href).trim()) return null;
-  const t = String(href).trim();
-  if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t;
-  if (t.startsWith('//')) return `https:${t}`;
-  const origin = appOrigin();
-  if (t.startsWith('/') && origin) return `${origin}${t}`;
-  return t;
 }
 
 function yesNoLabel(raw: string): string {
@@ -445,7 +432,7 @@ export async function getCustomerSiteReportPrintHtml(
   }>('SELECT company_name, company_logo, invoice_accent_color FROM invoice_settings WHERE created_by = $1 LIMIT 1', [ownerUserId]);
   const invRow = inv.rows[0];
   const companyName = (invRow?.company_name || 'WorkPilot').trim() || 'WorkPilot';
-  const logoUrl = resolveLogoHref(invRow?.company_logo ?? null);
+  const logoUrl = await resolveBrandingLogoForPdf(invRow?.company_logo ?? null, ownerUserId);
   const accent = (() => {
     const c = typeof invRow?.invoice_accent_color === 'string' ? invRow.invoice_accent_color.trim() : '';
     return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(c) ? c : '#14B8A6';

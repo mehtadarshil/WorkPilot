@@ -24,8 +24,6 @@ interface Props {
   workAddressId: string | null;
   customerDetails: CustomerDetails | null;
   invoices: Invoice[];
-  mapEmbedSrc: string;
-  mapGeocoding: boolean;
 }
 
 export default function CustomerOverviewMapTab({
@@ -33,8 +31,6 @@ export default function CustomerOverviewMapTab({
   workAddressId,
   customerDetails,
   invoices,
-  mapEmbedSrc,
-  mapGeocoding,
 }: Props) {
   // Outstanding balance calculation
   const outstandingInvoices = invoices.filter(
@@ -143,28 +139,6 @@ export default function CustomerOverviewMapTab({
               <span className="text-slate-500">Regular account behavior. Normal booking operations apply.</span>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Map Section */}
-      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-[#14B8A6]" />
-            <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider">Site Location Map</h3>
-          </div>
-          {mapGeocoding && (
-            <span className="text-xs text-[#14B8A6] font-semibold animate-pulse">Updating coordinates...</span>
-          )}
-        </div>
-        <div className="relative h-[450px] w-full bg-slate-100">
-          <iframe
-            title="Customer site address map"
-            src={mapEmbedSrc}
-            className="absolute inset-0 size-full border-0"
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
         </div>
       </div>
     </div>

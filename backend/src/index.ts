@@ -1153,6 +1153,7 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE customer_files ADD COLUMN IF NOT EXISTS spaces_key TEXT`);
   await pool.query(`ALTER TABLE customer_files ADD COLUMN IF NOT EXISTS file_url TEXT`);
+  await pool.query(`ALTER TABLE customer_files ADD COLUMN IF NOT EXISTS notes TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_files_customer_id ON customer_files(customer_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_files_work_address_id ON customer_files(work_address_id) WHERE work_address_id IS NOT NULL`);
 
@@ -12749,6 +12750,18 @@ async function buildInvoiceEmailTemplateVars(
       work_address = formatWorkAddressSingleLine(wr.rows[0]);
     }
   }
+  if (!work_address && inv.job_id) {
+    const wr = await pool.query(
+      `SELECT wa.*
+       FROM jobs j
+       JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+       WHERE j.id = $1 AND j.customer_id = $2`,
+      [inv.job_id, inv.customer_id],
+    );
+    if ((wr.rowCount ?? 0) > 0) {
+      work_address = formatWorkAddressSingleLine(wr.rows[0]);
+    }
+  }
   let pToken = inv.public_token;
   if (!pToken) {
     pToken = crypto.randomBytes(32).toString('hex');
@@ -12765,6 +12778,8 @@ async function buildInvoiceEmailTemplateVars(
     due_date: dueDate,
     customer_address,
     work_address,
+    site_address: work_address,
+    job_site_address: work_address,
     invoice_link: `<a href="${getPublicAppBaseUrl()}/public/invoices/${pToken}">${inv.invoice_number}</a>`,
   };
 }
@@ -12807,6 +12822,18 @@ async function buildQuotationEmailTemplateVars(
       work_address = formatWorkAddressSingleLine(wr.rows[0]);
     }
   }
+  if (!work_address && q.job_id) {
+    const wr = await pool.query(
+      `SELECT wa.*
+       FROM jobs j
+       JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+       WHERE j.id = $1 AND j.customer_id = $2`,
+      [q.job_id, q.customer_id],
+    );
+    if ((wr.rowCount ?? 0) > 0) {
+      work_address = formatWorkAddressSingleLine(wr.rows[0]);
+    }
+  }
   const base = getPublicAppBaseUrl();
   return {
     company_name: qSettings.company_name ?? 'WorkPilot',
@@ -12818,6 +12845,8 @@ async function buildQuotationEmailTemplateVars(
     valid_until: validUntil,
     customer_address,
     work_address,
+    site_address: work_address,
+    job_site_address: work_address,
     quotation_link: `<a href="${base}/public/quotations/${pToken}">${q.quotation_number}</a>`,
   };
 }
@@ -13472,8 +13501,15 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
     }
     let billingAddress = typeof body.billing_address === 'string' ? body.billing_address.trim() || null : null;
     let invoiceWorkAddressId: number | null = resolvedWorkAddressId;
-    if (resolvedWorkAddressId != null) {
-      const resolvedBill = await resolveInvoiceBillingFromWorkAddress(customerId, resolvedWorkAddressId);
+    if (invoiceWorkAddressId == null && jobId) {
+      const jobAddressRes = await pool.query<{ work_address_id: number | null }>(
+        `SELECT work_address_id FROM jobs WHERE id = $1 AND customer_id = $2`,
+        [jobId, customerId],
+      );
+      invoiceWorkAddressId = jobAddressRes.rows[0]?.work_address_id ?? null;
+    }
+    if (invoiceWorkAddressId != null) {
+      const resolvedBill = await resolveInvoiceBillingFromWorkAddress(customerId, invoiceWorkAddressId);
       billingAddress = resolvedBill.billing_address;
       invoiceWorkAddressId = resolvedBill.invoice_work_address_id;
     }
@@ -14274,10 +14310,19 @@ app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('i
     DbInvoice & {
       customer_email?: string | null;
       customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
       job_created_by?: number | null;
     }
   >(
-    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name, j.created_by AS job_created_by
+    `SELECT i.*, c.email AS customer_email, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode,
+            j.created_by AS job_created_by
      FROM invoices i
      JOIN customers c ON c.id = i.customer_id
      LEFT JOIN jobs j ON j.id = i.job_id
@@ -14320,17 +14365,10 @@ app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('i
 
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
 
-    // Replace placeholder if exists, but DO NOT auto-append anymore
-    let pToken = inv.public_token;
-    if (!pToken) {
-      pToken = crypto.randomBytes(32).toString('hex');
-      await pool.query('UPDATE invoices SET public_token = $1 WHERE id = $2', [pToken, inv.id]);
-    }
-    const publicLink = `${getPublicAppBaseUrl()}/public/invoices/${pToken}`;
-    let processedBody = bodyHtmlRaw;
-    if (processedBody.includes('{{invoice_link}}')) {
-      processedBody = processedBody.replace(/{{invoice_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
-    }
+    const invSettings = await getInvoiceSettings(userId);
+    const vars = await buildInvoiceEmailTemplateVars(inv, invSettings);
+    const processedSubject = applyTemplateVars(subject, vars);
+    const processedBody = applyTemplateVars(bodyHtmlRaw, vars);
 
     const html = wrapEmailHtml(processedBody, sigHtml);
     const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
@@ -14372,7 +14410,7 @@ app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('i
       id,
       'comm_email',
       {
-        subject,
+        subject: processedSubject,
         body: bodyHtmlRaw,
         to_email: to,
         cc: cc || null,
@@ -15564,9 +15602,20 @@ app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess(
   };
 
   const qCheck = await pool.query<
-    DbQuotation & { customer_email?: string | null; customer_full_name?: string | null }
+    DbQuotation & {
+      customer_email?: string | null;
+      customer_full_name?: string | null;
+      cust_addr_line_1?: string | null;
+      cust_addr_line_2?: string | null;
+      cust_addr_line_3?: string | null;
+      cust_town?: string | null;
+      cust_county?: string | null;
+      cust_postcode?: string | null;
+    }
   >(
-    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name
+    `SELECT q.*, c.email AS customer_email, c.full_name AS customer_full_name,
+            c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+            c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode
      FROM quotations q JOIN customers c ON c.id = q.customer_id WHERE q.id = $1`,
     [id],
   );
@@ -15613,16 +15662,10 @@ app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess(
 
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
 
-    let pToken = qRow.public_token;
-    if (!pToken) {
-      pToken = crypto.randomBytes(32).toString('hex');
-      await pool.query('UPDATE quotations SET public_token = $1 WHERE id = $2', [pToken, qRow.id]);
-    }
-    const publicLink = `${getPublicAppBaseUrl()}/public/quotations/${pToken}`;
-    let processedBody = bodyHtmlRaw;
-    if (processedBody.includes('{{quotation_link}}')) {
-      processedBody = processedBody.replace(/{{quotation_link}}/g, `<a href="${publicLink}">${publicLink}</a>`);
-    }
+    const qSettings = await getQuotationSettings(userId);
+    const vars = await buildQuotationEmailTemplateVars(qRow, qSettings);
+    const processedSubject = applyTemplateVars(subject, vars);
+    const processedBody = applyTemplateVars(bodyHtmlRaw, vars);
 
     const html = wrapEmailHtml(processedBody, sigHtml);
     const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
@@ -15654,7 +15697,7 @@ app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess(
       to,
       cc: cc || undefined,
       bcc: bcc || undefined,
-      subject,
+      subject: processedSubject,
       html,
       replyTo: emailCfg.reply_to,
       attachments: userAttachments.length > 0 ? userAttachments : undefined,
@@ -18891,7 +18934,7 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
     }
 
     const result = await pool.query(
-      `SELECT f.id, f.customer_id, f.work_address_id, f.original_filename, f.stored_filename, f.content_type, f.byte_size, f.created_at, f.created_by,
+      `SELECT f.id, f.customer_id, f.work_address_id, f.original_filename, f.stored_filename, f.content_type, f.byte_size, f.notes, f.created_at, f.created_by,
               COALESCE(u.full_name, u.email, 'User') AS created_by_name
        FROM customer_files f
        LEFT JOIN users u ON u.id = f.created_by
@@ -18952,6 +18995,7 @@ app.get('/api/customers/:customerId/files', authenticate, requireTenantCrmAccess
         stored_filename: String(r.stored_filename ?? ''),
         content_type: (r.content_type as string) ?? null,
         byte_size: Number(r.byte_size),
+        notes: typeof r.notes === 'string' ? r.notes : '',
         created_at: (r.created_at as Date).toISOString(),
         created_by: r.created_by != null ? Number(r.created_by) : null,
         created_by_name: (r.created_by_name as string) ?? 'User',
@@ -19109,6 +19153,35 @@ app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requir
     });
   } catch (error) {
     console.error('Download customer file error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/customers/:customerId/files/:fileId', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const fileId = parseInt(String(req.params.fileId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(fileId)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+  const body = req.body as { notes?: unknown };
+  const notes = typeof body.notes === 'string' ? body.notes.slice(0, 2000) : '';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const row = await pool.query<{ id: number; notes: string | null }>(
+      `UPDATE customer_files
+       SET notes = $1
+       WHERE id = $2 AND customer_id = $3
+       RETURNING id, notes`,
+      [notes.trim() || null, fileId, customerId],
+    );
+    if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'File not found' });
+    return res.json({ file: { id: row.rows[0].id, notes: row.rows[0].notes ?? '' } });
+  } catch (error) {
+    console.error('Update customer file notes error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, Quote, Plus, ChevronRight, ImagePlus, X } from 'lucide-react';
+import { Search, Quote, Plus, ChevronDown, ChevronRight, ChevronUp, ImagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
@@ -111,6 +111,12 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function resizeLineDescriptionTextarea(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(el.scrollHeight, 40)}px`;
+}
+
 export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -146,7 +152,13 @@ export default function QuotationsPage() {
   const [formLineItems, setFormLineItems] = useState<LineItemForm[]>([
     { description: '', quantity: 1, unit_price: 0, images: [] },
   ]);
+  const lineDescriptionRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!addModalOpen) return;
+    lineDescriptionRefs.current.forEach((el) => resizeLineDescriptionTextarea(el));
+  }, [formLineItems, addModalOpen]);
   const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
   const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
 
@@ -295,6 +307,17 @@ export default function QuotationsPage() {
   const removeLineItem = (i: number) => {
     if (formLineItems.length <= 1) return;
     setFormLineItems((prev) => prev.filter((_, idx) => idx !== i));
+  };
+
+  const moveLineItem = (from: number, to: number) => {
+    if (to < 0 || to >= formLineItems.length) return;
+    setFormLineItems((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      if (!item) return prev;
+      next.splice(to, 0, item);
+      return next;
+    });
   };
 
   const addLineItemImages = async (lineIndex: number, files: FileList | null) => {
@@ -737,33 +760,81 @@ export default function QuotationsPage() {
                 </div>
                 <div className="space-y-2">
                   {formLineItems.map((item, i) => (
-                    <div key={i} className="rounded-lg border border-slate-100 bg-slate-50/40 p-2">
-                      <div className="flex gap-2">
-                        <input type="text" value={item.description} onChange={(e) => updateLineItem(i, 'description', e.target.value)} placeholder="Description" className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={item.quantity === 0 ? '' : item.quantity}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                            updateLineItem(i, 'quantity', isNaN(val) ? 0 : val);
+                    <div key={i} className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/40 p-2">
+                      <label className="block text-xs font-medium text-slate-700">
+                        Description
+                        <textarea
+                          ref={(el) => {
+                            lineDescriptionRefs.current[i] = el;
+                            resizeLineDescriptionTextarea(el);
                           }}
-                          className="w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={item.unit_price === 0 ? '' : item.unit_price}
+                          rows={1}
+                          value={item.description}
                           onChange={(e) => {
-                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                            updateLineItem(i, 'unit_price', isNaN(val) ? 0 : val);
+                            updateLineItem(i, 'description', e.target.value);
+                            resizeLineDescriptionTextarea(e.target);
                           }}
-                          placeholder="Price"
-                          className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                          placeholder="Describe this line item"
+                          className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
                         />
-                        <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
+                      </label>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <label className="text-xs text-slate-600">
+                          Qty
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={item.quantity === 0 ? '' : item.quantity}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              updateLineItem(i, 'quantity', isNaN(val) ? 0 : val);
+                            }}
+                            className="mt-1 block w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                          />
+                        </label>
+                        <label className="text-xs text-slate-600">
+                          Unit price
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={item.unit_price === 0 ? '' : item.unit_price}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              updateLineItem(i, 'unit_price', isNaN(val) ? 0 : val);
+                            }}
+                            placeholder="Price"
+                            className="mt-1 block w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                          />
+                        </label>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                          <span className="block text-slate-500">Line total</span>
+                          <span className="text-sm font-semibold text-slate-900">
+                            {(item.quantity * item.unit_price).toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="ml-auto flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveLineItem(i, i - 1)}
+                            disabled={i === 0}
+                            className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
+                            aria-label="Move item up"
+                          >
+                            <ChevronUp className="size-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveLineItem(i, i + 1)}
+                            disabled={i === formLineItems.length - 1}
+                            className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
+                            aria-label="Move item down"
+                          >
+                            <ChevronDown className="size-4" />
+                          </button>
+                          <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
+                        </div>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {item.images.map((image, imageIndex) => (

@@ -2,8 +2,11 @@ import type { Application, Request, Response } from 'express';
 import type { Pool } from 'pg';
 import path from 'path';
 import fs from 'fs/promises';
+import crypto from 'crypto';
 import { getTenantScopeUserId, requireTenantCrmAccess } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
+import { writeWorkpilotFile } from './workpilotFileStorage';
+import { sendInlineWorkpilotFile } from './inlineBlobStorage';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -577,4 +580,118 @@ export function mountJobFilesRoutes(app: Application, deps: JobFilesRouteDeps): 
       return res.status(500).json({ message: 'Internal server error' });
     }
   });
+
+  app.post('/api/jobs/:id/files', authenticate, requireTenantCrmAccess('jobs'), async (req: Request, res: Response) => {
+    const jobId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(jobId)) return res.status(400).json({ message: 'Invalid job id' });
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+
+    const body = req.body as Record<string, unknown>;
+    const filenameRaw = typeof body.filename === 'string' ? body.filename : '';
+    const b64 = typeof body.content_base64 === 'string' ? body.content_base64.trim() : '';
+    const contentType =
+      typeof body.content_type === 'string' && body.content_type.trim() ? body.content_type.trim().slice(0, 255) : null;
+
+    if (!filenameRaw.trim() || !b64) {
+      return res.status(400).json({ message: 'filename and content_base64 are required' });
+    }
+
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(b64, 'base64');
+    } catch {
+      return res.status(400).json({ message: 'Invalid base64 file data' });
+    }
+    if (buf.length === 0) return res.status(400).json({ message: 'Empty file' });
+
+    const MAX_BYTES = (() => {
+      const n = parseInt(process.env.CUSTOMER_FILE_MAX_BYTES || '8388608', 10);
+      return Number.isFinite(n) && n > 0 ? Math.min(n, 20 * 1024 * 1024) : 8388608;
+    })();
+    if (buf.length > MAX_BYTES) {
+      return res.status(400).json({ message: `File too large (max ${Math.round(MAX_BYTES / (1024 * 1024))} MB)` });
+    }
+
+    const originalFilename = path.basename(filenameRaw.trim().replace(/[/\\]/g, '')) || 'upload';
+    const sanitizedFilename = originalFilename.length > 480 ? originalFilename.slice(0, 480) : originalFilename;
+    const ext = path.extname(sanitizedFilename).slice(0, 32) || '';
+    const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${ext}`;
+
+    try {
+      const jobRes = await pool.query<{
+        id: number;
+        attachments: unknown;
+      }>(
+        `SELECT id, attachments FROM jobs WHERE id = $1${
+          isSuperAdmin ? '' : ' AND created_by = $2'
+        }`,
+        isSuperAdmin ? [jobId] : [jobId, userId],
+      );
+      if ((jobRes.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+      const job = jobRes.rows[0];
+
+      const uploaded = await writeWorkpilotFile(
+        'job-attachments',
+        [jobId],
+        storedFilename,
+        buf,
+        contentType || 'application/octet-stream',
+      );
+
+      const attachments = Array.isArray(job.attachments) ? [...job.attachments] : [];
+      attachments.push({
+        file_url: `/jobs/${jobId}/attachments/${encodeURIComponent(storedFilename)}`,
+        filename: sanitizedFilename,
+        content_type: contentType || 'application/octet-stream',
+        byte_size: buf.length,
+        spaces_key: uploaded.spacesKey,
+        file_url_spaces: uploaded.fileUrl,
+        created_at: new Date().toISOString(),
+        uploaded_by: userId,
+      });
+
+      await pool.query(
+        `UPDATE jobs SET attachments = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(attachments), jobId],
+      );
+
+      return res.status(201).json({ message: 'File uploaded successfully' });
+    } catch (error) {
+      console.error('Upload job file error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get(
+    '/api/jobs/:id/attachments/:file',
+    authenticate,
+    requireTenantCrmAccess('jobs'),
+    async (req: Request, res: Response) => {
+      const jobId = parseInt(String(req.params.id), 10);
+      const fileParam = req.params.file;
+      const fileName = typeof fileParam === 'string' ? decodeURIComponent(fileParam) : '';
+      if (!Number.isFinite(jobId) || !fileName || fileName.includes('..') || path.isAbsolute(fileName)) {
+        return res.status(400).json({ message: 'Invalid request' });
+      }
+
+      const userId = getTenantScopeUserId((req as AuthReq).user!);
+      const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+
+      try {
+        const jobRes = await pool.query<{ id: number }>(
+          `SELECT id FROM jobs WHERE id = $1${
+            isSuperAdmin ? '' : ' AND created_by = $2'
+          }`,
+          isSuperAdmin ? [jobId] : [jobId, userId],
+        );
+        if ((jobRes.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
+
+        return sendInlineWorkpilotFile(res, 'job-attachments', [jobId], fileName);
+      } catch (error) {
+        console.error('Serve job attachment error:', error);
+        return res.status(500).json({ message: 'Internal server error' });
+      }
+    }
+  );
 }

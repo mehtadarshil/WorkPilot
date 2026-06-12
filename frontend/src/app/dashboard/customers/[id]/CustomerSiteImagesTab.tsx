@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getJson, postJson, deleteRequest, getBlob } from '../../../apiClient';
+import { getJson, postJson, deleteRequest, getBlob, patchJson } from '../../../apiClient';
 import { prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
 import { Upload, FileText, Trash2, Download, AlertCircle, Eye } from 'lucide-react';
 import dayjs from 'dayjs';
@@ -16,6 +16,7 @@ interface CustomerFileRow {
   created_at: string;
   created_by: number | null;
   created_by_name: string;
+  notes: string;
   kind?: 'uploaded' | 'electrical_certificate' | 'site_report';
   href?: string;
   source_label?: string;
@@ -79,6 +80,8 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [savingNotes, setSavingNotes] = useState<Record<string, boolean>>({});
 
   const fetchFiles = useCallback(async () => {
     if (!token || !customerId) return;
@@ -90,6 +93,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
       const res = await getJson<FilesResponse>(`/customers/${customerId}/files${qs ? `?${qs}` : ''}`, token);
       const imagesOnly = (res.files || []).filter(f => f.content_type?.startsWith('image/'));
       setFiles(imagesOnly);
+      setNoteDrafts(Object.fromEntries(imagesOnly.map((f) => [String(f.id), f.notes ?? ''])));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load files');
     }
@@ -180,6 +184,28 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
     }
   };
 
+  const saveImageNote = async (f: CustomerFileRow) => {
+    if (!token || f.kind !== 'uploaded') return;
+    const key = String(f.id);
+    setSavingNotes((prev) => ({ ...prev, [key]: true }));
+    setError(null);
+    try {
+      const notes = noteDrafts[key] ?? '';
+      const res = await patchJson<{ file: { id: number; notes: string } }>(
+        `/customers/${customerId}/files/${f.id}`,
+        { notes },
+        token,
+      );
+      const nextNotes = res.file.notes ?? '';
+      setFiles((prev) => prev.map((item) => (String(item.id) === key ? { ...item, notes: nextNotes } : item)));
+      setNoteDrafts((prev) => ({ ...prev, [key]: nextNotes }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save image note');
+    } finally {
+      setSavingNotes((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <div
@@ -239,31 +265,63 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
               No images yet. Upload photos of this site here.
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {files.map((f) => (
-                <div key={f.id} className="group relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                  <AuthImage
-                    customerId={customerId}
-                    file={f}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 opacity-0 transition-opacity group-hover:opacity-100">
-                    <p className="px-2 text-center text-xs font-medium text-white truncate w-full">{f.original_filename}</p>
-                    <p className="mt-1 text-[10px] text-slate-300">{formatBytes(f.byte_size)}</p>
-                    <div className="mt-3 flex gap-2">
+                <div key={f.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="group relative aspect-[4/3] overflow-hidden bg-slate-100">
+                    <AuthImage
+                      customerId={customerId}
+                      file={f}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 opacity-0 transition-opacity group-hover:opacity-100">
+                      <p className="w-full truncate px-2 text-center text-xs font-medium text-white">{f.original_filename}</p>
+                      <p className="mt-1 text-[10px] text-slate-300">{formatBytes(f.byte_size)}</p>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void previewFile(f)}
+                          className="rounded-full bg-white/20 p-2 text-white hover:bg-white/40"
+                          title="View Full Size"
+                        >
+                          <Eye className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeFile(f)}
+                          className="rounded-full bg-rose-500/80 p-2 text-white hover:bg-rose-500"
+                          title="Delete Image"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Image note
+                      <textarea
+                        value={noteDrafts[String(f.id)] ?? f.notes ?? ''}
+                        onChange={(event) => {
+                          const key = String(f.id);
+                          setNoteDrafts((prev) => ({ ...prev, [key]: event.target.value }));
+                        }}
+                        rows={3}
+                        maxLength={2000}
+                        placeholder="Add notes for this specific image..."
+                        disabled={f.kind !== 'uploaded'}
+                        className="mt-1 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal leading-relaxed outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20 disabled:bg-slate-50 disabled:text-slate-400"
+                      />
+                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[11px] text-slate-400">{f.original_filename}</span>
                       <button
-                        onClick={() => void previewFile(f)}
-                        className="rounded-full bg-white/20 p-2 text-white hover:bg-white/40"
-                        title="View Full Size"
+                        type="button"
+                        onClick={() => void saveImageNote(f)}
+                        disabled={f.kind !== 'uploaded' || savingNotes[String(f.id)] || (noteDrafts[String(f.id)] ?? '') === (f.notes ?? '')}
+                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-[#14B8A6] hover:bg-[#14B8A6]/5 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Eye className="size-4" />
-                      </button>
-                      <button
-                        onClick={() => void removeFile(f)}
-                        className="rounded-full bg-rose-500/80 p-2 text-white hover:bg-rose-500"
-                        title="Delete Image"
-                      >
-                        <Trash2 className="size-4" />
+                        {savingNotes[String(f.id)] ? 'Saving...' : 'Save note'}
                       </button>
                     </div>
                   </div>

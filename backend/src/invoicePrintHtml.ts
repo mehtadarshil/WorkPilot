@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from './jobClientReportPdf';
+import { resolveBrandingLogoForPdf } from './brandingLogoPdf';
 
 function escapeHtml(text: string): string {
   return text
@@ -69,21 +70,6 @@ function parseSafeHexColor(raw: unknown, fallback: string): string {
   const s = typeof raw === 'string' ? raw.trim() : '';
   if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(s)) return s;
   return fallback;
-}
-
-function appOrigin(): string {
-  return (process.env.PUBLIC_APP_URL || process.env.APP_ORIGIN || '').replace(/\/+$/, '');
-}
-
-/** Resolve logo / asset href for Puppeteer (absolute or data URL). */
-function resolveAssetUrl(href: string | null | undefined): string | null {
-  if (!href || !String(href).trim()) return null;
-  const t = String(href).trim();
-  if (t.startsWith('data:') || t.startsWith('http://') || t.startsWith('https://')) return t;
-  if (t.startsWith('//')) return `https:${t}`;
-  const origin = appOrigin();
-  if (t.startsWith('/') && origin) return `${origin}${t}`;
-  return t;
 }
 
 type LineItem = {
@@ -191,22 +177,16 @@ function buildInvoiceHtmlDocument(input: {
   if (companyPhone) companyLines.push(`<p class="co-line">${escapeHtml(companyPhone)}</p>`);
   if (companyEmail) companyLines.push(`<p class="co-line">${escapeHtml(companyEmail)}</p>`);
 
-  const workSiteBlock =
-    workSiteName?.trim() || workSiteAddress?.trim()
-      ? `<div class="card">
-      <p class="card-k">Work / site address</p>
-      ${workSiteName?.trim() ? `<p class="ws-name">${escapeHtml(workSiteName.trim())}</p>` : ''}
-      ${workSiteAddress?.trim() ? `<p class="ws-addr">${escapeHtml(workSiteAddress.trim())}</p>` : ''}
-    </div>`
-      : '';
-
-  const customBillingBlock =
-    invoiceCustomAddress?.trim() && !workSiteName?.trim() && !workSiteAddress?.trim()
-      ? `<div class="card">
-      <p class="card-k">Billing address</p>
-      <p class="billing-pre">${escapeHtml(invoiceCustomAddress.trim())}</p>
-    </div>`
-      : '';
+  const siteAddressLine =
+    workSiteName?.trim() && workSiteAddress?.trim()
+      ? `${workSiteName.trim()} - ${workSiteAddress.trim()}`
+      : workSiteName?.trim() || workSiteAddress?.trim() || '';
+  const primaryAddressLabel = siteAddressLine
+    ? 'Site address'
+    : invoiceCustomAddress?.trim()
+      ? 'Billing address'
+      : 'Customer address';
+  const primaryAddressLine = siteAddressLine || invoiceCustomAddress?.trim() || customerAddrLine;
 
   const descriptionBlock = description?.trim()
     ? `<div class="desc-block">
@@ -359,11 +339,9 @@ function buildInvoiceHtmlDocument(input: {
               ? `<p class="cust-line"><span style="font-weight:500;color:#334155">Customer reference:</span> ${escapeHtml(customerReferenceDisplay.trim())}</p>`
               : ''
           }
-          <p class="card-k" style="margin-top:12px">Customer address</p>
-          <p class="cust-line" style="margin-top:4px;line-height:1.5">${escapeHtml(customerAddrLine)}</p>
+          <p class="card-k" style="margin-top:12px">${escapeHtml(primaryAddressLabel)}</p>
+          <p class="cust-line" style="margin-top:4px;line-height:1.5;white-space:pre-wrap">${escapeHtml(primaryAddressLine)}</p>
         </div>
-        ${workSiteBlock || ''}
-        ${customBillingBlock || ''}
       </div>
       <div>
         <div class="meta-row">
@@ -519,9 +497,7 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
   const bankDetails = (row?.bank_details as string) || null;
   const accent = parseSafeHexColor(row?.invoice_accent_color, '#14B8A6');
   const accentEnd = parseSafeHexColor(row?.invoice_accent_end_color, '#0d9488');
-  const logoResolved = resolveAssetUrl(row?.company_logo as string | null);
-  const origin = appOrigin();
-  const defaultLogoUrl = origin ? `${origin}/logo.jpg` : null;
+  const logoResolved = await resolveBrandingLogoForPdf(row?.company_logo as string | null, ownerId);
 
   const subtotal = parseFloat(inv.subtotal);
   const taxAmount = parseFloat(inv.tax_amount);
@@ -556,7 +532,7 @@ export async function generateInvoicePdfBuffer(pool: Pool, invoiceId: number): P
     companyWebsite,
     companyTaxId,
     logoUrl: logoResolved,
-    defaultLogoUrl,
+    defaultLogoUrl: null,
     invoiceNumber: inv.invoice_number,
     stateLabel,
     customerName: inv.customer_full_name,

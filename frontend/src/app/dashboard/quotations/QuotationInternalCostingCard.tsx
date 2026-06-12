@@ -136,7 +136,7 @@ function CostTable({ title, rows, currency, onChange }: CostTableProps) {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="min-w-[620px] text-left text-xs">
+        <table className="min-w-[560px] text-left text-xs">
           <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-2 py-2">Item</th>
@@ -145,20 +145,31 @@ function CostTable({ title, rows, currency, onChange }: CostTableProps) {
               <th className="w-20 px-2 py-2">Unit cost</th>
               <th className="w-16 px-2 py-2">Qty</th>
               <th className="w-20 px-2 py-2">Total</th>
-              <th className="w-8 px-1 py-2" aria-label="Remove row" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((row, index) => (
               <tr key={row.key} className="align-top">
                 <td className="px-1 py-1">
-                  <input
-                    type="text"
-                    value={row.item}
-                    onChange={(e) => updateRow(index, { item: e.target.value })}
-                    placeholder="Item"
-                    className="w-full min-w-[7rem] rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-900 focus:border-[#14B8A6] focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
-                  />
+                  <div className="flex min-w-[9rem] items-center gap-1">
+                    <input
+                      type="text"
+                      value={row.item}
+                      onChange={(e) => updateRow(index, { item: e.target.value })}
+                      placeholder="Item"
+                      className="w-full rounded border border-slate-200 px-2 py-1.5 text-xs text-slate-900 focus:border-[#14B8A6] focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeRow(index)}
+                      disabled={rows.length <= 1}
+                      className="shrink-0 rounded border border-rose-100 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-30"
+                      aria-label="Delete row"
+                      title="Delete row"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
                 </td>
                 <td className="px-1 py-1">
                   <input
@@ -202,17 +213,6 @@ function CostTable({ title, rows, currency, onChange }: CostTableProps) {
                 </td>
                 <td className="px-2 py-2 text-xs font-semibold text-slate-700 whitespace-nowrap">
                   {formatCurrency(rowTotal(row), currency)}
-                </td>
-                <td className="px-1 py-1">
-                  <button
-                    type="button"
-                    onClick={() => removeRow(index)}
-                    disabled={rows.length <= 1}
-                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"
-                    aria-label="Remove row"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
                 </td>
               </tr>
             ))}

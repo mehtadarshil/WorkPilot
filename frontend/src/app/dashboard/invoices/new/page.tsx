@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson } from '../../../apiClient';
-import { ArrowLeft, ChevronDown, Search, X, Check, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Search, X, Check, Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
 
@@ -14,11 +14,41 @@ interface InvoiceTarget {
   customer_full_name: string;
   customer_address: string | null;
   customer_email: string | null;
+  invoice_work_address_id?: number | null;
   job_id: number | null;
   job_title: string | null;
   description_name: string | null;
   expected_completion: string | null;
   pricing_items: { id: number; item_name: string; quantity: number; total: string | number }[];
+}
+
+type JobWorkAddress = {
+  id: number;
+  name?: string | null;
+  branch_name?: string | null;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  address_line_3?: string | null;
+  town?: string | null;
+  county?: string | null;
+  postcode?: string | null;
+};
+
+function formatWorkAddress(address: JobWorkAddress | null | undefined): string | null {
+  if (!address) return null;
+  const parts = [
+    address.name,
+    address.branch_name,
+    address.address_line_1,
+    address.address_line_2,
+    address.address_line_3,
+    address.town,
+    address.county,
+    address.postcode,
+  ]
+    .map((part) => part?.trim() || '')
+    .filter(Boolean);
+  return parts.length ? parts.join(', ') : null;
 }
 
 function AddInvoiceInner() {
@@ -91,12 +121,14 @@ function AddInvoiceInner() {
         if (jobId) {
           const res = await getJson<{ job: any }>(`/jobs/${jobId}`, token);
           const job = res.job;
+          const workAddress = job.work_address as JobWorkAddress | null | undefined;
           setTarget({
             id: job.id,
             customer_id: job.customer_id,
             customer_full_name: job.customer_full_name,
-            customer_address: job.customer_address,
+            customer_address: formatWorkAddress(workAddress) || job.customer_address,
             customer_email: job.customer_email,
+            invoice_work_address_id: workAddress?.id ?? null,
             job_id: job.id,
             job_title: job.title,
             description_name: job.description_name,
@@ -120,6 +152,7 @@ function AddInvoiceInner() {
              customer_full_name: cust.full_name,
              customer_address: siteAddress,
              customer_email: cust.email,
+             invoice_work_address_id: workAddressIdParam ? Number(workAddressIdParam) : null,
              job_id: null,
              job_title: null,
              description_name: null,
@@ -170,6 +203,17 @@ function AddInvoiceInner() {
     setLineItems(prev => prev.filter((_, i) => i !== index));
   };
 
+  const moveLineItem = (from: number, to: number) => {
+    if (to < 0 || to >= lineItems.length) return;
+    setLineItems(prev => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      if (!item) return prev;
+      next.splice(to, 0, item);
+      return next;
+    });
+  };
+
   const updateLineItem = (index: number, field: 'description' | 'quantity' | 'unit_price', value: string) => {
     setLineItems(prev => {
       const next = [...prev];
@@ -204,7 +248,7 @@ function AddInvoiceInner() {
       const res = await postJson<{ invoice: any }>('/invoices', {
         job_id: target.job_id,
         customer_id: target.customer_id,
-        invoice_work_address_id: workAddressIdParam ? Number(workAddressIdParam) : undefined,
+        invoice_work_address_id: target.invoice_work_address_id ?? undefined,
         invoice_date: new Date(invoiceDate).toISOString(),
         due_date: new Date(dueDate).toISOString(),
         notes: notes || undefined,
@@ -472,14 +516,35 @@ function AddInvoiceInner() {
                               £{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}
                             </td>
                             <td className="px-3 py-2.5 text-center">
-                              <button 
-                                type="button" 
-                                onClick={() => removeLineItem(i)} 
-                                disabled={lineItems.length <= 1}
-                                className="p-1.5 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                              >
-                                <Trash2 className="size-4" />
-                              </button>
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => moveLineItem(i, i - 1)}
+                                  disabled={i === 0}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  aria-label="Move line item up"
+                                >
+                                  <ChevronUp className="size-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveLineItem(i, i + 1)}
+                                  disabled={i === lineItems.length - 1}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  aria-label="Move line item down"
+                                >
+                                  <ChevronDown className="size-4" />
+                                </button>
+                                <button 
+                                  type="button" 
+                                  onClick={() => removeLineItem(i)} 
+                                  disabled={lineItems.length <= 1}
+                                  className="p-1.5 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  aria-label="Remove line item"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -654,7 +719,7 @@ function AddInvoiceInner() {
                         <div className="text-sm text-slate-500 pl-4 py-2 italic -ml-6">No pricing items associated with this target.</div>
                      )}
                      
-                     {target.pricing_items?.map((pi, i) => (
+                     {target.pricing_items?.map((pi) => (
                         <div key={pi.id} className="relative flex items-center gap-4 mb-4 -ml-6 group">
                            {/* Circle Node overlaying line */}
                            <div className="relative z-10 bg-white border-2 border-slate-300 rounded-full w-8 h-8 flex items-center justify-center text-[10px] font-bold text-slate-500 shadow-sm shrink-0 mt-0.5">

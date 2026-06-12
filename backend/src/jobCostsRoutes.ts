@@ -16,6 +16,7 @@ type JobCostsRouteDeps = {
 type CostLine = {
   id: string;
   source: 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
+  editable?: boolean;
   label: string;
   description: string | null;
   quantity: number | null;
@@ -32,8 +33,12 @@ type RateConfig = {
   default_rate_name: string | null;
   travel_hourly_rate: number;
   on_site_hourly_rate: number;
+  first_hour_labour_rate: number;
+  additional_hour_labour_rate: number;
   travel_override: number | null;
   on_site_override: number | null;
+  first_hour_override: number | null;
+  additional_hour_override: number | null;
   updated_at: string | null;
   updated_by_name: string | null;
 };
@@ -110,11 +115,15 @@ async function ensureSchema(pool: Pool): Promise<void> {
       job_id INTEGER PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
       travel_hourly_rate DECIMAL(14,2),
       on_site_hourly_rate DECIMAL(14,2),
+      first_hour_labour_rate DECIMAL(14,2),
+      additional_hour_labour_rate DECIMAL(14,2),
       notes TEXT,
       updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE job_cost_rate_overrides ADD COLUMN IF NOT EXISTS first_hour_labour_rate DECIMAL(14,2)`);
+  await pool.query(`ALTER TABLE job_cost_rate_overrides ADD COLUMN IF NOT EXISTS additional_hour_labour_rate DECIMAL(14,2)`);
 }
 
 async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, write = false): Promise<boolean> {
@@ -147,6 +156,8 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
             lr.name AS default_rate_name,
             o.travel_hourly_rate,
             o.on_site_hourly_rate,
+            o.first_hour_labour_rate,
+            o.additional_hour_labour_rate,
             o.updated_at,
             COALESCE(u.full_name, u.email) AS updated_by_name
      FROM jobs j
@@ -167,13 +178,19 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
   const defaultRate = n(row.default_hourly_rate);
   const travelOverride = row.travel_hourly_rate == null ? null : n(row.travel_hourly_rate);
   const onSiteOverride = row.on_site_hourly_rate == null ? null : n(row.on_site_hourly_rate);
+  const firstHourOverride = row.first_hour_labour_rate == null ? null : n(row.first_hour_labour_rate);
+  const additionalHourOverride = row.additional_hour_labour_rate == null ? null : n(row.additional_hour_labour_rate);
   return {
     default_hourly_rate: defaultRate,
     default_rate_name: row.default_rate_name ? String(row.default_rate_name) : null,
     travel_hourly_rate: travelOverride ?? defaultRate,
     on_site_hourly_rate: onSiteOverride ?? defaultRate,
+    first_hour_labour_rate: firstHourOverride ?? onSiteOverride ?? defaultRate,
+    additional_hour_labour_rate: additionalHourOverride ?? onSiteOverride ?? defaultRate,
     travel_override: travelOverride,
     on_site_override: onSiteOverride,
+    first_hour_override: firstHourOverride,
+    additional_hour_override: additionalHourOverride,
     updated_at: iso(row.updated_at),
     updated_by_name: row.updated_by_name ? String(row.updated_by_name) : null,
   };
@@ -235,6 +252,7 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
     lines.push({
       id: `manual-${row.id}`,
       source: 'manual',
+      editable: true,
       label: String(row.cost_type || 'Site cost'),
       description: row.notes ? `${row.description}\n${row.notes}` : row.description,
       quantity: 1,
@@ -257,15 +275,28 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
     const seconds = n(row.duration_seconds);
     const hours = seconds / 3600;
     const isTravel = row.segment_type === 'travelling';
-    const rate = isTravel ? rateConfig.travel_hourly_rate : rateConfig.on_site_hourly_rate;
+    const firstHour = Math.min(hours, 1);
+    const additionalHours = Math.max(0, hours - 1);
+    const rate = isTravel ? rateConfig.travel_hourly_rate : rateConfig.first_hour_labour_rate;
+    const amount = isTravel
+      ? Math.round(hours * rateConfig.travel_hourly_rate * 100) / 100
+      : Math.round(
+          (firstHour * rateConfig.first_hour_labour_rate +
+            additionalHours * rateConfig.additional_hour_labour_rate) *
+            100,
+        ) / 100;
     lines.push({
       id: `timesheet-${row.id}`,
       source: 'timesheet',
       label: `${isTravel ? 'Travel time' : 'On-site time'}${row.officer_full_name ? ` · ${row.officer_full_name}` : ''}`,
-      description: `${iso(row.clock_in) ?? ''}${row.clock_out ? ` to ${iso(row.clock_out) ?? ''}` : ' to open'}`,
+      description: `${iso(row.clock_in) ?? ''}${row.clock_out ? ` to ${iso(row.clock_out) ?? ''}` : ' to open'}${
+        isTravel
+          ? ''
+          : `\nFirst hour ${firstHour.toFixed(2)}h @ £${rateConfig.first_hour_labour_rate.toFixed(2)}, additional ${additionalHours.toFixed(2)}h @ £${rateConfig.additional_hour_labour_rate.toFixed(2)}`
+      }`,
       quantity: hours,
       unit_amount: rate,
-      amount: Math.round(hours * rate * 100) / 100,
+      amount,
       currency: 'GBP',
       created_at: iso(row.clock_in),
       created_by_name: row.officer_full_name ?? null,
@@ -378,10 +409,12 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
     };
     const travelRate = parseNullableRate(body.travel_hourly_rate);
     const onSiteRate = parseNullableRate(body.on_site_hourly_rate);
+    const firstHourRate = parseNullableRate(body.first_hour_labour_rate);
+    const additionalHourRate = parseNullableRate(body.additional_hour_labour_rate);
     const reset = body.reset_to_default === true;
 
-    if (!reset && travelRate === undefined && onSiteRate === undefined) {
-      return res.status(400).json({ message: 'Provide a valid travel or on-site hourly rate' });
+    if (!reset && travelRate === undefined && onSiteRate === undefined && firstHourRate === undefined && additionalHourRate === undefined) {
+      return res.status(400).json({ message: 'Provide a valid labour rate' });
     }
 
     try {
@@ -389,20 +422,31 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
       if (reset) {
         await pool.query('DELETE FROM job_cost_rate_overrides WHERE job_id = $1', [jobId]);
       } else {
-        const existing = await pool.query('SELECT travel_hourly_rate, on_site_hourly_rate FROM job_cost_rate_overrides WHERE job_id = $1', [jobId]);
+        const existing = await pool.query(
+          'SELECT travel_hourly_rate, on_site_hourly_rate, first_hour_labour_rate, additional_hour_labour_rate FROM job_cost_rate_overrides WHERE job_id = $1',
+          [jobId],
+        );
         const currentTravel = existing.rows[0]?.travel_hourly_rate == null ? null : n(existing.rows[0].travel_hourly_rate);
         const currentOnSite = existing.rows[0]?.on_site_hourly_rate == null ? null : n(existing.rows[0].on_site_hourly_rate);
+        const currentFirstHour = existing.rows[0]?.first_hour_labour_rate == null ? null : n(existing.rows[0].first_hour_labour_rate);
+        const currentAdditionalHour = existing.rows[0]?.additional_hour_labour_rate == null ? null : n(existing.rows[0].additional_hour_labour_rate);
         const nextTravel = travelRate === undefined ? currentTravel : travelRate;
         const nextOnSite = onSiteRate === undefined ? currentOnSite : onSiteRate;
+        const nextFirstHour = firstHourRate === undefined ? currentFirstHour : firstHourRate;
+        const nextAdditionalHour = additionalHourRate === undefined ? currentAdditionalHour : additionalHourRate;
         await pool.query(
-          `INSERT INTO job_cost_rate_overrides (job_id, travel_hourly_rate, on_site_hourly_rate, updated_by, updated_at)
-           VALUES ($1, $2, $3, $4, NOW())
+          `INSERT INTO job_cost_rate_overrides (
+             job_id, travel_hourly_rate, on_site_hourly_rate, first_hour_labour_rate, additional_hour_labour_rate, updated_by, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())
            ON CONFLICT (job_id) DO UPDATE SET
              travel_hourly_rate = EXCLUDED.travel_hourly_rate,
              on_site_hourly_rate = EXCLUDED.on_site_hourly_rate,
+             first_hour_labour_rate = EXCLUDED.first_hour_labour_rate,
+             additional_hour_labour_rate = EXCLUDED.additional_hour_labour_rate,
              updated_by = EXCLUDED.updated_by,
              updated_at = NOW()`,
-          [jobId, nextTravel, nextOnSite, user.userId],
+          [jobId, nextTravel, nextOnSite, nextFirstHour, nextAdditionalHour, user.userId],
         );
       }
       return res.json({ rate_config: await getJobRateConfig(pool, jobId) });
@@ -468,6 +512,60 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
       }
     } catch (error) {
       console.error('Create job cost error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/jobs/:id/costs/:costId', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    const costId = parseId(req.params.costId);
+    if (jobId == null || costId == null) return res.status(400).json({ message: 'Invalid id' });
+    const user = (req as AuthReq).user!;
+    const body = req.body as Record<string, unknown>;
+    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const amount = n(body.amount);
+    const costType = typeof body.cost_type === 'string' && body.cost_type.trim() ? body.cost_type.trim() : 'site_cost';
+    const notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null;
+
+    if (!description) return res.status(400).json({ message: 'Description is required' });
+    if (!(amount > 0)) return res.status(400).json({ message: 'Amount must be greater than zero' });
+    if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'PATCH')) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+
+    try {
+      if (!(await canAccessJob(pool, jobId, user, true))) return res.status(404).json({ message: 'Job not found' });
+      const result = await pool.query(
+        `UPDATE job_cost_entries
+         SET cost_type = $1, description = $2, amount = $3, notes = $4, updated_at = NOW()
+         WHERE id = $5 AND job_id = $6
+         RETURNING id`,
+        [costType, description, amount, notes, costId, jobId],
+      );
+      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Cost entry not found' });
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('Update job cost error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/jobs/:id/costs/:costId', authenticate, async (req: Request, res: Response) => {
+    const jobId = parseId(req.params.id);
+    const costId = parseId(req.params.costId);
+    if (jobId == null || costId == null) return res.status(400).json({ message: 'Invalid id' });
+    const user = (req as AuthReq).user!;
+    if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'DELETE')) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+
+    try {
+      if (!(await canAccessJob(pool, jobId, user, true))) return res.status(404).json({ message: 'Job not found' });
+      const result = await pool.query('DELETE FROM job_cost_entries WHERE id = $1 AND job_id = $2', [costId, jobId]);
+      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Cost entry not found' });
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('Delete job cost error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });

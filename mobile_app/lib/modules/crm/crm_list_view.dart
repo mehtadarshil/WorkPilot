@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import '../open_jobs/open_job_formatters.dart';
+import '../certificates/certificate_catalog.dart';
 import 'crm_list_controller.dart';
 
 class CrmListView extends GetView<CrmListController> {
@@ -38,9 +39,13 @@ class CrmListView extends GetView<CrmListController> {
             ? row['name'] as String
             : 'Part #${row['id']}';
       case 'certifications':
-        return (row['name'] as String?)?.trim().isNotEmpty == true
-            ? row['name'] as String
-            : 'Cert #${row['id']}';
+        final certNo = (row['certificate_number'] as String?)?.trim();
+        final typeSlug = (row['type_slug'] as String?)?.trim() ?? '';
+        final shortLabel = certificateTypeForSlug(typeSlug).shortLabel;
+        if (certNo != null && certNo.isNotEmpty) {
+          return '$certNo · $shortLabel';
+        }
+        return shortLabel.isNotEmpty ? shortLabel : 'Cert #${row['id']}';
       default:
         return '#${row['id']}';
     }
@@ -64,7 +69,16 @@ class CrmListView extends GetView<CrmListController> {
       case 'parts_catalog':
         return (row['mpn'] as String?)?.trim();
       case 'certifications':
-        return (row['description'] as String?)?.trim();
+        final customer = (row['customer_full_name'] as String?)?.trim();
+        final installation = (row['installation_label'] as String?)?.trim();
+        final status = (row['status'] as String?)?.trim() ?? '';
+        final jobNo = (row['job_number'] as String?)?.trim();
+        final parts = <String>[];
+        if (customer != null && customer.isNotEmpty) parts.add(customer);
+        if (installation != null && installation.isNotEmpty) parts.add(installation);
+        if (jobNo != null && jobNo.isNotEmpty) parts.add('Job $jobNo');
+        if (status.isNotEmpty) parts.add(status.toUpperCase());
+        return parts.join(' · ');
       default:
         return null;
     }
@@ -133,25 +147,44 @@ class CrmListView extends GetView<CrmListController> {
             onPressed: Get.back,
           ),
         ),
-        floatingActionButton: controller.module == 'jobs'
-            ? FloatingActionButton.extended(
-                onPressed: () async {
-                  final r = await Get.toNamed(AppRoutes.customerNewJob);
-                  if (r == true) {
-                    controller.reloadFromStart();
-                  }
-                },
-                backgroundColor: AppColors.primary,
-                icon: const Icon(Icons.add_rounded, color: Colors.white),
-                label: Text(
-                  'New Job',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
+        floatingActionButton: () {
+          if (controller.module == 'jobs') {
+            return FloatingActionButton.extended(
+              onPressed: () async {
+                final r = await Get.toNamed(AppRoutes.customerNewJob);
+                if (r == true) {
+                  controller.reloadFromStart();
+                }
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              label: Text(
+                'New Job',
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
-              )
-            : null,
+              ),
+            );
+          } else if (controller.module == 'certifications') {
+            return FloatingActionButton.extended(
+              onPressed: () async {
+                await Get.toNamed(AppRoutes.certificateTypePicker);
+                controller.reloadFromStart();
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              label: Text(
+                'New Certificate',
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            );
+          }
+          return null;
+        }(),
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -489,11 +522,21 @@ class CrmListView extends GetView<CrmListController> {
                               borderRadius: BorderRadius.circular(16),
                               child: ListTile(
                                 onTap: () {
-                                  if (controller.module != 'jobs') return;
-                                  final raw = row['id'];
-                                  final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
-                                  if (id != null) {
-                                    Get.toNamed(AppRoutes.jobDetail, arguments: id);
+                                  if (controller.module == 'jobs') {
+                                    final raw = row['id'];
+                                    final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
+                                    if (id != null) {
+                                      Get.toNamed(AppRoutes.jobDetail, arguments: id);
+                                    }
+                                  } else if (controller.module == 'certifications') {
+                                    final raw = row['id'];
+                                    final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
+                                    if (id != null) {
+                                      Get.toNamed(
+                                        AppRoutes.certificateEditor,
+                                        arguments: {'id': id},
+                                      );
+                                    }
                                   }
                                 },
                                 title: Text(

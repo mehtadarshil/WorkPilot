@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
 
 type LineItemForm = { description: string; quantity: string; unit_price: string };
@@ -147,6 +147,17 @@ export default function EditInvoicePage() {
   const removeLine = (i: number) => {
     if (lineItems.length <= 1) return;
     setLineItems((p) => p.filter((_, idx) => idx !== i));
+  };
+
+  const moveLine = (from: number, to: number) => {
+    if (to < 0 || to >= lineItems.length) return;
+    setLineItems((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      if (!item) return prev;
+      next.splice(to, 0, item);
+      return next;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -478,15 +489,35 @@ export default function EditInvoicePage() {
                         className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(i)}
-                      disabled={lineItems.length <= 1}
-                      className="flex justify-end rounded p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
-                      aria-label="Remove line"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveLine(i, i - 1)}
+                        disabled={i === 0}
+                        className="rounded p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+                        aria-label="Move line up"
+                      >
+                        <ChevronUp className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveLine(i, i + 1)}
+                        disabled={i === lineItems.length - 1}
+                        className="rounded p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+                        aria-label="Move line down"
+                      >
+                        <ChevronDown className="size-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(i)}
+                        disabled={lineItems.length <= 1}
+                        className="rounded p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-30"
+                        aria-label="Remove line"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

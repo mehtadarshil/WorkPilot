@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/values/app_colors.dart';
 import 'certificate_catalog.dart';
 import 'certificate_type_picker_controller.dart';
+import '../../widgets/searchable_select_field.dart';
 import 'widgets/cert_form_widgets.dart';
 
 class CertificateTypePickerView
@@ -39,12 +40,11 @@ class CertificateTypePickerView
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                     children: [
-                      if ((controller.customerName ?? '').isNotEmpty ||
-                          (controller.jobTitle ?? '').isNotEmpty)
+                      if (controller.customerLocked)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: CertSectionCard(
-                            title: controller.customerName ?? 'Certificate',
+                            title: controller.customerName.value,
                             subtitle:
                                 [controller.jobNumber, controller.jobTitle]
                                     .where(
@@ -54,6 +54,39 @@ class CertificateTypePickerView
                                     )
                                     .join(' - '),
                             children: const [],
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: CertSectionCard(
+                            title: 'Customer & Site',
+                            subtitle: 'Select client and address',
+                            children: [
+                              SearchableSelectField<int>(
+                                label: 'Customer *',
+                                hint: 'Choose customer',
+                                sheetTitle: 'Customer',
+                                value: controller.customerId.value > 0 ? controller.customerId.value : null,
+                                options: controller.customerOptions,
+                                decoration: _inputDecoration('Choose customer'),
+                                onChanged: controller.onCustomerChanged,
+                              ),
+                              if (controller.customerId.value > 0) ...[
+                                const SizedBox(height: 16),
+                                SearchableSelectField<int>(
+                                  label: 'Site / work address (optional)',
+                                  hint: 'Use customer address',
+                                  sheetTitle: 'Site / work address',
+                                  value: controller.workAddressId.value,
+                                  allowClear: true,
+                                  clearLabel: 'Use customer address',
+                                  options: controller.workAddressOptions,
+                                  decoration: _inputDecoration('Use customer address'),
+                                  onChanged: controller.onWorkAddressChanged,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       if (controller.errorMessage.value.isNotEmpty)
@@ -180,6 +213,25 @@ class CertificateTypePickerView
           ),
         ),
       ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 14),
+      filled: true,
+      fillColor: AppColors.whiteOverlay(0.06),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
 }

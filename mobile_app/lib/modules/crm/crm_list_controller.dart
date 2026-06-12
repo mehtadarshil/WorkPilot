@@ -29,7 +29,7 @@ class CrmListController extends GetxController {
     'quotations' => 'Quotations',
     'invoices' => 'Invoices',
     'parts_catalog' => 'Part catalog',
-    'certifications' => 'Certifications',
+    'certifications' => 'Certificates',
     _ => 'List',
   };
 

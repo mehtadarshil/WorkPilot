@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
-import { AlertCircle, Calculator, Loader2, Paperclip, Plus, Receipt, RotateCcw, Save, UploadCloud } from 'lucide-react';
-import { getBlob, getJson, patchJson, postJson } from '../../../apiClient';
+import { AlertCircle, Calculator, Loader2, Paperclip, Pencil, Plus, Receipt, RotateCcw, Save, Trash2, UploadCloud } from 'lucide-react';
+import { deleteRequest, getBlob, getJson, patchJson, postJson } from '../../../apiClient';
 
 type CostSource = 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
 
@@ -17,6 +17,7 @@ interface ProofFile {
 interface CostLine {
   id: string;
   source: CostSource;
+  editable?: boolean;
   label: string;
   description: string | null;
   quantity: number | null;
@@ -34,8 +35,12 @@ interface CostPayload {
     default_rate_name: string | null;
     travel_hourly_rate: number;
     on_site_hourly_rate: number;
+    first_hour_labour_rate: number;
+    additional_hour_labour_rate: number;
     travel_override: number | null;
     on_site_override: number | null;
+    first_hour_override: number | null;
+    additional_hour_override: number | null;
     updated_at: string | null;
     updated_by_name: string | null;
   };
@@ -74,6 +79,12 @@ function bytesLabel(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function manualCostId(lineId: string): number | null {
+  if (!lineId.startsWith('manual-')) return null;
+  const id = Number(lineId.slice('manual-'.length));
+  return Number.isFinite(id) ? id : null;
+}
+
 async function fileToPayload(file: File) {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -99,7 +110,14 @@ export default function JobCostsTab({ jobId, token }: Props) {
   const [proofFiles, setProofFiles] = useState<File[]>([]);
   const [rateSaving, setRateSaving] = useState(false);
   const [travelRateInput, setTravelRateInput] = useState('');
-  const [onSiteRateInput, setOnSiteRateInput] = useState('');
+  const [firstHourRateInput, setFirstHourRateInput] = useState('');
+  const [additionalHourRateInput, setAdditionalHourRateInput] = useState('');
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [editCostType, setEditCostType] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   const loadCosts = useCallback(async () => {
     setLoading(true);
@@ -108,7 +126,8 @@ export default function JobCostsTab({ jobId, token }: Props) {
       const res = await getJson<CostPayload>(`/jobs/${jobId}/costs`, token);
       setPayload(res);
       setTravelRateInput(res.rate_config.travel_override == null ? '' : String(res.rate_config.travel_override));
-      setOnSiteRateInput(res.rate_config.on_site_override == null ? '' : String(res.rate_config.on_site_override));
+      setFirstHourRateInput(res.rate_config.first_hour_override == null ? '' : String(res.rate_config.first_hour_override));
+      setAdditionalHourRateInput(res.rate_config.additional_hour_override == null ? '' : String(res.rate_config.additional_hour_override));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load job costs');
     } finally {
@@ -180,12 +199,15 @@ export default function JobCostsTab({ jobId, token }: Props) {
 
   const saveRates = async () => {
     const travel = travelRateInput.trim();
-    const onSite = onSiteRateInput.trim();
+    const firstHour = firstHourRateInput.trim();
+    const additionalHour = additionalHourRateInput.trim();
     const travelNumber = travel === '' ? null : Number(travel);
-    const onSiteNumber = onSite === '' ? null : Number(onSite);
+    const firstHourNumber = firstHour === '' ? null : Number(firstHour);
+    const additionalHourNumber = additionalHour === '' ? null : Number(additionalHour);
     const invalidTravelRate = travelNumber !== null && (!Number.isFinite(travelNumber) || travelNumber < 0);
-    const invalidOnSiteRate = onSiteNumber !== null && (!Number.isFinite(onSiteNumber) || onSiteNumber < 0);
-    if (invalidTravelRate || invalidOnSiteRate) {
+    const invalidFirstHourRate = firstHourNumber !== null && (!Number.isFinite(firstHourNumber) || firstHourNumber < 0);
+    const invalidAdditionalHourRate = additionalHourNumber !== null && (!Number.isFinite(additionalHourNumber) || additionalHourNumber < 0);
+    if (invalidTravelRate || invalidFirstHourRate || invalidAdditionalHourRate) {
       setError('Rates must be positive numbers, or blank to use the price book default.');
       return;
     }
@@ -196,7 +218,8 @@ export default function JobCostsTab({ jobId, token }: Props) {
         `/jobs/${jobId}/costs/rates`,
         {
           travel_hourly_rate: travel === '' ? null : travelNumber,
-          on_site_hourly_rate: onSite === '' ? null : onSiteNumber,
+          first_hour_labour_rate: firstHour === '' ? null : firstHourNumber,
+          additional_hour_labour_rate: additionalHour === '' ? null : additionalHourNumber,
         },
         token,
       );
@@ -221,13 +244,79 @@ export default function JobCostsTab({ jobId, token }: Props) {
     }
   };
 
+  const startEditLine = (line: CostLine) => {
+    if (!line.editable) return;
+    setEditingLineId(line.id);
+    setEditCostType(line.label || 'site_cost');
+    const [mainDescription, ...noteLines] = (line.description ?? '').split('\n');
+    setEditDescription(mainDescription ?? '');
+    setEditNotes(noteLines.join('\n'));
+    setEditAmount(String(line.amount));
+    setShowForm(false);
+  };
+
+  const cancelEditLine = () => {
+    setEditingLineId(null);
+    setEditCostType('');
+    setEditDescription('');
+    setEditAmount('');
+    setEditNotes('');
+  };
+
+  const saveEditLine = async () => {
+    if (!editingLineId) return;
+    const id = manualCostId(editingLineId);
+    const numericAmount = Number(editAmount);
+    if (id == null || !editDescription.trim() || !(numericAmount > 0)) return;
+    setEditSaving(true);
+    setError(null);
+    try {
+      await patchJson(
+        `/jobs/${jobId}/costs/${id}`,
+        {
+          cost_type: editCostType,
+          description: editDescription,
+          amount: numericAmount,
+          notes: editNotes,
+        },
+        token,
+      );
+      cancelEditLine();
+      await loadCosts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update job cost');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const deleteLine = async (line: CostLine) => {
+    const id = manualCostId(line.id);
+    if (id == null) return;
+    if (!window.confirm('Delete this cost entry?')) return;
+    setEditSaving(true);
+    setError(null);
+    try {
+      await deleteRequest(`/jobs/${jobId}/costs/${id}`, token);
+      if (editingLineId === line.id) cancelEditLine();
+      await loadCosts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete job cost');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const canSave = description.trim().length > 0 && Number(amount) > 0 && proofFiles.length > 0 && !saving;
+  const canSaveEdit = editDescription.trim().length > 0 && Number(editAmount) > 0 && !editSaving;
   const summary = payload?.summary;
   const rateConfig = payload?.rate_config;
   const rateDirty =
     rateConfig != null &&
     (travelRateInput.trim() !== (rateConfig.travel_override == null ? '' : String(rateConfig.travel_override)) ||
-      onSiteRateInput.trim() !== (rateConfig.on_site_override == null ? '' : String(rateConfig.on_site_override)));
+      firstHourRateInput.trim() !== (rateConfig.first_hour_override == null ? '' : String(rateConfig.first_hour_override)) ||
+      additionalHourRateInput.trim() !==
+        (rateConfig.additional_hour_override == null ? '' : String(rateConfig.additional_hour_override)));
 
   return (
     <div className="space-y-6">
@@ -279,7 +368,8 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   <div>
                     <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Timesheet labour rates</h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      Used for travel and on-site timesheet costs on this job. Leave blank to use the customer price book default
+                      Used for travel and on-site timesheet costs on this job. On-site labour charges the first hour separately from additional hours.
+                      Leave blank to use the customer price book default
                       {rateConfig.default_rate_name ? ` (${rateConfig.default_rate_name})` : ''}: {money(rateConfig.default_hourly_rate)}/hr.
                     </p>
                   </div>
@@ -290,7 +380,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
                     </p>
                   ) : null}
                 </div>
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_auto]">
                   <RateInput
                     label="Travel £/hr"
                     value={travelRateInput}
@@ -300,11 +390,19 @@ export default function JobCostsTab({ jobId, token }: Props) {
                     disabled={rateSaving}
                   />
                   <RateInput
-                    label="On-site £/hr"
-                    value={onSiteRateInput}
-                    effective={rateConfig.on_site_hourly_rate}
-                    usingDefault={rateConfig.on_site_override == null}
-                    onChange={setOnSiteRateInput}
+                    label="First hour labour £/hr"
+                    value={firstHourRateInput}
+                    effective={rateConfig.first_hour_labour_rate}
+                    usingDefault={rateConfig.first_hour_override == null}
+                    onChange={setFirstHourRateInput}
+                    disabled={rateSaving}
+                  />
+                  <RateInput
+                    label="Additional hour labour £/hr"
+                    value={additionalHourRateInput}
+                    effective={rateConfig.additional_hour_labour_rate}
+                    usingDefault={rateConfig.additional_hour_override == null}
+                    onChange={setAdditionalHourRateInput}
                     disabled={rateSaving}
                   />
                   <div className="flex items-end gap-2">
@@ -319,7 +417,12 @@ export default function JobCostsTab({ jobId, token }: Props) {
                     </button>
                     <button
                       type="button"
-                      disabled={rateSaving || (rateConfig.travel_override == null && rateConfig.on_site_override == null)}
+                      disabled={
+                        rateSaving ||
+                        (rateConfig.travel_override == null &&
+                          rateConfig.first_hour_override == null &&
+                          rateConfig.additional_hour_override == null)
+                      }
                       onClick={resetRates}
                       className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-black uppercase text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -396,6 +499,63 @@ export default function JobCostsTab({ jobId, token }: Props) {
               </div>
             ) : null}
 
+            {editingLineId ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Edit cost entry</h3>
+                    <p className="mt-1 text-xs text-slate-500">Manual site costs can be corrected here. Proof files remain attached.</p>
+                  </div>
+                  <button type="button" onClick={cancelEditLine} className="text-xs font-bold text-slate-500 hover:text-slate-700">
+                    Cancel
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_160px]">
+                  <input
+                    value={editCostType}
+                    onChange={(event) => setEditCostType(event.target.value)}
+                    placeholder="Cost type"
+                    className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
+                  <input
+                    value={editAmount}
+                    onChange={(event) => setEditAmount(event.target.value)}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Amount"
+                    className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
+                </div>
+                <input
+                  value={editDescription}
+                  onChange={(event) => setEditDescription(event.target.value)}
+                  placeholder="Description"
+                  className="mt-3 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                />
+                <textarea
+                  value={editNotes}
+                  onChange={(event) => setEditNotes(event.target.value)}
+                  rows={3}
+                  placeholder="Notes"
+                  className="mt-3 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button type="button" onClick={cancelEditLine} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSaveEdit}
+                    onClick={saveEditLine}
+                    className="rounded-md bg-[#14B8A6] px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {editSaving ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="w-full text-left text-[13px]">
                 <thead className="border-b border-slate-100 bg-[#FBFCFD] text-[11px] font-black uppercase text-slate-500">
@@ -406,12 +566,13 @@ export default function JobCostsTab({ jobId, token }: Props) {
                     <th className="px-4 py-3 text-right">Unit</th>
                     <th className="px-4 py-3 text-right">Amount</th>
                     <th className="px-4 py-3">Proof</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(payload?.lines ?? []).length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-10 text-center font-semibold text-slate-400">No costs found for this job.</td>
+                      <td colSpan={7} className="px-4 py-10 text-center font-semibold text-slate-400">No costs found for this job.</td>
                     </tr>
                   ) : (
                     (Object.keys(grouped) as CostSource[]).flatMap((source) =>
@@ -440,6 +601,31 @@ export default function JobCostsTab({ jobId, token }: Props) {
                                     {proof.original_filename}
                                   </button>
                                 ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-300">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            {line.editable ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditLine(line)}
+                                  className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  title="Edit cost"
+                                >
+                                  <Pencil className="size-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteLine(line)}
+                                  disabled={editSaving}
+                                  className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                                  title="Delete cost"
+                                >
+                                  <Trash2 className="size-4" />
+                                </button>
                               </div>
                             ) : (
                               <span className="text-xs text-slate-300">-</span>

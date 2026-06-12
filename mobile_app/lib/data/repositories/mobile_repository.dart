@@ -570,12 +570,16 @@ class MobileRepository extends BaseRepository {
           totalPages: 1,
         );
       case 'certifications':
-        final res = await api.get<Map<String, dynamic>>('/certifications');
+        q['limit'] = 25;
+        final res = await api.get<Map<String, dynamic>>(
+          '/electrical-certificates',
+          queryParameters: q,
+        );
         final data = res.data;
         return (
-          items: parseList(data?['certifications']),
-          page: 1,
-          totalPages: 1,
+          items: parseList(data?['certificates']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
         );
       default:
         throw ApiException('Unknown CRM module: $module');

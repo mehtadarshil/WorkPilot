@@ -158,6 +158,13 @@ function formatCurrency(amount: number, currency: string): string {
   }
 }
 
+function invoiceSiteAddressLine(invoice: Pick<InvoiceDetails, 'work_site_name' | 'work_site_address'>): string {
+  const siteName = invoice.work_site_name?.trim() || '';
+  const siteAddress = invoice.work_site_address?.trim() || '';
+  if (siteName && siteAddress) return `${siteName} - ${siteAddress}`;
+  return siteName || siteAddress;
+}
+
 /** Parse amount field to integer cents; min 0.01 (1 cent). Accepts "0,01" style input. */
 function parsePaymentInputToCents(raw: string): number | null {
   const t = raw.trim().replace(/\s/g, '').replace(',', '.');
@@ -315,7 +322,13 @@ export default function InvoiceDetailsView() {
   const settings = invoice.settings;
   const companyName = settings?.company_name || 'WorkPilot';
   const taxLabel = settings?.tax_label || 'Tax';
-  const customerAddrLine = invoice.customer_address?.trim() || '—';
+  const siteAddressLine = invoiceSiteAddressLine(invoice);
+  const primaryAddressLabel = siteAddressLine
+    ? 'Site address'
+    : invoice.invoice_custom_address?.trim()
+      ? 'Billing address'
+      : 'Customer address';
+  const primaryAddressLine = siteAddressLine || invoice.invoice_custom_address?.trim() || invoice.customer_address?.trim() || '—';
   const accent =
     settings?.invoice_accent_color && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(settings.invoice_accent_color)
       ? settings.invoice_accent_color
@@ -404,30 +417,9 @@ export default function InvoiceDetailsView() {
                 <span className="font-medium text-slate-700">Customer reference:</span> {invoice.customer_reference_display.trim()}
               </p>
             )}
-            <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
-            <p className="mt-1 text-sm leading-relaxed text-slate-600">{customerAddrLine}</p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">{primaryAddressLabel}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{primaryAddressLine}</p>
           </div>
-          {(invoice.work_site_name?.trim() || invoice.work_site_address?.trim()) && (
-            <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
-              {invoice.work_site_name?.trim() && (
-                <p className="text-base font-bold text-slate-900">{invoice.work_site_name.trim()}</p>
-              )}
-              {invoice.work_site_address?.trim() && (
-                <p className={`text-sm leading-relaxed text-slate-600 ${invoice.work_site_name?.trim() ? 'mt-1' : ''}`}>
-                  {invoice.work_site_address.trim()}
-                </p>
-              )}
-            </div>
-          )}
-          {invoice.invoice_custom_address?.trim() &&
-            !invoice.work_site_name?.trim() &&
-            !invoice.work_site_address?.trim() && (
-              <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Billing address</p>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{invoice.invoice_custom_address.trim()}</p>
-              </div>
-            )}
         </div>
         <div className="flex flex-wrap gap-6 sm:justify-end sm:gap-8">
           <div>
@@ -692,7 +684,7 @@ export default function InvoiceDetailsView() {
           <span className="text-slate-500">
             Address:{' '}
             <strong className="ml-1 inline-block max-w-[400px] truncate align-bottom font-bold text-slate-800">
-              {invoice.customer_address || 'N/A'}
+              {primaryAddressLine}
             </strong>
           </span>
         </div>

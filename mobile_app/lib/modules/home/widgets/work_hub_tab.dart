@@ -106,6 +106,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.description_rounded,
           accent: Color(0xFF34D399),
         ),
+        'certifications': (
+          label: 'Certificates',
+          subtitle: 'Safety & compliance',
+          icon: Icons.verified_outlined,
+          accent: Color(0xFFC4B5FD),
+        ),
       };
 
   @override
@@ -145,6 +151,9 @@ class WorkHubTab extends StatelessWidget {
         add('customers', count: s.customersTotal);
         add('sites', count: s.sitesTotal);
         add('site_reports');
+      }
+      if (p('certifications') && roleUp != 'OFFICER') {
+        add('certifications');
       }
       if (p('quotations')) add('quotations', count: s.quotationsPending);
       if (p('invoices')) add('invoices', count: s.invoicesUnpaid);

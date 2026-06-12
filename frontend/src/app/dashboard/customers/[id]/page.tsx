@@ -711,31 +711,6 @@ export default function CustomerDetailsPage() {
 
           {/* LEFT SIDEBAR (Info Panel) */}
           <div className="w-full lg:w-[340px] shrink-0 border-r border-slate-200 bg-white shadow-[1px_0_5px_rgba(0,0,0,0.02)] flex flex-col">
-            
-            {/* Map: OpenStreetMap embed (no API key); geocode via /api/map-geocode → Nominatim */}
-            <div className="relative h-40 overflow-hidden bg-slate-200">
-              <iframe
-                title="Customer location map"
-                src={mapEmbedSrc}
-                className="absolute inset-0 size-full border-0"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-              {mapGeocoding && (
-                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/20 text-xs font-semibold text-white backdrop-blur-[1px]">
-                  Locating…
-                </div>
-              )}
-              <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
-                <span
-                  className={`rounded px-2 py-0.5 text-xs font-bold text-white shadow-sm ${
-                    data.status === 'ACTIVE' ? 'bg-[#14B8A6]' : data.status === 'LEAD' ? 'bg-amber-500' : 'bg-slate-500'
-                  }`}
-                >
-                  {data.status}
-                </span>
-              </div>
-            </div>
 
             {/* Primary Details Card */}
              <div className="p-5 border-b border-slate-100 relative group">
@@ -857,6 +832,29 @@ export default function CustomerDetailsPage() {
                 </div>
               </div>
             )}
+
+            <div className="border-b border-slate-100 p-5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-[15px] font-bold text-slate-800">Site location map</h3>
+                {mapGeocoding ? (
+                  <span className="text-[11px] font-semibold text-[#14B8A6]">Locating...</span>
+                ) : null}
+              </div>
+              <div className="relative h-44 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                <iframe
+                  title="Customer site address map"
+                  src={mapEmbedSrc}
+                  className="absolute inset-0 size-full border-0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+                {mapGeocoding && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/20 text-xs font-semibold text-white backdrop-blur-[1px]">
+                    Locating...
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="border-b border-slate-100 p-5">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -1375,8 +1373,6 @@ export default function CustomerDetailsPage() {
                    workAddressId={workAddressId}
                    customerDetails={data}
                    invoices={invoices}
-                   mapEmbedSrc={mapEmbedSrc}
-                   mapGeocoding={mapGeocoding}
                  />
                )}
 

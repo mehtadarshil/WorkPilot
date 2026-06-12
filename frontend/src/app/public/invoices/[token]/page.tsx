@@ -67,6 +67,18 @@ export default function PublicInvoicePage() {
     return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
+  const siteAddressLine =
+    invoice.work_site_name?.trim() && invoice.work_site_address?.trim()
+      ? `${invoice.work_site_name.trim()} - ${invoice.work_site_address.trim()}`
+      : invoice.work_site_name?.trim() || invoice.work_site_address?.trim() || '';
+  const primaryAddressLabel = siteAddressLine
+    ? 'Site address'
+    : invoice.invoice_custom_address?.trim() || invoice.billing_address?.trim()
+      ? 'Billing address'
+      : 'Customer address';
+  const primaryAddressLine =
+    siteAddressLine || invoice.invoice_custom_address?.trim() || invoice.billing_address?.trim() || invoice.customer_address?.trim() || '—';
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
       <style dangerouslySetInnerHTML={{ __html: `
@@ -172,22 +184,9 @@ export default function PublicInvoicePage() {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice for</p>
               <p className="text-base font-semibold text-slate-900">{invoice.customer_full_name || '-'}</p>
               {invoice.customer_phone && <p className="text-sm text-slate-600">{invoice.customer_phone}</p>}
-              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer address</p>
-              <p className="mt-1 text-sm leading-relaxed text-slate-600">{invoice.billing_address || invoice.customer_address || '—'}</p>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">{primaryAddressLabel}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-600">{primaryAddressLine}</p>
             </div>
-            {(invoice.work_site_name?.trim() || invoice.work_site_address?.trim()) && (
-              <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-5">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Work / site address</p>
-                {invoice.work_site_name?.trim() && (
-                  <p className="text-base font-bold text-slate-900">{invoice.work_site_name.trim()}</p>
-                )}
-                {invoice.work_site_address?.trim() && (
-                  <p className={`text-sm leading-relaxed text-slate-600 ${invoice.work_site_name?.trim() ? 'mt-1' : ''}`}>
-                    {invoice.work_site_address.trim()}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
           <div className="flex flex-wrap gap-6 sm:justify-end sm:gap-8">
             <div>

@@ -4,6 +4,7 @@ import {
   wrapEmailHtml,
   createMailTransport,
   formatFromHeader,
+  applyTemplateVars,
   type EmailSettingsPayload,
 } from './emailHelpers';
 import { getTenantScopeUserId, requireTenantCrmAccess } from './tenantAccess';
@@ -27,6 +28,105 @@ export type JobEmailRouteDeps = {
 const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+function formatJoinedAddressLines(parts: (string | null | undefined)[]): string {
+  return parts.map((p) => (typeof p === 'string' ? p.trim() : '')).filter(Boolean).join(', ');
+}
+
+function formatCustomerAddressSingleLine(row: {
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  address_line_3?: string | null;
+  town?: string | null;
+  county?: string | null;
+  postcode?: string | null;
+  address?: string | null;
+}): string {
+  const structured = formatJoinedAddressLines([
+    row.address_line_1,
+    row.address_line_2,
+    row.address_line_3,
+    row.town,
+    row.county,
+    row.postcode,
+  ]);
+  return structured || (row.address || '').trim();
+}
+
+function formatWorkAddressSingleLine(row: {
+  wa_name?: string | null;
+  wa_branch_name?: string | null;
+  wa_line1?: string | null;
+  wa_line2?: string | null;
+  wa_line3?: string | null;
+  wa_town?: string | null;
+  wa_county?: string | null;
+  wa_postcode?: string | null;
+}): string {
+  const street = formatJoinedAddressLines([
+    row.wa_line1,
+    row.wa_line2,
+    row.wa_line3,
+    row.wa_town,
+    row.wa_county,
+    row.wa_postcode,
+  ]);
+  const siteName = (row.wa_name || '').trim();
+  const branch = (row.wa_branch_name || '').trim();
+  const namePart = siteName ? (branch ? `${siteName} (${branch})` : siteName) : '';
+  return namePart && street ? `${namePart} - ${street}` : namePart || street;
+}
+
+type JobEmailRow = {
+  id: number;
+  job_number: string | null;
+  title: string;
+  description: string | null;
+  customer_id: number | null;
+  customer_email: string | null;
+  customer_full_name: string | null;
+  cust_addr_line_1: string | null;
+  cust_addr_line_2: string | null;
+  cust_addr_line_3: string | null;
+  cust_town: string | null;
+  cust_county: string | null;
+  cust_postcode: string | null;
+  cust_address: string | null;
+  wa_name: string | null;
+  wa_branch_name: string | null;
+  wa_line1: string | null;
+  wa_line2: string | null;
+  wa_line3: string | null;
+  wa_town: string | null;
+  wa_county: string | null;
+  wa_postcode: string | null;
+};
+
+function buildJobEmailTemplateVars(job: JobEmailRow): Record<string, string> {
+  const customerAddress = formatCustomerAddressSingleLine({
+    address_line_1: job.cust_addr_line_1,
+    address_line_2: job.cust_addr_line_2,
+    address_line_3: job.cust_addr_line_3,
+    town: job.cust_town,
+    county: job.cust_county,
+    postcode: job.cust_postcode,
+    address: job.cust_address,
+  });
+  const workAddress = formatWorkAddressSingleLine(job);
+  const jobNumber = (job.job_number || '').trim() || String(job.id);
+
+  return {
+    customer_name: job.customer_full_name ?? '',
+    customer_address: customerAddress,
+    work_address: workAddress,
+    site_address: workAddress,
+    job_site_address: workAddress,
+    job_id: String(job.id),
+    job_number: jobNumber,
+    job_title: job.title || '',
+    job_description: job.description || '',
+  };
+}
+
 export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): void {
   const { pool, authenticate, loadEmailSettingsPayload, sendUserEmail } = deps;
 
@@ -37,16 +137,17 @@ export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): 
     const userId = getTenantScopeUserId((req as AuthReq).user!);
     const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
 
-    const jobRes = await pool.query<{
-      id: number;
-      title: string;
-      customer_id: number | null;
-      customer_email: string | null;
-      customer_full_name: string | null;
-    }>(
-      `SELECT j.id, j.title, j.customer_id, c.email AS customer_email, c.full_name AS customer_full_name
+    const jobRes = await pool.query<JobEmailRow>(
+      `SELECT j.id, j.job_number, j.title, j.description, j.customer_id,
+              c.email AS customer_email, c.full_name AS customer_full_name,
+              c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+              c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode, c.address AS cust_address,
+              wa.name AS wa_name, wa.branch_name AS wa_branch_name,
+              wa.address_line_1 AS wa_line1, wa.address_line_2 AS wa_line2, wa.address_line_3 AS wa_line3,
+              wa.town AS wa_town, wa.county AS wa_county, wa.postcode AS wa_postcode
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        WHERE j.id = $1${isSuperAdmin ? '' : ' AND j.created_by = $2'}`,
       isSuperAdmin ? [jobId] : [jobId, userId],
     );
@@ -84,10 +185,12 @@ export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): 
         }
       }
 
+      const vars = buildJobEmailTemplateVars(job);
       const title = (job.title || 'Job').trim();
-      const subject = `Job files — ${title} (#${job.id})`;
+      const subject = applyTemplateVars('Job files - {{job_title}} (#{{job_number}})', vars) || `Job files - ${title}`;
       const who = job.customer_full_name?.trim() || 'there';
-      const bodyInner = `<p>Hi ${who},</p><p>Please find the selected files from this job attached.</p><p>Kind regards,</p>`;
+      const siteLine = vars.site_address ? `<p>Site address: ${vars.site_address}</p>` : '';
+      const bodyInner = `<p>Hi ${who},</p><p>Please find the selected files from this job attached.</p>${siteLine}<p>Kind regards,</p>`;
 
       return res.json({
         subject,
@@ -124,8 +227,18 @@ export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): 
       attachments?: { filename?: string; content_base64?: string; content_type?: string }[];
     };
 
-    const jobCheck = await pool.query<{ id: number }>(
-      `SELECT id FROM jobs WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+    const jobCheck = await pool.query<JobEmailRow>(
+      `SELECT j.id, j.job_number, j.title, j.description, j.customer_id,
+              c.email AS customer_email, c.full_name AS customer_full_name,
+              c.address_line_1 AS cust_addr_line_1, c.address_line_2 AS cust_addr_line_2, c.address_line_3 AS cust_addr_line_3,
+              c.town AS cust_town, c.county AS cust_county, c.postcode AS cust_postcode, c.address AS cust_address,
+              wa.name AS wa_name, wa.branch_name AS wa_branch_name,
+              wa.address_line_1 AS wa_line1, wa.address_line_2 AS wa_line2, wa.address_line_3 AS wa_line3,
+              wa.town AS wa_town, wa.county AS wa_county, wa.postcode AS wa_postcode
+       FROM jobs j
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+       WHERE j.id = $1${isSuperAdmin ? '' : ' AND j.created_by = $2'}`,
       isSuperAdmin ? [jobId] : [jobId, userId],
     );
     if ((jobCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
@@ -153,8 +266,11 @@ export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): 
     }
 
     try {
+      const vars = buildJobEmailTemplateVars(jobCheck.rows[0]);
+      const processedSubject = applyTemplateVars(subject, vars);
+      const processedBody = applyTemplateVars(bodyHtmlRaw, vars);
       const sigHtml = appendSig ? emailCfg.default_signature_html : null;
-      const html = wrapEmailHtml(bodyHtmlRaw, sigHtml);
+      const html = wrapEmailHtml(processedBody, sigHtml);
       const from = formatFromHeader(emailCfg.from_name, emailCfg.from_email);
 
       const userAttachments: { filename: string; content: Buffer; contentType?: string }[] = [];
@@ -196,7 +312,7 @@ export function mountJobEmailRoutes(app: Application, deps: JobEmailRouteDeps): 
         to,
         cc: cc || undefined,
         bcc: bcc || undefined,
-        subject,
+        subject: processedSubject,
         html,
         replyTo: emailCfg.reply_to,
         attachments: userAttachments.length > 0 ? userAttachments : undefined,
