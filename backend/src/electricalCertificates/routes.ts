@@ -17,7 +17,7 @@ import {
 import { generateElectricalCertificatePdfBuffer } from './generateCertificatePdf';
 import { PdfRenderUnavailableError } from '../jobClientReportPdf';
 import { sendInlineWorkpilotFile } from '../inlineBlobStorage';
-import { storeCertificateDocumentInlineFiles } from './certificateFileStorage';
+import { resolveCertificateDocumentFileRefs, storeCertificateDocumentInlineFiles } from './certificateFileStorage';
 import {
   loadCertificateTeamMembers,
   memberCanBeSignedBy,
@@ -474,7 +474,9 @@ async function loadCertificate(
     isSuperAdmin ? [id] : [id, userId],
   );
   if ((r.rowCount ?? 0) === 0) return null;
-  return mapRow(r.rows[0] as Record<string, unknown>);
+  const row = r.rows[0] as Record<string, unknown>;
+  row.document = await resolveCertificateDocumentFileRefs(id, row.document);
+  return mapRow(row);
 }
 
 export function mountElectricalCertificateRoutes(app: Application, deps: ElectricalCertificateRouteDeps): void {
@@ -815,6 +817,59 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const cert = await loadCertificate(pool, id, userId, isSuperAdmin);
     if (!cert) return res.status(404).json({ message: 'Certificate not found' });
     return res.json({ certificate: cert });
+  });
+
+  app.post('/api/electrical-certificates/:id/duplicate', ...guard, async (req: Request, res: Response) => {
+    const sourceId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(sourceId)) return res.status(400).json({ message: 'Invalid id' });
+    const userId = getTenantScopeUserId((req as AuthReq).user!);
+    const isSuperAdmin = (req as AuthReq).user!.role === 'SUPER_ADMIN';
+    const source = await loadCertificate(pool, sourceId, userId, isSuperAdmin);
+    if (!source) return res.status(404).json({ message: 'Certificate not found' });
+
+    const body = req.body as { type_slug?: unknown };
+    const targetTypeSlug = normalizeCertificateTypeSlug(
+      typeof body.type_slug === 'string' && body.type_slug.trim() ? body.type_slug : source.type_slug,
+    );
+
+    try {
+      const rawDoc = await pool.query<{ document: unknown }>(
+        'SELECT document FROM electrical_certificates WHERE id = $1',
+        [sourceId],
+      );
+      const resolvedDocument = await resolveCertificateDocumentFileRefs(sourceId, rawDoc.rows[0]?.document ?? source.document);
+      const resolvedObject =
+        resolvedDocument && typeof resolvedDocument === 'object' ? (resolvedDocument as Record<string, unknown>) : {};
+      const doc = coerceDocument({ ...resolvedObject, typeSlug: targetTypeSlug });
+      const certNumber = await generateCertificateNumber(pool, userId, targetTypeSlug);
+
+      const ins = await pool.query(
+        `INSERT INTO electrical_certificates (certificate_number, job_number, type_slug, status, customer_id, work_address_id, job_id, document, created_by, updated_by)
+         VALUES ($1, $2, $3, 'in_progress', $4, $5, $6, $7::jsonb, $8, $8)
+         RETURNING id`,
+        [
+          certNumber,
+          source.job_number,
+          targetTypeSlug,
+          source.customer_id,
+          source.work_address_id,
+          source.job_id,
+          JSON.stringify(doc),
+          userId,
+        ],
+      );
+      const newId = (ins.rows[0] as { id: number }).id;
+      const storedDoc = await storeCertificateDocumentInlineFiles(newId, doc);
+      await pool.query('UPDATE electrical_certificates SET document = $1::jsonb WHERE id = $2', [
+        JSON.stringify(storedDoc),
+        newId,
+      ]);
+      const duplicated = await loadCertificate(pool, newId, userId, isSuperAdmin);
+      return res.status(201).json({ certificate: duplicated });
+    } catch (e) {
+      console.error('Duplicate electrical certificate error:', e);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
   });
 
   app.post('/api/electrical-certificates', ...guard, async (req: Request, res: Response) => {

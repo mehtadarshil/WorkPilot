@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Download, Mail, Phone, Plus, Printer, Search, X, Paperclip } from 'lucide-react';
+import { CalendarDays, Download, Mail, Phone, Plus, Printer, Search, X, Paperclip, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
-import { getBlob, getJson, postJson } from '../../../apiClient';
+import { deleteRequest, getBlob, getJson, postJson } from '../../../apiClient';
 
 type RecordType = 'note' | 'email' | 'sms' | 'phone' | 'schedule';
 type ObjectType = 'customer' | 'job' | 'invoice' | 'property' | 'branch' | 'asset';
@@ -364,6 +364,17 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
     }
   };
 
+  const deleteRecord = async (id: number) => {
+    if (!token || !customerId) return;
+    if (!window.confirm('Are you sure you want to delete this communication record?')) return;
+    try {
+      await deleteRequest(`/customers/${customerId}/communications/${id}`, token);
+      fetchCommunications();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete communication record');
+    }
+  };
+
   const exportJson = () => {
     const data = JSON.stringify(records, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
@@ -463,7 +474,16 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
                             </p>
                           </div>
                         </div>
-                        <p className="text-xs text-slate-500">{dayjs(item.created_at).format('ddd D MMM YYYY (h:mm a)')}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-slate-500">{dayjs(item.created_at).format('ddd D MMM YYYY (h:mm a)')}</p>
+                          <button
+                            onClick={() => deleteRecord(item.id)}
+                            className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                            title="Delete record"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 space-y-1 text-sm text-slate-700">
                         {item.from_value && <p><span className="font-semibold text-slate-800">From:</span> {item.from_value}</p>}

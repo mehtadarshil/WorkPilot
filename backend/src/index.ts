@@ -6089,6 +6089,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       ? req.query.state
       : '';
     const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
+    const includeWorkAddressInvoices = req.query.include_work_address_invoices === 'true' || req.query.include_work_address_invoices === '1';
     const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
     const priorityFilter = typeof req.query.priority === 'string' && JOB_PRIORITIES.includes(req.query.priority as typeof JOB_PRIORITIES[number])
       ? req.query.priority
@@ -12364,6 +12365,7 @@ async function runAutomatedServiceReminders(pool: Pool): Promise<{ sent: number;
       id: number;
       title: string | null;
       customer_id: number;
+      work_address_id: number | null;
       expected_completion: Date;
       completed_service_items: unknown;
       job_contact_id: number | null;
@@ -12393,7 +12395,7 @@ async function runAutomatedServiceReminders(pool: Pool): Promise<{ sent: number;
       wa_county: string | null;
       wa_postcode: string | null;
     }>(
-      `SELECT j.id, j.title, j.customer_id, j.expected_completion, j.completed_service_items, j.job_contact_id,
+      `SELECT j.id, j.title, j.customer_id, j.work_address_id, j.expected_completion, j.completed_service_items, j.job_contact_id,
               c.full_name AS customer_name, c.email AS customer_email,
               COALESCE(c.service_reminders_enabled, true) AS service_reminders_enabled,
               c.phone AS customer_phone,
@@ -12587,9 +12589,9 @@ async function runAutomatedServiceReminders(pool: Pool): Promise<{ sent: number;
           );
           await pool.query(
             `INSERT INTO customer_communications
-              (customer_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
-             VALUES ($1, 'email', $2, $3, 'sent', $4, 'job', $5, $6)`,
-            [job.customer_id, subject, bodyInner, toEmail, job.id, tenantUserId],
+              (customer_id, work_address_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
+             VALUES ($1, $2, 'email', $3, $4, 'sent', $5, 'job', $6, $7)`,
+            [job.customer_id, job.work_address_id ?? null, subject, bodyInner, toEmail, job.id, tenantUserId],
           );
           sent += 1;
         } catch (e) {
@@ -13094,6 +13096,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       ? req.query.state
       : '';
     const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
+    const includeWorkAddressInvoices = req.query.include_work_address_invoices === 'true' || req.query.include_work_address_invoices === '1';
     const jobIdForList = typeof req.query.job_id === 'string' ? parseInt(req.query.job_id, 10) : NaN;
     const listScopedToJob = Number.isFinite(jobIdForList) && jobIdForList > 0;
     const offset = (page - 1) * limit;
@@ -13129,7 +13132,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       conditions.push(`i.customer_id = $${p++}`);
       countParams.push(customerId);
       listParams.push(customerId);
-      if (!(invoiceWorkAddressId && Number.isFinite(invoiceWorkAddressId)) && !(jobId && Number.isFinite(jobId))) {
+      if (!includeWorkAddressInvoices && !(invoiceWorkAddressId && Number.isFinite(invoiceWorkAddressId)) && !(jobId && Number.isFinite(jobId))) {
         /* Customer-level list: only invoices not tied to a work / site; work-site invoices use invoice_work_address_id. */
         conditions.push(`i.invoice_work_address_id IS NULL`);
       }
@@ -13153,12 +13156,15 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbInvoice & { customer_full_name?: string; job_title?: string }>(
+    const listResult = await pool.query<DbInvoice & { customer_full_name?: string; job_title?: string; work_address_name?: string | null }>(
       `SELECT i.id, i.invoice_number, i.customer_id, i.job_id, i.invoice_date, i.due_date, i.subtotal, i.tax_amount, i.total_amount, i.total_paid, i.currency, i.state, i.created_at,
-        c.full_name AS customer_full_name, j.title AS job_title
+        c.full_name AS customer_full_name, j.title AS job_title,
+        COALESCE(NULLIF(TRIM(iwa.name), ''), NULLIF(TRIM(jwa.name), '')) AS work_address_name
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN jobs j ON j.id = i.job_id
+       LEFT JOIN customer_work_addresses iwa ON iwa.id = i.invoice_work_address_id AND iwa.customer_id = i.customer_id
+       LEFT JOIN customer_work_addresses jwa ON jwa.id = j.work_address_id AND jwa.customer_id = i.customer_id
        ${whereClause}
        ORDER BY i.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -13196,6 +13202,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       customer_full_name: r.customer_full_name ?? null,
       job_id: r.job_id ?? null,
       job_title: r.job_title ?? null,
+      work_address_name: r.work_address_name ?? null,
       invoice_date: formatInvoiceDateFromDb(r.invoice_date),
       due_date: formatInvoiceDateFromDb(r.due_date),
       subtotal: parseFloat(r.subtotal),
@@ -17958,7 +17965,15 @@ app.get('/api/customers/:customerId/jobs', authenticate, async (req: Authenticat
       whereClause += ' AND j.work_address_id IS NULL';
     }
     const result = await pool.query(
-      `SELECT j.*, jd.name as description_name FROM jobs j 
+      `SELECT j.*, jd.name as description_name,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
+                NULLIF(TRIM(j.contact_name), ''),
+                c.full_name
+              ) AS site_contact_name
+       FROM jobs j 
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id AND jc.customer_id = j.customer_id
        LEFT JOIN job_descriptions jd ON j.job_description_id = jd.id
        ${whereClause} ORDER BY j.created_at DESC`,
       params
@@ -20300,8 +20315,6 @@ app.get('/api/customers/:customerId/communications', authenticate, requireTenant
     if (workAddressId && Number.isFinite(workAddressId)) {
       conditions.push(`cc.work_address_id = $${p++}`);
       params.push(workAddressId);
-    } else {
-      conditions.push(`cc.work_address_id IS NULL`);
     }
 
     if (type && ['note', 'email', 'sms', 'phone', 'schedule'].includes(type)) {
@@ -20485,6 +20498,37 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
       : 500;
     const message = error instanceof Error && statusCode !== 500 ? error.message : 'Internal server error';
     return res.status(statusCode).json({ message });
+  }
+});
+
+app.delete('/api/customers/:customerId/communications/:id', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const communicationId = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(communicationId)) {
+    return res.status(400).json({ message: 'Invalid ID parameters' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    const c = customer.rows[0] as { created_by: number | null };
+    if (!isSuperAdmin && c.created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const result = await pool.query(
+      'DELETE FROM customer_communications WHERE id = $1 AND customer_id = $2 RETURNING id',
+      [communicationId, customerId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Communication record not found' });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error('Delete customer communication error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 

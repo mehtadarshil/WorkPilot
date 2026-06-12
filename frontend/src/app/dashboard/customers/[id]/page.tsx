@@ -287,6 +287,7 @@ interface Job {
   created_at: string;
   description_name: string | null;
   expected_completion: string | null;
+  site_contact_name?: string | null;
 }
 
 interface CustomerInvoice {
@@ -341,7 +342,7 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['Overview', 'All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
+    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
     let initial = tab && allowed.includes(tab) ? tab : 'Overview';
     if (workAddressId && initial === 'Work address') initial = 'Overview';
     return initial;
@@ -356,7 +357,7 @@ export default function CustomerDetailsPage() {
   const [noteUploadError, setNoteUploadError] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [historyType, setHistoryType] = useState<'jobs' | 'invoices' | 'credit_notes'>('jobs');
+  const [historyType, setHistoryType] = useState<'' | 'jobs' | 'invoices' | 'credit_notes'>('');
   const [mapEmbedSrc, setMapEmbedSrc] = useState<string>(() => buildOsmEmbedUrl(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lon));
   const [mapGeocoding, setMapGeocoding] = useState(false);
   const [invoiceReminderPrefSaving, setInvoiceReminderPrefSaving] = useState(false);
@@ -372,10 +373,10 @@ export default function CustomerDetailsPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   // Sync tab from URL when the query changes. Do not depend on [activeTab]: including it caused
-  // any in-app tab click to be overwritten whenever `?tab=` was present in the URL (e.g. Files → All works).
+  // any in-app tab click to be overwritten whenever `?tab=` was present in the URL.
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['Overview', 'All works', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
+    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
         setActiveTab('Overview');
@@ -416,6 +417,7 @@ export default function CustomerDetailsPage() {
     try {
       const qp = new URLSearchParams({ customer_id: id, limit: '100' });
       if (workAddressId) qp.set('invoice_work_address_id', workAddressId);
+      else qp.set('include_work_address_invoices', 'true');
       const res = await getJson<{ invoices: CustomerInvoice[] }>(`/invoices?${qp.toString()}`, token);
       setInvoices(res.invoices || []);
     } catch (err) {
@@ -526,37 +528,44 @@ export default function CustomerDetailsPage() {
   ]);
 
   const historyRows = useMemo(() => {
-    if (historyType === 'jobs') {
-      return jobs
-        .filter((j) => ['completed', 'closed'].includes(j.state))
-        .map((j) => ({
-          id: `job-${j.id}`,
-          date: j.created_at,
-          typeLabel: 'Job',
-          recordNo: j.id.toString().padStart(4, '0'),
-          description: j.description_name || j.title,
-          total: '-',
-          balance: '-',
-          viewPath: `/dashboard/jobs/${j.id}`,
-          badgeClass: 'bg-slate-100 text-slate-600',
-        }));
-    }
-
-    if (historyType === 'invoices') {
-      return invoices.map((inv) => ({
-        id: `invoice-${inv.id}`,
-        date: inv.invoice_date,
-        typeLabel: 'Invoice',
-        recordNo: inv.invoice_number,
-        description: inv.job_title || 'Invoice',
-        total: `£${Number(inv.total_amount).toFixed(2)}`,
-        balance: `£${Math.max(0, Number(inv.total_amount) - Number(inv.total_paid)).toFixed(2)}`,
-        viewPath: `/dashboard/invoices/${inv.id}`,
-        badgeClass: inv.state === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+    const jobRows = jobs
+      .filter((j) => ['completed', 'closed'].includes(j.state))
+      .map((j) => ({
+        id: `job-${j.id}`,
+        date: j.created_at,
+        typeLabel: 'Job',
+        recordNo: j.id.toString().padStart(4, '0'),
+        description: j.description_name || j.title,
+        contactName: j.site_contact_name ?? null,
+        total: '-',
+        balance: '-',
+        viewPath: `/dashboard/jobs/${j.id}`,
+        badgeClass: 'bg-slate-100 text-slate-600',
       }));
-    }
 
-    return [];
+    const invoiceRows = invoices.map((inv) => ({
+      id: `invoice-${inv.id}`,
+      date: inv.invoice_date,
+      typeLabel: 'Invoice',
+      recordNo: inv.invoice_number,
+      description: inv.job_title || 'Invoice',
+      contactName: null,
+      total: `£${Number(inv.total_amount).toFixed(2)}`,
+      balance: `£${Math.max(0, Number(inv.total_amount) - Number(inv.total_paid)).toFixed(2)}`,
+      viewPath: `/dashboard/invoices/${inv.id}`,
+      badgeClass: inv.state === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+    }));
+
+    const rows =
+      historyType === 'jobs'
+        ? jobRows
+        : historyType === 'invoices'
+          ? invoiceRows
+          : historyType === 'credit_notes'
+            ? []
+            : [...jobRows, ...invoiceRows];
+
+    return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [historyType, jobs, invoices]).filter((row) => {
     if (!historySearch.trim()) return true;
     const text = `${row.recordNo} ${row.description} ${row.typeLabel}`.toLowerCase();
@@ -617,7 +626,6 @@ export default function CustomerDetailsPage() {
   const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
   const tabs: { key: string; label: string }[] = [
     { key: 'Overview', label: 'Overview' },
-    { key: 'All works', label: 'All works' },
     { key: 'Communications', label: 'Communications' },
     { key: 'Contacts', label: 'Contacts' },
     ...(workAddressId ? [{ key: 'Invoices', label: 'Invoices' }] : []),
@@ -1368,16 +1376,13 @@ export default function CustomerDetailsPage() {
              <div className="p-4 md:p-6 lg:p-8 overflow-y-auto">
                
                {activeTab === 'Overview' && (
-                 <CustomerOverviewMapTab
-                   customerId={id}
-                   workAddressId={workAddressId}
-                   customerDetails={data}
-                   invoices={invoices}
-                 />
-               )}
-
-               {activeTab === 'All works' && (
                  <div className="space-y-6 max-w-6xl mx-auto">
+                   <CustomerOverviewMapTab
+                     customerId={id}
+                     workAddressId={workAddressId}
+                     customerDetails={data}
+                     invoices={invoices}
+                   />
                     
                     {/* Ongoing works block */}
                     <div className="bg-white border border-slate-200 rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
@@ -1405,14 +1410,15 @@ export default function CustomerDetailsPage() {
                                <th className="px-5 py-3 border-b border-slate-200">Type</th>
                                <th className="px-5 py-3 border-b border-slate-200">Record no</th>
                                <th className="px-5 py-3 border-b border-slate-200">Description</th>
-                               <th className="px-5 py-3 border-b border-slate-200">Next visit booked</th>
+                              <th className="px-5 py-3 border-b border-slate-200">Contact</th>
+                              <th className="px-5 py-3 border-b border-slate-200">Next visit booked</th>
                                <th className="px-5 py-3 border-b border-slate-200 text-right">Actions</th>
                              </tr>
                            </thead>
                            <tbody className="divide-y divide-slate-100 text-slate-700">
                              {jobs.filter(j => !['completed', 'closed'].includes(j.state)).length === 0 ? (
                                <tr>
-                                 <td colSpan={6} className="px-5 py-8 text-center text-slate-400">No ongoing works found.</td>
+                                 <td colSpan={7} className="px-5 py-8 text-center text-slate-400">No ongoing works found.</td>
                                </tr>
                              ) : (
                                jobs.filter(j => !['completed', 'closed'].includes(j.state)).map(j => (
@@ -1423,6 +1429,7 @@ export default function CustomerDetailsPage() {
                                    </td>
                                    <td className="px-5 py-4 text-slate-500">{j.id.toString().padStart(4, '0')}</td>
                                    <td className="px-5 py-4 w-64 max-w-[300px] truncate font-medium">{j.description_name || j.title}</td>
+                                   <td className="px-5 py-4 text-slate-600">{j.site_contact_name || '—'}</td>
                                    <td className="px-5 py-4 text-slate-500">
                                       {j.expected_completion ? dayjs(j.expected_completion).format('DD/MM/YYYY HH:mm') : 'No date set'}
                                    </td>
@@ -1467,9 +1474,9 @@ export default function CustomerDetailsPage() {
                        
                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-0.5">
                           <span className="text-xs font-medium text-slate-500 px-3 uppercase tracking-wide">Filter by type:</span>
-                          <button onClick={() => setHistoryType('jobs')} className={`${historyType === 'jobs' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Jobs</button>
-                          <button onClick={() => setHistoryType('invoices')} className={`${historyType === 'invoices' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Invoices</button>
-                          <button onClick={() => setHistoryType('credit_notes')} className={`${historyType === 'credit_notes' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Credit notes</button>
+                          <button onClick={() => setHistoryType(historyType === 'jobs' ? '' : 'jobs')} className={`${historyType === 'jobs' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Jobs</button>
+                          <button onClick={() => setHistoryType(historyType === 'invoices' ? '' : 'invoices')} className={`${historyType === 'invoices' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Invoices</button>
+                          <button onClick={() => setHistoryType(historyType === 'credit_notes' ? '' : 'credit_notes')} className={`${historyType === 'credit_notes' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Credit notes</button>
                        </div>
                     </div>
 
@@ -1487,6 +1494,7 @@ export default function CustomerDetailsPage() {
                                <th className="px-5 py-3 border-b border-slate-200">Type</th>
                                <th className="px-5 py-3 border-b border-slate-200">Record no</th>
                                <th className="px-5 py-3 border-b border-slate-200">Description</th>
+                               <th className="px-5 py-3 border-b border-slate-200">Contact</th>
                                <th className="px-5 py-3 border-b border-slate-200">Total</th>
                                <th className="px-5 py-3 border-b border-slate-200">Balance</th>
                                <th className="px-5 py-3 border-b border-slate-200 text-right">Actions</th>
@@ -1495,11 +1503,11 @@ export default function CustomerDetailsPage() {
                            <tbody className="divide-y divide-slate-100 text-slate-700">
                              {historyType === 'credit_notes' ? (
                                <tr>
-                                 <td colSpan={7} className="px-5 py-8 text-center text-slate-400">Credit notes are not available yet.</td>
+                                 <td colSpan={8} className="px-5 py-8 text-center text-slate-400">Credit notes are not available yet.</td>
                                </tr>
                              ) : historyRows.length === 0 ? (
                                <tr>
-                                 <td colSpan={7} className="px-5 py-8 text-center text-slate-400">No history found.</td>
+                                 <td colSpan={8} className="px-5 py-8 text-center text-slate-400">No history found.</td>
                                </tr>
                              ) : (
                                historyRows.map((r) => (
@@ -1510,6 +1518,7 @@ export default function CustomerDetailsPage() {
                                    </td>
                                    <td className="px-5 py-4 text-slate-500">{r.recordNo}</td>
                                    <td className="px-5 py-4 w-64 max-w-[300px] truncate">{r.description}</td>
+                                   <td className="px-5 py-4 text-slate-600">{r.contactName || '—'}</td>
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.total}</td>
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.balance}</td>
                                    <td className="px-5 py-4 text-right">
@@ -1598,7 +1607,7 @@ export default function CustomerDetailsPage() {
                 />
               )}
 
-              {activeTab !== 'Overview' && activeTab !== 'All works' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Site images' && activeTab !== 'Files' && activeTab !== 'Site Reports' && (
+              {activeTab !== 'Overview' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Site images' && activeTab !== 'Files' && activeTab !== 'Site Reports' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

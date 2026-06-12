@@ -165,6 +165,7 @@ export async function runSiteReportRenewalReminderEmails(
     const reportsRes = await pool.query<{
       report_id: number;
       customer_id: number;
+      work_address_id: number | null;
       renewal_anchor_date: unknown;
       renewal_interval_years: number | null;
       renewal_early_days: number | null;
@@ -198,7 +199,7 @@ export async function runSiteReportRenewalReminderEmails(
       job_contact_first_name: string | null;
       job_contact_surname: string | null;
     }>(
-      `SELECT csr.id AS report_id, csr.customer_id,
+      `SELECT csr.id AS report_id, csr.customer_id, csr.work_address_id,
               csr.renewal_anchor_date, csr.renewal_interval_years, csr.renewal_early_days, csr.renewal_job_id,
               csr.report_title,
               c.full_name AS customer_name, c.email AS customer_email,
@@ -387,9 +388,9 @@ export async function runSiteReportRenewalReminderEmails(
         const commObjectId = row.renewal_job_id != null ? row.renewal_job_id : row.customer_id;
         await pool.query(
           `INSERT INTO customer_communications
-            (customer_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
-           VALUES ($1, 'email', $2, $3, 'sent', $4, $5, $6, $7)`,
-          [row.customer_id, subject, bodyInner, toEmail, commObjectType, commObjectId, tenantUserId],
+            (customer_id, work_address_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
+           VALUES ($1, $2, 'email', $3, $4, 'sent', $5, $6, $7, $8)`,
+          [row.customer_id, row.work_address_id ?? null, subject, bodyInner, toEmail, commObjectType, commObjectId, tenantUserId],
         );
         sent += 1;
       } catch (e) {
@@ -406,6 +407,7 @@ export async function runSiteReportRenewalReminderEmails(
       renewal_interval_years: number | null;
       renewal_early_days: number | null;
       renewal_job_id: number | null;
+      work_address_id: number | null;
       customer_id: number;
       customer_name: string | null;
       customer_email: string | null;
@@ -436,6 +438,7 @@ export async function runSiteReportRenewalReminderEmails(
               ec.renewal_interval_years,
               ec.renewal_early_days,
               ec.renewal_job_id,
+              ec.work_address_id,
               c.id AS customer_id,
               c.full_name AS customer_name,
               c.email AS customer_email,
@@ -584,10 +587,11 @@ export async function runSiteReportRenewalReminderEmails(
         );
         await pool.query(
           `INSERT INTO customer_communications
-            (customer_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
-           VALUES ($1, 'email', $2, $3, 'sent', $4, $5, $6, $7)`,
+            (customer_id, work_address_id, record_type, subject, message, status, to_value, object_type, object_id, created_by)
+           VALUES ($1, $2, 'email', $3, $4, 'sent', $5, $6, $7, $8)`,
           [
             row.customer_id,
+            row.work_address_id ?? null,
             subject,
             bodyInner,
             toEmail,

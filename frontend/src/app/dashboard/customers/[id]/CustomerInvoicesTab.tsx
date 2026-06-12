@@ -38,6 +38,7 @@ export default function CustomerInvoicesTab({ customerId, workAddressId }: Custo
     try {
       const qp = new URLSearchParams({ customer_id: customerId, limit: '1000' });
       if (workAddressId) qp.set('invoice_work_address_id', workAddressId);
+      else qp.set('include_work_address_invoices', 'true');
       
       const res = await getJson<{ invoices: Invoice[] }>(`/invoices?${qp.toString()}`, token);
       setInvoices(res.invoices || []);
