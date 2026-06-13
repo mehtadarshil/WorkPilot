@@ -873,7 +873,7 @@ export default function JobDetailsPage() {
                   ? 'Updating…'
                   : job.charge_type === 'free'
                     ? 'Paid Job'
-                    : 'Free Job'}
+                    : 'Free of charge'}
               </button>
               <button
                 type="button"
@@ -900,7 +900,7 @@ export default function JobDetailsPage() {
         )}
         {job.charge_type === 'free' && (
           <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
-            Free Job
+            Free of charge
           </span>
         )}
         <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{job.description_name || job.title}</strong></span>
