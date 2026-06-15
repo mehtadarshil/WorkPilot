@@ -579,7 +579,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     const SizedBox(height: 4),
                     TextField(
                       controller: _taxC,
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: const InputDecoration(
                         labelText: 'Tax %',
@@ -633,7 +633,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           width: 48,
           child: TextField(
             controller: l.qtyC,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
             decoration: const InputDecoration(hintText: 'Qty', hintStyle: TextStyle(color: Colors.white38)),
           ),
@@ -643,7 +643,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           width: 64,
           child: TextField(
             controller: l.priceC,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
             decoration: const InputDecoration(hintText: 'Price', hintStyle: TextStyle(color: Colors.white38)),
           ),

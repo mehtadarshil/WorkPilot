@@ -30,7 +30,13 @@ class BiometricLockController extends GetxController {
     try {
       final success = await _biometric.authenticate();
       if (success) {
-        Get.offAllNamed(AppRoutes.home);
+        if (Get.previousRoute.isNotEmpty &&
+            Get.previousRoute != '/' &&
+            Get.previousRoute != AppRoutes.biometricLock) {
+          Get.back();
+        } else {
+          Get.offAllNamed(AppRoutes.home);
+        }
       } else {
         errorMessage.value = 'Authentication failed. Please try again.';
       }

@@ -43,6 +43,7 @@ import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
 import { mountJobNotesRoutes } from './jobNotesRoutes';
 import { mountJobCostsRoutes } from './jobCostsRoutes';
+import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import {
@@ -1318,6 +1319,7 @@ async function initDb() {
   `);
   await pool.query(`ALTER TABLE customer_communications ADD COLUMN IF NOT EXISTS cc_value VARCHAR(255)`);
   await pool.query(`ALTER TABLE customer_communications ADD COLUMN IF NOT EXISTS bcc_value VARCHAR(255)`);
+  await pool.query(`ALTER TABLE customer_communications ADD COLUMN IF NOT EXISTS attachment_ids JSONB DEFAULT '[]'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_communications_customer_id ON customer_communications(customer_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_communications_created_at ON customer_communications(created_at DESC)`);
   await pool.query(
@@ -1730,6 +1732,22 @@ async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_diary_event_technical_notes_diary ON diary_event_technical_notes(diary_event_id)`,
   );
   await pool.query(`ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS abort_reason TEXT`);
+  await pool.query(`ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS next_job_state VARCHAR(50)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS diary_event_status_logs (
+      id SERIAL PRIMARY KEY,
+      diary_event_id INTEGER NOT NULL REFERENCES diary_events(id) ON DELETE CASCADE,
+      status VARCHAR(50) NOT NULL,
+      latitude NUMERIC(10, 7),
+      longitude NUMERIC(10, 7),
+      timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_diary_event_status_logs_event ON diary_event_status_logs(diary_event_id)`,
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS diary_abort_reasons (
       id SERIAL PRIMARY KEY,
@@ -2204,6 +2222,7 @@ async function initDb() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_event ON diary_event_officers(diary_event_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
+  await ensureStaffWorkSchema(pool);
 
   // Migrate existing single-officer assignments into junction tables
   await pool.query(`
@@ -2748,6 +2767,23 @@ async function applyDiaryStatusToTimesheet(
     await closeOpenTimesheetSegments(client, officerId);
     await openTimesheetSegment(client, officerId, 'on_site', diaryEventId);
   }
+}
+
+async function logDiaryEventStatusTransition(
+  client: PoolClient | Pool,
+  diaryEventId: number,
+  status: string,
+  latitude: number | null,
+  longitude: number | null,
+  timestamp: string | Date | null,
+  userId: number | null,
+): Promise<void> {
+  const ts = timestamp ? new Date(timestamp) : new Date();
+  await client.query(
+    `INSERT INTO diary_event_status_logs (diary_event_id, status, latitude, longitude, timestamp, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [diaryEventId, status, latitude, longitude, ts, userId],
+  );
 }
 
 app.get('/api/health', async (req: Request, res: Response) => {
@@ -8180,6 +8216,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               NULLIF(TRIM(c.postcode), '') AS customer_postcode,
               o.full_name AS officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
+              EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
                 NULLIF(TRIM(CONCAT_WS(' ', wa.title, wa.first_name, wa.surname)), ''),
@@ -8385,6 +8422,17 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       };
     });
 
+    const logsRes = await pool.query(
+      `SELECT status, latitude, longitude, timestamp FROM diary_event_status_logs WHERE diary_event_id = $1 ORDER BY timestamp ASC, id ASC`,
+      [id]
+    );
+    const statusLogs = logsRes.rows.map(r => ({
+      status: r.status,
+      latitude: r.latitude != null ? parseFloat(String(r.latitude)) : null,
+      longitude: r.longitude != null ? parseFloat(String(String(r.latitude)) !== 'null' ? String(r.longitude) : '0') : null,
+      timestamp: (r.timestamp as Date).toISOString()
+    }));
+
     const technicalNotes = customerSpecificNotes.map((n) => ({
       id: n.id,
       notes: n.description,
@@ -8433,6 +8481,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         site_images: siteImages,
         officer_full_name: row.officer_full_name,
         job_report_question_count: (row.job_report_question_count as number) ?? 0,
+        job_report_submitted: !!row.job_report_submitted,
         site_contact_name: row.site_contact_name ?? null,
         site_contact_email: row.site_contact_email ?? null,
         site_contact_phone: row.site_contact_phone ?? null,
@@ -8440,10 +8489,12 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         officers: deOfficersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
         /** Also on root; duplicated here for clients that only read `event`. */
         customer_specific_notes: customerSpecificNotes,
+        status_logs: statusLogs,
       },
       extra_submissions: extraSubmissions,
       technical_notes: technicalNotes,
       customer_specific_notes: customerSpecificNotes,
+      status_logs: statusLogs,
     });
   } catch (error) {
     console.error('get diary event by id error:', error);
@@ -8635,6 +8686,9 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
     quotation_date?: unknown;
     valid_until?: unknown;
     currency?: unknown;
+    latitude?: unknown;
+    longitude?: unknown;
+    timestamp?: unknown;
   };
 
   try {
@@ -8812,11 +8866,17 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
         ],
       );
 
+      const latVal = (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) ? body.latitude : (typeof body.latitude === 'string' && body.latitude.trim() !== '' ? parseFloat(body.latitude) : null);
+      const lngVal = (typeof body.longitude === 'number' && Number.isFinite(body.longitude)) ? body.longitude : (typeof body.longitude === 'string' && body.longitude.trim() !== '' ? parseFloat(body.longitude) : null);
+      const tsVal = (typeof body.timestamp === 'string' && body.timestamp.trim() !== '') ? body.timestamp.trim() : null;
+
       await client.query(
         `UPDATE diary_events SET status = 'completed', updated_at = NOW() WHERE id = $1`,
         [diaryEventId],
       );
       await client.query(`UPDATE jobs SET state = 'completed', updated_at = NOW() WHERE id = $1`, [ev.job_id]);
+
+      await logDiaryEventStatusTransition(client, diaryEventId, 'completed', latVal, lngVal, tsVal, userId);
 
       const deOfficersForTimesheet = await client.query<{ officer_id: number }>(
         `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
@@ -9333,8 +9393,6 @@ app.get(
 app.get(
   '/api/settings/site-report-templates',
   authenticate,
-  requireAdmin,
-  requirePermission('settings_site_report_templates'),
   async (req: AuthenticatedRequest, res: Response) => {
     const uid = getTenantScopeUserId(req.user!);
     try {
@@ -9373,8 +9431,6 @@ app.get(
 app.get(
   '/api/settings/site-report-templates/:templateId',
   authenticate,
-  requireAdmin,
-  requirePermission('settings_site_report_templates'),
   async (req: AuthenticatedRequest, res: Response) => {
     const uid = getTenantScopeUserId(req.user!);
     const templateId = parseInt(String(req.params.templateId), 10);
@@ -9693,8 +9749,6 @@ app.put('/api/jobs/:id/job-report-questions', authenticate, requireTenantCrmAcce
 app.get(
   '/api/settings/job-report-template',
   authenticate,
-  requireAdmin,
-  requirePermission('settings_job_report_template'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const result = await pool.query(
@@ -10420,7 +10474,13 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
     return res.status(400).json({ message: 'Invalid event id' });
   }
 
-  const body = req.body as { answers?: unknown; next_job_state?: unknown };
+  const body = req.body as {
+    answers?: unknown;
+    next_job_state?: unknown;
+    latitude?: unknown;
+    longitude?: unknown;
+    timestamp?: unknown;
+  };
   if (!Array.isArray(body.answers)) {
     return res.status(400).json({ message: 'Body must include answers array' });
   }
@@ -10431,6 +10491,10 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
         'next_job_state is required. Allowed: unscheduled, scheduled, rescheduled, paused, created, in_progress, completed.',
     });
   }
+
+  const latVal = (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) ? body.latitude : (typeof body.latitude === 'string' && body.latitude.trim() !== '' ? parseFloat(body.latitude) : null);
+  const lngVal = (typeof body.longitude === 'number' && Number.isFinite(body.longitude)) ? body.longitude : (typeof body.longitude === 'string' && body.longitude.trim() !== '' ? parseFloat(body.longitude) : null);
+  const tsVal = (typeof body.timestamp === 'string' && body.timestamp.trim() !== '') ? body.timestamp.trim() : null;
 
   const client = await pool.connect();
   try {
@@ -10560,50 +10624,21 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
       }
     }
 
-    const storedStatus = persistedDiaryStatus('completed');
+    // Save next_job_state on the diary event so we apply it when the visit is actually completed
     await client.query(
-      'UPDATE diary_events SET status = $1, updated_at = NOW() WHERE id = $2',
-      [storedStatus, diaryEventId],
+      'UPDATE diary_events SET next_job_state = $1, updated_at = NOW() WHERE id = $2',
+      [nextJobState, diaryEventId],
     );
 
-    const deOfficersForTimesheet = await pool.query<{ officer_id: number }>(
-      `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
-      [diaryEventId]
-    );
-    const tsOfficers = deOfficersForTimesheet.rows.length > 0
-      ? deOfficersForTimesheet.rows.map(r => r.officer_id)
-      : [ev.officer_id ?? ev.job_officer_id].filter(Boolean) as number[];
-    for (const tsOid of tsOfficers) {
-      await applyDiaryStatusToTimesheet(client, tsOid, diaryEventId, 'completed');
-    }
-
-    await client.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [
-      nextJobState,
-      ev.job_id,
-    ]);
+    await logDiaryEventStatusTransition(client, diaryEventId, 'job_report_submitted', latVal, lngVal, tsVal, userId);
 
     await client.query('COMMIT');
 
-    let autoInvoiceId: number | null = null;
-    if (nextJobState === 'completed') {
-      const jobIsQuotationVisit = await client.query<{ is_quotation_visit: boolean }>(
-        'SELECT is_quotation_visit FROM jobs WHERE id = $1',
-        [ev.job_id],
-      );
-      if (!jobIsQuotationVisit.rows[0]?.is_quotation_visit) {
-        try {
-          autoInvoiceId = await createInvoiceFromJob(ev.job_id, userId);
-        } catch (invErr) {
-          console.error('Auto invoice after job report submit:', invErr);
-        }
-      }
-    }
-
     return res.json({
-      message: 'Job report saved and visit completed',
-      status: storedStatus,
+      message: 'Job report submitted',
+      status: ev.event_status,
       job_state: nextJobState,
-      invoice_id: autoInvoiceId,
+      invoice_id: null,
     });
   } catch (error) {
     try {
@@ -11194,6 +11229,7 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
               j.charge_type,
+              EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
               (j.charge_type = 'free') AS is_free_job,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
@@ -11489,13 +11525,102 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
   }
 });
 
+// ── Admin-only: reschedule (date/time, duration, notes) ───────────────────────
+app.patch(
+  '/api/diary-events/:id/reschedule',
+  authenticate,
+  requireAdmin,
+  requirePermission('scheduling'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(String(idParam), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid event id' });
+
+    const body = req.body as {
+      start_time?: string | null;
+      duration_minutes?: number | null;
+      notes?: string | null;
+    };
+
+    const updates: string[] = ['updated_at = NOW()'];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (body.start_time !== undefined) {
+      const ts = body.start_time ? new Date(body.start_time) : null;
+      if (ts !== null && isNaN(ts.getTime())) {
+        return res.status(400).json({ message: 'Invalid start_time' });
+      }
+      updates.push(`start_time = $${idx++}`);
+      values.push(ts);
+    }
+    if (body.duration_minutes !== undefined) {
+      const dur =
+        typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes)
+          ? Math.round(body.duration_minutes)
+          : null;
+      updates.push(`duration_minutes = $${idx++}`);
+      values.push(dur);
+    }
+    if (body.notes !== undefined) {
+      const n = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+      updates.push(`notes = $${idx++}`);
+      values.push(n);
+    }
+
+    if (updates.length <= 1) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    try {
+      values.push(id);
+      const r = await pool.query(
+        `UPDATE diary_events SET ${updates.join(', ')} WHERE id = $${idx} RETURNING
+           id, job_id, officer_id, start_time, duration_minutes, status, notes, updated_at`,
+        values,
+      );
+      if ((r.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Diary event not found' });
+      }
+      const row = r.rows[0] as {
+        id: number;
+        job_id: number;
+        officer_id: number | null;
+        start_time: Date | null;
+        duration_minutes: number | null;
+        status: string | null;
+        notes: string | null;
+        updated_at: Date;
+      };
+      return res.json({
+        event: {
+          id: row.id,
+          job_id: row.job_id,
+          officer_id: row.officer_id,
+          start_time: row.start_time ? row.start_time.toISOString() : null,
+          duration_minutes: row.duration_minutes,
+          status: row.status,
+          notes: row.notes,
+          updated_at: row.updated_at.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('reschedule diary event error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
+
 app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
-  const { status, feedback_notes, abort_reason } = req.body as {
+  const { status, feedback_notes, abort_reason, latitude, longitude, timestamp } = req.body as {
     status?: unknown;
     feedback_notes?: unknown;
     abort_reason?: unknown;
+    latitude?: unknown;
+    longitude?: unknown;
+    timestamp?: unknown;
   };
   const userId = getTenantScopeUserId(req.user!);
   const duPatch = req.user!;
@@ -11547,15 +11672,25 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       }
     }
 
+    const latVal = (typeof latitude === 'number' && Number.isFinite(latitude)) ? latitude : (typeof latitude === 'string' && latitude.trim() !== '' ? parseFloat(latitude) : null);
+    const lngVal = (typeof longitude === 'number' && Number.isFinite(longitude)) ? longitude : (typeof longitude === 'string' && longitude.trim() !== '' ? parseFloat(longitude) : null);
+    const tsVal = (typeof timestamp === 'string' && timestamp.trim() !== '') ? timestamp.trim() : null;
+
     const normalizedPre = normalizeDiaryStatusForTimesheet(status);
     if (normalizedPre === 'completed') {
       const qc = await countJobReportQuestionsForJob(client, row.job_id);
       if (qc > 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          message:
-            'This job has a job report checklist. Complete it using Submit job report (officer app or web diary), which closes the visit and creates the invoice.',
-        });
+        const reportSubCheck = await client.query(
+          `SELECT EXISTS (SELECT 1 FROM job_report_answers WHERE diary_event_id = $1) AS submitted`,
+          [id]
+        );
+        if (!reportSubCheck.rows[0]?.submitted) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            message:
+              'This job requires a job report checklist. Please submit the job report before completing the visit.',
+          });
+        }
       }
     }
 
@@ -11582,6 +11717,8 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       [storedStatus, notesVal, storedStatus === 'cancelled' ? abortReasonVal : null, id],
     );
 
+    await logDiaryEventStatusTransition(client, id, storedStatus, latVal, lngVal, tsVal, userId);
+
     const normalized = normalizeDiaryStatusForTimesheet(status);
     const deOfficersForTimesheet = await pool.query<{ officer_id: number }>(
       `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
@@ -11597,19 +11734,25 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     await client.query('COMMIT');
 
     if (normalized === 'completed') {
+      const eventRowCheck = await pool.query<{ next_job_state: string | null }>(
+        'SELECT next_job_state FROM diary_events WHERE id = $1',
+        [id]
+      );
+      const nextState = eventRowCheck.rows[0]?.next_job_state || 'completed';
+
       const jobVisitCheck = await pool.query<{ is_quotation_visit: boolean }>(
         'SELECT is_quotation_visit FROM jobs WHERE id = $1',
         [row.job_id],
       );
       const isQuotationVisitJob = !!jobVisitCheck.rows[0]?.is_quotation_visit;
-      if (!isQuotationVisitJob) {
+      if (nextState === 'completed' && !isQuotationVisitJob) {
         try {
           await createInvoiceFromJob(row.job_id, userId);
         } catch (invErr) {
           console.error('Auto invoice after diary visit completed:', invErr);
         }
       }
-      await pool.query(`UPDATE jobs SET state = 'completed' WHERE id = $1`, [row.job_id]);
+      await pool.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [nextState, row.job_id]);
     }
 
     return res.json({ message: 'Diary event updated successfully', status: storedStatus });
@@ -17129,7 +17272,7 @@ app.delete('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, r
 });
 
 // ---------- Customer Types ----------
-app.get('/api/settings/customer-types', authenticate, requireAdmin, requirePermission('settings_customer_types'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/customer-types', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   const ownerClause = isSuperAdmin ? '' : 'WHERE created_by = $1';
@@ -17270,9 +17413,16 @@ app.delete('/api/settings/customer-types/:id', authenticate, requireAdmin, requi
 // ───────────────────────────────── JOB DESCRIPTIONS (Settings Templates) ─────────────────────────────────
 
 // List all job descriptions
-app.get('/api/settings/job-descriptions', authenticate, requireAdmin, requirePermission('settings_job_descriptions'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
-    const result = await pool.query('SELECT * FROM job_descriptions ORDER BY name ASC');
+    const result = await pool.query(
+      `SELECT * FROM job_descriptions
+       ${isSuperAdmin ? '' : 'WHERE created_by = $1'}
+       ORDER BY name ASC`,
+      isSuperAdmin ? [] : [userId],
+    );
     return res.json(result.rows);
   } catch (error) {
     console.error('List job descriptions error:', error);
@@ -17281,11 +17431,16 @@ app.get('/api/settings/job-descriptions', authenticate, requireAdmin, requirePer
 });
 
 // Get single job description with its default pricing items
-app.get('/api/settings/job-descriptions/:id', authenticate, requireAdmin, requirePermission('settings_job_descriptions'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
-    const descResult = await pool.query('SELECT * FROM job_descriptions WHERE id = $1', [id]);
+    const descResult = await pool.query(
+      `SELECT * FROM job_descriptions WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+      isSuperAdmin ? [id] : [id, userId],
+    );
     if ((descResult.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Not found' });
 
     const itemsResult = await pool.query('SELECT * FROM job_description_pricing_items WHERE job_description_id = $1 ORDER BY sort_order ASC', [id]);
@@ -17353,8 +17508,6 @@ app.delete('/api/settings/job-descriptions/:id', authenticate, requireAdmin, req
 app.get(
   '/api/settings/job-descriptions/:id/job-report-questions',
   authenticate,
-  requireAdmin,
-  requirePermission('settings_job_descriptions'),
   async (req: AuthenticatedRequest, res: Response) => {
     const descId = parseInt(String(req.params.id), 10);
     if (!Number.isFinite(descId)) return res.status(400).json({ message: 'Invalid ID' });
@@ -17464,11 +17617,20 @@ app.put(
 
 // ── Pricing items for a job description template ──
 
-app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, requireAdmin, requirePermission('settings_job_descriptions'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/job-descriptions/:id/pricing-items', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
   try {
-    const result = await pool.query('SELECT * FROM job_description_pricing_items WHERE job_description_id = $1 ORDER BY sort_order ASC', [id]);
+    const result = await pool.query(
+      `SELECT pi.*
+       FROM job_description_pricing_items pi
+       JOIN job_descriptions jd ON jd.id = pi.job_description_id
+       WHERE pi.job_description_id = $1${isSuperAdmin ? '' : ' AND jd.created_by = $2'}
+       ORDER BY pi.sort_order ASC`,
+      isSuperAdmin ? [id] : [id, userId],
+    );
     return res.json(result.rows);
   } catch (error) {
     return res.status(500).json({ message: 'Internal server error' });
@@ -17506,7 +17668,7 @@ app.delete('/api/settings/job-descriptions/:descId/pricing-items/:itemId', authe
 });
 
 // Settings: Business Units
-app.get('/api/settings/business-units', authenticate, requireAdmin, requirePermission('settings_business_units'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/business-units', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const r = await pool.query('SELECT * FROM business_units ORDER BY name ASC');
     res.json({ units: r.rows });
@@ -17540,7 +17702,7 @@ app.delete('/api/settings/business-units/:id', authenticate, requireAdmin, requi
 });
 
 // Settings: User Groups
-app.get('/api/settings/user-groups', authenticate, requireAdmin, requirePermission('settings_user_groups'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/user-groups', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const r = await pool.query('SELECT * FROM user_groups ORDER BY name ASC');
     res.json({ groups: r.rows });
@@ -17573,7 +17735,7 @@ app.delete('/api/settings/user-groups/:id', authenticate, requireAdmin, requireP
   }
 });
 
-app.get('/api/settings/service-checklist', authenticate, requireAdmin, requirePermission('settings_job_descriptions'), async (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/settings/service-checklist', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
   try {
     const result = await pool.query(
@@ -17878,6 +18040,10 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
   const createdBy = getTenantScopeUserId(req.user!);
 
   const completedServiceItems = normalizeCompletedServiceItemsForDb(completed_service_items);
+  const expectedCompletionDate = expected_completion ? new Date(expected_completion) : null;
+  if (expectedCompletionDate && Number.isNaN(expectedCompletionDate.getTime())) {
+    return res.status(400).json({ message: 'Invalid expected_completion' });
+  }
   const chargeType = typeof charge_type === 'string' && ['chargeable', 'free', 'callback'].includes(charge_type)
     ? charge_type
     : 'chargeable';
@@ -17912,7 +18078,7 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
       [
         title, job_notes || null, priority || 'medium', customerId, workAddressIdJob, createdBy,
         job_description_id || null, contactNameResolved, jobContactIdResolved,
-        expected_completion ? new Date(expected_completion) : null,
+        expectedCompletionDate,
         user_group || null, business_unit || null, skills || null, job_notes || null,
         !!is_service_job, quoted_amount || null, customer_reference || null, job_pipeline || null,
         book_into_diary !== false, JSON.stringify(completedServiceItems), !!is_quotation_visit, chargeType,
@@ -17941,8 +18107,39 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
 
     // Fetch the inserted pricing items
     const pItems = await pool.query('SELECT * FROM job_pricing_items WHERE job_id=$1 ORDER BY sort_order', [job.id]);
+    let diaryEvent: Record<string, unknown> | null = null;
+    if (book_into_diary !== false && expectedCompletionDate) {
+      const creatorNameResult = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user!.userId]);
+      const creatorName = creatorNameResult.rows[0]?.full_name || 'System User';
+      const officerId =
+        typeof req.user!.officerId === 'number' && Number.isFinite(req.user!.officerId) ? req.user!.officerId : null;
+      const diaryResult = await pool.query(
+        `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
+         VALUES ($1, $2, $3, 60, $4, $5)
+         RETURNING *`,
+        [job.id, officerId, expectedCompletionDate, job_notes || null, creatorName],
+      );
+      diaryEvent = diaryResult.rows[0] as Record<string, unknown>;
+      if (officerId != null) {
+        await pool.query(
+          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
+          [diaryEvent.id, officerId],
+        );
+      }
+      await pool.query(
+        `UPDATE jobs SET state = 'scheduled', updated_at = NOW() WHERE id = $1 AND state IN ('draft', 'created', 'unscheduled')`,
+        [job.id],
+      );
+    }
 
-    return res.status(201).json({ job: { ...job, pricing_items: pItems.rows } });
+    return res.status(201).json({
+      job: {
+        ...job,
+        state: diaryEvent ? 'scheduled' : job.state,
+        pricing_items: pItems.rows,
+        diary_event: diaryEvent,
+      },
+    });
   } catch (error) {
     console.error('Create customer job error:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -20345,7 +20542,7 @@ app.get('/api/customers/:customerId/communications', authenticate, requireTenant
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
     const result = await pool.query(
-      `SELECT cc.id, cc.customer_id, cc.record_type, cc.subject, cc.message, cc.status, cc.to_value, cc.cc_value, cc.bcc_value, cc.from_value, cc.object_type, cc.object_id, cc.attachment_name, cc.scheduled_for, cc.created_at, cc.created_by,
+      `SELECT cc.id, cc.customer_id, cc.record_type, cc.subject, cc.message, cc.status, cc.to_value, cc.cc_value, cc.bcc_value, cc.from_value, cc.object_type, cc.object_id, cc.attachment_name, cc.scheduled_for, cc.created_at, cc.created_by, cc.attachment_ids,
               COALESCE(u.full_name, u.email, 'System') AS created_by_name
        FROM customer_communications cc
        LEFT JOIN users u ON u.id = cc.created_by
@@ -20353,6 +20550,83 @@ app.get('/api/customers/:customerId/communications', authenticate, requireTenant
        ORDER BY cc.created_at DESC`,
       params,
     );
+
+    const allAttachmentIds: (string | number)[] = [];
+    for (const r of result.rows) {
+      const ids = Array.isArray(r.attachment_ids) ? r.attachment_ids : [];
+      for (const id of ids) {
+        if (id !== null && id !== undefined && !allAttachmentIds.includes(id)) {
+          allAttachmentIds.push(id);
+        }
+      }
+    }
+
+    const filesMap = new Map<string | number, { id: string | number; original_filename: string; content_type: string | null; byte_size: number | null; kind: string; href?: string }>();
+    if (allAttachmentIds.length > 0) {
+      const uploadedFileIds = allAttachmentIds.filter((id) => typeof id === 'number') as number[];
+      const stringFileIds = allAttachmentIds.filter((id) => typeof id === 'string') as string[];
+
+      if (uploadedFileIds.length > 0) {
+        const fileResult = await pool.query(
+          `SELECT id, original_filename, content_type, byte_size FROM customer_files WHERE id = ANY($1)`,
+          [uploadedFileIds]
+        );
+        for (const row of fileResult.rows) {
+          filesMap.set(Number(row.id), {
+            id: Number(row.id),
+            original_filename: row.original_filename,
+            content_type: row.content_type,
+            byte_size: row.byte_size ? Number(row.byte_size) : null,
+            kind: 'uploaded',
+          });
+        }
+      }
+
+      const certIds = stringFileIds
+        .filter((id) => id.startsWith('electrical_cert_'))
+        .map((id) => parseInt(id.replace('electrical_cert_', ''), 10))
+        .filter((id) => Number.isFinite(id));
+
+      const reportIds = stringFileIds
+        .filter((id) => id.startsWith('site_report_'))
+        .map((id) => parseInt(id.replace('site_report_', ''), 10))
+        .filter((id) => Number.isFinite(id));
+
+      if (certIds.length > 0) {
+        const certResult = await pool.query(
+          `SELECT id, certificate_number, type_slug FROM electrical_certificates WHERE id = ANY($1)`,
+          [certIds]
+        );
+        for (const row of certResult.rows) {
+          filesMap.set(`electrical_cert_${row.id}`, {
+            id: `electrical_cert_${row.id}`,
+            original_filename: `${row.certificate_number || `CERT-${row.id}`}.pdf`,
+            content_type: 'application/pdf',
+            byte_size: null,
+            kind: 'electrical_certificate',
+            href: `/electrical-certificates/${row.id}/pdf`,
+          });
+        }
+      }
+
+      if (reportIds.length > 0) {
+        const reportResult = await pool.query(
+          `SELECT r.id, r.report_title, t.name AS template_name FROM customer_site_reports r LEFT JOIN site_report_templates t ON t.id = r.template_id WHERE r.id = ANY($1)`,
+          [reportIds]
+        );
+        for (const row of reportResult.rows) {
+          const title = (row.report_title || row.template_name || `Site report ${row.id}`).trim();
+          filesMap.set(`site_report_${row.id}`, {
+            id: `site_report_${row.id}`,
+            original_filename: `${title.replace(/[/\\]/g, '_') || `site-report-${row.id}`}.pdf`,
+            content_type: 'application/pdf',
+            byte_size: null,
+            kind: 'site_report',
+            href: `/customers/${customerId}/site-report/${row.id}/pdf`,
+          });
+        }
+      }
+    }
 
     const users = await pool.query(
       `SELECT DISTINCT u.id, COALESCE(u.full_name, u.email) AS label
@@ -20378,6 +20652,10 @@ app.get('/api/customers/:customerId/communications', authenticate, requireTenant
         object_type: (r.object_type as string) ?? 'customer',
         object_id: r.object_id != null ? Number(r.object_id) : null,
         attachment_name: (r.attachment_name as string) ?? null,
+        attachment_ids: Array.isArray(r.attachment_ids) ? r.attachment_ids : [],
+        attachment_files: (Array.isArray(r.attachment_ids) ? r.attachment_ids : [])
+          .map((id) => filesMap.get(id))
+          .filter(Boolean),
         scheduled_for: r.scheduled_for ? (r.scheduled_for as Date).toISOString() : null,
         created_at: (r.created_at as Date).toISOString(),
         created_by: r.created_by != null ? Number(r.created_by) : null,
@@ -20455,6 +20733,71 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
 
     const workAddressId = await resolveWorkAddressIdForCustomer(pool, customerId, body.work_address_id);
     let sentAttachmentNames: string[] = [];
+    const attachmentIds: (string | number)[] = [];
+    const reqAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+    const processedAttachmentsForEmail: any[] = [];
+
+    for (const a of reqAttachments) {
+      if (!a || typeof a !== 'object') continue;
+      const filenameRaw = typeof a.filename === 'string' ? a.filename.trim() : '';
+      const b64 = typeof a.content_base64 === 'string' ? a.content_base64.trim() : '';
+      const contentType = typeof a.content_type === 'string' ? a.content_type.trim() : '';
+      const fileId = a.file_id;
+
+      if (fileId) {
+        attachmentIds.push(fileId);
+        processedAttachmentsForEmail.push({
+          filename: filenameRaw,
+          content_base64: b64,
+          content_type: contentType,
+        });
+      } else if (filenameRaw && b64) {
+        let buf: Buffer;
+        try {
+          buf = Buffer.from(b64, 'base64');
+        } catch {
+          continue;
+        }
+        if (buf.length === 0) continue;
+
+        const originalFilename = sanitizeStoredOriginalName(filenameRaw);
+        let uploadBuf = buf;
+        let uploadContentType = contentType || null;
+        let storedExt = path.extname(originalFilename).slice(0, 32) || '';
+        try {
+          const normalized = await normalizeCustomerImageUpload(buf, contentType || null, originalFilename);
+          uploadBuf = normalized.buffer;
+          uploadContentType = normalized.contentType;
+          storedExt = normalized.storedExtension || storedExt;
+        } catch (normErr) {
+          // ignore normalize error fallback
+        }
+
+        const storedFilename = `${Date.now()}_${crypto.randomBytes(12).toString('hex')}${storedExt || path.extname(originalFilename).slice(0, 32) || ''}`;
+        const uploaded = await writeWorkpilotFile(
+          'customer-files',
+          [customerId],
+          storedFilename,
+          uploadBuf,
+          uploadContentType || 'application/octet-stream',
+        );
+
+        const inserted = await pool.query(
+          `INSERT INTO customer_files (customer_id, work_address_id, original_filename, stored_filename, content_type, byte_size, spaces_key, file_url, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id`,
+          [customerId, workAddressId, originalFilename, storedFilename, uploadContentType, uploadBuf.length, uploaded.spacesKey, uploaded.fileUrl, userId],
+        );
+        const newFileId = Number(inserted.rows[0].id);
+        attachmentIds.push(newFileId);
+
+        processedAttachmentsForEmail.push({
+          filename: originalFilename,
+          content_base64: uploadBuf.toString('base64'),
+          content_type: uploadContentType || 'application/octet-stream',
+        });
+      }
+    }
 
     if (recordType === 'email') {
       sentAttachmentNames = await sendCustomerCommunicationEmail(
@@ -20468,7 +20811,7 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
           message,
           bodyHtml,
           appendSignature,
-          attachments: body.attachments,
+          attachments: processedAttachmentsForEmail,
         },
       ).catch((error) => {
         const msg = error instanceof Error ? error.message : 'Could not send email';
@@ -20479,10 +20822,10 @@ app.post('/api/customers/:customerId/communications', authenticate, requireTenan
 
     const result = await pool.query(
       `INSERT INTO customer_communications
-        (customer_id, record_type, subject, message, status, to_value, cc_value, bcc_value, from_value, object_type, object_id, attachment_name, scheduled_for, work_address_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        (customer_id, record_type, subject, message, status, to_value, cc_value, bcc_value, from_value, object_type, object_id, attachment_name, scheduled_for, work_address_id, created_by, attachment_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING id, created_at`,
-      [customerId, recordType, subject, message, recordType === 'email' ? 'sent' : status, toValue, ccValue, bccValue, fromValue, objectType, objectId, attachmentName || sentAttachmentNames.join(', ') || null, scheduledFor, workAddressId, userId],
+      [customerId, recordType, subject, message, recordType === 'email' ? 'sent' : status, toValue, ccValue, bccValue, fromValue, objectType, objectId, attachmentName || sentAttachmentNames.join(', ') || null, scheduledFor, workAddressId, userId, JSON.stringify(attachmentIds)],
     );
 
     return res.status(201).json({
@@ -20765,6 +21108,7 @@ mountJobEmailRoutes(app, { pool, authenticate, loadEmailSettingsPayload, sendUse
 mountJobFilesRoutes(app, { pool, authenticate });
 mountJobNotesRoutes(app, { pool, authenticate });
 mountJobCostsRoutes(app, { pool, authenticate });
+mountStaffWorkRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
 
 mountJobClientPanelRoutes(app, {

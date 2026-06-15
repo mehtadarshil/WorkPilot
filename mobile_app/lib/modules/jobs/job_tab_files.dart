@@ -243,17 +243,42 @@ class _JobTabFilesState extends State<JobTabFiles> {
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;');
-    return '<p>${esc.replaceAll('\n', '<br/>')}</p>';
+    var htmlBody = esc.replaceAll('\n', '<br/>');
+    final labelUrlRegex = RegExp(r'([a-zA-Z0-9\-\.\#\s\(\)]{2,100}):\s*(https?://[^\s<]+)');
+    htmlBody = htmlBody.replaceAllMapped(labelUrlRegex, (match) {
+      final label = match.group(1)!.trim();
+      final url = match.group(2)!;
+      return '<a href="$url">$label</a>';
+    });
+    final standaloneUrlRegex = RegExp(r'(?<!href=")(https?://[^\s<]+)(?![^<>]*>)');
+    htmlBody = htmlBody.replaceAllMapped(standaloneUrlRegex, (match) {
+      final url = match.group(1)!;
+      return '<a href="$url">$url</a>';
+    });
+    return '<p>$htmlBody</p>';
   }
 
   String _stripHtml(String html) {
-    var s = html.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    s = s.replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n');
-    s = s.replaceAll(RegExp(r'<[^>]*>'), ' ');
-    s = s.replaceAll('&nbsp;', ' ');
-    s = s.replaceAll('&amp;', '&');
-    s = s.replaceAll(RegExp(r'[ \t]+'), ' ');
-    s = s.replaceAll(RegExp(r'\n\s*\n+'), '\n\n');
+    var s = html.replaceAllMapped(RegExp(r'<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)</a>', caseSensitive: false), (match) {
+      final url = match.group(1) ?? '';
+      final text = match.group(2) ?? '';
+      final cleanText = text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+      if (cleanText.isEmpty) return url;
+      if (cleanText == url.trim()) return url;
+      return '$cleanText: $url';
+    });
+    s = s.replaceAll(RegExp(r'</p>|<br\s*/?>|</div>|</li>', caseSensitive: false), '\n');
+    s = s.replaceAll(RegExp(r'<[^>]*>'), '');
+    s = s.replaceAll('&nbsp;', ' ')
+         .replaceAll('&amp;', '&')
+         .replaceAll('&lt;', '<')
+         .replaceAll('&gt;', '>')
+         .replaceAll('&quot;', '"')
+         .replaceAll('&#39;', "'");
+    s = s.replaceAll(RegExp(r'[^\S\r\n]+'), ' ');
+    s = s.replaceAll(RegExp(r' +(?=\n)'), '');
+    s = s.replaceAll(RegExp(r'(?<=\n) +'), '');
+    s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     return s.trim();
   }
 

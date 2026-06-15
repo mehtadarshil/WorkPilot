@@ -119,7 +119,7 @@ class CustomersRepository extends GetxService {
     return d;
   }
 
-  /// Same `/settings/job-descriptions` list as the web add-job page (requires Settings permission when enforced).
+  /// Same `/settings/job-descriptions` list as the web add-job page.
   Future<List<Map<String, dynamic>>> listJobDescriptions() async {
     try {
       final res = await _api.get<List<dynamic>>('/settings/job-descriptions');

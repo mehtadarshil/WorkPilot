@@ -26,6 +26,11 @@ String _formatIsoShort(String? iso) {
   return '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}/${l.year}';
 }
 
+String _formatMoney(dynamic raw) {
+  final value = raw is num ? raw.toDouble() : double.tryParse(raw?.toString() ?? '') ?? 0;
+  return '£${value.toStringAsFixed(2)}';
+}
+
 String _dateMilestones(Map<String, dynamic> j) {
   final parts = <String>[];
   final sd = j['start_date'] as String?;
@@ -210,6 +215,54 @@ class JobTabDetails extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          _section(
+            'Expenses',
+            Obx(() {
+              final expenses = c.expenses;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (expenses.isEmpty)
+                    Text('No job expenses added yet.', style: _bodyStyle)
+                  else
+                    ...expenses.map((e) {
+                      final date = _str(e, 'expense_date');
+                      final category = _str(e, 'category').isEmpty ? 'Expense' : _str(e, 'category');
+                      final description = _str(e, 'description');
+                      final status = _str(e, 'status').isEmpty ? 'submitted' : _str(e, 'status');
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.receipt_long, size: 18, color: AppColors.slate400),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('$category · ${_formatMoney(e['amount'])}', style: GoogleFonts.inter(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w700)),
+                                  Text('Status: $status', style: GoogleFonts.inter(fontSize: 12, color: status == 'approved' ? AppColors.primary : AppColors.slate400, fontWeight: FontWeight.w600)),
+                                  if (description.isNotEmpty) Text(description, style: _bodyStyle),
+                                  if (date.isNotEmpty) Text(date, style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showAddExpense(context, c),
+                    icon: const Icon(Icons.add_card),
+                    label: const Text('Add expense'),
+                  ),
+                ],
+              );
+            }),
+          ),
           const SizedBox(height: 20),
           Text('Diary events', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
@@ -380,6 +433,85 @@ class JobTabDetails extends StatelessWidget {
     }
     durationC.dispose();
     notesC.dispose();
+  }
+
+  Future<void> _showAddExpense(BuildContext context, JobDetailController c) async {
+    var expenseDate = DateTime.now();
+    final categoryC = TextEditingController(text: 'Parking');
+    final amountC = TextEditingController();
+    final descriptionC = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Add expense'),
+          content: StatefulBuilder(
+            builder: (ctx, setS) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: categoryC,
+                      decoration: const InputDecoration(labelText: 'Category'),
+                      textCapitalization: TextCapitalization.sentences,
+                    ),
+                    TextField(
+                      controller: amountC,
+                      decoration: const InputDecoration(labelText: 'Amount'),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    ),
+                    TextField(
+                      controller: descriptionC,
+                      decoration: const InputDecoration(labelText: 'Notes'),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Expense date'),
+                      subtitle: Text(expenseDate.toIso8601String().split('T').first),
+                      onTap: () async {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: expenseDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2100),
+                        );
+                        if (d != null) setS(() => expenseDate = DateTime(d.year, d.month, d.day));
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
+        );
+      },
+    );
+    if (ok == true) {
+      try {
+        final amount = double.tryParse(amountC.text.trim().replaceAll(',', '')) ?? 0;
+        if (amount <= 0) throw Exception('Enter an expense amount greater than zero.');
+        await c.postExpense(
+          category: categoryC.text.trim().isEmpty ? 'Expense' : categoryC.text.trim(),
+          amount: amount,
+          description: descriptionC.text.trim().isEmpty ? null : descriptionC.text.trim(),
+          expenseDate: expenseDate.toIso8601String().split('T').first,
+        );
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+    }
+    categoryC.dispose();
+    amountC.dispose();
+    descriptionC.dispose();
   }
 
   Widget _diaryRow(BuildContext context, JobDetailController c, Map<String, dynamic> e, Map<String, dynamic> job) {

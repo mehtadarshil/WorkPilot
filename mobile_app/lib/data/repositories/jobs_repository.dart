@@ -71,6 +71,34 @@ class JobsRepository extends BaseRepository {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getJobExpenses(int jobId) async {
+    final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/expenses');
+    final raw = _asMap(res.data)['expenses'];
+    return _listOfMap(raw);
+  }
+
+  Future<Map<String, dynamic>> postJobExpense(
+    int jobId, {
+    required String category,
+    required double amount,
+    String? description,
+    String? expenseDate,
+  }) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/jobs/$jobId/expenses',
+      data: <String, dynamic>{
+        'category': category,
+        'amount': amount,
+        if (description != null && description.trim().isNotEmpty) 'description': description.trim(),
+        if (expenseDate != null && expenseDate.trim().isNotEmpty) 'expense_date': expenseDate.trim(),
+      },
+    );
+    final d = _asMap(res.data);
+    final expense = d['expense'];
+    if (expense is Map) return Map<String, dynamic>.from(expense);
+    return d;
+  }
+
   Future<List<Map<String, dynamic>>> getOfficeTasks(int jobId) async {
     final res = await api.get<Map<String, dynamic>>('/jobs/$jobId/office-tasks');
     final raw = _asMap(res.data)['tasks'];

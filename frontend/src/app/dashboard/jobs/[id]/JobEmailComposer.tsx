@@ -5,6 +5,7 @@ import {
   X,
   Paperclip,
   Send,
+  Eye,
   Bold,
   Italic,
   Underline,
@@ -186,6 +187,33 @@ export default function JobEmailComposer({ open, onClose, jobId, onSent, initial
 
   const removePreset = (key: string) => {
     setPresetAttachments((prev) => prev.filter((p) => p.key !== key));
+  };
+
+  const previewPresetAttachment = (p: JobEmailPresetAttachment) => {
+    try {
+      const byteCharacters = atob(p.content_base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: p.content_type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to preview preset attachment.');
+    }
+  };
+
+  const previewLocalFile = (f: File) => {
+    try {
+      const url = URL.createObjectURL(f);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to preview local file.');
+    }
   };
 
   const mergeJobFilePresets = useCallback((items: ComposerPresetAttachment[]) => {
@@ -572,9 +600,15 @@ export default function JobEmailComposer({ open, onClose, jobId, onSent, initial
                         key={p.key}
                         className="flex max-w-full items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1.5 shadow-sm"
                       >
-                        <span className="min-w-0 truncate font-medium" title={p.filename}>
+                        <button
+                          type="button"
+                          onClick={() => previewPresetAttachment(p)}
+                          className="min-w-0 truncate font-semibold text-[#14B8A6] hover:underline text-left flex items-center gap-1"
+                          title={`Preview ${p.filename}`}
+                        >
+                          <Eye className="size-3.5 shrink-0" />
                           {p.filename}
-                        </span>
+                        </button>
                         <span className="shrink-0 text-slate-500">{formatFileSize(approxBytesFromBase64(p.content_base64))}</span>
                         <button
                           type="button"
@@ -595,9 +629,15 @@ export default function JobEmailComposer({ open, onClose, jobId, onSent, initial
                         key={`${f.name}-${i}-${f.size}`}
                         className="flex max-w-full items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1.5 shadow-sm"
                       >
-                        <span className="min-w-0 truncate font-medium" title={f.name}>
+                        <button
+                          type="button"
+                          onClick={() => previewLocalFile(f)}
+                          className="min-w-0 truncate font-semibold text-[#14B8A6] hover:underline text-left flex items-center gap-1"
+                          title={`Preview ${f.name}`}
+                        >
+                          <Eye className="size-3.5 shrink-0" />
                           {f.name}
-                        </span>
+                        </button>
                         <span className="shrink-0 text-slate-500">{formatFileSize(f.size)}</span>
                         <button
                           type="button"

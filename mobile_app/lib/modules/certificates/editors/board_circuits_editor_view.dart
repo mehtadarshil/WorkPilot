@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../../core/values/app_colors.dart';
 import '../certificate_document_utils.dart';
 import '../certificate_editor_controller.dart';
@@ -685,7 +686,14 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     );
     if (f == null) return;
     try {
-      final bytes = await f.readAsBytes();
+      final bytes = await FlutterImageCompress.compressWithFile(
+        f.path,
+        minWidth: 1400,
+        minHeight: 1400,
+        quality: 80,
+        format: CompressFormat.jpeg,
+      );
+      if (bytes == null) return;
       final base64Str = base64Encode(bytes);
       final dataUrl = 'data:image/jpeg;base64,$base64Str';
       final fileName = f.name.replaceAll(RegExp(r'\.[^.]+$'), '');

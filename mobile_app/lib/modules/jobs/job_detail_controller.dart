@@ -22,6 +22,7 @@ class JobDetailController extends GetxController {
   final RxList<Map<String, dynamic>> invoices = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> officeTasks = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> officers = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> expenses = <Map<String, dynamic>>[].obs;
 
   final RxBool loading = true.obs;
   final RxString error = ''.obs;
@@ -55,6 +56,7 @@ class JobDetailController extends GetxController {
       List<Map<String, dynamic>> ev = [];
       List<Map<String, dynamic>> tasks = [];
       List<Map<String, dynamic>> offs = [];
+      List<Map<String, dynamic>> exp = [];
       try {
         ev = await _jobs.getJobDiaryEvents(jobId);
       } catch (_) {}
@@ -64,9 +66,13 @@ class JobDetailController extends GetxController {
       try {
         offs = await _jobs.getOfficers(limit: 100);
       } catch (_) {}
+      try {
+        exp = await _jobs.getJobExpenses(jobId);
+      } catch (_) {}
       diaryEvents.assignAll(ev);
       officeTasks.assignAll(tasks);
       officers.assignAll(offs);
+      expenses.assignAll(exp);
     } on ApiException catch (e) {
       error.value = e.message;
       job.value = null;
@@ -91,6 +97,24 @@ class JobDetailController extends GetxController {
     }
   }
 
+  Future<bool> updateJob(Map<String, dynamic> fields) async {
+    if (job.value == null) return false;
+    loading.value = true;
+    try {
+      await _jobs.patchJob(jobId, fields);
+      await refreshAll();
+      return true;
+    } on ApiException catch (e) {
+      error.value = e.message;
+      return false;
+    } catch (e) {
+      error.value = e.toString();
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   Future<void> postDiaryVisit({
     List<int>? officerIds,
     required DateTime start,
@@ -103,6 +127,22 @@ class JobDetailController extends GetxController {
       startTimeIso: start.toUtc().toIso8601String(),
       durationMinutes: durationMinutes,
       notes: notes,
+    );
+    await refreshAll();
+  }
+
+  Future<void> postExpense({
+    required String category,
+    required double amount,
+    String? description,
+    String? expenseDate,
+  }) async {
+    await _jobs.postJobExpense(
+      jobId,
+      category: category,
+      amount: amount,
+      description: description,
+      expenseDate: expenseDate,
     );
     await refreshAll();
   }

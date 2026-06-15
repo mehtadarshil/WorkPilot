@@ -92,6 +92,7 @@ interface DiaryEvent {
   site_contact_phone?: string | null;
   charge_type?: string;
   is_free_job?: boolean;
+  job_report_submitted?: boolean;
 }
 
 interface Invoice {
@@ -2065,7 +2066,7 @@ export default function JobDetailsPage() {
                                             setDiaryReportWizardStep(0);
                                             setDiaryPostReportJobState('completed');
                                             fetchJobDetails();
-                                            setViewingEvent({ ...viewingEvent, status: 'completed' });
+                                            setViewingEvent({ ...viewingEvent, job_report_submitted: true });
                                           } catch (err: unknown) {
                                             alert(err instanceof Error ? err.message : 'Submit failed');
                                           } finally {
@@ -2084,7 +2085,7 @@ export default function JobDetailsPage() {
                             {!diaryVisitIsCompleted(viewingEvent.status) &&
                               !diaryJobReportLoading &&
                               diaryJobReport &&
-                              diaryJobReport.questions.length === 0 && (
+                              (diaryJobReport.questions.length === 0 || viewingEvent.job_report_submitted) && (
                               <button
                                 onClick={async () => {
                                   if (!token) return;

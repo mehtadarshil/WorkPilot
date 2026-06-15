@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
@@ -12,6 +13,7 @@ import '../../data/models/job_report_models.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../diary_event/diary_event_detail_controller.dart';
 import '../home/controllers/home_controller.dart';
+import '../../core/utils/location_helper.dart';
 
 class JobReportController extends GetxController {
   JobReportController({MobileRepository? mobile})
@@ -161,9 +163,15 @@ class JobReportController extends GetxController {
       imageQuality: 82,
     );
     if (file == null) return;
-    final bytes = await file.readAsBytes();
-    final path = file.path.toLowerCase();
-    final mime = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    final bytes = await FlutterImageCompress.compressWithFile(
+      file.path,
+      minWidth: 1400,
+      minHeight: 1400,
+      quality: 80,
+      format: CompressFormat.jpeg,
+    );
+    if (bytes == null) return;
+    const mime = 'image/jpeg';
     imageByQuestionId[questionId] = 'data:$mime;base64,${base64Encode(bytes)}';
     imageByQuestionId.refresh();
     _scheduleDraftSave();
@@ -259,12 +267,17 @@ class JobReportController extends GetxController {
     }
     submitting.value = true;
     try {
+      final loc = await getCurrentLocation();
+      final clientTimestamp = DateTime.now().toUtc().toIso8601String();
       await _flushDraftSave();
       final answers = await _buildAnswersPayload();
       final synced = await _mobile.submitDiaryJobReport(
         diaryId,
         answers,
         nextJobState: selectedNextJobState.value,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timestamp: clientTimestamp,
       );
       if (synced) {
         if (Get.isRegistered<HomeController>()) {
@@ -302,11 +315,6 @@ class JobReportController extends GetxController {
               nextJobState: selectedNextJobState.value,
             );
           }
-        }
-        if (Get.isRegistered<HomeController>()) {
-          final h = Get.find<HomeController>();
-          h.patchDiaryEventInWeekList(diaryId, 'completed');
-          h.applyOptimisticTimesheetFromDiaryStatus('completed');
         }
         if (_shouldOfferCompletionActions()) {
           submittedOffline.value = true;

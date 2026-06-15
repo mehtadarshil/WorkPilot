@@ -1562,6 +1562,319 @@ class _DiaryTab extends GetView<HomeController> {
     return t;
   }
 
+
+
+  static String _monthNameAbbr(int month) {
+    const names = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    if (month < 1 || month > 12) return '';
+    return names[month - 1];
+  }
+
+  static String _emptyStateMessage(DiaryListScope scope, DiaryFilter filter) {
+    final team = scope == DiaryListScope.team;
+    switch (filter) {
+      case DiaryFilter.today:
+        return team ? 'No team diary entries today' : 'No diary entries today';
+      case DiaryFilter.sevenDays:
+        return team ? 'No team diary entries this week' : 'No diary entries this week';
+      case DiaryFilter.month:
+        return team ? 'No team diary entries this month' : 'No diary entries this month';
+    }
+  }
+
+  Widget _buildDiaryEventCard(
+    BuildContext context,
+    DiaryEventRow e,
+    bool ownVisit,
+    bool allowFieldActions,
+    bool showTeamFields,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          await Get.toNamed(
+            AppRoutes.diaryEventDetail,
+            arguments: <String, dynamic>{
+              'diaryId': e.diaryId,
+              'jobReportQuestionCount': e.jobReportQuestionCount,
+            },
+          );
+          await controller.loadDiaryEvents();
+        },
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: const Color(0xB30F172A),
+            border: Border.all(color: AppColors.whiteOverlay(0.12)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.blackOverlay(0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
+                                Text(
+                                  e.jobNumber!.trim(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (e.isQuotationVisit) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'Quotation visit',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF92400E),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if ((e.jobNumber ?? '').trim().isNotEmpty || e.isQuotationVisit)
+                            const SizedBox(height: 4),
+                          Text(
+                            e.title ?? 'Job',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Text(
+                        _displayVisitStatus(e.eventStatus),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (e.description != null && e.description!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    e.description!.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.slate400,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 16,
+                      color: AppColors.slate400,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _line(e),
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.slate300,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (showTeamFields &&
+                    (e.officerFullName ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.badge_outlined,
+                        size: 16,
+                        color: AppColors.slate400,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Officer: ${e.officerFullName!.trim()}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (e.displayContactName.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: 16,
+                        color: AppColors.slate400,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          e.displayContactName,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.slate300,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (e.location != null &&
+                    e.location!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.place_outlined,
+                        size: 16,
+                        color: AppColors.slate500,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          e.location!,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: AppColors.slate400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_visitCancelled(e.eventStatus) &&
+                    e.abortReason != null &&
+                    e.abortReason!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Colors.red.shade300,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Reason: ${e.abortReason!.trim()}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: Colors.red.shade300,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        ownVisit
+                            ? 'Tap card for visit details, site contact, and to mark arrived.'
+                            : 'Tap card to view visit details (read-only).',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: AppColors.slate500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      children: [
+                        Text(
+                          'Details',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.primary,
+                          size: 22,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1616,6 +1929,29 @@ class _DiaryTab extends GetView<HomeController> {
                   ],
                 );
               }),
+              Obx(() {
+                final isTeam = controller.diaryListScope.value == DiaryListScope.team;
+                if (!isTeam) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: _DiaryViewModeToggle(
+                    mode: controller.diaryViewMode.value,
+                    onChanged: (mode) => controller.setDiaryViewMode(mode),
+                  ),
+                );
+              }),
+              Obx(() {
+                final isTeam = controller.diaryListScope.value == DiaryListScope.team;
+                final isList = controller.diaryViewMode.value == DiaryViewMode.list;
+                if (!isTeam || !isList) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: _DiaryFilterBar(
+                    selectedFilter: controller.diaryFilter.value,
+                    onChanged: (filter) => controller.setDiaryFilter(filter),
+                  ),
+                );
+              }),
               const SizedBox(height: 10),
               const _OfflineSyncBanner(),
             ],
@@ -1639,333 +1975,581 @@ class _DiaryTab extends GetView<HomeController> {
                 ),
               );
             }
-            if (controller.diaryLoading.value) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              );
-            }
-            if (controller.diaryEvents.isEmpty) {
-              return Center(
+
+            final isTeam = controller.diaryListScope.value == DiaryListScope.team;
+            final isCalendar = controller.diaryViewMode.value == DiaryViewMode.calendar;
+
+            if (isTeam && isCalendar) {
+              if (controller.diaryLoading.value) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                );
+              }
+
+              final selectedDate = controller.calendarSelectedDate.value;
+              final dayEvents = controller.diaryEvents.where((e) {
+                final start = e.startTime;
+                if (start == null) return false;
+                return start.year == selectedDate.year &&
+                    start.month == selectedDate.month &&
+                    start.day == selectedDate.day;
+              }).toList();
+              dayEvents.sort((a, b) {
+                final tA = a.startTime;
+                final tB = b.startTime;
+                if (tA == null) return 1;
+                if (tB == null) return -1;
+                return tA.compareTo(tB);
+              });
+
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.calendar_month_rounded,
-                      size: 64,
-                      color: AppColors.whiteOverlay(0.25),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      controller.diaryListScope.value == DiaryListScope.team
-                          ? 'No team diary entries this week'
-                          : 'No diary entries this week',
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        color: AppColors.slate400,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _DiaryCalendarView(
+                        focusedMonth: controller.calendarFocusedMonth.value,
+                        selectedDate: selectedDate,
+                        events: controller.diaryEvents,
+                        onDateSelected: (date) => controller.selectCalendarDate(date),
+                        onMonthChanged: (delta) => controller.changeCalendarMonth(delta),
+                        onJumpToToday: () {
+                          controller.selectCalendarDate(DateTime.now());
+                        },
                       ),
                     ),
-                  ],
-                ),
-              );
-            }
-            final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
-            final allowFieldActions = !showTeamFields;
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              physics: const BouncingScrollPhysics(),
-              itemCount: controller.diaryEvents.length,
-              itemBuilder: (context, i) {
-                final e = controller.diaryEvents[i];
-                final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () async {
-                        await Get.toNamed(
-                          AppRoutes.diaryEventDetail,
-                          arguments: <String, dynamic>{
-                            'diaryId': e.diaryId,
-                            'jobReportQuestionCount': e.jobReportQuestionCount,
-                          },
-                        );
-                        await controller.loadDiaryWeek();
-                      },
-                      child: Ink(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
-                          color: const Color(0xB30F172A),
-                          border: Border.all(color: AppColors.whiteOverlay(0.12)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.blackOverlay(0.25),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        '${selectedDate.day} ${_monthNameAbbr(selectedDate.month)} ${selectedDate.year} · ${dayEvents.length} visit${dayEvents.length == 1 ? '' : 's'}',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slate300,
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (dayEvents.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 32),
+                        child: Center(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
-                                              Text(
-                                                e.jobNumber!.trim(),
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: AppColors.primary,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                            ],
-                                            if (e.isQuotationVisit) ...[
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFFFEF3C7),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                ),
-                                                child: Text(
-                                                  'Quotation visit',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: const Color(0xFF92400E),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                        if ((e.jobNumber ?? '').trim().isNotEmpty || e.isQuotationVisit)
-                                          const SizedBox(height: 4),
-                                        Text(
-                                          e.title ?? 'Job',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.white,
-                                            height: 1.25,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(alpha: 0.2),
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: AppColors.primary.withValues(alpha: 0.45),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      _displayVisitStatus(e.eventStatus),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              Icon(
+                                Icons.calendar_month_rounded,
+                                size: 48,
+                                color: AppColors.whiteOverlay(0.15),
                               ),
-                              if (e.description != null && e.description!.trim().isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  e.description!.trim(),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    color: AppColors.slate400,
-                                    height: 1.35,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.schedule_rounded,
-                                    size: 16,
-                                    color: AppColors.slate400,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      _line(e),
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        color: AppColors.slate300,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (showTeamFields &&
-                                  (e.officerFullName ?? '').trim().isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.badge_outlined,
-                                      size: 16,
-                                      color: AppColors.slate400,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        'Officer: ${e.officerFullName!.trim()}',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              if (e.displayContactName.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.person_outline_rounded,
-                                      size: 16,
-                                      color: AppColors.slate400,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        e.displayContactName,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          color: AppColors.slate300,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              if (e.location != null &&
-                                  e.location!.trim().isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.place_outlined,
-                                      size: 16,
-                                      color: AppColors.slate500,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        e.location!,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          height: 1.35,
-                                          color: AppColors.slate400,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              if (_visitCancelled(e.eventStatus) &&
-                                  e.abortReason != null &&
-                                  e.abortReason!.trim().isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline_rounded,
-                                      size: 16,
-                                      color: Colors.red.shade300,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        'Reason: ${e.abortReason!.trim()}',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          height: 1.35,
-                                          color: Colors.red.shade300,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
                               const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      ownVisit
-                                          ? 'Tap card for visit details, site contact, and to mark arrived.'
-                                          : 'Tap card to view visit details (read-only).',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11,
-                                        height: 1.35,
-                                        color: AppColors.slate500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        'Details',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: AppColors.primary,
-                                        size: 22,
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                              Text(
+                                'No visits scheduled',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  color: AppColors.slate500,
+                                ),
                               ),
                             ],
                           ),
                         ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          children: dayEvents.map((e) {
+                            final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
+                            final allowFieldActions = !showTeamFields;
+                            final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _buildDiaryEventCard(context, e, ownVisit, allowFieldActions, showTeamFields),
+                            );
+                          }).toList(),
+                        ),
                       ),
-                    ),
+                  ],
+                ),
+              );
+            } else {
+              if (controller.diaryLoading.value) {
+                return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                );
+              }
+              if (controller.diaryEvents.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.calendar_month_rounded,
+                        size: 64,
+                        color: AppColors.whiteOverlay(0.25),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        isTeam
+                            ? _emptyStateMessage(controller.diaryListScope.value, controller.diaryFilter.value)
+                            : (controller.diaryListScope.value == DiaryListScope.team
+                                ? 'No team diary entries this week'
+                                : 'No diary entries this week'),
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          color: AppColors.slate400,
+                        ),
+                      ),
+                    ],
                   ),
                 );
-              },
-            );
+              }
+              final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
+              final allowFieldActions = !showTeamFields;
+              return ListView.builder(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                physics: const BouncingScrollPhysics(),
+                itemCount: controller.diaryEvents.length,
+                itemBuilder: (context, i) {
+                  final e = controller.diaryEvents[i];
+                  final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildDiaryEventCard(context, e, ownVisit, allowFieldActions, showTeamFields),
+                  );
+                },
+              );
+            }
           }),
         ),
       ],
+    );
+  }
+}
+
+class _DiaryViewModeToggle extends StatelessWidget {
+  const _DiaryViewModeToggle({
+    required this.mode,
+    required this.onChanged,
+  });
+
+  final DiaryViewMode mode;
+  final ValueChanged<DiaryViewMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.whiteOverlay(0.04),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(DiaryViewMode.calendar),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: mode == DiaryViewMode.calendar
+                      ? const Color(0xFF1E293B)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      size: 16,
+                      color: mode == DiaryViewMode.calendar
+                          ? Colors.white
+                          : AppColors.slate400,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Calendar',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: mode == DiaryViewMode.calendar
+                            ? Colors.white
+                            : AppColors.slate400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(DiaryViewMode.list),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: mode == DiaryViewMode.list
+                      ? const Color(0xFF1E293B)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.list_rounded,
+                      size: 16,
+                      color: mode == DiaryViewMode.list
+                          ? Colors.white
+                          : AppColors.slate400,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'List',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: mode == DiaryViewMode.list
+                            ? Colors.white
+                            : AppColors.slate400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiaryFilterBar extends StatelessWidget {
+  const _DiaryFilterBar({
+    required this.selectedFilter,
+    required this.onChanged,
+  });
+
+  final DiaryFilter selectedFilter;
+  final ValueChanged<DiaryFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _buildChip('Today', DiaryFilter.today),
+        const SizedBox(width: 8),
+        _buildChip('7 Days', DiaryFilter.sevenDays),
+        const SizedBox(width: 8),
+        _buildChip('This Month', DiaryFilter.month),
+      ],
+    );
+  }
+
+  Widget _buildChip(String label, DiaryFilter filter) {
+    final active = selectedFilter == filter;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => onChanged(filter),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.primary.withValues(alpha: 0.15)
+                : AppColors.whiteOverlay(0.04),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active
+                  ? AppColors.primary.withValues(alpha: 0.45)
+                  : AppColors.whiteOverlay(0.08),
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: active ? AppColors.primary : AppColors.slate400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiaryCalendarView extends StatelessWidget {
+  const _DiaryCalendarView({
+    required this.focusedMonth,
+    required this.selectedDate,
+    required this.events,
+    required this.onDateSelected,
+    required this.onMonthChanged,
+    required this.onJumpToToday,
+  });
+
+  final DateTime focusedMonth;
+  final DateTime selectedDate;
+  final List<DiaryEventRow> events;
+  final ValueChanged<DateTime> onDateSelected;
+  final ValueChanged<int> onMonthChanged;
+  final VoidCallback onJumpToToday;
+
+  @override
+  Widget build(BuildContext context) {
+    final weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    final firstDay = DateTime(focusedMonth.year, focusedMonth.month, 1);
+    final firstWeekday = firstDay.weekday;
+    final leadingDays = firstWeekday - 1;
+    final gridStart = firstDay.subtract(Duration(days: leadingDays));
+    final gridDates = List.generate(42, (i) => gridStart.add(Duration(days: i)));
+
+    final monthFormatter = _monthName(focusedMonth.month);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _MonthNavButton(
+              icon: Icons.chevron_left_rounded,
+              onTap: () => onMonthChanged(-1),
+            ),
+            Column(
+              children: [
+                Text(
+                  '$monthFormatter ${focusedMonth.year}',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                GestureDetector(
+                  onTap: onJumpToToday,
+                  child: Text(
+                    'Today',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            _MonthNavButton(
+              icon: Icons.chevron_right_rounded,
+              onTap: () => onMonthChanged(1),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: weekdays.map((day) {
+            return Container(
+              width: 40,
+              alignment: Alignment.center,
+              child: Text(
+                day,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.slate400,
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: 42,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1,
+          ),
+          itemBuilder: (context, index) {
+            final date = gridDates[index];
+            final isCurrentMonth = date.month == focusedMonth.month;
+            final isSelected = date.year == selectedDate.year &&
+                date.month == selectedDate.month &&
+                date.day == selectedDate.day;
+            final isToday = _isToday(date);
+            final hasEvents = _hasEventsOn(date);
+
+            return _CalendarDayCell(
+              date: date,
+              isCurrentMonth: isCurrentMonth,
+              isSelected: isSelected,
+              isToday: isToday,
+              hasEvents: hasEvents,
+              onTap: () => onDateSelected(date),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  String _monthName(int month) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    if (month < 1 || month > 12) return '';
+    return names[month - 1];
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year && date.month == now.month && date.day == now.day;
+  }
+
+  bool _hasEventsOn(DateTime date) {
+    return events.any((e) {
+      final start = e.startTime;
+      if (start == null) return false;
+      return start.year == date.year && start.month == date.month && start.day == date.day;
+    });
+  }
+}
+
+class _CalendarDayCell extends StatelessWidget {
+  const _CalendarDayCell({
+    required this.date,
+    required this.isCurrentMonth,
+    required this.isSelected,
+    required this.isToday,
+    required this.hasEvents,
+    required this.onTap,
+  });
+
+  final DateTime date;
+  final bool isCurrentMonth;
+  final bool isSelected;
+  final bool isToday;
+  final bool hasEvents;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    Color textColor;
+    if (isSelected) {
+      textColor = AppColors.primary;
+    } else if (isToday) {
+      textColor = AppColors.primary;
+    } else if (isCurrentMonth) {
+      textColor = Colors.white;
+    } else {
+      textColor = AppColors.slate500;
+    }
+
+    BoxDecoration? decoration;
+    if (isSelected) {
+      decoration = BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.primary,
+          width: 2,
+        ),
+      );
+    } else if (isToday) {
+      decoration = BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.4),
+          width: 1,
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        decoration: decoration,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Text(
+              '${date.day}',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: (isSelected || isToday) ? FontWeight.w800 : FontWeight.w600,
+                color: textColor,
+              ),
+            ),
+            if (hasEvents)
+              Positioned(
+                bottom: 4,
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primary : AppColors.primary.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthNavButton extends StatelessWidget {
+  const _MonthNavButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.whiteOverlay(0.04),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.whiteOverlay(0.08)),
+          ),
+          child: Icon(
+            icon,
+            color: Colors.white,
+            size: 20,
+          ),
+        ),
+      ),
     );
   }
 }

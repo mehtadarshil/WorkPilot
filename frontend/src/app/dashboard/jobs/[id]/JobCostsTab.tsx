@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { AlertCircle, Calculator, Loader2, Paperclip, Pencil, Plus, Receipt, RotateCcw, Save, Trash2, UploadCloud } from 'lucide-react';
 import { deleteRequest, getBlob, getJson, patchJson, postJson } from '../../../apiClient';
 
-type CostSource = 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
+type CostSource = 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part' | 'expense';
 
 interface ProofFile {
   original_filename: string;
@@ -51,6 +51,7 @@ interface CostPayload {
     job_pricing_total: number;
     quotation_total: number;
     parts_total: number;
+    expenses_total: number;
     currency: string;
   };
   lines: CostLine[];
@@ -67,6 +68,7 @@ const sourceLabels: Record<CostSource, string> = {
   job_pricing: 'Job pricing',
   quotation: 'Quotation',
   part: 'Parts',
+  expense: 'Approved expenses',
 };
 
 function money(value: number | null | undefined) {
@@ -146,7 +148,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
         acc[line.source].push(line);
         return acc;
       },
-      { manual: [], timesheet: [], job_pricing: [], quotation: [], part: [] },
+      { manual: [], timesheet: [], job_pricing: [], quotation: [], part: [], expense: [] },
     );
   }, [payload?.lines]);
 
@@ -360,6 +362,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
               <SummaryCard label="Job pricing" value={money(summary?.job_pricing_total)} />
               <SummaryCard label="Quotations" value={money(summary?.quotation_total)} />
               <SummaryCard label="Parts" value={money(summary?.parts_total)} />
+              <SummaryCard label="Approved expenses" value={money(summary?.expenses_total)} />
             </div>
 
             {rateConfig ? (

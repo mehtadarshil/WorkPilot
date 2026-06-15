@@ -160,12 +160,18 @@ class OfflineQueueService extends GetxService {
     required int diaryId,
     required String status,
     String? abortReason,
+    double? latitude,
+    double? longitude,
+    String? timestamp,
   }) async {
     await _appendOp('diary_patch', <String, dynamic>{
       'diaryId': diaryId,
       'status': status,
       if (abortReason != null && abortReason.trim().isNotEmpty)
         'abortReason': abortReason.trim(),
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (timestamp != null) 'timestamp': timestamp,
     });
   }
 
@@ -173,11 +179,17 @@ class OfflineQueueService extends GetxService {
     required int diaryId,
     required List<Map<String, dynamic>> answers,
     required String nextJobState,
+    double? latitude,
+    double? longitude,
+    String? timestamp,
   }) async {
     await _appendOp('job_report_submit', <String, dynamic>{
       'diaryId': diaryId,
       'answers': answers,
       'nextJobState': nextJobState,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (timestamp != null) 'timestamp': timestamp,
     });
   }
 
@@ -223,6 +235,15 @@ class OfflineQueueService extends GetxService {
         if (ar is String && ar.trim().isNotEmpty) {
           data['abort_reason'] = ar.trim();
         }
+        if (payload['latitude'] != null) {
+          data['latitude'] = payload['latitude'];
+        }
+        if (payload['longitude'] != null) {
+          data['longitude'] = payload['longitude'];
+        }
+        if (payload['timestamp'] != null) {
+          data['timestamp'] = payload['timestamp'];
+        }
         await _api.patch<Map<String, dynamic>>(
           '/diary-events/${payload['diaryId']}',
           data: data,
@@ -234,6 +255,9 @@ class OfflineQueueService extends GetxService {
           data: <String, dynamic>{
             'answers': payload['answers'],
             'next_job_state': payload['nextJobState'],
+            if (payload['latitude'] != null) 'latitude': payload['latitude'],
+            if (payload['longitude'] != null) 'longitude': payload['longitude'],
+            if (payload['timestamp'] != null) 'timestamp': payload['timestamp'],
           },
         );
         return;

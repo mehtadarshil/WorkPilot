@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Calculator, Plus, Trash2, Save } from 'lucide-react';
 import { getJson, putJson } from '../../apiClient';
 
@@ -249,6 +249,17 @@ export default function QuotationInternalCostingCard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const hasChanges = useRef(false);
+
+  const handleMaterialRowsChange = (next: InternalCostRow[]) => {
+    hasChanges.current = true;
+    setMaterialRows(next);
+  };
+
+  const handleLabourRowsChange = (next: InternalCostRow[]) => {
+    hasChanges.current = true;
+    setLabourRows(next);
+  };
 
   const loadCosts = useCallback(async () => {
     if (!authToken || !quotationId) return;
@@ -256,6 +267,7 @@ export default function QuotationInternalCostingCard({
     setError(null);
     try {
       const data = await getJson<InternalCostsPayload>(`/quotations/${quotationId}/internal-costs`, authToken);
+      hasChanges.current = false;
       setMaterialRows(itemsToRows(data.items, 'material'));
       setLabourRows(itemsToRows(data.items, 'labour'));
     } catch (err) {
@@ -281,6 +293,7 @@ export default function QuotationInternalCostingCard({
 
   const handleSave = async () => {
     if (!authToken) return;
+    hasChanges.current = false;
     setSaving(true);
     setError(null);
     try {
@@ -309,6 +322,18 @@ export default function QuotationInternalCostingCard({
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!hasChanges.current || loading) return;
+
+    const handler = setTimeout(() => {
+      void handleSave();
+    }, 1500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [materialRows, labourRows, loading, authToken]);
 
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-6 shadow-sm">
@@ -342,8 +367,8 @@ export default function QuotationInternalCostingCard({
         <div className="py-8 text-center text-sm text-slate-500">Loading costing worksheet…</div>
       ) : (
         <div className="space-y-6">
-          <CostTable title="Materials" rows={materialRows} currency={currency} onChange={setMaterialRows} />
-          <CostTable title="Labour" rows={labourRows} currency={currency} onChange={setLabourRows} />
+          <CostTable title="Materials" rows={materialRows} currency={currency} onChange={handleMaterialRowsChange} />
+          <CostTable title="Labour" rows={labourRows} currency={currency} onChange={handleLabourRowsChange} />
 
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
             <div className="flex justify-between py-1">

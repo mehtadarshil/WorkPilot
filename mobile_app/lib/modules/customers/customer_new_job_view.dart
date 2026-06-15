@@ -424,6 +424,10 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
       setState(() => _pageError = 'Please choose a job description.');
       return;
     }
+    if (_bookIntoDiary && (_expectedDate == null || _expectedTime == null)) {
+      setState(() => _pageError = 'Pick a diary visit date and time, or turn off Book into diary.');
+      return;
+    }
     var titleStr = 'New Job';
     for (final d in _jobDescriptions) {
       if ((d['id'] as num?)?.toInt() == _descriptionId) {
@@ -659,7 +663,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'No job descriptions loaded. You need Settings (job descriptions) access, same as the web app.',
+                          'No job descriptions loaded. Ask an admin to add job descriptions in Settings.',
                           style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFBBF24)),
                         ),
                       ),

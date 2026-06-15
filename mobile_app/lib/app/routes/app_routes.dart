@@ -13,6 +13,7 @@ abstract class AppRoutes {
   static const String diaryJobReportHistory = '/diary-job-report-history';
   static const String crmList = '/crm-list';
   static const String jobDetail = '/jobs/detail';
+  static const String editJob = '/jobs/edit';
   static const String quotations = '/quotations';
   static const String quotationDetail = '/quotations/detail';
   static const String quotationForm = '/quotations/form';

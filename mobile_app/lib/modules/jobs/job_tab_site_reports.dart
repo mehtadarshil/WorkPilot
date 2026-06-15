@@ -10,6 +10,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
@@ -460,17 +461,27 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     });
 
     try {
-      final bytes = await file.readAsBytes();
       final name = file.name;
-      final path = name.toLowerCase();
-      final mime = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      final extIdx = name.lastIndexOf('.');
+      final baseName = extIdx != -1 ? name.substring(0, extIdx) : name;
+      final newName = '${baseName}_compressed.jpg';
+      const mime = 'image/jpeg';
+
+      final bytes = await FlutterImageCompress.compressWithFile(
+        file.path,
+        minWidth: 1400,
+        minHeight: 1400,
+        quality: 80,
+        format: CompressFormat.jpeg,
+      );
+      if (bytes == null) return;
       final b64 = base64Encode(bytes);
 
       final jobs = Get.find<JobsRepository>();
       final res = await jobs.postCustomerSiteReportImage(
         cid,
         rid,
-        filename: name,
+        filename: newName,
         contentType: mime,
         contentBase64: b64,
       );
@@ -837,6 +848,49 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     });
   }
 
+  void _copyRepeatableInstance(String sectionId, Map<String, dynamic> sourceInstance, List<Map<String, dynamic>> sectionFields) {
+    final sourceInstanceId = sourceInstance['id']?.toString() ?? '';
+    if (sourceInstanceId.isEmpty) return;
+
+    final newInstanceId = 'door_${DateTime.now().millisecondsSinceEpoch}';
+    final newInst = <String, dynamic>{'id': newInstanceId, 'values': <String, dynamic>{}};
+
+    setState(() {
+      final list = List<Map<String, dynamic>>.from(_repeatableInstances[sectionId] ?? []);
+      list.add(newInst);
+      _repeatableInstances[sectionId] = list;
+
+      for (final f in sectionFields) {
+        final fieldId = (f['id'] as String?) ?? '';
+        if (fieldId.isEmpty) continue;
+        final type = (f['type'] as String?) ?? 'text';
+        if (type == 'static_text' || type == 'image' || type == 'signature') continue;
+
+        final srcKey = _repeatableCtrlKey(sectionId, sourceInstanceId, fieldId);
+        final dstKey = _repeatableCtrlKey(sectionId, newInstanceId, fieldId);
+
+        if (type == 'yes_no_na' || type == 'pass_fail') {
+          _yesNo[dstKey] = _yesNo[srcKey];
+        } else {
+          final srcVal = _textCtr[srcKey]?.text ?? '';
+          _textCtr[dstKey] = TextEditingController(text: srcVal);
+        }
+      }
+    });
+  }
+
+  String _yesNoLabel(String val) {
+    switch (val) {
+      case 'yes': return 'Yes';
+      case 'no': return 'No';
+      case 'na': return 'N/A';
+      case 'not_determined': return 'Not determined';
+      case 'pass': return 'Pass';
+      case 'fail': return 'Fail';
+      default: return val;
+    }
+  }
+
   List<Widget> _repeatableSectionWidgets(Map<String, dynamic> sec) {
     final sectionId = (sec['id'] as String?) ?? '';
     final title = (sec['title'] as String?) ?? 'Section';
@@ -891,7 +945,10 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           final collapseKey = '$sectionId|$instanceId';
           final collapsed = _repeatableCollapsed[collapseKey] == true;
           final doorTitle = _textCtr[_repeatableCtrlKey(sectionId, instanceId, 'door_location')]?.text.trim();
-          final cardTitle = (doorTitle != null && doorTitle.isNotEmpty) ? doorTitle : '$repeatLabel ${i + 1}';
+          final ratingTitle = _textCtr[_repeatableCtrlKey(sectionId, instanceId, 'fire_door_rating')]?.text.trim();
+          final cardTitle = (doorTitle != null && doorTitle.isNotEmpty)
+              ? doorTitle
+              : ((ratingTitle != null && ratingTitle.isNotEmpty) ? ratingTitle : '$repeatLabel ${i + 1}');
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
@@ -908,6 +965,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.copy_rounded, color: AppColors.slate300, size: 20),
+                        tooltip: 'Copy $repeatLabel',
+                        onPressed: () => _copyRepeatableInstance(sectionId, inst, sectionFields),
+                      ),
                       IconButton(
                         icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, color: AppColors.slate300),
                         onPressed: () => setState(() => _repeatableCollapsed[collapseKey] = !collapsed),
@@ -1242,7 +1304,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             items: [
               const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
               for (final o in opts.where((x) => x.isNotEmpty))
-                DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: const TextStyle(color: Colors.white))),
             ],
             onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),
@@ -1268,7 +1330,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             items: [
               const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
               for (final o in opts.where((x) => x.isNotEmpty))
-                DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: const TextStyle(color: Colors.white))),
             ],
             onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),

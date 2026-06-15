@@ -12,6 +12,7 @@ import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
 import '../../data/models/diary_event_detail.dart';
 import '../certificates/certificate_catalog.dart';
+import '../home/controllers/home_controller.dart';
 import 'diary_event_detail_controller.dart';
 import 'diary_extra_submissions_panel.dart';
 import 'diary_technical_notes_panel.dart';
@@ -245,8 +246,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               );
                             }),
                             _StatusBanner(d: d, phase: controller.phase),
-                            if (controller.phase ==
-                                DiaryVisitUiPhase.completed) ...[
+                            if (controller.phase == DiaryVisitUiPhase.completed || d.jobReportSubmitted) ...[
                               const SizedBox(height: 12),
                               _SubmittedJobReportBanner(
                                 onOpen: () async {
@@ -259,6 +259,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                   );
                                 },
                               ),
+                            ],
+                            if (controller.phase == DiaryVisitUiPhase.completed) ...[
                               if (!d.isQuotationVisit) ...[
                                 const SizedBox(height: 12),
                                 _JobCompletionDocumentsPanel(controller: controller),
@@ -711,6 +713,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                             ),
                             const SizedBox(height: 12),
                             DiaryExtraSubmissionsPanel(controller: controller),
+                            const SizedBox(height: 12),
+                            _VisitTimelinePanel(controller: controller),
                             const SizedBox(height: 24),
                           ],
                         ),
@@ -2184,7 +2188,8 @@ class _BottomActions extends StatelessWidget {
 
       if (phase == DiaryVisitUiPhase.onSite) {
         final needsReport = controller.effectiveJobReportQuestionCount > 0;
-        if (needsReport) {
+        final reportSubmitted = controller.detail.value?.jobReportSubmitted ?? false;
+        if (needsReport && !reportSubmitted) {
           primary = ElevatedButton(
             onPressed: busy
                 ? null
@@ -2253,6 +2258,9 @@ class _BottomActions extends StatelessWidget {
       }
 
       if (phase == DiaryVisitUiPhase.scheduled) {
+        final canEdit = Get.isRegistered<HomeController>()
+            ? Get.find<HomeController>().canEditBookedJobs
+            : false;
         return _BottomGlassDock(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2290,6 +2298,30 @@ class _BottomActions extends StatelessWidget {
                   ),
                 ),
               ),
+              if (canEdit) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () => _showEditVisitSheet(context, controller, d),
+                  icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                  label: Text(
+                    'Edit visit',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: _outlineOnGlass,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
@@ -2517,4 +2549,633 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
     ),
   );
   if (ok == true) await c.applyStatus('completed');
+}
+
+class _VisitTimelinePanel extends StatelessWidget {
+  const _VisitTimelinePanel({required this.controller});
+
+  final DiaryEventDetailController controller;
+
+  String _formatStatusLabel(String status) {
+    final s = status.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+    if (s == 'travelling_to_site' || s == 'travelling') return 'Traveling to Site';
+    if (s == 'arrived_at_site' || s == 'arrived' || s == 'on_site') return 'Arrived at Site';
+    if (s == 'job_report_submitted') return 'Job Report Submitted';
+    if (s == 'completed') return 'Completed';
+    if (s == 'cancelled' || s == 'aborted') return 'Cancelled';
+    return status;
+  }
+
+  IconData _formatStatusIcon(String status) {
+    final s = status.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+    if (s == 'travelling_to_site' || s == 'travelling') return Icons.directions_car_rounded;
+    if (s == 'arrived_at_site' || s == 'arrived' || s == 'on_site') return Icons.pin_drop_rounded;
+    if (s == 'job_report_submitted') return Icons.assignment_turned_in_rounded;
+    if (s == 'completed') return Icons.check_circle_rounded;
+    if (s == 'cancelled' || s == 'aborted') return Icons.cancel_rounded;
+    return Icons.circle_outlined;
+  }
+
+  Color _formatStatusColor(String status) {
+    final s = status.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+    if (s == 'travelling_to_site' || s == 'travelling') return Colors.blue.shade300;
+    if (s == 'arrived_at_site' || s == 'arrived' || s == 'on_site') return Colors.orange.shade300;
+    if (s == 'job_report_submitted') return Colors.teal.shade300;
+    if (s == 'completed') return Colors.green.shade300;
+    if (s == 'cancelled' || s == 'aborted') return Colors.red.shade300;
+    return Colors.grey.shade400;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = controller.detail.value;
+    if (d == null || d.statusLogs.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return _DetailGlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.timeline_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Visit timeline logs',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ListView.builder(
+            shrinkWrap: true,
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: d.statusLogs.length,
+            itemBuilder: (context, index) {
+              final log = d.statusLogs[index];
+              final status = log['status'] as String? ?? '';
+              final lat = log['latitude'];
+              final lon = log['longitude'];
+              final tsStr = log['timestamp'] as String? ?? '';
+              final ts = DateTime.tryParse(tsStr)?.toLocal();
+              final timeFormatted = ts != null
+                  ? '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')} (on ${_formatDate(ts)})'
+                  : '—';
+
+              final hasCoords = lat != null && lon != null && lat != 0.0 && lon != 0.0;
+              final isLast = index == d.statusLogs.length - 1;
+
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Column(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _formatStatusColor(status).withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: _formatStatusColor(status).withValues(alpha: 0.4),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Icon(
+                            _formatStatusIcon(status),
+                            size: 14,
+                            color: _formatStatusColor(status),
+                          ),
+                        ),
+                        if (!isLast)
+                          Expanded(
+                            child: Container(
+                              width: 2,
+                              color: AppColors.whiteOverlay(0.15),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _formatStatusLabel(status),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              timeFormatted,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppColors.slate400,
+                              ),
+                            ),
+                            if (hasCoords) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on_rounded,
+                                    size: 11,
+                                    color: AppColors.slate400,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Lat: ${lat.toStringAsFixed(5)}, Lon: ${lon.toStringAsFixed(5)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppColors.slate300,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime dt) {
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edit-visit bottom sheet (admin / scheduling staff only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _showEditVisitSheet(
+  BuildContext context,
+  DiaryEventDetailController controller,
+  DiaryEventDetail detail,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _EditVisitSheet(controller: controller, detail: detail),
+  );
+}
+
+class _EditVisitSheet extends StatefulWidget {
+  const _EditVisitSheet({
+    required this.controller,
+    required this.detail,
+  });
+
+  final DiaryEventDetailController controller;
+  final DiaryEventDetail detail;
+
+  @override
+  State<_EditVisitSheet> createState() => _EditVisitSheetState();
+}
+
+class _EditVisitSheetState extends State<_EditVisitSheet> {
+  late DateTime _selectedDate;
+  late TimeOfDay _selectedTime;
+  late int _durationMinutes;
+  late TextEditingController _notesCtrl;
+
+  static const _durations = [
+    15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 420, 480,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final start = widget.detail.startTime ?? DateTime.now();
+    _selectedDate = DateTime(start.year, start.month, start.day);
+    _selectedTime = TimeOfDay(hour: start.hour, minute: start.minute);
+    _durationMinutes = widget.detail.durationMinutes;
+    // Clamp to nearest valid step if not in list.
+    if (!_durations.contains(_durationMinutes)) {
+      _durationMinutes = _durations.reduce(
+        (a, b) =>
+            (a - _durationMinutes).abs() < (b - _durationMinutes).abs() ? a : b,
+      );
+    }
+    _notesCtrl = TextEditingController(
+      text: widget.detail.notes?.trim() ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  String _durationLabel(int minutes) {
+    if (minutes < 60) return '${minutes}m';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}m';
+  }
+
+  DateTime get _combinedStart => DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+            surface: Color(0xFF1E293B),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+      builder: (ctx, child) => Theme(
+        data: ThemeData.dark().copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+            surface: Color(0xFF1E293B),
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedTime = picked);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, mq.viewInsets.bottom + 24),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppColors.whiteOverlay(0.14),
+                const Color(0xEF0F172A),
+              ],
+            ),
+            border: Border(
+              top: BorderSide(color: AppColors.whiteOverlay(0.15)),
+            ),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.whiteOverlay(0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                // Title
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.edit_calendar_rounded,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Edit visit',
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Update the appointment date, time, duration, or notes.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.slate300,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Date & Time row ──────────────────────────────────────────
+                Text(
+                  'DATE & TIME',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.slate400,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SheetPickerTile(
+                        icon: Icons.calendar_today_rounded,
+                        label: () {
+                          final d = _selectedDate;
+                          const mo = [
+                            'Jan','Feb','Mar','Apr','May','Jun',
+                            'Jul','Aug','Sep','Oct','Nov','Dec',
+                          ];
+                          return '${d.day} ${mo[d.month - 1]} ${d.year}';
+                        }(),
+                        onTap: _pickDate,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _SheetPickerTile(
+                        icon: Icons.access_time_rounded,
+                        label: _selectedTime.format(context),
+                        onTap: _pickTime,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // ── Duration ────────────────────────────────────────────────
+                Text(
+                  'DURATION',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.slate400,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _durations.map((d) {
+                      final selected = d == _durationMinutes;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _durationMinutes = d),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.primary
+                                  : AppColors.whiteOverlay(0.08),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selected
+                                    ? AppColors.primary
+                                    : AppColors.whiteOverlay(0.15),
+                              ),
+                            ),
+                            child: Text(
+                              _durationLabel(d),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: selected
+                                    ? Colors.white
+                                    : AppColors.slate300,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Appointment notes ────────────────────────────────────────
+                Text(
+                  'APPOINTMENT NOTES',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.slate400,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.whiteOverlay(0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.whiteOverlay(0.14),
+                    ),
+                  ),
+                  child: TextField(
+                    controller: _notesCtrl,
+                    maxLines: 4,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white,
+                      height: 1.5,
+                    ),
+                    cursorColor: AppColors.primary,
+                    decoration: InputDecoration(
+                      hintText: 'Add notes for this visit…',
+                      hintStyle: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppColors.slate400,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.all(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // ── Save / Cancel ────────────────────────────────────────────
+                Obx(() {
+                  final busy = widget.controller.saving.value;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ElevatedButton(
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                Navigator.pop(context);
+                                await widget.controller.rescheduleVisit(
+                                  startTime: _combinedStart,
+                                  durationMinutes: _durationMinutes,
+                                  notes: _notesCtrl.text.trim().isEmpty
+                                      ? null
+                                      : _notesCtrl.text.trim(),
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                'Save changes',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: busy ? null : () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.slate300,
+                          side: BorderSide(
+                            color: AppColors.whiteOverlay(0.18),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tappable pill used in the edit sheet for date and time pickers.
+class _SheetPickerTile extends StatelessWidget {
+  const _SheetPickerTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.whiteOverlay(0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.whiteOverlay(0.14)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down_rounded,
+                size: 20, color: AppColors.slate400),
+          ],
+        ),
+      ),
+    );
+  }
 }

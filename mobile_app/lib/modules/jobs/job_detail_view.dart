@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
+import '../home/controllers/home_controller.dart';
 import 'job_detail_controller.dart';
 import 'job_tab_client_panel.dart';
 import 'job_tab_costs.dart';
@@ -74,6 +76,17 @@ class _JobDetailViewState extends State<JobDetailView>
             onPressed: Get.back,
           ),
           actions: [
+            Obx(() {
+              final showEdit = !controller.loading.value &&
+                  Get.isRegistered<HomeController>() &&
+                  Get.find<HomeController>().canEditBookedJobs;
+              if (!showEdit) return const SizedBox.shrink();
+              return IconButton(
+                tooltip: 'Edit Job',
+                icon: const Icon(Icons.edit_rounded),
+                onPressed: () => Get.toNamed(AppRoutes.editJob),
+              );
+            }),
             Obx(() {
               if (controller.loading.value) return const SizedBox.shrink();
               return IconButton(

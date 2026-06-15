@@ -56,6 +56,8 @@
 	<string>Select photos and videos for job reports and visit submissions.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock WorkPilot using your device biometrics.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>WorkPilot tracks your location when you update your visit status (e.g. traveling, arriving, completing visits) to log timestamps and coordinates.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>

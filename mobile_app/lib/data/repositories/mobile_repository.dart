@@ -244,11 +244,23 @@ class MobileRepository extends BaseRepository {
     int diaryEventId,
     String status, {
     String? abortReason,
+    double? latitude,
+    double? longitude,
+    String? timestamp,
   }) async {
     final data = <String, dynamic>{'status': status};
     final ar = abortReason?.trim();
     if (ar != null && ar.isNotEmpty) {
       data['abort_reason'] = ar;
+    }
+    if (latitude != null) {
+      data['latitude'] = latitude;
+    }
+    if (longitude != null) {
+      data['longitude'] = longitude;
+    }
+    if (timestamp != null) {
+      data['timestamp'] = timestamp;
     }
     return _enqueueOrRun(
       runOnline: () async {
@@ -262,8 +274,35 @@ class MobileRepository extends BaseRepository {
           diaryId: diaryEventId,
           status: status,
           abortReason: ar,
+          latitude: latitude,
+          longitude: longitude,
+          timestamp: timestamp,
         );
       },
+    );
+  }
+
+  /// Admin/scheduling-only: update visit date/time, duration, and notes.
+  /// Calls `PATCH /api/diary-events/:id/reschedule`.
+  Future<void> rescheduleDiaryEvent({
+    required int diaryEventId,
+    DateTime? startTime,
+    int? durationMinutes,
+    String? notes,
+  }) async {
+    final data = <String, dynamic>{};
+    if (startTime != null) {
+      data['start_time'] = startTime.toUtc().toIso8601String();
+    }
+    if (durationMinutes != null) {
+      data['duration_minutes'] = durationMinutes;
+    }
+    if (notes != null) {
+      data['notes'] = notes.trim().isEmpty ? null : notes.trim();
+    }
+    await api.patch<Map<String, dynamic>>(
+      '/diary-events/$diaryEventId/reschedule',
+      data: data,
     );
   }
 
@@ -330,6 +369,9 @@ class MobileRepository extends BaseRepository {
     int diaryEventId,
     List<Map<String, dynamic>> answers, {
     required String nextJobState,
+    double? latitude,
+    double? longitude,
+    String? timestamp,
   }) async {
     return _enqueueOrRun(
       runOnline: () async {
@@ -338,6 +380,9 @@ class MobileRepository extends BaseRepository {
           data: <String, dynamic>{
             'answers': answers,
             'next_job_state': nextJobState,
+            if (latitude != null) 'latitude': latitude,
+            if (longitude != null) 'longitude': longitude,
+            if (timestamp != null) 'timestamp': timestamp,
           },
         );
       },
@@ -346,6 +391,9 @@ class MobileRepository extends BaseRepository {
           diaryId: diaryEventId,
           answers: answers,
           nextJobState: nextJobState,
+          latitude: latitude,
+          longitude: longitude,
+          timestamp: timestamp,
         );
       },
     );

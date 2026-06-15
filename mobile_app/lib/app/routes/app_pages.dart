@@ -17,6 +17,7 @@ import '../../modules/timesheet/timesheet_history_binding.dart';
 import '../../modules/timesheet/timesheet_history_view.dart';
 import '../../modules/crm/crm_list_binding.dart';
 import '../../modules/crm/crm_list_view.dart';
+import '../../modules/jobs/edit_job_view.dart';
 import '../../modules/jobs/job_detail_binding.dart';
 import '../../modules/jobs/job_detail_view.dart';
 import '../../modules/quotations/quotation_detail_page.dart';
@@ -126,6 +127,10 @@ class AppPages {
       name: AppRoutes.jobDetail,
       page: () => JobDetailView(),
       binding: JobDetailBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.editJob,
+      page: () => const EditJobView(),
     ),
     GetPage<void>(
       name: AppRoutes.quotations,

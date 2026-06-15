@@ -15,7 +15,7 @@ type JobCostsRouteDeps = {
 
 type CostLine = {
   id: string;
-  source: 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part';
+  source: 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part' | 'expense';
   editable?: boolean;
   label: string;
   description: string | null;
@@ -245,6 +245,16 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
     [jobId],
   );
 
+  const expenses = await pool.query(
+    `SELECT je.id, je.expense_date, je.category, je.description, je.amount, je.created_at,
+            o.full_name AS officer_full_name
+     FROM job_expenses je
+     LEFT JOIN officers o ON o.id = je.officer_id
+     WHERE je.job_id = $1 AND je.status = 'approved'
+     ORDER BY je.expense_date DESC, je.id DESC`,
+    [jobId],
+  );
+
   const lines: CostLine[] = [];
 
   for (const row of manual.rows) {
@@ -351,6 +361,24 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
     });
   }
 
+  for (const row of expenses.rows) {
+    lines.push({
+      id: `expense-${row.id}`,
+      source: 'expense',
+      label: `Approved expense · ${row.category || 'Expense'}`,
+      description: [
+        row.description ? String(row.description) : null,
+        row.expense_date ? `Expense date: ${iso(row.expense_date)?.slice(0, 10)}` : null,
+      ].filter(Boolean).join('\n') || null,
+      quantity: 1,
+      unit_amount: n(row.amount),
+      amount: n(row.amount),
+      currency: 'GBP',
+      created_at: iso(row.created_at),
+      created_by_name: row.officer_full_name ?? null,
+    });
+  }
+
   const bySource = lines.reduce<Record<string, number>>((acc, line) => {
     acc[line.source] = Math.round(((acc[line.source] ?? 0) + line.amount) * 100) / 100;
     return acc;
@@ -365,6 +393,7 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
       job_pricing_total: bySource.job_pricing ?? 0,
       quotation_total: bySource.quotation ?? 0,
       parts_total: bySource.part ?? 0,
+      expenses_total: bySource.expense ?? 0,
       currency: 'GBP',
     },
     lines,

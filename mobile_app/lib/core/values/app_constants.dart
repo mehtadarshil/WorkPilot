@@ -72,10 +72,14 @@ abstract class AppConstants {
       return fromEnv.replaceAll(RegExp(r'/$'), '');
     }
     final api = apiBaseUrl.trim().replaceAll(RegExp(r'/$'), '');
+    var base = api;
     if (api.endsWith('/api')) {
-      return api.substring(0, api.length - 4);
+      base = api.substring(0, api.length - 4);
     }
-    return api;
+    if (base.contains(':4000')) {
+      base = base.replaceAll(':4000', ':3001');
+    }
+    return base;
   }
 
   static const Duration connectTimeout = Duration(seconds: 30);

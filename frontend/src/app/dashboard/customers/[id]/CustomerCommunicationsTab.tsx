@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Download, Mail, Phone, Plus, Printer, Search, X, Paperclip, Trash2 } from 'lucide-react';
+import { CalendarDays, Download, Mail, Phone, Plus, Printer, Search, X, Paperclip, Trash2, Eye } from 'lucide-react';
 import dayjs from 'dayjs';
 import { deleteRequest, getBlob, getJson, postJson } from '../../../apiClient';
 
@@ -22,6 +22,15 @@ interface Communication {
   object_type: ObjectType;
   object_id: number | null;
   attachment_name: string | null;
+  attachment_ids?: (string | number)[];
+  attachment_files?: {
+    id: string | number;
+    original_filename: string;
+    content_type: string | null;
+    byte_size: number | null;
+    kind: string;
+    href?: string;
+  }[];
   scheduled_for: string | null;
   created_at: string;
   created_by: number | null;
@@ -188,9 +197,76 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
     }
   }, [token, customerId, query, fromDate, toDate, typeFilter, createdByFilter, objectFilter, workAddressId]);
 
+  const fetchCustomerFiles = useCallback(async () => {
+    if (!token || !customerId) return;
+    const params = new URLSearchParams();
+    if (workAddressId) params.set('work_address_id', workAddressId);
+    try {
+      const res = await getJson<{ files: CustomerFileOption[] }>(
+        `/customers/${customerId}/files${params.toString() ? `?${params.toString()}` : ''}`,
+        token
+      );
+      setCustomerFiles(res.files ?? []);
+    } catch (e) {
+      console.error('Failed to fetch customer files:', e);
+    }
+  }, [token, customerId, workAddressId]);
+
+  const previewAttachment = (attachment: EmailAttachment) => {
+    try {
+      const base64Data = attachment.content_base64;
+      const contentType = attachment.content_type || 'application/octet-stream';
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Could not preview attachment:', err);
+      alert('Failed to preview attachment.');
+    }
+  };
+
+  const previewFileByIdOrName = async (idOrName: string | number, filename: string) => {
+    if (!token) return;
+    try {
+      let path = '';
+      if (typeof idOrName === 'string' && idOrName.startsWith('electrical_cert_')) {
+        const cId = idOrName.replace('electrical_cert_', '');
+        path = `/electrical-certificates/${cId}/pdf`;
+      } else if (typeof idOrName === 'string' && idOrName.startsWith('site_report_')) {
+        const rId = idOrName.replace('site_report_', '');
+        path = `/customers/${customerId}/site-report/${rId}/pdf`;
+      } else {
+        path = `/customers/${customerId}/files/${idOrName}/content`;
+      }
+      const blob = await getBlob(path, token);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      console.error(e);
+      alert(`Failed to preview "${filename}"`);
+    }
+  };
+
+  const handleFallbackPreview = async (filename: string) => {
+    const trimmedName = filename.trim();
+    const matched = customerFiles.find((f) => f.original_filename.trim().toLowerCase() === trimmedName.toLowerCase());
+    if (matched) {
+      await previewFileByIdOrName(matched.id, matched.original_filename);
+    } else {
+      alert(`Attachment "${trimmedName}" is not available for preview.`);
+    }
+  };
+
   useEffect(() => {
     fetchCommunications();
-  }, [fetchCommunications]);
+    void fetchCustomerFiles();
+  }, [fetchCommunications, fetchCustomerFiles]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Communication[]>();
@@ -492,7 +568,41 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
                         {item.bcc_value && <p><span className="font-semibold text-slate-800">BCC:</span> {item.bcc_value}</p>}
                         {item.status && <p><span className="font-semibold text-slate-800">Status:</span> <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">{item.status}</span></p>}
                         {item.message && <p className="whitespace-pre-wrap">{item.message}</p>}
-                        {item.attachment_name && <p className="text-[#14B8A6]">Attachment: {item.attachment_name}</p>}
+                        {item.attachment_files && item.attachment_files.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 items-center text-xs">
+                            <span className="font-semibold text-slate-800">Attachments:</span>
+                            {item.attachment_files.map((file: any) => (
+                              <button
+                                key={String(file.id)}
+                                type="button"
+                                onClick={() => void previewFileByIdOrName(file.id, file.original_filename)}
+                                className="inline-flex items-center gap-1 rounded bg-[#14B8A6]/10 px-2 py-0.5 font-medium text-[#14B8A6] hover:bg-[#14B8A6]/20 transition-colors"
+                              >
+                                <Eye className="size-3" />
+                                {file.original_filename}
+                              </button>
+                            ))}
+                          </div>
+                        ) : item.attachment_name ? (
+                          <div className="flex flex-wrap gap-2 items-center text-xs">
+                            <span className="font-semibold text-slate-800">Attachments:</span>
+                            {item.attachment_name.split(',').map((name: string, idx: number) => {
+                              const trimmed = name.trim();
+                              if (!trimmed) return null;
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => void handleFallbackPreview(trimmed)}
+                                  className="inline-flex items-center gap-1 rounded bg-[#14B8A6]/10 px-2 py-0.5 font-medium text-[#14B8A6] hover:bg-[#14B8A6]/20 transition-colors"
+                                >
+                                  <Eye className="size-3" />
+                                  {trimmed}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
                         {item.scheduled_for && <p><span className="font-semibold text-slate-800">Scheduled:</span> {dayjs(item.scheduled_for).format('ddd D MMM YYYY h:mm a')}</p>}
                       </div>
                     </div>
@@ -667,7 +777,15 @@ export default function CustomerCommunicationsTab({ customerId, customer, workAd
                     <ul className="space-y-1 text-xs text-slate-700">
                       {attachments.map((attachment) => (
                         <li key={attachment.key} className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 px-2 py-1">
-                          <span className="truncate">{attachment.filename}</span>
+                          <button
+                            type="button"
+                            onClick={() => previewAttachment(attachment)}
+                            className="min-w-0 truncate font-semibold text-[#14B8A6] hover:underline text-left flex items-center gap-1"
+                            title={`Preview ${attachment.filename}`}
+                          >
+                            <Eye className="size-3.5 shrink-0" />
+                            {attachment.filename}
+                          </button>
                           <span className="shrink-0 text-slate-500">{formatBytes(attachment.byte_size)}</span>
                           <button
                             type="button"

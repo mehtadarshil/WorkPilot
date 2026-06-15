@@ -20,6 +20,10 @@ import '../../../data/repositories/mobile_repository.dart';
 /// Diary list filter: personal field schedule vs tenant-wide (admin).
 enum DiaryListScope { mine, team }
 
+enum DiaryViewMode { list, calendar }
+
+enum DiaryFilter { today, sevenDays, month }
+
 class HomeController extends GetxController with WidgetsBindingObserver {
   HomeController({StorageService? storage, MobileRepository? mobile})
     : _storage = storage ?? Get.find<StorageService>(),
@@ -40,6 +44,10 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   final RxList<DiaryEventRow> diaryEvents = <DiaryEventRow>[].obs;
   final RxBool diaryLoading = false.obs;
   final Rx<DiaryListScope> diaryListScope = DiaryListScope.mine.obs;
+  final Rx<DiaryViewMode> diaryViewMode = DiaryViewMode.list.obs;
+  final Rx<DiaryFilter> diaryFilter = DiaryFilter.sevenDays.obs;
+  final Rx<DateTime> calendarFocusedMonth = DateTime.now().obs;
+  final Rx<DateTime> calendarSelectedDate = DateTime.now().obs;
 
   /// Bump after profile edit so Profile tab reloads photo/summary.
   final RxInt profileRevision = 0.obs;
@@ -67,7 +75,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   DateTime? _pausedAt;
 
-  static const _lockAfterBackgroundDuration = Duration(seconds: 3);
+  static const _lockAfterBackgroundDuration = Duration(seconds: 30);
 
   bool get officerFeatures => home.value?.officerFeatures ?? false;
 
@@ -89,6 +97,18 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   bool get showDiaryScopeTabs => canViewMyDiary && canViewTeamDiary;
 
   bool get canUseDiaryTab => canViewMyDiary || canViewTeamDiary;
+
+  /// True for ADMIN / SUPER_ADMIN, or STAFF with the 'scheduling' permission.
+  /// Mirrors the `requireAdmin + requirePermission('scheduling')` guard on the
+  /// backend `PATCH /api/diary-events/:id/reschedule` endpoint.
+  bool get canEditBookedJobs {
+    final h = home.value;
+    if (h == null) return false;
+    final role = h.role.toUpperCase();
+    if (role == 'SUPER_ADMIN' || role == 'ADMIN') return true;
+    if (role == 'STAFF') return h.mobilePermissions['scheduling'] == true;
+    return false;
+  }
 
   int? get myOfficerId => home.value?.profile?.id;
 
@@ -233,44 +253,92 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       diaryListScope.value = DiaryListScope.mine;
     }
   }
-
   void setDiaryListScope(DiaryListScope scope) {
     if (diaryListScope.value == scope) return;
     diaryListScope.value = scope;
-    loadDiaryWeek();
+    loadDiaryEvents();
+  }
+
+  void setDiaryViewMode(DiaryViewMode mode) {
+    if (diaryViewMode.value == mode) return;
+    diaryViewMode.value = mode;
+    loadDiaryEvents();
+  }
+
+  void setDiaryFilter(DiaryFilter filter) {
+    if (diaryFilter.value == filter) return;
+    diaryFilter.value = filter;
+    loadDiaryEvents();
+  }
+
+  void selectCalendarDate(DateTime date) {
+    calendarSelectedDate.value = date;
+    if (date.year != calendarFocusedMonth.value.year || date.month != calendarFocusedMonth.value.month) {
+      calendarFocusedMonth.value = DateTime(date.year, date.month, 1);
+      loadDiaryEvents();
+    }
+  }
+
+  void changeCalendarMonth(int delta) {
+    final cur = calendarFocusedMonth.value;
+    calendarFocusedMonth.value = DateTime(cur.year, cur.month + delta, 1);
+    loadDiaryEvents();
   }
 
   Future<void> loadDiaryWeek() async {
+    await loadDiaryEvents();
+  }
+
+  Future<void> loadDiaryEvents() async {
     final scope = diaryListScope.value;
     if (scope == DiaryListScope.mine && !canViewMyDiary) return;
     if (scope == DiaryListScope.team && !canViewTeamDiary) return;
     diaryLoading.value = true;
-    // Home "next" uses start+duration>now, so a visit that started *yesterday*
-    // can still be upcoming. Align diary list with (yesterday 00:00)…(+6d) to match
-    // the same 8 local calendar days that were [today..today+7] end, but shifted
-    // back by one so yesterday's visits are included.
+
+    String rangeStart;
+    String rangeEnd;
+
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final firstDay = today.subtract(const Duration(days: 1));
-    final endDay = today.add(const Duration(days: 6));
-    final rangeStart = DateTime(
-      firstDay.year,
-      firstDay.month,
-      firstDay.day,
-      0,
-      0,
-      0,
-      0,
-    ).toIso8601String();
-    final rangeEnd = DateTime(
-      endDay.year,
-      endDay.month,
-      endDay.day,
-      23,
-      59,
-      59,
-      999,
-    ).toIso8601String();
+
+    if (scope == DiaryListScope.mine) {
+      // Mine view: always default to 7-day upcoming list range
+      final firstDay = today.subtract(const Duration(days: 1));
+      final endDay = today.add(const Duration(days: 6));
+      rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
+      rangeEnd = DateTime(endDay.year, endDay.month, endDay.day, 23, 59, 59, 999).toIso8601String();
+    } else {
+      // Team view: respect calendar mode and filters
+      if (diaryViewMode.value == DiaryViewMode.calendar) {
+        final focused = calendarFocusedMonth.value;
+        final firstDayOfMonth = DateTime(focused.year, focused.month, 1);
+        final lastDayOfMonth = DateTime(focused.year, focused.month + 1, 0);
+        final start = firstDayOfMonth.subtract(const Duration(days: 7));
+        final end = lastDayOfMonth.add(const Duration(days: 7));
+        rangeStart = DateTime(start.year, start.month, start.day, 0, 0, 0, 0).toIso8601String();
+        rangeEnd = DateTime(end.year, end.month, end.day, 23, 59, 59, 999).toIso8601String();
+      } else {
+        switch (diaryFilter.value) {
+          case DiaryFilter.today:
+            rangeStart = DateTime(today.year, today.month, today.day, 0, 0, 0, 0).toIso8601String();
+            rangeEnd = DateTime(today.year, today.month, today.day, 23, 59, 59, 999).toIso8601String();
+            break;
+          case DiaryFilter.sevenDays:
+            final firstDay = today.subtract(const Duration(days: 1));
+            final endDay = today.add(const Duration(days: 6));
+            rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
+            rangeEnd = DateTime(endDay.year, endDay.month, endDay.day, 23, 59, 59, 999).toIso8601String();
+            break;
+          case DiaryFilter.month:
+            final firstDay = DateTime(today.year, today.month, 1);
+            final lastDay = DateTime(today.year, today.month + 1, 0);
+            rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
+            rangeEnd = DateTime(lastDay.year, lastDay.month, lastDay.day, 23, 59, 59, 999).toIso8601String();
+            break;
+        }
+      }
+    }
+
     final apiScope = scope == DiaryListScope.team ? 'team' : 'mine';
     try {
       final list = await _mobile.fetchDiaryEvents(
@@ -297,10 +365,6 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         diaryEvents.clear();
       }
     } catch (_) {
-      // Defensive: a malformed row (e.g., unexpected type from a schema change
-      // or stale cache) must not break the home tab. Drop the list and let the
-      // user pull-to-refresh; the underlying error is logged via the catch
-      // chain in refreshHome() if it ever propagates from there in the future.
       diaryEvents.clear();
     } finally {
       diaryLoading.value = false;
@@ -505,7 +569,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     final canAuth = await biometric.canAuthenticate();
     final enabled = biometric.isBiometricEnabled;
     if (canAuth && enabled && Get.currentRoute != AppRoutes.biometricLock) {
-      Get.offAllNamed(AppRoutes.biometricLock);
+      Get.toNamed(AppRoutes.biometricLock);
     }
   }
 }

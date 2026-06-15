@@ -62,6 +62,8 @@ class DiaryEventDetail {
     this.keyInfo,
     this.siteNotes,
     this.siteImages = const [],
+    this.jobReportSubmitted = false,
+    this.statusLogs = const [],
   });
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
@@ -171,6 +173,12 @@ class DiaryEventDetail {
       keyInfo: m['key_info'] as String?,
       siteNotes: m['site_notes'] as String?,
       siteImages: imagesList,
+      jobReportSubmitted: m['job_report_submitted'] == true,
+      statusLogs: json['status_logs'] is List
+          ? (json['status_logs'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          : (m['status_logs'] is List
+              ? (m['status_logs'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
+              : const []),
     );
   }
 
@@ -220,6 +228,8 @@ class DiaryEventDetail {
   final String? keyInfo;
   final String? siteNotes;
   final List<DiarySiteImage> siteImages;
+  final bool jobReportSubmitted;
+  final List<Map<String, dynamic>> statusLogs;
 
   String? get primaryOfficerName {
     for (final o in officers) {
@@ -265,6 +275,8 @@ class DiaryEventDetail {
     List<DiaryExtraSubmission>? technicalNotes,
     String? chargeType,
     List<DiarySiteImage>? siteImages,
+    bool? jobReportSubmitted,
+    List<Map<String, dynamic>>? statusLogs,
   }) {
     return DiaryEventDetail(
       diaryId: diaryId,
@@ -313,6 +325,8 @@ class DiaryEventDetail {
       keyInfo: keyInfo ?? this.keyInfo,
       siteNotes: siteNotes ?? this.siteNotes,
       siteImages: siteImages ?? this.siteImages,
+      jobReportSubmitted: jobReportSubmitted ?? this.jobReportSubmitted,
+      statusLogs: statusLogs ?? this.statusLogs,
     );
   }
 }

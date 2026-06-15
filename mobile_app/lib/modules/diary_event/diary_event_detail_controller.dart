@@ -11,6 +11,7 @@ import '../../data/models/electrical_certificate_models.dart';
 import '../../data/models/job_report_history_models.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../home/controllers/home_controller.dart';
+import '../../core/utils/location_helper.dart';
 
 enum DiaryVisitUiPhase { scheduled, travelling, onSite, completed, cancelled }
 
@@ -195,26 +196,41 @@ class DiaryEventDetailController extends GetxController {
     final d = detail.value;
     if (d == null) return;
     detail.value = d.copyWith(
-      eventStatus: 'completed',
+      jobReportSubmitted: true,
       jobState: nextJobState,
       updatedAtIso: DateTime.now().toUtc().toIso8601String(),
     );
     jobReportHistoryLoaded.value = false;
   }
 
-  void _applyLocalDetailAfterQueuedPatch(String status, {String? abortReason}) {
+  void _applyLocalDetailAfterQueuedPatch(
+    String status, {
+    String? abortReason,
+    double? latitude,
+    double? longitude,
+    String? timestamp,
+  }) {
     final d = detail.value;
     if (d == null) return;
     final t = status.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
     final normalizedStatus = (t == 'cancelled' || t == 'aborted')
         ? 'cancelled'
         : status.trim();
+
+    final newLog = <String, dynamic>{
+      'status': normalizedStatus,
+      'latitude': latitude,
+      'longitude': longitude,
+      'timestamp': timestamp ?? DateTime.now().toUtc().toIso8601String(),
+    };
+
     detail.value = d.copyWith(
       eventStatus: normalizedStatus,
       abortReason: abortReason != null && abortReason.trim().isNotEmpty
           ? abortReason.trim()
           : d.abortReason,
       updatedAtIso: DateTime.now().toUtc().toIso8601String(),
+      statusLogs: [...d.statusLogs, newLog],
     );
   }
 
@@ -222,10 +238,16 @@ class DiaryEventDetailController extends GetxController {
     if (saving.value) return;
     saving.value = true;
     try {
+      final loc = await getCurrentLocation();
+      final clientTimestamp = DateTime.now().toUtc().toIso8601String();
+
       final synced = await _mobile.patchDiaryEventStatus(
         diaryId,
         status,
         abortReason: abortReason,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timestamp: clientTimestamp,
       );
       if (synced) {
         await load();
@@ -251,7 +273,13 @@ class DiaryEventDetailController extends GetxController {
           );
         }
       } else {
-        _applyLocalDetailAfterQueuedPatch(status, abortReason: abortReason);
+        _applyLocalDetailAfterQueuedPatch(
+          status,
+          abortReason: abortReason,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          timestamp: clientTimestamp,
+        );
         if (Get.isRegistered<HomeController>()) {
           final h = Get.find<HomeController>();
           h.patchDiaryEventInWeekList(
@@ -273,6 +301,54 @@ class DiaryEventDetailController extends GetxController {
       Get.snackbar(
         'Visit',
         e.message,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  /// Admin-only: update visit date/time, duration, and appointment notes.
+  Future<void> rescheduleVisit({
+    required DateTime startTime,
+    required int durationMinutes,
+    String? notes,
+  }) async {
+    if (saving.value) return;
+    saving.value = true;
+    try {
+      await _mobile.rescheduleDiaryEvent(
+        diaryEventId: diaryId,
+        startTime: startTime,
+        durationMinutes: durationMinutes,
+        notes: notes,
+      );
+      // Reload full detail so all derived fields (endTime, statusLogs, etc.) refresh.
+      await load(silent: true);
+      if (Get.isRegistered<HomeController>()) {
+        await Get.find<HomeController>().refreshHome();
+      }
+      Get.snackbar(
+        'Visit updated',
+        'Appointment details have been saved.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } on ApiException catch (e) {
+      Get.snackbar(
+        'Could not update',
+        e.message,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Could not update',
+        e.toString().replaceFirst('Exception: ', ''),
         snackPosition: SnackPosition.BOTTOM,
         margin: const EdgeInsets.all(16),
         borderRadius: 12,
