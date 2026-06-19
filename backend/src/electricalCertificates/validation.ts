@@ -83,6 +83,7 @@ export function validateElectricalCertificate(doc: ElectricalCertificateDocument
 
   const sectionIncomplete: Record<string, number> = {};
   for (const item of INSPECTION_SCHEDULE_ITEMS) {
+    if (item.id === '5.12' || item.id === '5.17') continue;
     const outcome = doc.inspectionSchedule[item.id];
     if (!outcome) {
       sectionIncomplete[item.section] = (sectionIncomplete[item.section] ?? 0) + 1;

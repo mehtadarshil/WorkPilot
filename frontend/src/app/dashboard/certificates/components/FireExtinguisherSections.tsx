@@ -24,7 +24,7 @@ import type {
   FireExtinguisherRecord,
 } from '@/lib/electricalCertificates/types';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
-import { OutcomeButtons, SectionCard, SelectField, TextAreaField, TextField } from './FormFields';
+import { DateInput, OutcomeButtons, SectionCard, SelectField, TextAreaField, TextField } from './FormFields';
 
 const inputClass =
   'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -425,15 +425,23 @@ function EngineerSelect({ label, engineers, value, onSelect }: { label: string; 
 function DateField({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   const today = new Date().toISOString().slice(0, 10);
   return (
-    <label className={labelClass}>
-      {label}
-      <div className="flex gap-2">
-        <input type="date" disabled={disabled} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
-        <button type="button" disabled={disabled} onClick={() => onChange(today)} className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+    <div className="flex flex-col gap-1">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <DateInput
+            label={label}
+            value={value}
+            onChange={onChange}
+            inputClassName={inputClass}
+            labelClassName={labelClass}
+            placeholder={disabled ? '' : 'DD/MM/YYYY'}
+          />
+        </div>
+        <button type="button" disabled={disabled} onClick={() => onChange(today)} className="shrink-0 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 mb-0.5">
           Today
         </button>
       </div>
-    </label>
+    </div>
   );
 }
 

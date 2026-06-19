@@ -1,6 +1,6 @@
-'use client';
-
+import { useState, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
+import dayjs from 'dayjs';
 
 const inputClass =
   'w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]/40';
@@ -79,6 +79,28 @@ export function QuickSetTextField({
   );
 }
 
+export function QuickSetTextAreaField({
+  label,
+  value,
+  onChange,
+  options = TEXT_QUICK_NA_LIM,
+  rows = 3,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: { value: string; label: string }[];
+  rows?: number;
+}) {
+  return (
+    <div>
+      <TextAreaField label={label} value={value} onChange={onChange} rows={rows} />
+      <QuickSetButtons value={value} onChange={onChange} options={options} compact />
+    </div>
+  );
+}
+
+
 export function QuickSetSelectField({
   label,
   value,
@@ -141,6 +163,102 @@ function handleFormFieldKeyDown(event: KeyboardEvent<HTMLInputElement | HTMLSele
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return <label className={labelClass}>{children}</label>;
 }
+export function DateInput({
+  label,
+  value,
+  onChange,
+  placeholder = 'DD/MM/YYYY',
+  inputClassName,
+  labelClassName,
+}: {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  inputClassName?: string;
+  labelClassName?: string;
+}) {
+  const formatToDisplay = (val: string) => {
+    if (!val) return '';
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) return val;
+    const d = dayjs(val, 'YYYY-MM-DD');
+    return d.isValid() ? d.format('DD/MM/YYYY') : val;
+  };
+
+  const [inputValue, setInputValue] = useState(formatToDisplay(value));
+
+  useEffect(() => {
+    setInputValue(formatToDisplay(value));
+  }, [value]);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let text = e.target.value;
+    text = text.replace(/[^0-9/]/g, '');
+
+    // Automatically append slashes
+    if (text.length === 2 && !text.includes('/')) {
+      text = text + '/';
+    } else if (text.length === 5 && text.split('/').length === 2) {
+      text = text + '/';
+    }
+
+    if (text.length > 10) {
+      text = text.slice(0, 10);
+    }
+
+    setInputValue(text);
+
+    if (text.length === 10) {
+      const parts = text.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1000 && year <= 9999) {
+          const formattedMonth = month < 10 ? `0${month}` : `${month}`;
+          const formattedDay = day < 10 ? `0${day}` : `${day}`;
+          const isoDate = `${year}-${formattedMonth}-${formattedDay}`;
+          onChange(isoDate);
+        }
+      }
+    } else if (text === '') {
+      onChange('');
+    }
+  };
+
+  const handleBlur = () => {
+    if (!inputValue) {
+      onChange('');
+      return;
+    }
+    if (inputValue.length !== 10) {
+      setInputValue(formatToDisplay(value));
+    } else {
+      const parts = inputValue.split('/');
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const year = parseInt(parts[2], 10);
+      if (!(day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1000 && year <= 9999)) {
+        setInputValue(formatToDisplay(value));
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      {label && <label className={labelClassName || labelClass}>{label}</label>}
+      <input
+        type="text"
+        className={inputClassName || inputClass}
+        value={inputValue}
+        placeholder={placeholder}
+        onChange={handleTextChange}
+        onBlur={handleBlur}
+        onKeyDown={handleFormFieldKeyDown}
+      />
+    </div>
+  );
+}
 
 export function TextField({
   label,
@@ -155,6 +273,10 @@ export function TextField({
   placeholder?: string;
   type?: string;
 }) {
+  if (type === 'date') {
+    return <DateInput label={label} value={value} onChange={onChange} placeholder={placeholder} />;
+  }
+
   return (
     <div className="space-y-1">
       <FieldLabel>{label}</FieldLabel>

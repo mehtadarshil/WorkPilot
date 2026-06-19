@@ -78,6 +78,9 @@ export function buildEicrCertificatePdfHtml(input: CertificatePdfInput, h: PdfHe
       const rows = INSPECTION_SCHEDULE_ITEMS.filter((item) => item.section === section)
         .map((item) => {
           const outcome = doc.inspectionSchedule[item.id] ?? '';
+          if (item.id === '5.12' || item.id === '5.17') {
+            return `<tr class="sched-subheading"><td class="mono" style="font-weight:bold">${h.esc(item.id)}</td><td colspan="2" style="font-weight:bold">${h.esc(item.label)}</td></tr>`;
+          }
           return `<tr><td class="mono">${h.esc(item.id)}</td><td>${h.esc(item.label)}</td><td class="outcome">${h.esc(OUTCOME_LABELS[outcome] ?? outcome)}</td></tr>`;
         })
         .join('');

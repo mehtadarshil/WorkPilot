@@ -35,6 +35,7 @@ import { DOMESTIC_FIRE_ALARM_EDITOR_SECTIONS } from '@/lib/electricalCertificate
 import { downloadCertificatePdf, openCertificatePdfPreviewWindow, previewCertificatePdf } from '@/lib/electricalCertificates/certificateExport';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
 import { useCertificateEditor } from '../CertificateEditorContext';
+import { DateInput } from './FormFields';
 
 const inputClass =
   'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -188,10 +189,13 @@ function InstallationSection({ domestic, update, certificate }: { domestic: Dome
           value={domestic.summary.overallAssessment}
           onChange={(overallAssessment) => update((p) => ({ ...p, summary: { ...p.summary, overallAssessment: overallAssessment as FireAlarmOverallAssessment } }))}
         />
-        <label className={labelClass}>
-          Recommended next inspection date
-          <input type="date" className={inputClass} value={domestic.summary.nextInspectionDate} onChange={(e) => update((p) => ({ ...p, summary: { ...p.summary, nextInspectionDate: e.target.value, nextInspectionPreset: '' } }))} />
-        </label>
+        <DateInput
+          label="Recommended next inspection date"
+          value={domestic.summary.nextInspectionDate}
+          onChange={(v) => update((p) => ({ ...p, summary: { ...p.summary, nextInspectionDate: v, nextInspectionPreset: '' } }))}
+          inputClassName={inputClass}
+          labelClassName={labelClass}
+        />
         <div className="flex flex-wrap gap-2">
           {DOMESTIC_FIRE_ALARM_NEXT_INSPECTION_PRESETS.map((preset) => (
             <button key={preset.value} type="button" onClick={() => update((p) => ({ ...p, summary: { ...p.summary, nextInspectionPreset: preset.value, nextInspectionDate: preset.value === 'other' ? p.summary.nextInspectionDate : dateAfterPreset(preset.value) } }))} className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${domestic.summary.nextInspectionPreset === preset.value ? 'border-[#14B8A6] bg-[#14B8A6]/10 text-[#0d9488]' : 'border-slate-200 text-slate-600'}`}>
@@ -325,6 +329,17 @@ function AppendixSection({ content, photos, onContent, onPhotos }: { content: st
 }
 
 function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+  if (type === 'date') {
+    return (
+      <DateInput
+        label={label}
+        value={value}
+        onChange={onChange}
+        inputClassName={inputClass}
+        labelClassName={labelClass}
+      />
+    );
+  }
   return (
     <label className={labelClass}>
       {label}

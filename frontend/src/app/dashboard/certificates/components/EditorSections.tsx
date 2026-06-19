@@ -22,6 +22,7 @@ import {
   PASS_FAIL_OPTIONS,
   QuickSetSelectField,
   QuickSetTextField,
+  QuickSetTextAreaField,
   SELECT_QUICK_NA_LIM,
   SELECT_QUICK_NA_LIM_UNKNOWN,
   SectionCard,
@@ -253,17 +254,17 @@ export function InstallationDetailsSection() {
           value={inst.previousInspectionDate}
           onChange={(v) => patch({ previousInspectionDate: v })}
         />
-        <TextField
+        <QuickSetTextField
           label="Previous certificate number"
           value={inst.previousCertNumber}
           onChange={(v) => patch({ previousCertNumber: v })}
         />
-        <TextField
+        <QuickSetTextField
           label="Estimated age of installation (years)"
           value={inst.estimatedAge}
           onChange={(v) => patch({ estimatedAge: v })}
         />
-        <TextAreaField
+        <QuickSetTextAreaField
           label="Evidence of additions or alterations"
           value={inst.alterationsEvidence}
           onChange={(v) => patch({ alterationsEvidence: v })}
@@ -657,20 +658,31 @@ export function InspectionScheduleSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/80">
-                      <td className="px-2 py-1.5 align-top font-mono text-[11px] font-semibold text-slate-600">
-                        {item.id}
-                      </td>
-                      <td className="px-2 py-1.5 align-top text-[11px] leading-snug text-slate-800">{item.label}</td>
-                      <td className="px-2 py-1 align-top">
-                        <InspectionOutcomePicker
-                          value={schedule[item.id] ?? ''}
-                          onChange={(v) => setOutcome(item.id, v as InspectionOutcome)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((item) => {
+                    const isHeading = item.id === '5.12' || item.id === '5.17';
+                    return (
+                      <tr key={item.id} className={`border-b border-slate-100 ${isHeading ? 'bg-slate-50 font-bold' : 'hover:bg-slate-50/80'}`}>
+                        <td className="px-2 py-1.5 align-top font-mono text-[11px] font-semibold text-slate-600">
+                          {item.id}
+                        </td>
+                        {isHeading ? (
+                          <td colSpan={2} className="px-2 py-1.5 align-top text-[11px] leading-snug text-slate-900 font-bold">
+                            {item.label}
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-2 py-1.5 align-top text-[11px] leading-snug text-slate-800">{item.label}</td>
+                            <td className="px-2 py-1 align-top">
+                              <InspectionOutcomePicker
+                                value={schedule[item.id] ?? ''}
+                                onChange={(v) => setOutcome(item.id, v as InspectionOutcome)}
+                              />
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

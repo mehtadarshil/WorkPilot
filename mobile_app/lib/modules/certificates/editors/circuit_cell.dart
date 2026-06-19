@@ -95,6 +95,23 @@ class _CircuitCellState extends State<CircuitCell> {
   Widget build(BuildContext context) {
     final hasOptions = widget.options != null && widget.options!.isNotEmpty;
 
+    final cellDecoration = InputDecoration(
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      isDense: true,
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: widget.isCalc
@@ -195,11 +212,7 @@ class _CircuitCellState extends State<CircuitCell> {
                             color: widget.isCalc ? const Color(0xFF134E4A) : Colors.white,
                             fontSize: 13,
                           ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                            isDense: true,
-                          ),
+                          decoration: cellDecoration,
                           onChanged: widget.readOnly ? null : widget.onChanged,
                         );
                       },
@@ -212,11 +225,7 @@ class _CircuitCellState extends State<CircuitCell> {
                         color: widget.isCalc ? const Color(0xFF134E4A) : Colors.white,
                         fontSize: 13,
                       ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                        isDense: true,
-                      ),
+                      decoration: cellDecoration,
                       onChanged: widget.readOnly ? null : widget.onChanged,
                     ),
             ),
