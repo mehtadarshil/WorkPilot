@@ -48,6 +48,7 @@ type Ctx = {
   validateOpen: boolean;
   setValidateOpen: (open: boolean) => void;
   applyCertificate: (next: ElectricalCertificate) => void;
+  setIsMetaEditing: (editing: boolean) => void;
 };
 
 const CertificateEditorContext = createContext<Ctx | null>(null);
@@ -73,6 +74,7 @@ export function CertificateEditorProvider({
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(initial.updated_at);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
   const [validateOpen, setValidateOpen] = useState(false);
+  const [isMetaEditing, setIsMetaEditing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const docRef = useRef(document);
   docRef.current = document;
@@ -318,6 +320,13 @@ export function CertificateEditorProvider({
   }, [certificate.id, token]);
 
   useEffect(() => {
+    if (isMetaEditing) {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       void saveDocument();
@@ -325,7 +334,7 @@ export function CertificateEditorProvider({
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [document, saveDocument]);
+  }, [document, saveDocument, isMetaEditing]);
 
   const patchMeta = useCallback(
     async (patch: {
@@ -342,6 +351,7 @@ export function CertificateEditorProvider({
         token,
       );
       setCertificate(res.certificate);
+      setDocumentState(res.certificate.document);
     },
     [certificate.id, token],
   );
@@ -385,6 +395,7 @@ export function CertificateEditorProvider({
       validateOpen,
       setValidateOpen,
       applyCertificate,
+      setIsMetaEditing,
     }),
     [
       certificate,
@@ -398,7 +409,9 @@ export function CertificateEditorProvider({
       runValidate,
       validationIssues,
       validateOpen,
+      setValidateOpen,
       applyCertificate,
+      setIsMetaEditing,
     ],
   );
 

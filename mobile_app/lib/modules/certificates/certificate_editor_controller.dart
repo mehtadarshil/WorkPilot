@@ -207,7 +207,11 @@ class CertificateEditorController extends GetxController {
     }
   }
 
-  Future<void> duplicateCertificate({String? targetTypeSlug}) async {
+  Future<void> duplicateCertificate({
+    String? targetTypeSlug,
+    int? customerId,
+    int? workAddressId,
+  }) async {
     if (duplicating.value) return;
     duplicating.value = true;
     try {
@@ -215,6 +219,8 @@ class CertificateEditorController extends GetxController {
       final cert = await _mobile.duplicateElectricalCertificate(
         certificateId,
         typeSlug: targetTypeSlug,
+        customerId: customerId,
+        workAddressId: workAddressId,
       );
       Get.offNamed(
         AppRoutes.certificateEditor,

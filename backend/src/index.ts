@@ -106,6 +106,10 @@ import {
   writeWorkpilotFile,
 } from './workpilotFileStorage';
 import { sendInlineWorkpilotFile, storeInlineDataUrlAsWorkpilotFile } from './inlineBlobStorage';
+import {
+  brandingLogoPublicPath,
+  resolveBrandingLogoPublicUrl,
+} from './brandingLogoUrl';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -2528,37 +2532,6 @@ async function storeBrandingLogoValue(userId: number, scope: 'invoice' | 'quotat
   const stored = await storeInlineDataUrlAsWorkpilotFile('branding-assets', [scope, userId], 'company_logo', value);
   if (!stored) return value;
   return brandingLogoPublicPath(scope, userId, stored.filename);
-}
-
-function brandingLogoPublicPath(scope: 'invoice' | 'quotation', userId: number, filename: string): string {
-  return `/api/branding-assets/${scope}/${userId}/${encodeURIComponent(path.basename(filename))}`;
-}
-
-function normalizeStoredBrandingLogoValue(userId: number, scope: 'invoice' | 'quotation', value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('/api/branding-assets/')) return trimmed;
-
-  try {
-    const pathname = trimmed.startsWith('http://') || trimmed.startsWith('https://')
-      ? new URL(trimmed).pathname
-      : trimmed;
-    const parts = pathname.split('/').map((p) => decodeURIComponent(p)).filter(Boolean);
-    const brandingIndex = parts.findIndex((p) => p === 'branding-assets');
-    if (
-      brandingIndex >= 0 &&
-      parts[brandingIndex + 1] === scope &&
-      parts[brandingIndex + 2] === String(userId) &&
-      parts[brandingIndex + 3]
-    ) {
-      return brandingLogoPublicPath(scope, userId, parts[brandingIndex + 3]);
-    }
-  } catch {
-    /* keep manually entered URLs unchanged */
-  }
-
-  return trimmed;
 }
 
 function imageContentTypeFromFilename(filename: string): string {
@@ -12347,7 +12320,7 @@ async function getInvoiceSettings(userId: number): Promise<{
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
       company_email: (row.company_email as string) ?? null,
-      company_logo: normalizeStoredBrandingLogoValue(userId, 'invoice', row.company_logo),
+      company_logo: resolveBrandingLogoPublicUrl(row.company_logo, userId, 'invoice'),
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
@@ -14775,7 +14748,7 @@ async function getQuotationSettings(userId: number): Promise<{
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
       company_email: (row.company_email as string) ?? null,
-      company_logo: normalizeStoredBrandingLogoValue(userId, 'quotation', row.company_logo),
+      company_logo: resolveBrandingLogoPublicUrl(row.company_logo, userId, 'quotation'),
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',

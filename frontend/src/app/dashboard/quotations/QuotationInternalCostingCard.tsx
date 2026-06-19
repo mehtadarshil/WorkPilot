@@ -308,13 +308,11 @@ export default function QuotationInternalCostingCard({
           quantity: parseNumber(row.quantity),
           sort_order: index,
         }));
-      const data = await putJson<InternalCostsPayload, { items: typeof payloadRows }>(
+      await putJson<InternalCostsPayload, { items: typeof payloadRows }>(
         `/quotations/${quotationId}/internal-costs`,
         { items: payloadRows },
         authToken,
       );
-      setMaterialRows(itemsToRows(data.items, 'material'));
-      setLabourRows(itemsToRows(data.items, 'labour'));
       setSavedAt(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save internal costing');

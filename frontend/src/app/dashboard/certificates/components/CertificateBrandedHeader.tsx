@@ -1,6 +1,7 @@
 'use client';
 
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
+import { resolveWorkpilotAssetUrl } from '@/lib/resolveWorkpilotAssetUrl';
 
 type Props = {
   branding: CompanyBranding;
@@ -27,7 +28,7 @@ export function CertificateBrandedHeader({
     >
       {branding.company_logo && (
         <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white p-1">
-          <img src={branding.company_logo} alt="" className="max-h-full max-w-full object-contain" />
+          <img src={resolveWorkpilotAssetUrl(branding.company_logo) ?? branding.company_logo} alt="" className="max-h-full max-w-full object-contain" />
         </div>
       )}
       <div className="min-w-0 flex-1">

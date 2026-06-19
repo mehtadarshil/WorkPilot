@@ -279,7 +279,7 @@ function EditCertificateDetailsModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { certificate, patchMeta } = useCertificateEditor();
+  const { certificate, patchMeta, setIsMetaEditing } = useCertificateEditor();
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [customers, setCustomers] = useState<{ id: number; full_name: string }[]>([]);
   const [workAddresses, setWorkAddresses] = useState<{ id: number; label: string }[]>([]);
@@ -290,6 +290,13 @@ function EditCertificateDetailsModal({
   const [jobNumber, setJobNumber] = useState(certificate.job_number ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsMetaEditing(open);
+    return () => {
+      setIsMetaEditing(false);
+    };
+  }, [open, setIsMetaEditing]);
 
   useEffect(() => {
     if (!open) return;

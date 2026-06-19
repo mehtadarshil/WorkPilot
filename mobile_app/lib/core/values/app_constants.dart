@@ -65,7 +65,6 @@ abstract class AppConstants {
     defaultValue: '',
   );
 
-  /// Base URL for opening customer-facing pages in the browser (no trailing slash).
   static String get resolvedWebAppOrigin {
     final fromEnv = webAppBaseUrl.trim();
     if (fromEnv.isNotEmpty) {
@@ -78,6 +77,11 @@ abstract class AppConstants {
     }
     if (base.contains(':4000')) {
       base = base.replaceAll(':4000', ':3001');
+    }
+    if (base.startsWith('https://api.')) {
+      base = base.replaceFirst('https://api.', 'https://');
+    } else if (base.startsWith('http://api.')) {
+      base = base.replaceFirst('http://api.', 'http://');
     }
     return base;
   }

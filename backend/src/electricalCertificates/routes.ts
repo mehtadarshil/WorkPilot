@@ -845,12 +845,64 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const source = await loadCertificate(pool, sourceId, userId, isSuperAdmin);
     if (!source) return res.status(404).json({ message: 'Certificate not found' });
 
-    const body = req.body as { type_slug?: unknown };
+    const body = req.body as {
+      type_slug?: unknown;
+      customer_id?: unknown;
+      work_address_id?: unknown;
+    };
     const targetTypeSlug = normalizeCertificateTypeSlug(
       typeof body.type_slug === 'string' && body.type_slug.trim() ? body.type_slug : source.type_slug,
     );
 
+    let customerId = source.customer_id;
+    let workAddressId = source.work_address_id;
+    let customerName = '';
+    let selectedInstallationAddress = '';
+
+    if (body.customer_id != null && Number.isFinite(Number(body.customer_id))) {
+      customerId = Number(body.customer_id);
+      if (body.hasOwnProperty('work_address_id')) {
+        workAddressId = body.work_address_id != null && Number.isFinite(Number(body.work_address_id)) ? Number(body.work_address_id) : null;
+      } else {
+        workAddressId = null;
+      }
+    } else if (body.hasOwnProperty('work_address_id')) {
+      workAddressId = body.work_address_id != null && Number.isFinite(Number(body.work_address_id)) ? Number(body.work_address_id) : null;
+    }
+
     try {
+      const custCheck = await pool.query(
+        `SELECT id, full_name,
+                COALESCE(
+                  NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), ''),
+                  NULLIF(TRIM(address), '')
+                ) AS customer_address
+         FROM customers WHERE id = $1` + (isSuperAdmin ? '' : ' AND created_by = $2'),
+        isSuperAdmin ? [customerId] : [customerId, userId],
+      );
+      if ((custCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid client' });
+      const customer = custCheck.rows[0] as { full_name: string; customer_address: string | null };
+      customerName = customer.full_name;
+
+      if (workAddressId) {
+        const wa = await pool.query<{
+          id: number;
+          name: string | null;
+          address_label: string | null;
+        }>(
+          `SELECT id, name,
+                  NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), '') AS address_label
+           FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
+          [workAddressId, customerId],
+        );
+        if ((wa.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid installation' });
+        const selected = wa.rows[0];
+        selectedInstallationAddress = [selected.name, selected.address_label].filter(Boolean).join('\n');
+      }
+      if (!selectedInstallationAddress) {
+        selectedInstallationAddress = customer.customer_address ?? '';
+      }
+
       const rawDoc = await pool.query<{ document: unknown }>(
         'SELECT document FROM electrical_certificates WHERE id = $1',
         [sourceId],
@@ -859,6 +911,38 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       const resolvedObject =
         resolvedDocument && typeof resolvedDocument === 'object' ? (resolvedDocument as Record<string, unknown>) : {};
       const doc = coerceDocument({ ...resolvedObject, typeSlug: targetTypeSlug });
+
+      if (customerId !== source.customer_id || workAddressId !== source.work_address_id || targetTypeSlug !== source.type_slug) {
+        if (doc.installation) {
+          doc.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'portable_appliance_test' && doc.pat) {
+          doc.pat.jobAddress.customerName = customerName;
+          doc.pat.jobAddress.address = selectedInstallationAddress;
+        }
+        if (targetTypeSlug === 'fi_insp_2025' && doc.fireAlarm) {
+          doc.fireAlarm.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'dfi_insp_2019_a1' && doc.domesticFireAlarm) {
+          doc.domesticFireAlarm.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'dfi_inst_2019_a1' && doc.domesticFireAlarmInst) {
+          doc.domesticFireAlarmInst.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'fi_extinsp_5306' && doc.fireExtinguisher) {
+          doc.fireExtinguisher.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'em_pir_2025' && doc.emergencyLighting) {
+          doc.emergencyLighting.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'eic_18e_a3' && doc.electricalInstallation) {
+          doc.installation.occupierName = customerName;
+        }
+        if (targetTypeSlug === 'mwc_18e_a3' && doc.minorWorks) {
+          doc.installation.occupierName = customerName;
+        }
+      }
+
       const certNumber = await generateCertificateNumber(pool, userId, targetTypeSlug);
 
       const ins = await pool.query(
@@ -869,9 +953,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
           certNumber,
           source.job_number,
           targetTypeSlug,
-          source.customer_id,
-          source.work_address_id,
-          source.job_id,
+          customerId,
+          workAddressId,
+          customerId === source.customer_id ? source.job_id : null,
           JSON.stringify(doc),
           userId,
         ],
@@ -1059,6 +1143,11 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       document?: ElectricalCertificateDocument;
     };
 
+    let nextDocument: ElectricalCertificateDocument | undefined;
+    if (body.document) {
+      nextDocument = withProtectedPatSignatureFields(coerceDocument(body.document), existing.document);
+    }
+
     const updates: string[] = ['updated_at = NOW()', 'updated_by = $1'];
     const values: unknown[] = [userId];
     let idx = 2;
@@ -1117,6 +1206,80 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
         if ((waCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid installation' });
       }
 
+      if (nextCustomerId !== existing.customer_id || nextWorkAddressId !== existing.work_address_id) {
+        const custCheck = await pool.query<{
+          id: number;
+          full_name: string;
+          customer_address: string | null;
+        }>(
+          `SELECT id, full_name,
+                  COALESCE(
+                    NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), ''),
+                    NULLIF(TRIM(address), '')
+                  ) AS customer_address
+           FROM customers WHERE id = $1` + (isSuperAdmin ? '' : ' AND created_by = $2'),
+          isSuperAdmin ? [nextCustomerId] : [nextCustomerId, userId],
+        );
+        if ((custCheck.rowCount ?? 0) > 0) {
+          const customer = custCheck.rows[0];
+          const customerName = customer.full_name;
+          let selectedInstallationAddress = '';
+          if (nextWorkAddressId) {
+            const wa = await pool.query<{
+              id: number;
+              name: string | null;
+              address_label: string | null;
+            }>(
+              `SELECT id, name,
+                      NULLIF(TRIM(CONCAT_WS(', ', address_line_1, address_line_2, address_line_3, town, county, postcode)), '') AS address_label
+               FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
+              [nextWorkAddressId, nextCustomerId],
+            );
+            if ((wa.rowCount ?? 0) > 0) {
+              const selected = wa.rows[0];
+              selectedInstallationAddress = [selected.name, selected.address_label].filter(Boolean).join('\n');
+            }
+          }
+          if (!selectedInstallationAddress) {
+            selectedInstallationAddress = customer.customer_address ?? '';
+          }
+
+          if (!nextDocument) {
+            nextDocument = coerceDocument(existing.document);
+          }
+
+          const targetTypeSlug = existing.type_slug;
+          if (nextDocument.installation) {
+            nextDocument.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'portable_appliance_test' && nextDocument.pat) {
+            nextDocument.pat.jobAddress.customerName = customerName;
+            nextDocument.pat.jobAddress.address = selectedInstallationAddress;
+          }
+          if (targetTypeSlug === 'fi_insp_2025' && nextDocument.fireAlarm) {
+            nextDocument.fireAlarm.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'dfi_insp_2019_a1' && nextDocument.domesticFireAlarm) {
+            nextDocument.domesticFireAlarm.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'dfi_inst_2019_a1' && nextDocument.domesticFireAlarmInst) {
+            nextDocument.domesticFireAlarmInst.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'fi_extinsp_5306' && nextDocument.fireExtinguisher) {
+            nextDocument.fireExtinguisher.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'em_pir_2025' && nextDocument.emergencyLighting) {
+            nextDocument.emergencyLighting.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'eic_18e_a3' && nextDocument.electricalInstallation) {
+            nextDocument.installation.occupierName = customerName;
+          }
+          if (targetTypeSlug === 'mwc_18e_a3' && nextDocument.minorWorks) {
+            nextDocument.installation.occupierName = customerName;
+          }
+        }
+      }
+
       updates.push(`customer_id = $${idx++}`);
       values.push(nextCustomerId);
       updates.push(`work_address_id = $${idx++}`);
@@ -1128,13 +1291,13 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
       updates.push(`status = $${idx++}`);
       values.push(body.status);
     }
-    if (body.document) {
-      const nextDocument = await storeCertificateDocumentInlineFiles(
+    if (nextDocument) {
+      const nextDocumentStored = await storeCertificateDocumentInlineFiles(
         id,
-        withProtectedPatSignatureFields(coerceDocument(body.document), existing.document),
+        nextDocument,
       );
       updates.push(`document = $${idx++}::jsonb`);
-      values.push(JSON.stringify(nextDocument));
+      values.push(JSON.stringify(nextDocumentStored));
     }
 
     values.push(id);

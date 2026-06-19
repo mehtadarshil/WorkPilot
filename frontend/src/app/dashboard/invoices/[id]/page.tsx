@@ -8,6 +8,7 @@ import { Info, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import Image from 'next/image';
+import { resolveWorkpilotAssetUrl } from '@/lib/resolveWorkpilotAssetUrl';
 import InvoiceNotesPanel from './InvoiceNotesPanel';
 import InvoiceEmailComposer from './InvoiceEmailComposer';
 
@@ -378,7 +379,7 @@ export default function InvoiceDetailsView() {
           <div className="flex items-center gap-4">
             <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-slate-100 shadow-sm">
               {settings?.company_logo ? (
-                <img src={settings.company_logo} alt={companyName} className="h-full w-full object-contain" />
+                <img src={resolveWorkpilotAssetUrl(settings.company_logo) ?? settings.company_logo} alt={companyName} className="h-full w-full object-contain" />
               ) : (
                 <Image src="/logo.jpg" alt={companyName} fill className="object-contain" />
               )}

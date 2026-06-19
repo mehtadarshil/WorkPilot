@@ -115,6 +115,25 @@ function NoteEditRow({
     }
   };
 
+  useEffect(() => {
+    if (text.trim() === note.body.trim()) return;
+    const handler = setTimeout(async () => {
+      if (!text.trim()) return;
+      setSaving(true);
+      setErr(null);
+      try {
+        await patchJson(`/quotations/${quotationId}/internal-notes/${note.id}`, { body: text.trim() }, authToken);
+        onSaved(note.id, text.trim());
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Failed to save');
+      } finally {
+        setSaving(false);
+      }
+    }, 1500);
+
+    return () => clearTimeout(handler);
+  }, [text, note.body, quotationId, authToken, onSaved]);
+
   return (
     <div className="space-y-2">
       <textarea
@@ -162,12 +181,23 @@ type Props = {
 type PendingImage = { id: string; file: File; previewUrl: string };
 
 export default function QuotationInternalNotesCard({ quotationId, notes, authToken, onAppendNote, onRemoveNote, onUpdateNote }: Props) {
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem(`quotation_internal_note_draft_${quotationId}`) || '';
+    }
+    return '';
+  });
   const [pending, setPending] = useState<PendingImage[]>([]);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(`quotation_internal_note_draft_${quotationId}`, draft);
+    }
+  }, [draft, quotationId]);
 
   const addPendingFiles = useCallback((list: FileList | File[]) => {
     const arr = Array.from(list).filter((f) => f.type.startsWith('image/'));
@@ -226,6 +256,9 @@ export default function QuotationInternalNotesCard({ quotationId, notes, authTok
       pending.forEach((p) => URL.revokeObjectURL(p.previewUrl));
       setPending([]);
       setDraft('');
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(`quotation_internal_note_draft_${quotationId}`);
+      }
       onAppendNote(res.note);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save');

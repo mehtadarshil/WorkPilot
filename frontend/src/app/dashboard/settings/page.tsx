@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { FileCheck2, FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { CompanyLogoPreview } from './CompanyLogoPreview';
 import { getJson, patchJson } from '../../apiClient';
 import type { TenantPermissionKey } from '../../../lib/tenantPermissions';
 import CustomerTypesSettings from './CustomerTypesSettings';
@@ -663,7 +664,7 @@ export default function SettingsPage() {
                   <p className="mt-1 text-xs text-slate-500">Enter a logo URL or upload an image (PNG, JPG). Shown on invoices and quotations.</p>
                   {companyLogo && (
                     <div className="mt-2 flex h-12 w-12 overflow-hidden rounded-lg border border-slate-200">
-                      <img src={companyLogo} alt="Logo preview" className="h-full w-full object-contain" />
+                      <CompanyLogoPreview src={companyLogo} className="h-full w-full object-contain" />
                     </div>
                   )}
                 </div>
@@ -725,7 +726,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-6">
                         {companyLogo ? (
                           <div className="size-20 rounded-xl border border-white bg-white overflow-hidden shadow-md">
-                            <img src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
+                            <CompanyLogoPreview src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
                           </div>
                         ) : (
                           <div className="size-20 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 border border-white shadow-inner">
@@ -830,7 +831,7 @@ export default function SettingsPage() {
                 {companyLogo && (
                   <div className="mt-3 flex items-center gap-3">
                     <div className="flex h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                      <img src={companyLogo} alt="Logo preview" className="h-full w-full object-contain" />
+                      <CompanyLogoPreview src={companyLogo} className="h-full w-full object-contain" />
                     </div>
                     <button
                       type="button"
@@ -1004,7 +1005,7 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-4">
                       {companyLogo ? (
                         <div className="size-14 rounded-xl border border-slate-100 overflow-hidden bg-white shadow-sm">
-                          <img src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
+                          <CompanyLogoPreview src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
                         </div>
                       ) : (
                         <div className="size-14 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400">
@@ -1161,7 +1162,7 @@ export default function SettingsPage() {
                 {companyLogo && (
                   <div className="mt-3 flex items-center gap-3">
                     <div className="flex h-14 w-14 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                      <img src={companyLogo} alt="Logo preview" className="h-full w-full object-contain" />
+                      <CompanyLogoPreview src={companyLogo} className="h-full w-full object-contain" />
                     </div>
                     <button
                       type="button"
@@ -1335,7 +1336,7 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-4">
                       {companyLogo ? (
                         <div className="size-14 rounded-xl border border-slate-100 overflow-hidden bg-white shadow-sm">
-                          <img src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
+                          <CompanyLogoPreview src={companyLogo} alt="Logo" className="h-full w-full object-contain" />
                         </div>
                       ) : (
                         <div className="size-14 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400">

@@ -873,10 +873,16 @@ class MobileRepository extends BaseRepository {
   Future<ElectricalCertificate> duplicateElectricalCertificate(
     int id, {
     String? typeSlug,
+    int? customerId,
+    int? workAddressId,
   }) async {
     final res = await api.post<Map<String, dynamic>>(
       '/electrical-certificates/$id/duplicate',
-      data: typeSlug == null || typeSlug.trim().isEmpty ? null : {'type_slug': typeSlug.trim()},
+      data: <String, dynamic>{
+        if (typeSlug != null && typeSlug.trim().isNotEmpty) 'type_slug': typeSlug.trim(),
+        if (customerId != null) 'customer_id': customerId,
+        'work_address_id': workAddressId,
+      },
     );
     final cert = res.data?['certificate'];
     if (cert is! Map) throw ApiException('Invalid duplicate response');

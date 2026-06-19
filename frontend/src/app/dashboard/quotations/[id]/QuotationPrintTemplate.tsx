@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import dayjs from 'dayjs';
+import { resolveWorkpilotAssetUrl } from '@/lib/resolveWorkpilotAssetUrl';
 
 export type QuotationPrintSettings = {
   company_name: string;
@@ -66,7 +67,7 @@ function formatCurrency(amount: number, currency: string): string {
 
 function CompanyLogo({ src, companyName }: { src?: string | null; companyName: string }) {
   const [failed, setFailed] = useState(false);
-  const logoSrc = src?.trim();
+  const logoSrc = resolveWorkpilotAssetUrl(src);
   if (logoSrc && !failed) {
     return (
       <img
