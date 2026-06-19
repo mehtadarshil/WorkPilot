@@ -4,11 +4,15 @@ import 'package:get/get.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../app/routes/app_routes.dart';
+
 import '../../core/network/api_exception.dart';
 import '../../data/models/electrical_certificate_models.dart';
 import '../../data/repositories/mobile_repository.dart';
 import 'certificate_catalog.dart';
 import 'certificate_document_utils.dart';
+import 'certificate_validation.dart';
+import 'widgets/validate_issues_sheet.dart';
 
 class CertificateEditorController extends GetxController {
   CertificateEditorController({MobileRepository? mobile})
@@ -28,6 +32,11 @@ class CertificateEditorController extends GetxController {
   final RxBool exporting = false.obs;
   final RxString errorMessage = ''.obs;
   final RxString activeSectionKey = ''.obs;
+
+  final RxBool duplicating = false.obs;
+
+  Map<String, int> get sectionIssueCounts =>
+      countIssuesBySection(validateElectricalCertificateDocument(Map<String, dynamic>.from(document)));
 
   @override
   void onInit() {
@@ -165,12 +174,7 @@ class CertificateEditorController extends GetxController {
       await save();
       final issues = await _mobile.validateElectricalCertificate(certificateId);
       validationIssues.assignAll(issues);
-      Get.snackbar(
-        issues.isEmpty ? 'Valid' : 'Validation issues',
-        issues.isEmpty
-            ? 'No certificate issues found.'
-            : '${issues.length} issue(s) need attention.',
-      );
+      await showValidateIssuesSheet(this);
     } on ApiException catch (e) {
       Get.snackbar('Validation failed', e.message);
     } catch (e) {
@@ -200,6 +204,29 @@ class CertificateEditorController extends GetxController {
       Get.snackbar('Export failed', e.toString());
     } finally {
       exporting.value = false;
+    }
+  }
+
+  Future<void> duplicateCertificate({String? targetTypeSlug}) async {
+    if (duplicating.value) return;
+    duplicating.value = true;
+    try {
+      await save();
+      final cert = await _mobile.duplicateElectricalCertificate(
+        certificateId,
+        typeSlug: targetTypeSlug,
+      );
+      Get.offNamed(
+        AppRoutes.certificateEditor,
+        arguments: {'id': cert.id},
+      );
+      Get.snackbar('Created', 'Certificate copy opened.');
+    } on ApiException catch (e) {
+      Get.snackbar('Copy failed', e.message);
+    } catch (e) {
+      Get.snackbar('Copy failed', e.toString());
+    } finally {
+      duplicating.value = false;
     }
   }
 

@@ -46,6 +46,10 @@ class CrmListView extends GetView<CrmListController> {
           return '$certNo · $shortLabel';
         }
         return shortLabel.isNotEmpty ? shortLabel : 'Cert #${row['id']}';
+      case 'quotation_visits':
+        return (row['title'] as String?)?.trim().isNotEmpty == true
+            ? row['title'] as String
+            : 'Quotation Visit #${row['id']}';
       default:
         return '#${row['id']}';
     }
@@ -73,18 +77,46 @@ class CrmListView extends GetView<CrmListController> {
         final installation = (row['installation_label'] as String?)?.trim();
         final status = (row['status'] as String?)?.trim() ?? '';
         final jobNo = (row['job_number'] as String?)?.trim();
+        final summary = row['list_summary'];
         final parts = <String>[];
         if (customer != null && customer.isNotEmpty) parts.add(customer);
         if (installation != null && installation.isNotEmpty) parts.add(installation);
         if (jobNo != null && jobNo.isNotEmpty) parts.add('Job $jobNo');
+        if (summary is Map) {
+          final boards = summary['board_count'];
+          final circuits = summary['circuit_count'];
+          final observations = summary['observation_count'];
+          final assessment = summary['overall_assessment']?.toString().trim();
+          if (boards != null && circuits != null) {
+            parts.add('$boards board(s) · $circuits circuits');
+          }
+          if (observations != null) parts.add('$observations observation(s)');
+          if (assessment != null && assessment.isNotEmpty) parts.add(assessment);
+        }
         if (status.isNotEmpty) parts.add(status.toUpperCase());
         return parts.join(' · ');
+      case 'quotation_visits':
+        return (row['customer_full_name'] as String?)?.trim();
       default:
         return null;
     }
   }
 
   String _formatCrmJobSchedule(Map<String, dynamic> row) {
+    final visitStart = row['latest_visit_start'] as String?;
+    if (controller.module == 'quotation_visits' && visitStart != null && visitStart.isNotEmpty) {
+      final d = DateTime.tryParse(visitStart);
+      if (d != null) {
+        final local = d.toLocal();
+        final dd = local.day.toString().padLeft(2, '0');
+        final mm = local.month.toString().padLeft(2, '0');
+        final yyyy = local.year;
+        final hh = local.hour.toString().padLeft(2, '0');
+        final min = local.minute.toString().padLeft(2, '0');
+        return '$dd/$mm/$yyyy · $hh:$min';
+      }
+    }
+
     final iso = row['schedule_start'] as String?;
     if (iso != null && iso.isNotEmpty) {
       final d = DateTime.tryParse(iso);
@@ -227,7 +259,37 @@ class CrmListView extends GetView<CrmListController> {
             }
             return Column(
               children: [
-                if (controller.module == 'jobs')
+                if (controller.module == 'certifications')
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Obx(
+                      () => SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            FilterChip(
+                              label: const Text('All'),
+                              selected: controller.listFilter.value.isEmpty,
+                              onSelected: (_) => controller.setListFilter(''),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Incomplete'),
+                              selected: controller.listFilter.value == 'incomplete',
+                              onSelected: (_) => controller.setListFilter('incomplete'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilterChip(
+                              label: const Text('Last 7 days'),
+                              selected: controller.listFilter.value == 'recent',
+                              onSelected: (_) => controller.setListFilter('recent'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                if (controller.module == 'jobs' || controller.module == 'quotation_visits')
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
                     child: TextField(
@@ -235,7 +297,9 @@ class CrmListView extends GetView<CrmListController> {
                       onChanged: controller.setSearch,
                       style: GoogleFonts.inter(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: 'Search jobs by number, title, customer...',
+                        hintText: controller.module == 'quotation_visits'
+                            ? 'Search quotation visits by title, customer...'
+                            : 'Search jobs by number, title, customer...',
                         hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                         prefixIcon: const Icon(
                           Icons.search_rounded,
@@ -288,14 +352,14 @@ class CrmListView extends GetView<CrmListController> {
                           final row = controller.items[i];
                           final sub = _subtitle(row);
 
-                          if (controller.module == 'jobs') {
+                          if (controller.module == 'jobs' || controller.module == 'quotation_visits') {
                             final jobNumber = (row['job_number'] as String?)?.trim();
                             final title = (row['title'] as String?)?.trim() ?? 'Untitled';
                             final desc = (row['description'] as String?)?.trim();
                             final customer = (row['customer_full_name'] as String?)?.trim();
                             final location = (row['location'] as String?)?.trim();
                             final state = (row['state'] as String?)?.trim() ?? '';
-                            final isQuotationVisit = row['is_quotation_visit'] == true;
+                            final isQuotationVisit = controller.module == 'quotation_visits' || row['is_quotation_visit'] == true;
                             final schedule = _formatCrmJobSchedule(row);
                             final stateLabel = formatJobState(state);
 
@@ -308,7 +372,11 @@ class CrmListView extends GetView<CrmListController> {
                                     final raw = row['id'];
                                     final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
                                     if (id != null) {
-                                      Get.toNamed(AppRoutes.jobDetail, arguments: id);
+                                      if (controller.module == 'quotation_visits') {
+                                        Get.toNamed(AppRoutes.quotationVisitDetail, arguments: id);
+                                      } else {
+                                        Get.toNamed(AppRoutes.jobDetail, arguments: id);
+                                      }
                                     }
                                   },
                                   borderRadius: BorderRadius.circular(18),

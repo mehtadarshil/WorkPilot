@@ -200,6 +200,86 @@ class CertSelectField extends StatelessWidget {
   }
 }
 
+class CertQuickSetTextField extends StatelessWidget {
+  const CertQuickSetTextField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.quickOptions = const ['N/A', 'LIM'],
+    super.key,
+  });
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+  final List<String> quickOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CertTextField(label: label, value: value, onChanged: onChanged),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: quickOptions
+              .map(
+                (option) => ActionChip(
+                  label: Text(option, style: GoogleFonts.inter(fontSize: 11)),
+                  backgroundColor: AppColors.whiteOverlay(0.08),
+                  side: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                  onPressed: () => onChanged(option),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class CertQuickSetSelectField extends StatelessWidget {
+  const CertQuickSetSelectField({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.quickOptions = const ['N/A', 'LIM'],
+    super.key,
+  });
+
+  final String label;
+  final String value;
+  final List<CertOption> options;
+  final ValueChanged<String> onChanged;
+  final List<String> quickOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CertSelectField(label: label, value: value, options: options, onChanged: onChanged),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: quickOptions
+              .map(
+                (option) => ActionChip(
+                  label: Text(option, style: GoogleFonts.inter(fontSize: 11)),
+                  backgroundColor: AppColors.whiteOverlay(0.08),
+                  side: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                  onPressed: () => onChanged(option.toLowerCase() == 'n/a' ? 'na' : option),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
+
 class OutcomeChipGroup extends StatelessWidget {
   const OutcomeChipGroup({
     required this.label,

@@ -44,6 +44,7 @@ import { mountJobEmailRoutes } from './jobEmailRoutes';
 import { mountJobNotesRoutes } from './jobNotesRoutes';
 import { mountJobCostsRoutes } from './jobCostsRoutes';
 import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
+import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import {
@@ -2223,6 +2224,7 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_event ON diary_event_officers(diary_event_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
   await ensureStaffWorkSchema(pool);
+  await ensureHolidaySchema(pool);
 
   // Migrate existing single-officer assignments into junction tables
   await pool.query(`
@@ -21109,6 +21111,7 @@ mountJobFilesRoutes(app, { pool, authenticate });
 mountJobNotesRoutes(app, { pool, authenticate });
 mountJobCostsRoutes(app, { pool, authenticate });
 mountStaffWorkRoutes(app, { pool, authenticate });
+mountHolidayRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
 
 mountJobClientPanelRoutes(app, {

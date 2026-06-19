@@ -38,7 +38,7 @@ export function TradecertPanel({
   toolbar?: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+    <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
         <h3 className="text-xs font-bold uppercase tracking-wide text-slate-800">{title}</h3>
         {toolbar}

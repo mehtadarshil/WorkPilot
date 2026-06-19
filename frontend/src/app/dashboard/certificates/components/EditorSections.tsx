@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { cloneBoard, moveItem } from '@/lib/electricalCertificates/documentHelpers';
 import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalculations';
 import { INSPECTION_SCHEDULE_PRESETS } from '@/lib/electricalCertificates/inspectionSchedulePresets';
+import { REINSPECTION_QUICK_OPTIONS, sortObservationsByCodeAndLocation } from '@/lib/electricalCertificates/certificateUxUtils';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import {
@@ -321,6 +322,18 @@ export function InstallationDetailsSection() {
           onChange={(v) => patch({ reinspectionPeriod: v })}
           placeholder="e.g. 5 years"
         />
+        <div className="flex flex-wrap gap-2">
+          {REINSPECTION_QUICK_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => patch({ reinspectionPeriod: option.value })}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-teal-50"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </TradecertPanel>
     </TradecertFormLayout>
   );
@@ -355,9 +368,29 @@ export function ObservationsSection() {
     }));
   };
 
+  const sortItems = () => {
+    setDocument((d) => ({
+      ...d,
+      observations: {
+        ...d.observations,
+        items: sortObservationsByCodeAndLocation(d.observations.items),
+      },
+    }));
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <SectionCard title="Observations">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={sortItems}
+            disabled={obs.items.length < 2}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Sort by code &amp; location
+          </button>
+        </div>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 
+import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
 import '../../data/repositories/invoices_repository.dart';
 import '../../data/repositories/jobs_repository.dart';
@@ -48,6 +49,11 @@ class JobDetailController extends GetxController {
     error.value = '';
     try {
       final j = await _jobs.getJob(jobId);
+      if (j['is_quotation_visit'] == true) {
+        loading.value = false;
+        await Get.offNamed(AppRoutes.quotationVisitDetail, arguments: jobId);
+        return;
+      }
       job.value = j;
       final invRes = await _invoices.listInvoices(jobId: jobId, page: 1, limit: 100);
       final invRaw = invRes['invoices'];

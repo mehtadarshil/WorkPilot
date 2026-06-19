@@ -28,6 +28,14 @@ class JobsRepository extends BaseRepository {
     await api.patch<void>('/jobs/$id', data: body);
   }
 
+  Future<Map<String, dynamic>> convertToWorkJob(int id, Map<String, dynamic> body) async {
+    final res = await api.post<Map<String, dynamic>>('/jobs/$id/convert-to-work-job', data: body);
+    final d = _asMap(res.data);
+    final j = d['job'];
+    if (j is Map) return Map<String, dynamic>.from(j);
+    return d;
+  }
+
   Future<void> deleteJob(int id) async {
     await api.delete<void>('/jobs/$id');
   }

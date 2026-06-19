@@ -603,4 +603,5 @@ export interface ValidationIssue {
   label: string;
   field?: string;
   boardId?: string;
+  circuitId?: string;
 }

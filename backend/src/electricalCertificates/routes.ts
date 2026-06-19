@@ -387,6 +387,11 @@ async function generateCertificateNumber(pool: Pool, userId: number, typeSlug: E
 }
 
 function mapRow(row: Record<string, unknown>) {
+  const document = coerceDocument({ ...((row.document as Record<string, unknown>) ?? {}), typeSlug: row.type_slug });
+  const boards = Array.isArray(document.boards) ? document.boards : [];
+  const observationItems = document.observations?.items ?? [];
+  const overall = document.installation?.overallAssessment?.trim() || null;
+  const circuitCount = boards.reduce((sum, board) => sum + (board.circuits?.length ?? 0), 0);
   return {
     id: row.id as number,
     certificate_number: row.certificate_number as string,
@@ -396,7 +401,7 @@ function mapRow(row: Record<string, unknown>) {
     customer_id: row.customer_id as number,
     work_address_id: (row.work_address_id as number | null) ?? null,
     job_id: (row.job_id as number | null) ?? null,
-    document: coerceDocument({ ...((row.document as Record<string, unknown>) ?? {}), typeSlug: row.type_slug }),
+    document,
     customer_full_name: (row.customer_full_name as string | null) ?? null,
     installation_label: (row.installation_label as string | null) ?? null,
     created_at: (row.created_at as Date).toISOString(),
@@ -411,6 +416,12 @@ function mapRow(row: Record<string, unknown>) {
     renewal_interval_years: Math.max(1, Math.min(10, Number(row.renewal_interval_years) || 1)),
     renewal_early_days: Math.max(1, Math.min(120, Number(row.renewal_early_days) || 30)),
     renewal_job_id: row.renewal_job_id != null ? Number(row.renewal_job_id) : null,
+    list_summary: {
+      board_count: boards.length,
+      circuit_count: circuitCount,
+      observation_count: observationItems.length,
+      overall_assessment: overall,
+    },
   };
 }
 
@@ -491,6 +502,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const offset = (page - 1) * limit;
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
     const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+    const filter = typeof req.query.filter === 'string' ? req.query.filter.trim() : '';
 
     const params: unknown[] = [];
     const where: string[] = [];
@@ -507,6 +519,12 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     if (status) {
       params.push(status);
       where.push(`ec.status = $${params.length}`);
+    }
+    if (filter === 'incomplete') {
+      where.push(`ec.status = 'in_progress'`);
+    }
+    if (filter === 'recent') {
+      where.push(`ec.updated_at >= NOW() - INTERVAL '7 days'`);
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 

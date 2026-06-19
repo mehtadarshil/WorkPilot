@@ -29,6 +29,7 @@ import QuotationEmailComposer from './QuotationEmailComposer';
 import QuotationPrintTemplate from './QuotationPrintTemplate';
 import type { QuotationInternalNote } from './QuotationInternalNotesCard';
 import QuotationDetailSidebar from './QuotationDetailSidebar';
+import QuotationWorkJobChoice from '../QuotationWorkJobChoice';
 
 interface LineItem {
   id: number;
@@ -132,6 +133,7 @@ export default function QuotationDetailPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [appOrigin, setAppOrigin] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [workJobChoiceOpen, setWorkJobChoiceOpen] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -159,9 +161,13 @@ export default function QuotationDetailPage() {
   const handleAccept = async () => {
     if (!token || !quotation) return;
     setActionError(null);
+    const wasVisitLinked = !!quotation.job_is_quotation_visit && quotation.job_id != null;
     try {
       await postJson(`/quotations/${id}/accept`, {}, token);
-      fetchQuotation({ silent: true });
+      await fetchQuotation({ silent: true });
+      if (wasVisitLinked && quotation.job_id != null) {
+        setWorkJobChoiceOpen(true);
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to accept');
     }
@@ -244,9 +250,7 @@ export default function QuotationDetailPage() {
   const handleSetupWorkJobFromVisit = () => {
     if (!quotation?.job_id) return;
     setActionError(null);
-    router.push(
-      `/dashboard/customers/${quotation.customer_id}/jobs/new?edit=${quotation.job_id}&from_quotation=${encodeURIComponent(id)}&convert_visit=1`,
-    );
+    setWorkJobChoiceOpen(true);
   };
 
   const publicCustomerUrl =
@@ -698,6 +702,17 @@ export default function QuotationDetailPage() {
           quotationId={id}
           onSent={() => fetchQuotation({ silent: true })}
         />
+
+        {quotation.job_id != null && (
+          <QuotationWorkJobChoice
+            open={workJobChoiceOpen}
+            onClose={() => setWorkJobChoiceOpen(false)}
+            customerId={quotation.customer_id}
+            quotationId={id}
+            visitJobId={quotation.job_id}
+            workAddressId={quotation.quotation_work_address_id}
+          />
+        )}
 
       </div>
     </>

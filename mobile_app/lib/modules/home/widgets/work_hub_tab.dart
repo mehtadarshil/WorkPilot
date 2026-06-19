@@ -59,6 +59,10 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.siteReportsList);
       return;
     }
+    if (module == 'holidays') {
+      Get.toNamed(AppRoutes.holidays);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
@@ -94,6 +98,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.tune_rounded,
           accent: Color(0xFFFCD34D),
         ),
+        'holidays': (
+          label: 'Holidays',
+          subtitle: 'Time off & requests',
+          icon: Icons.event_rounded,
+          accent: Color(0xFF86EFAC),
+        ),
         'sites': (
           label: 'Sites',
           subtitle: 'All addresses & properties',
@@ -111,6 +121,12 @@ class WorkHubTab extends StatelessWidget {
           subtitle: 'Safety & compliance',
           icon: Icons.verified_outlined,
           accent: Color(0xFFC4B5FD),
+        ),
+        'quotation_visits': (
+          label: 'Quotation Visits',
+          subtitle: 'Quotes surveys & visits',
+          icon: Icons.assignment_turned_in_rounded,
+          accent: Color(0xFFFBBF24),
         ),
       };
 
@@ -155,10 +171,14 @@ class WorkHubTab extends StatelessWidget {
       if (p('certifications') && roleUp != 'OFFICER') {
         add('certifications');
       }
-      if (p('quotations')) add('quotations', count: s.quotationsPending);
+      if (p('quotations')) {
+        add('quotations', count: s.quotationsPending);
+        add('quotation_visits');
+      }
       if (p('invoices')) add('invoices', count: s.invoicesUnpaid);
       if (p('jobs') && roleUp != 'OFFICER') add('jobs', count: s.jobsOpen);
       if (hasSettings && roleUp != 'OFFICER') add('settings');
+      if (p('field_users') && roleUp != 'OFFICER') add('holidays');
 
       return CustomScrollView(
         physics: const BouncingScrollPhysics(),

@@ -9,6 +9,12 @@ import {
   applyCircuitCalculations,
   type CalcFieldKey,
 } from '@/lib/electricalCertificates/circuitCalculations';
+import {
+  CIRCUIT_OPTION_VALUES,
+  clampCircuitField,
+  isNaDescription,
+} from '@/lib/electricalCertificates/circuitGridUtils';
+import { CircuitCellInput } from './CircuitCellInput';
 
 const CALC_KEY_MAP: Partial<Record<keyof CircuitRow, CalcFieldKey>> = {
   maxDisconnectTime: 'maxDisconnectTime',
@@ -51,44 +57,7 @@ const CIRCUIT_NA_FIELDS: (keyof CircuitRow)[] = [
   'remarks',
 ];
 
-const CIRCUIT_OPTION_VALUES: Partial<Record<keyof CircuitRow, string[]>> = {
-  description: ['Spare', 'Unknown'],
-  points: ['1', '2', '3', '4', '5', '6', '8', '10', '12', 'N/A', 'LIM'],
-  wiringType: ['A', 'B', 'C', 'D', 'SWA', 'MICC', 'FP200', 'Twin & earth', 'Singles', 'N/A', 'LIM', 'Other'],
-  refMethod: ['A1', 'A2', 'B1', 'B2', 'C', 'D', 'E', 'F', 'G', '100', '101', '102', '103', 'N/A', 'LIM'],
-  liveMm2: ['1', '1.5', '2.5', '4', '6', '10', '16', '25', '35', '50', '70', 'N/A', 'LIM'],
-  cpcMm2: ['1', '1.5', '2.5', '4', '6', '10', '16', '25', '35', 'N/A', 'LIM'],
-  maxDisconnectTime: ['0.2', '0.4', '1', '5', 'N/A', 'LIM'],
-  ocpdBs: ['60898', '61009', '88-2', '88-3', '3036', '3871', '1361', '60947-2', '60269', 'N/A', 'LIM', 'UNKNOWN'],
-  ocpdType: ['B', 'C', 'D', '1', '2', '3', 'gG', 'gL', 'aM', 'N/A', 'LIM'],
-  ocpdRatingA: ['5', '6', '10', '15', '16', '20', '25', '32', '40', '45', '50', '63', '80', '100', 'N/A', 'LIM'],
-  ocpdBreakingKa: ['1', '3', '6', '10', '16', '25', '33', '50', 'N/A', 'LIM', 'UNKNOWN'],
-  maxZs: ['N/A', 'LIM', 'N/V', '---'],
-  rcdBs: ['61008', '61009', '62423', 'N/A', 'LIM', 'UNKNOWN'],
-  rcdType: ['AC', 'A', 'F', 'B', 'S', 'N/A', 'LIM'],
-  rcdRatingMa: ['10', '30', '100', '300', '500', '1000', 'N/A', 'N/V', 'LIM'],
-  rcdRatingA: ['16', '20', '25', '32', '40', '63', '80', '100', 'N/A', 'LIM'],
-  ringR1: ['N/A', 'LIM', 'N/V', '---'],
-  ringRn: ['N/A', 'LIM', 'N/V', '---'],
-  ringR2End: ['N/A', 'LIM', 'N/V', '---'],
-  r1r2: ['N/A', 'LIM', 'N/V', '---'],
-  r2: ['N/A', 'LIM', 'N/V', '---'],
-  insulation: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
-  insulationTestVoltage: ['250', '500', '1000', 'N/A', 'LIM'],
-  insulationLL: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
-  insulationLE: ['>999', '>500', '>200', '>100', 'N/A', 'LIM', 'N/V', '---'],
-  polarity: ['PASS', 'FAIL', 'LIM', 'N/A'],
-  zs: ['N/A', 'LIM', 'N/V', '---'],
-  rcdTripMs: ['N/A', 'LIM', 'N/V', '---'],
-  afdd: ['PASS', 'FAIL', 'LIM', 'N/A'],
-};
-
 const UNTESTED_ZS_VALUES = new Set(['', '-', '--', '---', 'lim', 'n/v', 'n/a', 'na', 'x']);
-
-function isNaDescription(value: string) {
-  const text = value.trim().toLowerCase();
-  return text === 'spare' || text === 'unknown';
-}
 
 function applyNaCircuitDefaults(circuit: CircuitRow): CircuitRow {
   const next = { ...circuit, tested: false, calcOverrides: { ...(circuit.calcOverrides ?? {}) } };
@@ -172,20 +141,21 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
   );
 
   const updateCircuit = (circuitId: string, key: keyof CircuitRow, value: string | boolean) => {
+    const nextValue = typeof value === 'string' ? clampCircuitField(key, value) : value;
     updateBoardCircuits((list) =>
       list.map((c) => {
         if (c.id !== circuitId) return c;
         const calcKey = CALC_KEY_MAP[key];
         const overrides = { ...(c.calcOverrides ?? {}) };
-        if (calcKey && typeof value === 'string') {
+        if (calcKey && typeof nextValue === 'string') {
           overrides[calcKey as CircuitCalcOverrideKey] = true;
         }
-        let updated = { ...c, [key]: value, calcOverrides: overrides } as CircuitRow;
-        if (key === 'description' && typeof value === 'string' && isNaDescription(value)) {
+        let updated = { ...c, [key]: nextValue, calcOverrides: overrides } as CircuitRow;
+        if (key === 'description' && typeof nextValue === 'string' && isNaDescription(nextValue)) {
           updated = applyNaCircuitDefaults(updated);
         }
-        if (key === 'zs' && typeof value === 'string') {
-          updated.tested = !UNTESTED_ZS_VALUES.has(value.trim().toLowerCase());
+        if (key === 'zs' && typeof nextValue === 'string') {
+          updated.tested = !UNTESTED_ZS_VALUES.has(nextValue.trim().toLowerCase());
         }
         const triggersCalc =
           key === 'ocpdType' ||
@@ -254,7 +224,7 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
   };
 
   return (
-    <div data-circuit-grid className="relative overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-inner">
+    <div data-circuit-grid className="relative overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-inner">
       <table className="min-w-[2400px] border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-50">
           <tr className="border-b border-slate-200">
@@ -300,7 +270,6 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
                 const overridden = calcField && c.calcOverrides?.[calcField];
                 const cellValue = String(c[col.key] ?? '');
                 const options = CIRCUIT_OPTION_VALUES[col.key];
-                const listId = options ? `circuit-${boardId}-${col.key}` : undefined;
 
                 return (
                   <td
@@ -310,18 +279,20 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
                     } ${col.key === 'description' ? 'sticky left-11 z-[5] bg-white' : ''}`}
                   >
                     <div className="relative flex items-center">
-                      <input
-                        list={listId}
-                        disabled={readOnly}
-                        className={`w-full border-0 px-1.5 py-1.5 outline-none focus:bg-white focus:ring-1 focus:ring-[#14B8A6] disabled:cursor-not-allowed disabled:opacity-60 ${
-                          isCalc ? 'bg-teal-50/50 text-teal-900' : 'bg-transparent'
-                        } ${overridden ? 'ring-1 ring-amber-200' : ''}`}
+                      <CircuitCellInput
                         value={cellValue}
-                        onChange={(e) => updateCircuit(c.id, col.key, e.target.value)}
-                        onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex)}
-                        data-circuit-row={rowIndex}
-                        data-circuit-col={colIndex}
+                        options={options}
+                        disabled={readOnly}
+                        rowIndex={rowIndex}
+                        colIndex={colIndex}
                         title={isCalc ? 'Auto-calculated — edit to override' : undefined}
+                        className={`w-full border-0 px-1.5 py-1.5 outline-none focus:bg-white focus:ring-1 focus:ring-[#14B8A6] disabled:cursor-not-allowed disabled:opacity-60 ${
+                          options?.length ? 'pr-5' : ''
+                        } ${
+                          isCalc ? 'bg-teal-50/50 text-teal-900' : 'bg-transparent text-slate-900'
+                        } ${overridden ? 'ring-1 ring-amber-200' : ''}`}
+                        onChange={(next) => updateCircuit(c.id, col.key, next)}
+                        onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex)}
                       />
                       {isCalc && calcField && overridden && (
                         <button
@@ -376,13 +347,6 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
           ))}
         </tbody>
       </table>
-      {Object.entries(CIRCUIT_OPTION_VALUES).map(([key, options]) => (
-        <datalist key={key} id={`circuit-${boardId}-${key}`}>
-          {options.map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
-      ))}
     </div>
   );
 }

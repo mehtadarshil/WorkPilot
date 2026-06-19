@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
-import { Calculator, Hash, Plus, Replace, Rows3, Wand2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Calculator, ClipboardPaste, Eraser, Hash, Plus, Replace, Rows3, Wand2 } from 'lucide-react';
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
-import { CIRCUIT_COLUMNS } from '@/lib/electricalCertificates/circuitColumns';
+import {
+  FILLABLE_CIRCUIT_COLUMNS,
+  getColumnQuickOptions,
+} from '@/lib/electricalCertificates/circuitGridUtils';
 import { isCircuitTested } from './CircuitsGrid';
 
 type Props = {
   board: BoardRecord;
   readOnly?: boolean;
   onFindReplace: () => void;
+  onPaste: () => void;
   onQuickAdd: (n: number) => void;
   onAdd: () => void;
   onRenumber: () => void;
   onToggle100MaxZs: () => void;
   onRecalculateAll: () => void;
   onFillColumn: (key: keyof CircuitRow, value: string) => void;
+  onClearColumn: (key: keyof CircuitRow) => void;
   onAutofillFromPrevious: () => void;
 };
 
@@ -23,21 +28,20 @@ export function CircuitsToolbar({
   board,
   readOnly = false,
   onFindReplace,
+  onPaste,
   onQuickAdd,
   onAdd,
   onRenumber,
   onToggle100MaxZs,
   onRecalculateAll,
   onFillColumn,
+  onClearColumn,
   onAutofillFromPrevious,
 }: Props) {
   const [fillKey, setFillKey] = useState<keyof CircuitRow>('wiringType');
   const [fillValue, setFillValue] = useState('');
   const tested = board.circuits.filter(isCircuitTested).length;
-
-  const fillableCols = CIRCUIT_COLUMNS.filter(
-    (c) => !c.calculated && c.key !== 'circuitNumber' && c.key !== 'id',
-  );
+  const quickOptions = useMemo(() => getColumnQuickOptions(fillKey), [fillKey]);
 
   return (
     <div className="space-y-3">
@@ -65,6 +69,14 @@ export function CircuitsToolbar({
           className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           <Replace className="size-3.5" /> Find &amp; replace
+        </button>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={onPaste}
+          className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+        >
+          <ClipboardPaste className="size-3.5" /> Paste
         </button>
         <button
           type="button"
@@ -122,7 +134,7 @@ export function CircuitsToolbar({
             value={fillKey}
             onChange={(e) => setFillKey(e.target.value as keyof CircuitRow)}
           >
-            {fillableCols.map((c) => (
+            {FILLABLE_CIRCUIT_COLUMNS.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.label}
               </option>
@@ -147,8 +159,31 @@ export function CircuitsToolbar({
           }}
           className="mb-0.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
         >
-          Apply to all rows
+          Apply (skip spares)
         </button>
+        <button
+          type="button"
+          disabled={readOnly || board.circuits.length === 0}
+          onClick={() => onClearColumn(fillKey)}
+          className="mb-0.5 flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+        >
+          <Eraser className="size-3" /> Clear column
+        </button>
+        {quickOptions.length > 0 && (
+          <div className="mb-0.5 flex flex-wrap items-center gap-1">
+            {quickOptions.slice(0, 8).map((option) => (
+              <button
+                key={option}
+                type="button"
+                disabled={readOnly}
+                onClick={() => onFillColumn(fillKey, option)}
+                className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-teal-50 disabled:opacity-40"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

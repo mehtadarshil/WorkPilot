@@ -63,6 +63,7 @@ export default function ElectricalCertificatesPage() {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [listFilter, setListFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createStep, setCreateStep] = useState<'type' | 'client'>('type');
   const [selectedType, setSelectedType] = useState('eicr_18e_a3');
@@ -110,6 +111,7 @@ export default function ElectricalCertificatesPage() {
       q.set('limit', String(PAGE_SIZE));
       if (searchDebounced) q.set('search', searchDebounced);
       if (statusFilter) q.set('status', statusFilter);
+      if (listFilter) q.set('filter', listFilter);
       const data = await getJson<{
         certificates: ElectricalCertificate[];
         total: number;
@@ -123,7 +125,7 @@ export default function ElectricalCertificatesPage() {
       setTotal(0);
       setTotalPages(1);
     }
-  }, [token, page, searchDebounced, statusFilter]);
+  }, [token, page, searchDebounced, statusFilter, listFilter]);
 
   useEffect(() => {
     void fetchList();
@@ -388,6 +390,18 @@ export default function ElectricalCertificatesPage() {
           />
         </div>
         <select
+          value={listFilter}
+          onChange={(e) => {
+            setListFilter(e.target.value);
+            setPage(1);
+          }}
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        >
+          <option value="">All certificates</option>
+          <option value="incomplete">Incomplete</option>
+          <option value="recent">Last 7 days</option>
+        </select>
+        <select
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value);
@@ -409,6 +423,7 @@ export default function ElectricalCertificatesPage() {
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Installation</th>
               <th className="px-4 py-3">Job</th>
+              <th className="px-4 py-3">Summary</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -416,7 +431,7 @@ export default function ElectricalCertificatesPage() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
                   No certificates yet. Create your first certificate.
                 </td>
               </tr>
@@ -439,6 +454,19 @@ export default function ElectricalCertificatesPage() {
                   <td className="px-4 py-3">{c.customer_full_name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{c.installation_label ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{c.job_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600">
+                    {c.list_summary ? (
+                      <div className="space-y-0.5">
+                        <p>{c.list_summary.board_count} board(s) · {c.list_summary.circuit_count} circuits</p>
+                        <p>{c.list_summary.observation_count} observation(s)</p>
+                        {c.list_summary.overall_assessment && (
+                          <p className="font-semibold capitalize">{c.list_summary.overall_assessment}</p>
+                        )}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${

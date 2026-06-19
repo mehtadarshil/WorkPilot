@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
+import '../../data/repositories/jobs_repository.dart';
 import '../../data/repositories/quotations_repository.dart';
 import '../../widgets/searchable_select_field.dart';
 import 'customer_new_job_customer_panel.dart';
@@ -41,6 +43,8 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
   late int _customerId;
   int? _workAddressId;
   int? _fromQuotationId;
+  int? _editVisitId;
+  bool _convertVisit = false;
   bool _customerLocked = false;
 
   Map<String, dynamic>? _customer;
@@ -92,6 +96,8 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
       _customerId = (m['customerId'] as num?)?.toInt() ?? (m['id'] as num?)?.toInt() ?? 0;
       _workAddressId = (m['work_address_id'] as num?)?.toInt();
       _fromQuotationId = (m['from_quotation'] as num?)?.toInt();
+      _editVisitId = (m['edit_visit_id'] as num?)?.toInt();
+      _convertVisit = m['convert_visit'] == true;
       _customerLocked = _customerId > 0;
     } else {
       _customerId = 0;
@@ -160,6 +166,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         _contacts = contacts;
         _loading = false;
       });
+      await _prefillFromVisit();
       await _prefillFromQuotation();
     } on ApiException catch (e) {
       setState(() {
@@ -172,6 +179,62 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         _pageError = e.toString();
       });
     }
+  }
+
+  Future<void> _prefillFromVisit() async {
+    final visitId = _editVisitId;
+    if (visitId == null) return;
+    try {
+      final job = await Get.find<JobsRepository>().getJob(visitId);
+      _jobContactId = (job['job_contact_id'] as num?)?.toInt();
+      _contactName.text = (job['contact_name'] as String?)?.trim() ?? _contactName.text;
+      _descriptionId = (job['job_description_id'] as num?)?.toInt();
+      _skills.text = (job['skills'] as String?)?.trim() ?? '';
+      _jobNotes.text = (job['job_notes'] as String?)?.trim() ?? _jobNotes.text;
+      _isServiceJob = job['is_service_job'] == true;
+      final ec = job['expected_completion'] as String?;
+      if (ec != null && ec.isNotEmpty) {
+        final dt = DateTime.tryParse(ec);
+        if (dt != null) {
+          _expectedDate = DateTime(dt.year, dt.month, dt.day);
+          _expectedTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+        }
+      }
+      _priority = (job['priority'] as String?)?.trim().isNotEmpty == true ? (job['priority'] as String) : _priority;
+      _userGroup = (job['user_group'] as String?)?.trim();
+      _businessUnit = (job['business_unit'] as String?)?.trim();
+      _bookIntoDiary = job['book_into_diary'] != false;
+      final qa = (job['quoted_amount'] as num?)?.toDouble();
+      if (qa != null) _quotedAmount.text = qa.toStringAsFixed(2);
+      _customerReference.text = (job['customer_reference'] as String?)?.trim() ?? _customerReference.text;
+      _jobPipeline = (job['job_pipeline'] as String?)?.trim().isNotEmpty == true
+          ? (job['job_pipeline'] as String)
+          : _jobPipeline;
+      final wa = (job['work_address_id'] as num?)?.toInt();
+      if (wa != null) _workAddressId = wa;
+      final pricing = job['pricing_items'];
+      if (pricing is List && pricing.isNotEmpty) {
+        for (final r in _pricingRows) {
+          r.dispose();
+        }
+        _pricingRows.clear();
+        for (final raw in pricing) {
+          if (raw is! Map) continue;
+          final m = Map<String, dynamic>.from(raw);
+          _pricingRows.add(
+            CustomerNewJobPricingRow(
+              key: 'pi_${_piKey++}',
+              itemName: (m['item_name'] as String?) ?? '',
+              timeIncluded: (m['time_included'] as num?)?.toDouble() ?? 0,
+              unitPrice: (m['unit_price'] as num?)?.toDouble() ?? 0,
+              vatRate: (m['vat_rate'] as num?)?.toDouble() ?? 20,
+              quantity: (m['quantity'] as num?)?.round() ?? 1,
+            ),
+          );
+        }
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _prefillFromQuotation() async {
@@ -478,6 +541,12 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         if (_workAddressId != null) 'work_address_id': _workAddressId,
       };
 
+      if (_convertVisit && _editVisitId != null) {
+        await Get.find<JobsRepository>().convertToWorkJob(_editVisitId!, body);
+        Get.offNamed(AppRoutes.jobDetail, arguments: _editVisitId);
+        return;
+      }
+
       final job = await _repo.createCustomerJob(_customerId, body);
       final newJobId = (job['id'] as num?)?.toInt();
       if (_fromQuotationId != null && newJobId != null) {
@@ -524,6 +593,11 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     });
   }
 
+  String get _pageTitle {
+    if (_convertVisit && _editVisitId != null) return 'Set up work job';
+    return 'Add new job';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -531,7 +605,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
           backgroundColor: AppColors.gradientStart,
-          appBar: AppBar(title: Text('Add new job', style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
+          appBar: AppBar(title: Text(_pageTitle, style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
           body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
         ),
       );
@@ -547,7 +621,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
       child: Scaffold(
         backgroundColor: AppColors.gradientStart,
         appBar: AppBar(
-          title: Text('Add new job', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+          title: Text(_pageTitle, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),

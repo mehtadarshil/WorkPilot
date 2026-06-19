@@ -599,6 +599,14 @@ export interface ValidationIssue {
   label: string;
   field?: string;
   boardId?: string;
+  circuitId?: string;
+}
+
+export interface ElectricalCertificateListSummary {
+  board_count: number;
+  circuit_count: number;
+  observation_count: number;
+  overall_assessment: string | null;
 }
 
 export interface ElectricalCertificate {
@@ -620,6 +628,7 @@ export interface ElectricalCertificate {
   renewal_interval_years: number;
   renewal_early_days: number;
   renewal_job_id: number | null;
+  list_summary?: ElectricalCertificateListSummary;
 }
 
 export const CERTIFICATE_TYPE_CATALOG = [

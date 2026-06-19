@@ -301,41 +301,33 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    if (scope == DiaryListScope.mine) {
-      // Mine view: always default to 7-day upcoming list range
-      final firstDay = today.subtract(const Duration(days: 1));
-      final endDay = today.add(const Duration(days: 6));
-      rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
-      rangeEnd = DateTime(endDay.year, endDay.month, endDay.day, 23, 59, 59, 999).toIso8601String();
+    // Respect calendar mode and filters for both Mine and Team scopes
+    if (diaryViewMode.value == DiaryViewMode.calendar) {
+      final focused = calendarFocusedMonth.value;
+      final firstDayOfMonth = DateTime(focused.year, focused.month, 1);
+      final lastDayOfMonth = DateTime(focused.year, focused.month + 1, 0);
+      final start = firstDayOfMonth.subtract(const Duration(days: 7));
+      final end = lastDayOfMonth.add(const Duration(days: 7));
+      rangeStart = DateTime(start.year, start.month, start.day, 0, 0, 0, 0).toIso8601String();
+      rangeEnd = DateTime(end.year, end.month, end.day, 23, 59, 59, 999).toIso8601String();
     } else {
-      // Team view: respect calendar mode and filters
-      if (diaryViewMode.value == DiaryViewMode.calendar) {
-        final focused = calendarFocusedMonth.value;
-        final firstDayOfMonth = DateTime(focused.year, focused.month, 1);
-        final lastDayOfMonth = DateTime(focused.year, focused.month + 1, 0);
-        final start = firstDayOfMonth.subtract(const Duration(days: 7));
-        final end = lastDayOfMonth.add(const Duration(days: 7));
-        rangeStart = DateTime(start.year, start.month, start.day, 0, 0, 0, 0).toIso8601String();
-        rangeEnd = DateTime(end.year, end.month, end.day, 23, 59, 59, 999).toIso8601String();
-      } else {
-        switch (diaryFilter.value) {
-          case DiaryFilter.today:
-            rangeStart = DateTime(today.year, today.month, today.day, 0, 0, 0, 0).toIso8601String();
-            rangeEnd = DateTime(today.year, today.month, today.day, 23, 59, 59, 999).toIso8601String();
-            break;
-          case DiaryFilter.sevenDays:
-            final firstDay = today.subtract(const Duration(days: 1));
-            final endDay = today.add(const Duration(days: 6));
-            rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
-            rangeEnd = DateTime(endDay.year, endDay.month, endDay.day, 23, 59, 59, 999).toIso8601String();
-            break;
-          case DiaryFilter.month:
-            final firstDay = DateTime(today.year, today.month, 1);
-            final lastDay = DateTime(today.year, today.month + 1, 0);
-            rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
-            rangeEnd = DateTime(lastDay.year, lastDay.month, lastDay.day, 23, 59, 59, 999).toIso8601String();
-            break;
-        }
+      switch (diaryFilter.value) {
+        case DiaryFilter.today:
+          rangeStart = DateTime(today.year, today.month, today.day, 0, 0, 0, 0).toIso8601String();
+          rangeEnd = DateTime(today.year, today.month, today.day, 23, 59, 59, 999).toIso8601String();
+          break;
+        case DiaryFilter.sevenDays:
+          final firstDay = today.subtract(const Duration(days: 1));
+          final endDay = today.add(const Duration(days: 6));
+          rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
+          rangeEnd = DateTime(endDay.year, endDay.month, endDay.day, 23, 59, 59, 999).toIso8601String();
+          break;
+        case DiaryFilter.month:
+          final firstDay = DateTime(today.year, today.month, 1);
+          final lastDay = DateTime(today.year, today.month + 1, 0);
+          rangeStart = DateTime(firstDay.year, firstDay.month, firstDay.day, 0, 0, 0, 0).toIso8601String();
+          rangeEnd = DateTime(lastDay.year, lastDay.month, lastDay.day, 23, 59, 59, 999).toIso8601String();
+          break;
       }
     }
 

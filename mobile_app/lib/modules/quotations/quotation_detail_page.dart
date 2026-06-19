@@ -1,4 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:convert';
+
+import 'package:image_picker/image_picker.dart';
+import '../diary_event/extra_submission_helpers.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +22,7 @@ import 'quotation_helpers.dart';
 import 'quotation_notes_tab.dart';
 import 'quotation_official_send_sheet.dart';
 import 'quotation_print_webview_page.dart';
+import 'quotation_work_job_choice_sheet.dart';
 
 /// Arguments: quotation id ([int]).
 class QuotationDetailPage extends StatefulWidget {
@@ -42,6 +48,8 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
   String? _error;
   Map<String, dynamic>? _q;
   final _internalDraft = TextEditingController();
+  final List<String> _noteImagePaths = [];
+  final _picker = ImagePicker();
   bool _savingNote = false;
 
   @override
@@ -115,10 +123,28 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
     }
   }
 
+  Future<void> _showWorkJobChoiceFromVisit(Map<String, dynamic> q) async {
+    final custId = (q['customer_id'] as num?)?.toInt() ?? 0;
+    final visitJobId = (q['job_id'] as num?)?.toInt();
+    if (custId <= 0 || visitJobId == null || !mounted) return;
+    await showQuotationWorkJobChoiceSheet(
+      context,
+      customerId: custId,
+      quotationId: _id,
+      visitJobId: visitJobId,
+      workAddressId: (q['quotation_work_address_id'] as num?)?.toInt(),
+    );
+    if (mounted) await _load();
+  }
+
   Future<void> _accept() async {
+    final wasVisitLinked = _q?['job_is_quotation_visit'] == true && _q?['job_id'] != null;
     try {
       await _repo.acceptQuotation(_id);
       await _load();
+      if (wasVisitLinked && mounted && _q != null) {
+        await _showWorkJobChoiceFromVisit(_q!);
+      }
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
@@ -201,13 +227,35 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
   }
 
+  Future<void> _addNotePhotoCamera() async {
+    final f = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 2000,
+      imageQuality: 85,
+    );
+    if (f == null) return;
+    setState(() => _noteImagePaths.add(f.path));
+  }
+
+  Future<void> _addNotePhotoGallery() async {
+    final list = await _picker.pickMultiImage();
+    if (list.isEmpty) return;
+    setState(() {
+      for (final f in list) {
+        _noteImagePaths.add(f.path);
+      }
+    });
+  }
+
   Future<void> _saveInternalNote() async {
     final t = _internalDraft.text.trim();
-    if (t.isEmpty) return;
+    if (t.isEmpty && _noteImagePaths.isEmpty) return;
     setState(() => _savingNote = true);
     try {
-      await _repo.addInternalNote(_id, body: t);
+      final media = await buildExtraSubmissionMediaPayload(imagePaths: _noteImagePaths);
+      await _repo.addInternalNote(_id, body: t, media: media);
       _internalDraft.clear();
+      _noteImagePaths.clear();
       await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -237,6 +285,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
     final taxLabel = (q['settings'] is Map ? (q['settings'] as Map)['tax_label'] : null) as String? ?? 'Tax';
     final custId = (q['customer_id'] as num?)?.toInt() ?? 0;
     final jobId = (q['job_id'] as num?)?.toInt();
+    final jobIsQuotationVisit = q['job_is_quotation_visit'] == true;
     final items = q['line_items'];
     final activities = q['activities'];
     final internal = q['internal_notes'];
@@ -321,7 +370,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                       label: const Text('To invoice'),
                       onPressed: _transferInvoice,
                     ),
-                    if (jobId == null)
+                    if (jobId == null && !jobIsQuotationVisit)
                       ActionChip(
                         avatar: const Icon(Icons.work_rounded, size: 18),
                         label: const Text('Create job'),
@@ -340,10 +389,17 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                               }
                             : null,
                       ),
-                    if (jobId != null)
+                    if (_state == 'accepted' && jobIsQuotationVisit && jobId != null)
                       ActionChip(
-                        label: const Text('Open customer'),
-                        onPressed: () => Get.toNamed(AppRoutes.customerDetail, arguments: custId),
+                        avatar: const Icon(Icons.work_outline_rounded, size: 18),
+                        label: const Text('Set up work job'),
+                        onPressed: custId > 0 ? () => _showWorkJobChoiceFromVisit(q) : null,
+                      ),
+                    if (jobId != null && !jobIsQuotationVisit)
+                      ActionChip(
+                        avatar: const Icon(Icons.work_rounded, size: 18),
+                        label: const Text('Open job'),
+                        onPressed: () => Get.toNamed(AppRoutes.jobDetail, arguments: jobId),
                       ),
                   ],
                   if ((q['public_token'] as String?)?.trim().isNotEmpty == true) ...[
@@ -373,12 +429,59 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                   final qty = (m['quantity'] as num?)?.toDouble() ?? 0;
                   final up = (m['unit_price'] as num?)?.toDouble() ?? 0;
                   final am = (m['amount'] as num?)?.toDouble() ?? (qty * up);
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(desc, style: GoogleFonts.inter(color: Colors.white)),
-                    subtitle: Text('$qty × ${QuotationHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
-                    trailing: Text(QuotationHelpers.formatMoney(am, cur), style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                  final rawImgs = m['images'];
+                  final parsedImages = <Uint8List>[];
+                  if (rawImgs is List) {
+                    for (final img in rawImgs) {
+                      if (img is Map) {
+                        final du = img['data_url'] as String?;
+                        if (du != null && du.startsWith('data:')) {
+                          final comma = du.indexOf(',');
+                          if (comma != -1) {
+                            try {
+                              parsedImages.add(base64Decode(du.substring(comma + 1)));
+                            } catch (_) {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(desc, style: GoogleFonts.inter(color: Colors.white)),
+                        subtitle: Text('$qty × ${QuotationHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+                        trailing: Text(QuotationHelpers.formatMoney(am, cur), style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
+                      ),
+                      if (parsedImages.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 60,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: parsedImages.length,
+                            itemBuilder: (ctx, idx) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    parsedImages[idx],
+                                    width: 80,
+                                    height: 60,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                    ],
                   );
                 }),
               const Divider(color: Colors.white24),
@@ -394,23 +497,74 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                   final m = Map<String, dynamic>.from(e);
                   final nid = (m['id'] as num?)?.toInt();
                   final body = (m['body'] as String?) ?? '';
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(body, style: GoogleFonts.inter(color: Colors.white)),
-                    trailing: nid == null
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                            onPressed: () async {
-                              try {
-                                await _repo.deleteInternalNote(_id, nid);
-                                _load();
-                              } on ApiException catch (ex) {
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ex.message)));
-                              }
+                  final rawMedia = m['media'] is List ? m['media'] as List : [];
+                  final media = rawMedia.whereType<Map>().map((x) => Map<String, dynamic>.from(x)).toList();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(body, style: GoogleFonts.inter(color: Colors.white)),
+                        trailing: nid == null
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                onPressed: () async {
+                                  try {
+                                    await _repo.deleteInternalNote(_id, nid);
+                                    _load();
+                                  } on ApiException catch (ex) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ex.message)));
+                                  }
+                                },
+                              ),
+                      ),
+                      if (media.isNotEmpty && nid != null) ...[
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 60,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: media.length,
+                            itemBuilder: (ctx, idx) {
+                              final item = media[idx];
+                              final stored = item['stored_filename'] as String? ?? '';
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: FutureBuilder<Uint8List>(
+                                    future: stored.isEmpty
+                                        ? Future.value(Uint8List(0))
+                                        : _repo.getInternalNoteMediaBytes(_id, nid, stored),
+                                    builder: (ctx, snap) {
+                                      final bytes = snap.data;
+                                      if (bytes == null || bytes.isEmpty) {
+                                        return Container(
+                                          width: 80,
+                                          height: 60,
+                                          color: Colors.white12,
+                                          child: const Icon(Icons.image_outlined, color: Colors.white38),
+                                        );
+                                      }
+                                      return Image.memory(
+                                        bytes,
+                                        width: 80,
+                                        height: 60,
+                                        fit: BoxFit.cover,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
                             },
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ],
                   );
                 }),
               TextField(
@@ -419,7 +573,67 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                 style: GoogleFonts.inter(color: Colors.white),
                 decoration: const InputDecoration(hintText: 'New internal note…', hintStyle: TextStyle(color: Colors.white38)),
               ),
+              if (_noteImagePaths.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 60,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _noteImagePaths.length,
+                    itemBuilder: (ctx, idx) {
+                      final path = _noteImagePaths[idx];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.file(
+                                File(path),
+                                width: 80,
+                                height: 60,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              right: 2,
+                              top: 2,
+                              child: InkWell(
+                                onTap: () => setState(() => _noteImagePaths.removeAt(idx)),
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black54,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
+              Row(
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.camera_alt_outlined, size: 16),
+                    label: const Text('Camera'),
+                    onPressed: _savingNote ? null : _addNotePhotoCamera,
+                  ),
+                  const SizedBox(width: 8),
+                  ActionChip(
+                    avatar: const Icon(Icons.photo_library_outlined, size: 16),
+                    label: const Text('Gallery'),
+                    onPressed: _savingNote ? null : _addNotePhotoGallery,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               FilledButton(
                 onPressed: _savingNote ? null : _saveInternalNote,
                 child: _savingNote

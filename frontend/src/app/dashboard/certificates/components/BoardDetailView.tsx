@@ -10,6 +10,14 @@ import { cloneBoard, replaceInCircuits } from '@/lib/electricalCertificates/docu
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalculations';
 import {
+  clearColumnIntelligent,
+  FILLABLE_CIRCUIT_COLUMNS,
+  fillColumnIntelligent,
+  parsePastedGrid,
+  pasteIntoCircuits,
+  renumberCircuitsSmart,
+} from '@/lib/electricalCertificates/circuitGridUtils';
+import {
   OutcomeButtons,
   PASS_FAIL_OPTIONS,
   QuickSetSelectField,
@@ -24,6 +32,7 @@ import { TradecertFieldGrid, TradecertFormLayout, TradecertPanel } from './Trade
 import { CircuitsGrid } from './CircuitsGrid';
 import { CircuitsToolbar } from './CircuitsToolbar';
 import { FindReplaceModal } from './FindReplaceModal';
+import { PasteCircuitsModal } from './PasteCircuitsModal';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
 
 const BOARD_PHASE_OPTIONS = ['1', '2', '3', 'na', 'Other'].map((value) => ({
@@ -86,6 +95,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
   const base = `/dashboard/certificates/${certificate.id}`;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const readOnly = board?.status === 'done';
 
   if (!board) {
@@ -283,12 +293,11 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
           board={board}
           readOnly={readOnly}
           onFindReplace={() => setFindReplaceOpen(true)}
+          onPaste={() => setPasteOpen(true)}
           onQuickAdd={(n) => addCircuits(n)}
           onAdd={() => addCircuits(1)}
           onRenumber={() => {
-            setCircuits(
-              board.circuits.map((c, i) => ({ ...c, circuitNumber: String(i + 1) })),
-            );
+            setCircuits(renumberCircuitsSmart(board.circuits));
           }}
           onToggle100MaxZs={() => {
             const use100 = !board.maxZsUse100Percent;
@@ -301,7 +310,10 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             setCircuits(recalculateAllCircuits(board.circuits, board, board.maxZsUse100Percent, true));
           }}
           onFillColumn={(key, value) => {
-            setCircuits(board.circuits.map((c) => ({ ...c, [key]: value })));
+            setCircuits(fillColumnIntelligent(board.circuits, key, value, board, board.maxZsUse100Percent));
+          }}
+          onClearColumn={(key) => {
+            setCircuits(clearColumnIntelligent(board.circuits, key, board, board.maxZsUse100Percent));
           }}
           onAutofillFromPrevious={() => {
             if (board.circuits.length < 2) return;
@@ -338,6 +350,25 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
         onClose={() => setFindReplaceOpen(false)}
         onApply={(col, find, rep) => {
           setCircuits(replaceInCircuits(board.circuits, col, find, rep));
+        }}
+      />
+      <PasteCircuitsModal
+        open={pasteOpen}
+        onClose={() => setPasteOpen(false)}
+        columnLabels={FILLABLE_CIRCUIT_COLUMNS.map((c) => ({ key: c.key, label: c.label }))}
+        onApply={(text, startRow, startColIndex) => {
+          const grid = parsePastedGrid(text);
+          if (grid.length === 0) return;
+          setCircuits(
+            pasteIntoCircuits(
+              board.circuits,
+              startRow,
+              startColIndex,
+              grid,
+              board,
+              board.maxZsUse100Percent,
+            ),
+          );
         }}
       />
     </div>

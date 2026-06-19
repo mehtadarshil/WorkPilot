@@ -7,6 +7,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../../core/values/app_colors.dart';
 import '../certificate_document_utils.dart';
 import '../certificate_editor_controller.dart';
+import 'circuit_helpers.dart';
 import '../widgets/cert_form_widgets.dart';
 
 class ObservationsSectionEditor extends StatelessWidget {
@@ -70,6 +71,23 @@ class ObservationsSectionEditor extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
+              const SizedBox(height: 8),
+              if (items.length > 1)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () {
+                      final nextObs = Map<String, dynamic>.from(obs);
+                      nextObs['items'] = sortObservationsByCodeAndLocation(items);
+                      controller.updatePath('observations', nextObs);
+                    },
+                    icon: const Icon(Icons.sort_rounded, color: AppColors.primary, size: 18),
+                    label: Text(
+                      'Sort by code & location',
+                      style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               if (items.isEmpty)
                 Padding(

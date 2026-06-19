@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { X } from 'lucide-react';
 import { useCertificateEditor } from '../CertificateEditorContext';
-import type { EditorSectionKey } from '@/lib/electricalCertificates/types';
+import type { EditorSectionKey, ValidationIssue } from '@/lib/electricalCertificates/types';
 
 const SECTION_ROUTES: Record<string, EditorSectionKey> = {
   installation: 'installation-details',
@@ -13,6 +13,18 @@ const SECTION_ROUTES: Record<string, EditorSectionKey> = {
   boards: 'boards',
   appendix: 'appendix',
 };
+
+function issueHref(certificateId: number, issue: ValidationIssue) {
+  const base = `/dashboard/certificates/${certificateId}`;
+  const sectionRoute = SECTION_ROUTES[issue.section] ?? 'installation-details';
+  if (issue.boardId) {
+    const boardPath = `${base}/boards/${issue.boardId}`;
+    if (issue.field) return `${boardPath}?focus=${encodeURIComponent(issue.field)}`;
+    return boardPath;
+  }
+  if (issue.field) return `${base}/${sectionRoute}?focus=${encodeURIComponent(issue.field)}`;
+  return `${base}/${sectionRoute}`;
+}
 
 export function ValidateSheet() {
   const { certificate, validationIssues, validateOpen, setValidateOpen } = useCertificateEditor();
@@ -71,13 +83,19 @@ export function ValidateSheet() {
                     {section} ({items.length})
                   </Link>
                   <ul className="space-y-1">
-                    {items.slice(0, 12).map((issue) => (
-                      <li key={issue.id} className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-900">
-                        {issue.label}
+                    {items.slice(0, 20).map((issue) => (
+                      <li key={issue.id}>
+                        <Link
+                          href={issueHref(certificate.id, issue)}
+                          onClick={() => setValidateOpen(false)}
+                          className="block rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-900 hover:bg-rose-100"
+                        >
+                          {issue.label}
+                        </Link>
                       </li>
                     ))}
-                    {items.length > 12 && (
-                      <li className="text-xs text-slate-500">+ {items.length - 12} more…</li>
+                    {items.length > 20 && (
+                      <li className="text-xs text-slate-500">+ {items.length - 20} more…</li>
                     )}
                   </ul>
                 </li>

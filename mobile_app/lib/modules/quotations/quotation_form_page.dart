@@ -1,7 +1,13 @@
+import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
@@ -20,15 +26,53 @@ class QuotationFormPage extends StatefulWidget {
   State<QuotationFormPage> createState() => _QuotationFormPageState();
 }
 
+class _LineRowImage {
+  _LineRowImage({
+    this.localPath,
+    this.storedFilename,
+    this.contentType,
+    this.originalFilename,
+    this.byteSize,
+    this.dataUrl,
+  });
+
+  final String? localPath;
+  final String? storedFilename;
+  final String? contentType;
+  final String? originalFilename;
+  final int? byteSize;
+  final String? dataUrl;
+
+  bool get isLocal => localPath != null;
+
+  Uint8List? get memoryBytes {
+    if (dataUrl != null && dataUrl!.startsWith('data:')) {
+      final comma = dataUrl!.indexOf(',');
+      if (comma != -1) {
+        try {
+          return base64Decode(dataUrl!.substring(comma + 1));
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+}
+
 class _LineRow {
-  _LineRow({String desc = '', double qty = 1, double price = 0})
-    : descC = TextEditingController(text: desc),
-      qtyC = TextEditingController(text: qty == qty.roundToDouble() ? '${qty.toInt()}' : '$qty'),
-      priceC = TextEditingController(text: '$price');
+  _LineRow({
+    String desc = '',
+    double qty = 1,
+    double price = 0,
+    List<_LineRowImage> images = const [],
+  })  : descC = TextEditingController(text: desc),
+        qtyC = TextEditingController(text: qty == qty.roundToDouble() ? '${qty.toInt()}' : '$qty'),
+        priceC = TextEditingController(text: '$price'),
+        images = List.from(images);
 
   final TextEditingController descC;
   final TextEditingController qtyC;
   final TextEditingController priceC;
+  final List<_LineRowImage> images;
 
   void dispose() {
     descC.dispose();
@@ -46,6 +90,29 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  final _picker = ImagePicker();
+
+  Future<void> _addLinePhotoCamera(int i) async {
+    final f = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 2000,
+      imageQuality: 85,
+    );
+    if (f == null) return;
+    setState(() {
+      _lines[i].images.add(_LineRowImage(localPath: f.path));
+    });
+  }
+
+  Future<void> _addLinePhotoGallery(int i) async {
+    final list = await _picker.pickMultiImage();
+    if (list.isEmpty) return;
+    setState(() {
+      for (final f in list) {
+        _lines[i].images.add(_LineRowImage(localPath: f.path));
+      }
+    });
+  }
 
   List<Map<String, dynamic>> _customers = [];
   int? _customerId;
@@ -126,11 +193,27 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
           for (final e in items) {
             if (e is! Map) continue;
             final m = Map<String, dynamic>.from(e);
+            final rawImgs = m['images'];
+            final imgs = <_LineRowImage>[];
+            if (rawImgs is List) {
+              for (final img in rawImgs) {
+                if (img is! Map) continue;
+                final im = Map<String, dynamic>.from(img);
+                imgs.add(_LineRowImage(
+                  storedFilename: im['stored_filename'] as String?,
+                  originalFilename: im['original_filename'] as String?,
+                  contentType: im['content_type'] as String?,
+                  byteSize: (im['byte_size'] as num?)?.toInt(),
+                  dataUrl: im['data_url'] as String?,
+                ));
+              }
+            }
             _lines.add(
               _LineRow(
                 desc: (m['description'] as String?) ?? '',
                 qty: (m['quantity'] as num?)?.toDouble() ?? 1,
                 price: (m['unit_price'] as num?)?.toDouble() ?? 0,
+                images: imgs,
               ),
             );
           }
@@ -218,25 +301,61 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
       setState(() => _error = 'Customer is required.');
       return;
     }
-    final validItems = <Map<String, dynamic>>[];
-    for (final l in _lines) {
-      final d = l.descC.text.trim();
-      if (d.isEmpty) continue;
-      validItems.add(<String, dynamic>{
-        'description': d,
-        'quantity': double.tryParse(l.qtyC.text) ?? 1,
-        'unit_price': double.tryParse(l.priceC.text) ?? 0,
-      });
-    }
-    if (validItems.isEmpty) {
-      setState(() => _error = 'At least one line item with a description is required.');
-      return;
-    }
     setState(() {
       _saving = true;
       _error = null;
     });
+
     try {
+      final validItems = <Map<String, dynamic>>[];
+      for (final l in _lines) {
+        final d = l.descC.text.trim();
+        if (d.isEmpty) continue;
+
+        final listImages = <Map<String, dynamic>>[];
+        for (final img in l.images) {
+          if (img.storedFilename != null) {
+            listImages.add(<String, dynamic>{
+              'stored_filename': img.storedFilename,
+              'original_filename': img.originalFilename ?? 'image.jpg',
+              'content_type': img.contentType ?? 'image/jpeg',
+              'byte_size': img.byteSize ?? 0,
+            });
+          } else if (img.localPath != null) {
+            final p = img.localPath!;
+            final u = await FlutterImageCompress.compressWithFile(
+              p,
+              minWidth: 1280,
+              minHeight: 1280,
+              quality: 68,
+              format: CompressFormat.jpeg,
+            );
+            if (u == null) continue;
+            final filename = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+            listImages.add(<String, dynamic>{
+              'original_filename': filename,
+              'filename': filename,
+              'content_type': 'image/jpeg',
+              'byte_size': u.length,
+              'content_base64': base64Encode(u),
+            });
+          }
+        }
+
+        validItems.add(<String, dynamic>{
+          'description': d,
+          'quantity': double.tryParse(l.qtyC.text) ?? 1,
+          'unit_price': double.tryParse(l.priceC.text) ?? 0,
+          'images': listImages,
+        });
+      }
+      if (validItems.isEmpty) {
+        setState(() {
+          _saving = false;
+          _error = 'At least one line item with a description is required.';
+        });
+        return;
+      }
       final qd = _quotationDate.toIso8601String().split('T').first;
       final vu = _validUntil.toIso8601String().split('T').first;
       if (_editId == null) {
@@ -480,6 +599,16 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    _panel(
+                      child: TextField(
+                        controller: _descriptionC,
+                        enabled: !_saving,
+                        maxLines: 3,
+                        style: GoogleFonts.inter(color: Colors.white),
+                        decoration: _inputDeco('Project description'),
+                      ),
+                    ),
                     const SizedBox(height: 20),
                     Text('Line items', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 12),
@@ -510,16 +639,6 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       'Subtotal ${QuotationHelpers.formatMoney(_subtotal, _currency)} · Tax ${QuotationHelpers.formatMoney(_taxAmount, _currency)} · Total ${QuotationHelpers.formatMoney(_total, _currency)}',
                       style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700),
                       softWrap: true,
-                    ),
-                    const SizedBox(height: 16),
-                    _panel(
-                      child: TextField(
-                        controller: _descriptionC,
-                        enabled: !_saving,
-                        maxLines: 3,
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: _inputDeco('Project description'),
-                      ),
                     ),
                     const SizedBox(height: 16),
                     _panel(
@@ -596,6 +715,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
     final l = _lines[i];
     return _panel(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: l.descC,
@@ -635,6 +755,87 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         });
                       },
                 icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171)),
+              ),
+            ],
+          ),
+          if (l.images.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 60,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: l.images.length,
+                itemBuilder: (ctx, idx) {
+                  final img = l.images[idx];
+                  Widget imageWidget;
+                  if (img.isLocal) {
+                    imageWidget = Image.file(
+                      File(img.localPath!),
+                      width: 80,
+                      height: 60,
+                      fit: BoxFit.cover,
+                    );
+                  } else {
+                    final bytes = img.memoryBytes;
+                    if (bytes != null) {
+                      imageWidget = Image.memory(
+                        bytes,
+                        width: 80,
+                        height: 60,
+                        fit: BoxFit.cover,
+                      );
+                    } else {
+                      imageWidget = Container(
+                        width: 80,
+                        height: 60,
+                        color: Colors.white12,
+                        child: const Icon(Icons.image_outlined, color: Colors.white38),
+                      );
+                    }
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: imageWidget,
+                        ),
+                        Positioned(
+                          right: 2,
+                          top: 2,
+                          child: InkWell(
+                            onTap: () => setState(() => l.images.removeAt(idx)),
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton.icon(
+                onPressed: _saving ? null : () => _addLinePhotoCamera(i),
+                icon: const Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white70),
+                label: Text('Camera', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: _saving ? null : () => _addLinePhotoGallery(i),
+                icon: const Icon(Icons.photo_library_outlined, size: 16, color: Colors.white70),
+                label: Text('Gallery', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
               ),
             ],
           ),

@@ -6,6 +6,7 @@ import '../certificate_document_utils.dart';
 import '../certificate_editor_controller.dart';
 import '../widgets/cert_form_widgets.dart';
 import 'circuit_calculations.dart';
+import 'circuit_helpers.dart';
 import 'board_circuits_editor_view.dart';
 
 class BoardsListEditor extends StatelessWidget {
@@ -101,7 +102,7 @@ class BoardsListEditor extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '${circuits.length} circuit(s) · ${status == 'complete' ? 'Complete' : 'In Progress'}',
+                                        '${circuits.length} circuit(s) · ${boardStatusLabel(status)}',
                                         style: GoogleFonts.inter(
                                           color: AppColors.slate400,
                                           fontSize: 12,
@@ -237,6 +238,10 @@ class BoardsListEditor extends StatelessWidget {
   }
 
   void _deleteBoard(int index, List<Map<String, dynamic>> boards) {
+    if (boards.length <= 1) {
+      Get.snackbar('Cannot delete', 'At least one board is required.');
+      return;
+    }
     final nextBoards = List<Map<String, dynamic>>.from(boards);
     if (index >= 0 && index < nextBoards.length) {
       nextBoards.removeAt(index);
@@ -250,7 +255,7 @@ class BoardsListEditor extends StatelessWidget {
       final rawCircuits = nextB['circuits'] as List? ?? [];
       final circuits = rawCircuits.map((c) => Map<String, dynamic>.from(c)).toList();
       final use100Percent = nextB['maxZsUse100Percent'] == true;
-      nextB['circuits'] = recalculateAllCircuits(circuits, nextB, use100Percent);
+      nextB['circuits'] = recalculateAllCircuits(circuits, nextB, use100Percent, clearOverrides: true);
       return nextB;
     }).toList();
     controller.updatePath('boards', nextBoards);

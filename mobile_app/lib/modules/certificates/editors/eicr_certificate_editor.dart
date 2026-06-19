@@ -46,6 +46,10 @@ class EicrCertificateEditor extends StatelessWidget {
           label: 'General condition',
           maxLines: 3,
         ),
+        JsonFieldSpec(
+          path: 'installation.reinspectionPeriod',
+          label: 'Recommended re-inspection period',
+        ),
       ],
     ),
     CertificateSectionSpec(

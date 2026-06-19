@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/values/app_colors.dart';
 import 'certificate_editor_controller.dart';
+import 'certificate_print_webview_page.dart';
+import 'certificate_validation.dart';
 import 'editors/domestic_fire_alarm_certificate_editor.dart';
 import 'editors/domestic_fire_alarm_inst_certificate_editor.dart';
 import 'editors/eic_certificate_editor.dart';
@@ -15,6 +17,7 @@ import 'editors/fire_extinguisher_certificate_editor.dart';
 import 'editors/generic_certificate_editor.dart';
 import 'editors/minor_works_certificate_editor.dart';
 import 'editors/pat_certificate_editor.dart';
+import 'widgets/copy_convert_certificate_sheet.dart';
 import 'widgets/cert_form_widgets.dart';
 
 class CertificateEditorView extends GetView<CertificateEditorController> {
@@ -39,6 +42,26 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
             onPressed: Get.back,
           ),
           actions: [
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (value) async {
+                switch (value) {
+                  case 'print':
+                    final id = controller.certificate.value?.id;
+                    if (id != null) {
+                      await Get.to(() => CertificatePrintWebViewPage(certificateId: id));
+                    }
+                    break;
+                  case 'copy':
+                    await showCopyConvertCertificateSheet(controller);
+                    break;
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'print', child: Text('Print layout')),
+                PopupMenuItem(value: 'copy', child: Text('Copy / convert…')),
+              ],
+            ),
             Obx(
               () => IconButton(
                 tooltip: 'Export PDF',
@@ -83,6 +106,7 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
 
           final sections = _sectionsFor(controller.certificate.value!.typeSlug);
           final active = controller.activeSectionKey.value;
+          final issueCounts = controller.sectionIssueCounts;
           return Column(
             children: [
               _Header(controller: controller),
@@ -94,8 +118,32 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
                   itemBuilder: (context, index) {
                     final section = sections[index];
                     final selected = active == section.key;
+                    final issueCount = issueCountForSectionKey(section.key, issueCounts);
                     return ChoiceChip(
-                      label: Text(section.label),
+                      label: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(section.label),
+                          if (issueCount > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade700,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '!',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       selected: selected,
                       selectedColor: AppColors.primary,
                       backgroundColor: AppColors.whiteOverlay(0.08),

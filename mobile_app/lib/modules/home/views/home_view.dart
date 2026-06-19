@@ -1930,8 +1930,6 @@ class _DiaryTab extends GetView<HomeController> {
                 );
               }),
               Obx(() {
-                final isTeam = controller.diaryListScope.value == DiaryListScope.team;
-                if (!isTeam) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: _DiaryViewModeToggle(
@@ -1941,9 +1939,8 @@ class _DiaryTab extends GetView<HomeController> {
                 );
               }),
               Obx(() {
-                final isTeam = controller.diaryListScope.value == DiaryListScope.team;
                 final isList = controller.diaryViewMode.value == DiaryViewMode.list;
-                if (!isTeam || !isList) return const SizedBox.shrink();
+                if (!isList) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: _DiaryFilterBar(
@@ -1976,10 +1973,9 @@ class _DiaryTab extends GetView<HomeController> {
               );
             }
 
-            final isTeam = controller.diaryListScope.value == DiaryListScope.team;
             final isCalendar = controller.diaryViewMode.value == DiaryViewMode.calendar;
 
-            if (isTeam && isCalendar) {
+            if (isCalendar) {
               if (controller.diaryLoading.value) {
                 return const Center(
                   child: CircularProgressIndicator(color: AppColors.primary),
@@ -2094,11 +2090,7 @@ class _DiaryTab extends GetView<HomeController> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        isTeam
-                            ? _emptyStateMessage(controller.diaryListScope.value, controller.diaryFilter.value)
-                            : (controller.diaryListScope.value == DiaryListScope.team
-                                ? 'No team diary entries this week'
-                                : 'No diary entries this week'),
+                        _emptyStateMessage(controller.diaryListScope.value, controller.diaryFilter.value),
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           color: AppColors.slate400,

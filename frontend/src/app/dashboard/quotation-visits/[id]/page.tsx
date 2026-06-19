@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { getJson, postJson } from '../../../apiClient';
+import QuotationWorkJobChoice from '../../quotations/QuotationWorkJobChoice';
 
 interface DiaryEvent {
   diary_id: number;
@@ -40,6 +41,7 @@ interface VisitDetail {
     customer_full_name: string | null;
     officer_full_name: string | null;
     officers: { id: number; full_name: string; is_primary: boolean }[];
+    work_address_id?: number | null;
     created_at: string;
   };
   diary_events: DiaryEvent[];
@@ -87,6 +89,7 @@ export default function QuotationVisitDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [workJobChoiceOpen, setWorkJobChoiceOpen] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     if (!token || !id) return;
@@ -194,14 +197,15 @@ export default function QuotationVisitDetailPage() {
               {quotation.quotation_number}
             </Link>
           )}
-          {canSetupWorkJob && visit.customer_id && (
-            <Link
-              href={`/dashboard/customers/${visit.customer_id}/jobs/new?edit=${visit.id}&from_quotation=${quotation!.id}&convert_visit=1`}
+          {canSetupWorkJob && visit.customer_id && quotation && (
+            <button
+              type="button"
+              onClick={() => setWorkJobChoiceOpen(true)}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100"
             >
               <Briefcase className="size-4" />
               Set up work job
-            </Link>
+            </button>
           )}
         </div>
       </header>
@@ -326,6 +330,17 @@ export default function QuotationVisitDetailPage() {
           )}
         </div>
       </div>
+
+      {quotation && visit.customer_id && (
+        <QuotationWorkJobChoice
+          open={workJobChoiceOpen}
+          onClose={() => setWorkJobChoiceOpen(false)}
+          customerId={visit.customer_id}
+          quotationId={quotation.id}
+          visitJobId={visit.id}
+          workAddressId={visit.work_address_id}
+        />
+      )}
     </div>
   );
 }

@@ -5,8 +5,19 @@ function isEmpty(v: string | undefined | null): boolean {
   return v == null || String(v).trim() === '';
 }
 
-function req(section: string, label: string, field?: string, boardId?: string): ValidationIssue {
-  return { id: `${section}:${label}`, section, label: `${label}: Is empty`, field, boardId };
+function isNaDescription(value: string) {
+  const text = value.trim().toLowerCase();
+  return text === 'spare' || text === 'unknown';
+}
+
+function req(
+  section: string,
+  label: string,
+  field?: string,
+  boardId?: string,
+  circuitId?: string,
+): ValidationIssue {
+  return { id: `${section}:${label}:${boardId ?? ''}:${circuitId ?? ''}`, section, label: `${label}: Is empty`, field, boardId, circuitId };
 }
 
 export function validateElectricalCertificate(doc: ElectricalCertificateDocument): ValidationIssue[] {
@@ -108,17 +119,38 @@ export function validateElectricalCertificate(doc: ElectricalCertificateDocument
 
     let incompleteCircuitFields = 0;
     for (const c of board.circuits) {
-      if (isEmpty(c.description)) incompleteCircuitFields++;
-      if (isEmpty(c.ocpdBs)) incompleteCircuitFields++;
-      if (isEmpty(c.ocpdRatingA)) incompleteCircuitFields++;
-      if (isEmpty(c.zs)) incompleteCircuitFields++;
+      if (isEmpty(c.description)) {
+        incompleteCircuitFields++;
+        issues.push(req('boards', `Circuit ${c.circuitNumber || '?'}: Description`, 'description', bid, c.id));
+      }
+      if (!isNaDescription(c.description)) {
+        if (isEmpty(c.ocpdBs)) {
+          incompleteCircuitFields++;
+          issues.push(req('boards', `Circuit ${c.circuitNumber || '?'}: OCPD BS`, 'ocpdBs', bid, c.id));
+        }
+        if (isEmpty(c.ocpdRatingA)) {
+          incompleteCircuitFields++;
+          issues.push(req('boards', `Circuit ${c.circuitNumber || '?'}: OCPD rating`, 'ocpdRatingA', bid, c.id));
+        }
+        if (isEmpty(c.zs)) {
+          incompleteCircuitFields++;
+          issues.push(req('boards', `Circuit ${c.circuitNumber || '?'}: Measured Zs`, 'zs', bid, c.id));
+        }
+      }
     }
-    if (board.circuits.length === 0) incompleteCircuitFields += 6;
-    if (incompleteCircuitFields > 0) {
+    if (board.circuits.length === 0) {
+      incompleteCircuitFields += 6;
+      issues.push({
+        id: `boards:${bid}:empty`,
+        section: 'boards',
+        label: `${board.name || 'Board'}: No circuits added`,
+        boardId: bid,
+      });
+    } else if (incompleteCircuitFields > 0) {
       issues.push({
         id: `boards:${bid}:circuits`,
         section: 'boards',
-        label: `Circuits: ${incompleteCircuitFields} fields incomplete`,
+        label: `${board.name || 'Board'}: ${incompleteCircuitFields} circuit field(s) incomplete`,
         boardId: bid,
       });
     }

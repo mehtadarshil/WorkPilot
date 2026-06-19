@@ -23,6 +23,8 @@ class CrmListController extends GetxController {
   int? _totalPages;
   Timer? _searchDebounce;
 
+  final RxString listFilter = ''.obs;
+
   String get title => switch (module) {
     'customers' => 'Customers',
     'jobs' => 'Jobs',
@@ -30,6 +32,7 @@ class CrmListController extends GetxController {
     'invoices' => 'Invoices',
     'parts_catalog' => 'Part catalog',
     'certifications' => 'Certificates',
+    'quotation_visits' => 'Quotation Visits',
     _ => 'List',
   };
 
@@ -37,7 +40,9 @@ class CrmListController extends GetxController {
       module == 'customers' ||
       module == 'jobs' ||
       module == 'quotations' ||
-      module == 'invoices';
+      module == 'invoices' ||
+      module == 'quotation_visits' ||
+      module == 'certifications';
 
   bool get hasMore {
     if (!_paginated || _totalPages == null) return false;
@@ -48,6 +53,11 @@ class CrmListController extends GetxController {
   void onInit() {
     module = Get.arguments as String? ?? 'customers';
     super.onInit();
+    reloadFromStart();
+  }
+
+  void setListFilter(String value) {
+    listFilter.value = value;
     reloadFromStart();
   }
 
@@ -75,7 +85,8 @@ class CrmListController extends GetxController {
       final r = await _mobile.fetchCrmListPage(
         module: module,
         page: _page,
-        search: module == 'jobs' ? searchController.text : null,
+        search: (module == 'jobs' || module == 'quotation_visits') ? searchController.text : null,
+        filter: module == 'certifications' ? listFilter.value : null,
       );
       if (append) {
         items.addAll(r.items);

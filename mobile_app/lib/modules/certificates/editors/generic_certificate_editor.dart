@@ -6,6 +6,7 @@ import '../constants/certificate_schedule_items.dart';
 import '../widgets/cert_form_widgets.dart';
 import 'custom_section_editors.dart';
 import 'boards_list_editor.dart';
+import 'circuit_helpers.dart';
 
 class JsonFieldSpec {
   const JsonFieldSpec({
@@ -138,11 +139,52 @@ class GenericCertificateEditor extends StatelessWidget {
         onChanged: (value) => controller.updatePath(field.path, value),
       );
     }
+    if (field.path == 'installation.reinspectionPeriod') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CertTextField(
+            label: field.label,
+            value: controller.valueAt(field.path),
+            maxLines: field.maxLines,
+            onChanged: (value) => controller.updatePath(field.path, value),
+          ),
+          _ReinspectionQuickPicks(
+            onPick: (value) => controller.updatePath(field.path, value),
+          ),
+        ],
+      );
+    }
     return CertTextField(
       label: field.label,
       value: controller.valueAt(field.path),
       maxLines: field.maxLines,
       onChanged: (value) => controller.updatePath(field.path, value),
+    );
+  }
+}
+
+class _ReinspectionQuickPicks extends StatelessWidget {
+  const _ReinspectionQuickPicks({required this.onPick});
+
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: reinspectionQuickOptions
+            .map(
+              (option) => ActionChip(
+                label: Text(option, style: const TextStyle(fontSize: 11)),
+                onPressed: () => onPick(option),
+              ),
+            )
+            .toList(),
+      ),
     );
   }
 }

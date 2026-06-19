@@ -17,6 +17,7 @@ abstract class AppRoutes {
   static const String quotations = '/quotations';
   static const String quotationDetail = '/quotations/detail';
   static const String quotationForm = '/quotations/form';
+  static const String quotationVisitDetail = '/quotation-visits/detail';
   static const String invoices = '/invoices';
   static const String invoiceDetail = '/invoices/detail';
   static const String invoiceForm = '/invoices/form';
@@ -35,4 +36,5 @@ abstract class AppRoutes {
   static const String certificateEditor = '/certificates/editor';
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
+  static const String holidays = '/holidays';
 }

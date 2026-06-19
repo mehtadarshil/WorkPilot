@@ -77,6 +77,7 @@ class ValidationIssue {
     required this.label,
     this.field,
     this.boardId,
+    this.circuitId,
   });
 
   factory ValidationIssue.fromJson(Map<String, dynamic> m) {
@@ -86,6 +87,7 @@ class ValidationIssue {
       label: (m['label'] as String?) ?? '',
       field: m['field'] as String?,
       boardId: m['boardId'] as String?,
+      circuitId: m['circuitId'] as String?,
     );
   }
 
@@ -94,6 +96,7 @@ class ValidationIssue {
   final String label;
   final String? field;
   final String? boardId;
+  final String? circuitId;
 }
 
 class JobLinkedCertificateSummary {

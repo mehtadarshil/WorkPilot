@@ -540,6 +540,7 @@ class MobileRepository extends BaseRepository {
     required String module,
     int page = 1,
     String? search,
+    String? filter,
   }) async {
     List<Map<String, dynamic>> parseList(dynamic raw) {
       if (raw is! List) return [];
@@ -552,6 +553,10 @@ class MobileRepository extends BaseRepository {
     final q = <String, dynamic>{'page': page};
     if (trimmed != null && trimmed.isNotEmpty) {
       q['search'] = trimmed;
+    }
+    final listFilter = filter?.trim();
+    if (listFilter != null && listFilter.isNotEmpty) {
+      q['filter'] = listFilter;
     }
 
     switch (module) {
@@ -626,6 +631,18 @@ class MobileRepository extends BaseRepository {
         final data = res.data;
         return (
           items: parseList(data?['certificates']),
+          page: page,
+          totalPages: (data?['totalPages'] as num?)?.toInt(),
+        );
+      case 'quotation_visits':
+        q['limit'] = 25;
+        final res = await api.get<Map<String, dynamic>>(
+          '/quotation-visits',
+          queryParameters: q,
+        );
+        final data = res.data;
+        return (
+          items: parseList(data?['visits']),
           page: page,
           totalPages: (data?['totalPages'] as num?)?.toInt(),
         );
@@ -851,6 +868,19 @@ class MobileRepository extends BaseRepository {
       },
     );
     return ElectricalCertificate.fromJson(Map<String, dynamic>.from(res.data ?? {}));
+  }
+
+  Future<ElectricalCertificate> duplicateElectricalCertificate(
+    int id, {
+    String? typeSlug,
+  }) async {
+    final res = await api.post<Map<String, dynamic>>(
+      '/electrical-certificates/$id/duplicate',
+      data: typeSlug == null || typeSlug.trim().isEmpty ? null : {'type_slug': typeSlug.trim()},
+    );
+    final cert = res.data?['certificate'];
+    if (cert is! Map) throw ApiException('Invalid duplicate response');
+    return ElectricalCertificate.fromJson(Map<String, dynamic>.from(cert));
   }
 
   Future<List<ValidationIssue>> validateElectricalCertificate(int id) async {

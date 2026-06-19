@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:get/get.dart';
 
 import '../../core/network/api_exception.dart';
@@ -106,6 +108,12 @@ class QuotationsRepository extends GetxService {
     return _asMap(res.data);
   }
 
+  /// Same payload as web `/dashboard/quotation-visits/[id]`.
+  Future<Map<String, dynamic>> getQuotationVisit(int id) async {
+    final res = await _api.get<Map<String, dynamic>>('/quotation-visits/$id');
+    return _asMap(res.data);
+  }
+
   Future<Map<String, dynamic>> getEmailComposeDraft(int id) async {
     final res = await _api.get<Map<String, dynamic>>('/quotations/$id/email-compose');
     return _asMap(res.data);
@@ -152,6 +160,11 @@ class QuotationsRepository extends GetxService {
 
   Future<void> deleteInternalNote(int quotationId, int noteId) async {
     await _api.delete<void>('/quotations/$quotationId/internal-notes/$noteId');
+  }
+
+  Future<Uint8List> getInternalNoteMediaBytes(int quotationId, int noteId, String storedFilename) async {
+    final res = await _api.getBytes('/quotations/$quotationId/internal-notes/$noteId/files/$storedFilename');
+    return Uint8List.fromList(res.data ?? []);
   }
 
   Future<void> postCommunication(int quotationId, Map<String, dynamic> payload) async {

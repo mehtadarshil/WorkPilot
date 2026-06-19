@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMemo } from 'react';
 import {
   Building2,
   ClipboardList,
@@ -14,6 +15,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { EDITOR_SECTIONS, type EditorSectionKey } from '@/lib/electricalCertificates/types';
+import { countIssuesBySection } from '@/lib/electricalCertificates/certificateUxUtils';
+import { validateElectricalCertificate } from '@/lib/electricalCertificates/validation';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import { ValidateSheet } from './ValidateSheet';
 import { CertificateEditorMenu } from './CertificateEditorMenu';
@@ -30,11 +33,15 @@ const SECTION_ICONS: Record<EditorSectionKey, React.ReactNode> = {
 
 export function CertificateEditorShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { certificate, saving, saveError, lastSavedAt, runValidate, setValidateOpen } =
+  const { certificate, document, saving, saveError, lastSavedAt, runValidate, setValidateOpen } =
     useCertificateEditor();
   const base = `/dashboard/certificates/${certificate.id}`;
   const obsCount = certificate.document.observations.items.length;
   const boardCount = certificate.document.boards.length;
+  const sectionIssueCounts = useMemo(
+    () => countIssuesBySection(validateElectricalCertificate(document)),
+    [document],
+  );
 
   const activeSection =
     EDITOR_SECTIONS.find((s) => pathname.includes(`/${s.key}`))?.key ?? 'installation-details';
@@ -101,6 +108,18 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
                 : s.key === 'boards' && boardCount > 0
                   ? boardCount
                   : null;
+            const issueCount =
+              s.key === 'installation-details'
+                ? sectionIssueCounts.installation ?? 0
+                : s.key === 'observations'
+                  ? sectionIssueCounts.observations ?? 0
+                  : s.key === 'supply-characteristics'
+                    ? sectionIssueCounts.supply ?? 0
+                    : s.key === 'inspection-schedule'
+                      ? sectionIssueCounts.inspection ?? 0
+                      : s.key === 'boards'
+                        ? sectionIssueCounts.boards ?? 0
+                        : 0;
             return (
               <Link
                 key={s.key}
@@ -115,6 +134,11 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
                 {s.label}
                 {badge != null && (
                   <span className="rounded-full bg-[#14B8A6] px-1.5 text-[10px] text-white">{badge}</span>
+                )}
+                {issueCount > 0 && (
+                  <span className="rounded-full bg-rose-500 px-1.5 text-[10px] text-white" title={`${issueCount} validation issue(s)`}>
+                    !
+                  </span>
                 )}
               </Link>
             );

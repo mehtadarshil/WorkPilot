@@ -22,6 +22,8 @@ import '../../modules/jobs/job_detail_binding.dart';
 import '../../modules/jobs/job_detail_view.dart';
 import '../../modules/quotations/quotation_detail_page.dart';
 import '../../modules/quotations/quotation_form_page.dart';
+import '../../modules/quotation_visits/quotation_visit_detail_binding.dart';
+import '../../modules/quotation_visits/quotation_visit_detail_view.dart';
 import '../../modules/quotations/quotations_list_binding.dart';
 import '../../modules/quotations/quotations_list_view.dart';
 import '../../modules/invoices/invoice_detail_page.dart';
@@ -58,6 +60,8 @@ import '../../modules/certificates/certificate_editor_binding.dart';
 import '../../modules/certificates/certificate_editor_view.dart';
 import '../../modules/certificates/certificate_type_picker_binding.dart';
 import '../../modules/certificates/certificate_type_picker_view.dart';
+import '../../modules/holidays/holidays_binding.dart';
+import '../../modules/holidays/holidays_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -146,6 +150,11 @@ class AppPages {
       page: () => const QuotationFormPage(),
     ),
     GetPage<void>(
+      name: AppRoutes.quotationVisitDetail,
+      page: () => const QuotationVisitDetailView(),
+      binding: QuotationVisitDetailBinding(),
+    ),
+    GetPage<void>(
       name: AppRoutes.invoices,
       page: () => const InvoicesListView(),
       binding: InvoicesListBinding(),
@@ -217,6 +226,11 @@ class AppPages {
       name: AppRoutes.certificateEditor,
       page: () => const CertificateEditorView(),
       binding: CertificateEditorBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.holidays,
+      page: () => const HolidaysView(),
+      binding: HolidaysBinding(),
     ),
   ];
 }
