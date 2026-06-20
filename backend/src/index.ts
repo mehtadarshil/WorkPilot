@@ -108,6 +108,7 @@ import {
 import { sendInlineWorkpilotFile, storeInlineDataUrlAsWorkpilotFile } from './inlineBlobStorage';
 import {
   brandingLogoPublicPath,
+  canonicalBrandingLogoPath,
   resolveBrandingLogoPublicUrl,
 } from './brandingLogoUrl';
 
@@ -2527,11 +2528,29 @@ async function storeJobReportAnswerValue(
   return stored ? jobReportAnswerFilePath(diaryEventId, questionId, stored.filename) : trimmed;
 }
 
-async function storeBrandingLogoValue(userId: number, scope: 'invoice' | 'quotation', value: string | null | undefined): Promise<string | null | undefined> {
-  if (typeof value !== 'string' || !value.startsWith('data:')) return value;
-  const stored = await storeInlineDataUrlAsWorkpilotFile('branding-assets', [scope, userId], 'company_logo', value);
-  if (!stored) return value;
-  return brandingLogoPublicPath(scope, userId, stored.filename);
+async function storeBrandingLogoValue(userId: number, _scope: 'invoice' | 'quotation', value: string | null | undefined): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null || (typeof value === 'string' && !value.trim())) return null;
+
+  const trimmed = value.trim();
+  if (trimmed.startsWith('data:')) {
+    const stored = await storeInlineDataUrlAsWorkpilotFile('branding-assets', ['invoice', userId], 'company_logo', trimmed);
+    if (!stored) return trimmed;
+    return brandingLogoPublicPath('invoice', userId, stored.filename);
+  }
+
+  return canonicalBrandingLogoPath(trimmed, userId) ?? trimmed;
+}
+
+async function syncCompanyLogoAcrossSettings(userId: number, companyLogo: string | null): Promise<void> {
+  await pool.query(
+    'UPDATE invoice_settings SET company_logo = $1, updated_at = NOW() WHERE created_by = $2',
+    [companyLogo, userId],
+  );
+  await pool.query(
+    'UPDATE quotation_settings SET company_logo = $1, updated_at = NOW() WHERE created_by = $2',
+    [companyLogo, userId],
+  );
 }
 
 function imageContentTypeFromFilename(filename: string): string {
@@ -12311,6 +12330,14 @@ async function getInvoiceSettings(userId: number): Promise<{
   );
   if ((r.rowCount ?? 0) > 0) {
     const row = r.rows[0] as Record<string, unknown>;
+    let storedLogo = (row.company_logo as string) ?? null;
+    if (!storedLogo) {
+      const qLogo = await pool.query(
+        'SELECT company_logo FROM quotation_settings WHERE created_by = $1',
+        [userId],
+      );
+      storedLogo = (qLogo.rows[0]?.company_logo as string) ?? null;
+    }
     return {
       default_currency: (row.default_currency as string) ?? 'USD',
       invoice_prefix: (row.invoice_prefix as string) ?? 'INV',
@@ -12320,7 +12347,7 @@ async function getInvoiceSettings(userId: number): Promise<{
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
       company_email: (row.company_email as string) ?? null,
-      company_logo: resolveBrandingLogoPublicUrl(row.company_logo, userId, 'invoice'),
+      company_logo: resolveBrandingLogoPublicUrl(storedLogo, userId, 'invoice'),
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
@@ -16624,6 +16651,9 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, requireAnyPermi
         ],
       );
     }
+    if (companyLogo !== undefined) {
+      await syncCompanyLogoAcrossSettings(userId, companyLogo);
+    }
     const settings = await getQuotationSettings(userId);
     return res.json({ settings });
   } catch (error) {
@@ -16735,6 +16765,9 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
          ON CONFLICT (created_by) DO UPDATE SET default_currency = EXCLUDED.default_currency, invoice_prefix = EXCLUDED.invoice_prefix, terms_and_conditions = EXCLUDED.terms_and_conditions, default_due_days = EXCLUDED.default_due_days, company_name = EXCLUDED.company_name, company_address = EXCLUDED.company_address, company_phone = EXCLUDED.company_phone, company_email = EXCLUDED.company_email, company_logo = EXCLUDED.company_logo, company_website = EXCLUDED.company_website, company_tax_id = EXCLUDED.company_tax_id, tax_label = EXCLUDED.tax_label, default_tax_percentage = EXCLUDED.default_tax_percentage, footer_text = EXCLUDED.footer_text, payment_terms = EXCLUDED.payment_terms, bank_details = EXCLUDED.bank_details, invoice_accent_color = EXCLUDED.invoice_accent_color, invoice_accent_end_color = EXCLUDED.invoice_accent_end_color, updated_at = NOW()`,
         [userId, merged.default_currency, merged.invoice_prefix, merged.terms_and_conditions, merged.default_due_days, merged.company_name, merged.company_address, merged.company_phone, merged.company_email, merged.company_logo, merged.company_website, merged.company_tax_id, merged.tax_label, merged.default_tax_percentage, merged.footer_text, merged.payment_terms, merged.bank_details, merged.invoice_accent_color, merged.invoice_accent_end_color],
       );
+    }
+    if (companyLogo !== undefined) {
+      await syncCompanyLogoAcrossSettings(userId, companyLogo);
     }
     const settings = await getInvoiceSettings(userId);
     return res.json({ settings });

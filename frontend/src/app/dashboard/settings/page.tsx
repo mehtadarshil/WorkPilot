@@ -317,7 +317,6 @@ export default function SettingsPage() {
       setCompanyAddress(s.company_address ?? '');
       setCompanyPhone(s.company_phone ?? '');
       setCompanyEmail(s.company_email ?? '');
-      setCompanyLogo(s.company_logo ?? '');
       setCompanyWebsite(s.company_website ?? '');
       setCompanyTaxId(s.company_tax_id ?? '');
       setCompanyTaxLabel(s.tax_label ?? 'Tax');
@@ -409,7 +408,6 @@ export default function SettingsPage() {
         company_address: companyAddress.trim() || null,
         company_phone: companyPhone.trim() || null,
         company_email: companyEmail.trim() || null,
-        company_logo: companyLogo.trim() || null,
         company_website: companyWebsite.trim() || null,
         company_tax_id: companyTaxId.trim() || null,
         tax_label: companyTaxLabel.trim() || 'Tax',
@@ -445,7 +443,6 @@ export default function SettingsPage() {
         company_address: companyAddress.trim() || null,
         company_phone: companyPhone.trim() || null,
         company_email: companyEmail.trim() || null,
-        company_logo: companyLogo.trim() || null,
         company_website: companyWebsite.trim() || null,
         company_tax_id: companyTaxId.trim() || null,
         tax_label: companyTaxLabel.trim() || 'Tax',

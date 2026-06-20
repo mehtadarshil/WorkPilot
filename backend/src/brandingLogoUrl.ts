@@ -1,5 +1,4 @@
 import path from 'path';
-import { workpilotFileUrl } from './workpilotFileStorage';
 
 export type BrandingLogoScope = 'invoice' | 'quotation';
 
@@ -74,7 +73,23 @@ export function apiPublicOrigin(): string {
   return raw.replace(/\/+$/, '');
 }
 
-/** Resolve a stored logo reference to a browser-loadable absolute URL. */
+/** Canonical relative path for any stored branding asset reference. */
+export function canonicalBrandingLogoPath(value: unknown, userId: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  const parsed = parseBrandingAssetPath(trimmed);
+  if (parsed) {
+    return brandingLogoPublicPath(parsed.scope, parsed.userId, parsed.filename);
+  }
+
+  return normalizeStoredBrandingLogoValue(userId, 'invoice', trimmed)
+    ?? normalizeStoredBrandingLogoValue(userId, 'quotation', trimmed);
+}
+
+/** Resolve a stored logo reference to a browser-loadable absolute URL (via API proxy, not private Spaces). */
 export function resolveBrandingLogoPublicUrl(
   value: unknown,
   userId: number,
@@ -82,24 +97,21 @@ export function resolveBrandingLogoPublicUrl(
 ): string | null {
   const normalized = normalizeStoredBrandingLogoValue(userId, scope, value);
   if (!normalized) return null;
-  if (
-    normalized.startsWith('data:') ||
-    normalized.startsWith('http://') ||
-    normalized.startsWith('https://')
-  ) {
-    return normalized;
-  }
+  if (normalized.startsWith('data:')) return normalized;
 
-  const parsed = parseBrandingAssetPath(normalized);
-  if (parsed) {
-    const spacesUrl = workpilotFileUrl('branding-assets', [parsed.scope, parsed.userId], parsed.filename);
-    if (spacesUrl) return spacesUrl;
+  const relative = canonicalBrandingLogoPath(normalized, userId) ?? normalized;
+  if (relative.startsWith('http://') || relative.startsWith('https://')) {
+    const parsed = parseBrandingAssetPath(relative);
+    if (!parsed) return relative;
+    const apiOrigin = apiPublicOrigin();
+    const pathOnly = brandingLogoPublicPath(parsed.scope, parsed.userId, parsed.filename);
+    return apiOrigin ? `${apiOrigin}${pathOnly}` : pathOnly;
   }
 
   const apiOrigin = apiPublicOrigin();
-  if (apiOrigin && normalized.startsWith('/')) {
-    return `${apiOrigin}${normalized}`;
+  if (apiOrigin && relative.startsWith('/')) {
+    return `${apiOrigin}${relative}`;
   }
 
-  return normalized;
+  return relative;
 }
