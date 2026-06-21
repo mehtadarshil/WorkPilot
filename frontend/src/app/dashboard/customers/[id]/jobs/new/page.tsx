@@ -604,6 +604,8 @@ export default function AddNewJobPage() {
         ...(workAddressId && !isEdit ? { work_address_id: Number(workAddressId) } : {}),
       };
 
+      let newJobId: number | undefined;
+
       if (isEdit) {
         await patchJson(`/jobs/${editJobId}`, payload, token);
         if (convertVisit && fromQuotationId) {
@@ -614,7 +616,7 @@ export default function AddNewJobPage() {
         }
       } else {
         const created = await postJson<{ job: { id: number } }>(`/customers/${customerId}/jobs`, payload, token);
-        const newJobId = created.job?.id;
+        newJobId = created.job?.id;
         if (newJobId && fromQuotationId && token) {
           try {
             await postJson(`/quotations/${fromQuotationId}/link-job`, { job_id: newJobId }, token);
@@ -627,7 +629,11 @@ export default function AddNewJobPage() {
       }
 
       setSaving(false);
-      router.push(back);
+      if (!isEdit && bookIntoDiary && newJobId) {
+        router.push(`/dashboard/diary?jobId=${newJobId}`);
+      } else {
+        router.push(back);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} job`);
       setSaving(false);

@@ -62,7 +62,7 @@ class _InvoiceSettingsSheetState extends State<InvoiceSettingsSheet> {
         _prefixCtrl.text = s['invoice_prefix'] as String? ?? 'INV';
         _termsCtrl.text = s['terms_and_conditions'] as String? ?? '';
         _dueDaysCtrl.text = (s['default_due_days'] as num?)?.toString() ?? '30';
-        _taxPctCtrl.text = (s['default_tax_percentage'] as num?)?.toString() ?? '0';
+        _taxPctCtrl.text = (s['default_tax_percentage'] as num?)?.toString() ?? '20';
         _footerCtrl.text = s['footer_text'] as String? ?? '';
         _paymentTermsCtrl.text = s['payment_terms'] as String? ?? '';
         _bankDetailsCtrl.text = s['bank_details'] as String? ?? '';
@@ -90,7 +90,7 @@ class _InvoiceSettingsSheetState extends State<InvoiceSettingsSheet> {
         'invoice_prefix': _prefixCtrl.text.trim().isEmpty ? 'INV' : _prefixCtrl.text.trim(),
         'terms_and_conditions': _termsCtrl.text.trim().isEmpty ? null : _termsCtrl.text.trim(),
         'default_due_days': int.tryParse(_dueDaysCtrl.text) ?? 30,
-        'default_tax_percentage': double.tryParse(_taxPctCtrl.text) ?? 0,
+        'default_tax_percentage': double.tryParse(_taxPctCtrl.text) ?? 20,
         'footer_text': _footerCtrl.text.trim().isEmpty ? null : _footerCtrl.text.trim(),
         'payment_terms': _paymentTermsCtrl.text.trim().isEmpty ? null : _paymentTermsCtrl.text.trim(),
         'bank_details': _bankDetailsCtrl.text.trim().isEmpty ? null : _bankDetailsCtrl.text.trim(),

@@ -109,6 +109,13 @@ function AddInvoiceInner() {
            setUserGroup(res.groups[0].name);
          }
       }).catch(console.error);
+
+    getJson<{ settings: { default_tax_percentage: number } }>('/settings/invoice', token)
+      .then(res => {
+         if (res.settings && typeof res.settings.default_tax_percentage === 'number') {
+            setVatRate(res.settings.default_tax_percentage);
+         }
+      }).catch(console.error);
   }, []);
 
   useEffect(() => {

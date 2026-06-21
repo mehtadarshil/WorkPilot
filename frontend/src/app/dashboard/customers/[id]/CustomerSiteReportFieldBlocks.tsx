@@ -178,6 +178,22 @@ export function renderSiteReportFieldInput(
       </select>
     );
   }
+  if (f.type === 'select') {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+      >
+        <option value="">Select option</option>
+        {f.choices?.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    );
+  }
   if (f.type === 'textarea') {
     return (
       <textarea

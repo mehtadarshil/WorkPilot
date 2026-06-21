@@ -190,6 +190,18 @@ export default function SiteReportTemplateVisualEditor({ value, onChange }: Prop
           />
         </div>
       ) : null}
+      {field.type === 'select' ? (
+        <div>
+          <label className="text-[11px] font-semibold uppercase text-slate-500">Pre-defined Choices (comma-separated, e.g. FD-30, FD-60, FD-90)</label>
+          <input
+            type="text"
+            value={field.choices?.join(', ') ?? ''}
+            onChange={(e) => onPatch({ choices: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })}
+            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+            placeholder="FD-30, FD-60, FD-90"
+          />
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
         <button
           type="button"

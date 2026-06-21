@@ -63,7 +63,7 @@ class _QuotationSettingsSheetState extends State<QuotationSettingsSheet> {
         _prefixCtrl.text = q['quotation_prefix'] as String? ?? 'QUOT';
         _termsCtrl.text = q['terms_and_conditions'] as String? ?? '';
         _validDaysCtrl.text = (q['default_valid_days'] as num?)?.toString() ?? '30';
-        _taxPctCtrl.text = (q['default_tax_percentage'] as num?)?.toString() ?? '0';
+        _taxPctCtrl.text = (q['default_tax_percentage'] as num?)?.toString() ?? '20';
         _footerCtrl.text = q['footer_text'] as String? ?? '';
         _paymentTermsCtrl.text = q['payment_terms'] as String? ?? '';
         _bankDetailsCtrl.text = q['bank_details'] as String? ?? '';
@@ -91,7 +91,7 @@ class _QuotationSettingsSheetState extends State<QuotationSettingsSheet> {
         'quotation_prefix': _prefixCtrl.text.trim().isEmpty ? 'QUOT' : _prefixCtrl.text.trim(),
         'terms_and_conditions': _termsCtrl.text.trim().isEmpty ? null : _termsCtrl.text.trim(),
         'default_valid_days': int.tryParse(_validDaysCtrl.text) ?? 30,
-        'default_tax_percentage': double.tryParse(_taxPctCtrl.text) ?? 0,
+        'default_tax_percentage': double.tryParse(_taxPctCtrl.text) ?? 20,
         'footer_text': _footerCtrl.text.trim().isEmpty ? null : _footerCtrl.text.trim(),
         'payment_terms': _paymentTermsCtrl.text.trim().isEmpty ? null : _paymentTermsCtrl.text.trim(),
         'bank_details': _bankDetailsCtrl.text.trim().isEmpty ? null : _bankDetailsCtrl.text.trim(),

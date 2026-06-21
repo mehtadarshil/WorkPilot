@@ -87,6 +87,12 @@ function resizeLineDescriptionTextarea(el: HTMLTextAreaElement | null) {
   el.style.height = `${Math.max(el.scrollHeight, 40)}px`;
 }
 
+interface JobDescPreset {
+  id: number;
+  name: string;
+  default_job_notes: string | null;
+}
+
 export default function EditQuotationPage() {
   const router = useRouter();
   const params = useParams();
@@ -114,6 +120,7 @@ export default function EditQuotationPage() {
   const skipNextWorkFetchReset = useRef(false);
   const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
+  const [jobDescriptions, setJobDescriptions] = useState<JobDescPreset[]>([]);
   const lineDescriptionRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
   useLayoutEffect(() => {
@@ -126,9 +133,10 @@ export default function EditQuotationPage() {
     setLoading(true);
     setError(null);
     try {
-      const [qRes, custRes] = await Promise.all([
+      const [qRes, custRes, descRes] = await Promise.all([
         getJson<{ quotation: QuotationDetail }>(`/quotations/${id}`, token),
         getJson<{ customers: CustomerRow[] }>('/customers?limit=5000&page=1', token),
+        getJson<JobDescPreset[]>('/settings/job-descriptions', token).catch(() => []),
       ]);
       const q = qRes.quotation;
       setQuotationNumber(q.quotation_number);
@@ -166,6 +174,7 @@ export default function EditQuotationPage() {
         q.subtotal > 0 ? Math.round((q.tax_amount / q.subtotal) * 10000) / 100 : 0;
       setTaxPercentage(tp);
       setCustomers(custRes.customers ?? []);
+      setJobDescriptions(descRes || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load quotation');
     } finally {
@@ -230,6 +239,14 @@ export default function EditQuotationPage() {
   const subtotal = lineItems.reduce((s, li) => s + li.quantity * li.unit_price, 0);
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
   const totalAmount = subtotal + taxAmount;
+
+  const handleAddPresetDescription = (presetText: string) => {
+    setDescription((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed) return presetText;
+      return `${trimmed}\n${presetText}`;
+    });
+  };
 
   const updateLine = (i: number, field: keyof LineItemForm, value: string | number) => {
     setLineItems((prev) => {
@@ -593,6 +610,26 @@ export default function EditQuotationPage() {
                   className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
                   placeholder="Summarize the project scope or works involved..."
                 />
+                {jobDescriptions.length > 0 && (
+                  <div className="mt-2">
+                    <span className="text-xs font-semibold text-slate-500">Quick Phrases:</span>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {jobDescriptions.map((desc) => {
+                        const textToAppend = desc.default_job_notes?.trim() || desc.name;
+                        return (
+                          <button
+                            key={desc.id}
+                            type="button"
+                            onClick={() => handleAddPresetDescription(textToAppend)}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/30 transition-all active:scale-[0.98]"
+                          >
+                            + {desc.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </label>
             </div>
 

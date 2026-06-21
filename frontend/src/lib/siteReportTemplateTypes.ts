@@ -6,7 +6,8 @@ export type SiteReportFieldType =
   | 'pass_fail'
   | 'static_text'
   | 'image'
-  | 'signature';
+  | 'signature'
+  | 'select';
 
 export type SiteReportTemplateField = {
   id: string;
@@ -14,6 +15,7 @@ export type SiteReportTemplateField = {
   type: SiteReportFieldType;
   content?: string;
   rows?: number;
+  choices?: string[];
 };
 
 export type SiteReportTemplateSection = {
@@ -99,6 +101,7 @@ export const SITE_REPORT_FIELD_TYPE_OPTIONS: { value: SiteReportFieldType; label
   { value: 'static_text', label: 'Read-only text', hint: 'Instructions or legal wording shown to staff' },
   { value: 'image', label: 'Image (field)', hint: 'Upload one or more photos tied to this question' },
   { value: 'signature', label: 'Signature', hint: 'Sign on screen; stored as an image on the report' },
+  { value: 'select', label: 'Dropdown list', hint: 'Select from a predefined list of choices' },
 ];
 
 export const YES_NO_NA_OPTIONS: { value: string; label: string }[] = [

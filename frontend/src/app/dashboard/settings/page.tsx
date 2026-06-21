@@ -175,7 +175,7 @@ export default function SettingsPage() {
   const [formPrefix, setFormPrefix] = useState('INV');
   const [formTerms, setFormTerms] = useState('');
   const [formDueDays, setFormDueDays] = useState(30);
-  const [formDefaultTaxPercentage, setFormDefaultTaxPercentage] = useState(0);
+  const [formDefaultTaxPercentage, setFormDefaultTaxPercentage] = useState(20);
   const [formFooter, setFormFooter] = useState('');
   const [formInvoiceAccent, setFormInvoiceAccent] = useState('#14B8A6');
   const [formInvoiceAccentEnd, setFormInvoiceAccentEnd] = useState('#0d9488');
@@ -186,7 +186,7 @@ export default function SettingsPage() {
   const [qFormPrefix, setQFormPrefix] = useState('QUOT');
   const [qFormTerms, setQFormTerms] = useState('');
   const [qFormValidDays, setQFormValidDays] = useState(30);
-  const [qFormDefaultTaxPercentage, setQFormDefaultTaxPercentage] = useState(0);
+  const [qFormDefaultTaxPercentage, setQFormDefaultTaxPercentage] = useState(20);
   const [qFormFooter, setQFormFooter] = useState('');
   const [qFormQuotationAccent, setQFormQuotationAccent] = useState('#14B8A6');
   const [qFormQuotationAccentEnd, setQFormQuotationAccentEnd] = useState('#0d9488');
@@ -292,7 +292,7 @@ export default function SettingsPage() {
       setCompanyWebsite(s.company_website ?? '');
       setCompanyTaxId(s.company_tax_id ?? '');
       setCompanyTaxLabel(s.tax_label ?? 'Tax');
-      setFormDefaultTaxPercentage(s.default_tax_percentage ?? 0);
+      setFormDefaultTaxPercentage(s.default_tax_percentage ?? 20);
       setFormFooter(s.footer_text ?? '');
       setFormInvoiceAccent(s.invoice_accent_color ?? '#14B8A6');
       setFormInvoiceAccentEnd(s.invoice_accent_end_color ?? '#0d9488');
@@ -320,7 +320,7 @@ export default function SettingsPage() {
       setCompanyWebsite(s.company_website ?? '');
       setCompanyTaxId(s.company_tax_id ?? '');
       setCompanyTaxLabel(s.tax_label ?? 'Tax');
-      setQFormDefaultTaxPercentage(s.default_tax_percentage ?? 0);
+      setQFormDefaultTaxPercentage(s.default_tax_percentage ?? 20);
       setQFormFooter(s.footer_text ?? '');
       setQFormQuotationAccent(s.quotation_accent_color ?? '#14B8A6');
       setQFormQuotationAccentEnd(s.quotation_accent_end_color ?? '#0d9488');

@@ -25,6 +25,7 @@ class CustomerDetailController extends GetxController {
 
   final scopedWorkAddressId = Rxn<int>();
   final workAddressPreview = Rxn<Map<String, dynamic>>();
+  final siteImages = <Map<String, dynamic>>[].obs;
   final selectedTabIndex = 0.obs;
 
   bool _initialTabApplied = false;
@@ -39,10 +40,28 @@ class CustomerDetailController extends GetxController {
     refreshCustomer();
   }
 
+  Future<void> _fetchSiteImages() async {
+    final wid = scopedWorkAddressId.value;
+    if (wid == null) {
+      siteImages.clear();
+      return;
+    }
+    try {
+      final allFiles = await _repo.getFiles(customerId, workAddressId: wid);
+      siteImages.value = allFiles.where((f) {
+        final ct = f['content_type'];
+        return ct is String && ct.toLowerCase().startsWith('image/');
+      }).toList();
+    } catch (_) {
+      siteImages.clear();
+    }
+  }
+
   Future<void> _fetchWorkAddressPreview() async {
     final wid = scopedWorkAddressId.value;
     if (wid == null) {
       workAddressPreview.value = null;
+      siteImages.clear();
       return;
     }
     try {
@@ -50,6 +69,7 @@ class CustomerDetailController extends GetxController {
     } catch (_) {
       workAddressPreview.value = null;
     }
+    await _fetchSiteImages();
   }
 
   Future<void> enterWorkAddressScope(int workAddressId) async {
@@ -61,6 +81,7 @@ class CustomerDetailController extends GetxController {
   Future<void> exitWorkAddressScope() async {
     scopedWorkAddressId.value = null;
     workAddressPreview.value = null;
+    siteImages.clear();
     selectedTabIndex.value = 0;
     await refreshCustomer();
   }

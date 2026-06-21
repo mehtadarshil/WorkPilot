@@ -50,6 +50,8 @@ export default function SiteReportsList({ token }: Props) {
   const [createTemplateId, setCreateTemplateId] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [workAddresses, setWorkAddresses] = useState<{ id: number; label: string }[]>([]);
+  const [createWorkAddressId, setCreateWorkAddressId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +69,40 @@ export default function SiteReportsList({ token }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!token || !createCustomerId) {
+      setWorkAddresses([]);
+      setCreateWorkAddressId('');
+      return;
+    }
+    getJson<{
+      work_addresses: {
+        id: number;
+        name: string;
+        address_line_1?: string | null;
+        town?: string | null;
+        postcode?: string | null;
+      }[];
+    }>(`/customers/${createCustomerId}/work-addresses?status=active`, token)
+      .then((res) => {
+        const list = res.work_addresses || [];
+        const formatted = list.map((w) => {
+          const addr = [w.address_line_1, w.town, w.postcode]
+            .filter((x): x is string => Boolean(x && String(x).trim()))
+            .join(', ');
+          const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
+          return { id: w.id, label };
+        });
+        setWorkAddresses(formatted);
+        setCreateWorkAddressId('');
+      })
+      .catch((err) => {
+        console.error('Failed to load work addresses:', err);
+        setWorkAddresses([]);
+        setCreateWorkAddressId('');
+      });
+  }, [createCustomerId, token]);
 
   const openCreate = async () => {
     setCreateOpen(true);
@@ -92,9 +128,9 @@ export default function SiteReportsList({ token }: Props) {
     setCreating(true);
     setCreateError(null);
     try {
-      const res = await postJson<{ report: { id: number; customer_id: number; template_id: number; report_title: string | null; updated_at: string; created_at: string } }>(
+      const res = await postJson<{ report: { id: number; customer_id: number; template_id: number; report_title: string | null; updated_at: string; created_at: string; work_address_id?: number | null } }>(
         `/customers/${createCustomerId}/site-reports`,
-        { template_id: Number(createTemplateId), work_address_id: null, job_id: null },
+        { template_id: Number(createTemplateId), work_address_id: createWorkAddressId ? Number(createWorkAddressId) : null, job_id: null },
         token,
       );
       const newReport = res.report;
@@ -102,6 +138,7 @@ export default function SiteReportsList({ token }: Props) {
       await load();
       // Find the customer name for display
       const customer = customers.find((c) => c.id === newReport.customer_id);
+      const workAddress = workAddresses.find((w) => w.id === newReport.work_address_id);
       setSelectedReport({
         id: newReport.id,
         customer_id: newReport.customer_id,
@@ -113,8 +150,8 @@ export default function SiteReportsList({ token }: Props) {
         created_at: newReport.created_at,
         certificate_number: null,
         job_id: null,
-        work_address_id: null,
-        work_address_name: null,
+        work_address_id: newReport.work_address_id ?? null,
+        work_address_name: workAddress ? workAddress.label : null,
       });
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : 'Failed to create report');
@@ -220,6 +257,22 @@ export default function SiteReportsList({ token }: Props) {
                 ))}
               </select>
             </label>
+
+            {workAddresses.length > 0 && (
+              <label className="mt-4 block">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Work / site address (optional)</span>
+                <select
+                  value={createWorkAddressId}
+                  onChange={(e) => setCreateWorkAddressId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                >
+                  <option value="">No site address selected</option>
+                  {workAddresses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="mt-4 block">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Template</span>

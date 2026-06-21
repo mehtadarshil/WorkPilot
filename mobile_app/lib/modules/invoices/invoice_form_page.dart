@@ -209,7 +209,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
             : 'USD';
         final dueDays = (settings['default_due_days'] as num?)?.toInt() ?? 30;
         _dueDate = DateTime.now().add(Duration(days: dueDays));
-        final dtp = (settings['default_tax_percentage'] as num?)?.toDouble() ?? 0;
+        final dtp = (settings['default_tax_percentage'] as num?)?.toDouble() ?? 20.0;
         _taxC.text = '$dtp';
         if (_prefillCustomerId != null) {
           _customerId = _prefillCustomerId;

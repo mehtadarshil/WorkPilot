@@ -262,7 +262,7 @@ export default function InvoicesPage() {
     setFormNotes('');
     setFormDescription('');
     setFormLineItems([{ description: '', quantity: 1, unit_price: 0 }]);
-    setFormTaxPercentage(settings?.default_tax_percentage ?? 0);
+    setFormTaxPercentage(settings?.default_tax_percentage ?? 20);
     setFormCustomerReference('');
   };
 

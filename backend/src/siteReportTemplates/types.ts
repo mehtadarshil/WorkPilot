@@ -7,7 +7,8 @@ export type SiteReportFieldType =
   | 'pass_fail'
   | 'static_text'
   | 'image'
-  | 'signature';
+  | 'signature'
+  | 'select';
 
 export type SiteReportTemplateField = {
   id: string;
@@ -16,6 +17,7 @@ export type SiteReportTemplateField = {
   /** static_text only — shown on form/print, not stored in customer values */
   content?: string;
   rows?: number;
+  choices?: string[];
 };
 
 export type SiteReportTemplateSection = {
@@ -86,6 +88,7 @@ export const SITE_REPORT_FIELD_TYPES: SiteReportFieldType[] = [
   'static_text',
   'image',
   'signature',
+  'select',
 ];
 
 export const YES_NO_NA_VALUES = ['yes', 'no', 'na', 'not_determined'] as const;

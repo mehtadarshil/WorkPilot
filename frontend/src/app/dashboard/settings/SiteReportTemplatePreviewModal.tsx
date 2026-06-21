@@ -61,6 +61,23 @@ function PreviewField({
     );
   }
 
+  if (field.type === 'select') {
+    return (
+      <select
+        disabled
+        className="w-full cursor-default rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-500"
+        value=""
+      >
+        <option value="">Select option</option>
+        {field.choices?.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   if (field.type === 'textarea') {
     return (
       <textarea

@@ -229,7 +229,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
             : 'USD';
         final vd = (settings['default_valid_days'] as num?)?.toInt() ?? 30;
         _validUntil = DateTime.now().add(Duration(days: vd));
-        final dtp = (settings['default_tax_percentage'] as num?)?.toDouble() ?? 0;
+        final dtp = (settings['default_tax_percentage'] as num?)?.toDouble() ?? 20.0;
         _taxC.text = '$dtp';
         if (_customerId != null) {
           await _loadWorkAddresses(_customerId!);

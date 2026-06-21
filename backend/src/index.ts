@@ -1902,13 +1902,14 @@ async function initDb() {
       company_phone VARCHAR(50),
       company_email VARCHAR(255),
       tax_label VARCHAR(50) DEFAULT 'Tax',
-      default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+      default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 20,
       footer_text TEXT,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
   try {
-    await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 20`);
+    await pool.query(`ALTER TABLE invoice_settings ALTER COLUMN default_tax_percentage SET DEFAULT 20`);
   } catch { /* column may already exist from CREATE */ }
   try {
     await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS company_logo TEXT`);
@@ -2077,12 +2078,14 @@ async function initDb() {
       company_phone VARCHAR(50),
       company_email VARCHAR(255),
       tax_label VARCHAR(50) DEFAULT 'Tax',
-      default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 0,
+      default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 20,
       footer_text TEXT,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
   try {
+    await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS default_tax_percentage DECIMAL(5,2) NOT NULL DEFAULT 20`);
+    await pool.query(`ALTER TABLE quotation_settings ALTER COLUMN default_tax_percentage SET DEFAULT 20`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_logo TEXT`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_website VARCHAR(255)`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS company_tax_id VARCHAR(100)`);
@@ -12351,7 +12354,7 @@ async function getInvoiceSettings(userId: number): Promise<{
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
-      default_tax_percentage: row.default_tax_percentage != null ? Math.max(0, Math.min(100, Number(row.default_tax_percentage))) : 0,
+      default_tax_percentage: row.default_tax_percentage != null ? Math.max(0, Math.min(100, Number(row.default_tax_percentage))) : 20,
       footer_text: (row.footer_text as string) ?? null,
       invoice_accent_color: parseSafeHexColor(row.invoice_accent_color, '#14B8A6'),
       invoice_accent_end_color: parseSafeHexColor(row.invoice_accent_end_color, '#0d9488'),
@@ -12372,7 +12375,7 @@ async function getInvoiceSettings(userId: number): Promise<{
     company_website: null,
     company_tax_id: null,
     tax_label: 'Tax',
-    default_tax_percentage: 0,
+    default_tax_percentage: 20,
     footer_text: null,
     invoice_accent_color: '#14B8A6',
     invoice_accent_end_color: '#0d9488',
@@ -14779,7 +14782,7 @@ async function getQuotationSettings(userId: number): Promise<{
       company_website: (row.company_website as string) ?? null,
       company_tax_id: (row.company_tax_id as string) ?? null,
       tax_label: (row.tax_label as string) ?? 'Tax',
-      default_tax_percentage: row.default_tax_percentage != null ? Math.max(0, Math.min(100, Number(row.default_tax_percentage))) : 0,
+      default_tax_percentage: row.default_tax_percentage != null ? Math.max(0, Math.min(100, Number(row.default_tax_percentage))) : 20,
       footer_text: (row.footer_text as string) ?? null,
       payment_terms: (row.payment_terms as string) ?? null,
       bank_details: (row.bank_details as string) ?? null,
@@ -14800,7 +14803,7 @@ async function getQuotationSettings(userId: number): Promise<{
     company_website: null,
     company_tax_id: null,
     tax_label: 'Tax',
-    default_tax_percentage: 0,
+    default_tax_percentage: 20,
     footer_text: null,
     payment_terms: null,
     bank_details: null,

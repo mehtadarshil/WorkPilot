@@ -4,11 +4,68 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app/routes/app_routes.dart';
+import '../../core/services/storage_service.dart';
 import '../../core/values/app_colors.dart';
+import '../../core/values/app_constants.dart';
 import 'customer_detail_controller.dart';
 import 'customer_tab_widgets.dart';
 import 'customer_tabs/customer_notes_tab.dart';
 import 'customer_tabs/helpers.dart';
+
+String _customerFileContentUrl(int customerId, int fileId) {
+  final base = AppConstants.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+  return '$base/customers/$customerId/files/$fileId/content';
+}
+
+void _openImagePreview(BuildContext context, int customerId, Map<String, dynamic> r) {
+  final id = (r['id'] as num?)?.toInt() ?? 0;
+  if (id <= 0) return;
+  final tok = Get.find<StorageService>().authToken ?? '';
+  final url = _customerFileContentUrl(customerId, id);
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final mq = MediaQuery.of(ctx);
+      return Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: mq.size.width * 0.94,
+          height: mq.size.height * 0.82,
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
+                    loadingBuilder: (_, child, prog) {
+                      if (prog == null) return child;
+                      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+                    },
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
 String _workAddressTabLabel(Map<String, dynamic>? cust) {
   if (cust == null) return 'Work address';
@@ -208,12 +265,56 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
           if (scoped != null)
             Material(
               color: const Color(0x33F59E0B),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-                child: Row(
-                  children: [
-                    Icon(Icons.location_on_outlined, color: AppColors.whiteOverlay(0.9), size: 22),
-                    const SizedBox(width: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Obx(() {
+                    if (_c.siteImages.isEmpty) return const SizedBox.shrink();
+                    final tok = Get.find<StorageService>().authToken ?? '';
+                    return Container(
+                      height: 80,
+                      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _c.siteImages.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (ctx, i) {
+                          final r = _c.siteImages[i];
+                          final id = (r['id'] as num?)?.toInt() ?? 0;
+                          final url = _customerFileContentUrl(_c.customerId, id);
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _openImagePreview(ctx, _c.customerId, r),
+                              borderRadius: BorderRadius.circular(8),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: AspectRatio(
+                                  aspectRatio: 1,
+                                  child: Image.network(
+                                    url,
+                                    fit: BoxFit.cover,
+                                    width: 80,
+                                    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: AppColors.whiteOverlay(0.08),
+                                      child: const Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  }),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.location_on_outlined, color: AppColors.whiteOverlay(0.9), size: 22),
+                        const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,7 +394,9 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                   ],
                 ),
               ),
-            ),
+            ],
+          ),
+        ),
           Expanded(child: _tabBody(keys[idx])),
         ],
       ),

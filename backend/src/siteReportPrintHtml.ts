@@ -58,6 +58,7 @@ function formatDateDdMmYyyy(value: string): string {
 function formatFieldValue(field: SiteReportTemplateField, value: string): string {
   if (field.type === 'yes_no_na') return value ? yesNoLabel(value) : '—';
   if (field.type === 'pass_fail') return value ? passFailLabel(value) : '—';
+  if (field.type === 'select') return value ? escapeHtml(value) : '—';
   if (field.type === 'date') return value ? escapeHtml(formatDateDdMmYyyy(value)) : '—';
   if (field.type === 'textarea') return value ? nl2br(value) : '—';
   if (field.type === 'text') return value ? escapeHtml(value) : '—';
@@ -154,7 +155,7 @@ function fieldHasUserEntry(
   const override = overrides[field.id];
   const rawVal = override !== undefined ? override : (values[field.id] ?? '');
   if (field.type === 'yes_no_na' || field.type === 'pass_fail') return rawVal.trim().length > 0;
-  if (field.type === 'text' || field.type === 'textarea' || field.type === 'date') return rawVal.trim().length > 0;
+  if (field.type === 'text' || field.type === 'textarea' || field.type === 'date' || field.type === 'select') return rawVal.trim().length > 0;
   return false;
 }
 
@@ -213,7 +214,7 @@ function renderFieldBlock(
   }
   const override = overrides[field.id];
   const rawVal = override !== undefined ? override : (values[field.id] ?? '');
-  if (field.type === 'yes_no_na' || field.type === 'pass_fail' || field.type === 'text' || field.type === 'date' || field.type === 'textarea') {
+  if (field.type === 'yes_no_na' || field.type === 'pass_fail' || field.type === 'text' || field.type === 'date' || field.type === 'textarea' || field.type === 'select') {
     const body = formatFieldValue(field, rawVal);
     return `<div class="field">${labelHtml}<div class="value">${body}</div></div>`;
   }

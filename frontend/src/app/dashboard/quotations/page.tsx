@@ -54,6 +54,12 @@ interface QuotationSettings {
   default_tax_percentage: number;
 }
 
+interface JobDescPreset {
+  id: number;
+  name: string;
+  default_job_notes: string | null;
+}
+
 type LineItemImage = {
   original_filename: string;
   content_type: string;
@@ -154,6 +160,7 @@ export default function QuotationsPage() {
   ]);
   const lineDescriptionRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
   const [formTaxPercentage, setFormTaxPercentage] = useState(0);
+  const [jobDescriptions, setJobDescriptions] = useState<JobDescPreset[]>([]);
 
   useLayoutEffect(() => {
     if (!addModalOpen) return;
@@ -226,6 +233,16 @@ export default function QuotationsPage() {
     }
   }, [token]);
 
+  const fetchJobDescriptions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await getJson<JobDescPreset[]>('/settings/job-descriptions', token);
+      setJobDescriptions(data || []);
+    } catch {
+      setJobDescriptions([]);
+    }
+  }, [token]);
+
   const fetchQuotationSettings = useCallback(async () => {
     if (!token) return null;
     try {
@@ -255,10 +272,11 @@ export default function QuotationsPage() {
     if (addModalOpen || visitModalOpen) {
       const t = setTimeout(() => {
         void fetchCustomers();
+        void fetchJobDescriptions();
       }, 0);
       return () => clearTimeout(t);
     }
-  }, [addModalOpen, visitModalOpen, fetchCustomers]);
+  }, [addModalOpen, visitModalOpen, fetchCustomers, fetchJobDescriptions]);
 
   const resetForm = (settings: QuotationSettings | null) => {
     setFormCustomerId(null);
@@ -273,7 +291,7 @@ export default function QuotationsPage() {
     setFormNotes('');
     setFormDescription('');
     setFormLineItems([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
-    setFormTaxPercentage(settings?.default_tax_percentage ?? 0);
+    setFormTaxPercentage(settings?.default_tax_percentage ?? 20);
   };
 
   const openAdd = async () => {
@@ -281,6 +299,14 @@ export default function QuotationsPage() {
     const settings = await fetchQuotationSettings();
     resetForm(settings);
     setAddModalOpen(true);
+  };
+
+  const handleAddPresetDescription = (presetText: string) => {
+    setFormDescription((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed) return presetText;
+      return `${trimmed}\n${presetText}`;
+    });
   };
 
   const handleFormCustomerChange = (customerId: number | null) => {
@@ -886,6 +912,26 @@ export default function QuotationsPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Project Description</label>
                 <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Overview of the project scope..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+                {jobDescriptions.length > 0 && (
+                  <div className="mt-2">
+                    <span className="text-xs font-semibold text-slate-500">Quick Phrases:</span>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {jobDescriptions.map((desc) => {
+                        const textToAppend = desc.default_job_notes?.trim() || desc.name;
+                        return (
+                          <button
+                            key={desc.id}
+                            type="button"
+                            onClick={() => handleAddPresetDescription(textToAppend)}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/30 transition-all active:scale-[0.98]"
+                          >
+                            + {desc.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Internal Notes</label>
