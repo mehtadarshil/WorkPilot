@@ -1,4 +1,6 @@
 import type { CertificatePdfInput } from './certificatePdfHtml';
+import { passFailOutcomeBadgeHtml } from './certificatePrint/passFailOutcomes';
+import { CERTIFICATE_PRINT_CSS } from './certificatePrint/printStyles';
 
 type PdfHelpers = {
   esc: (value: string) => string;
@@ -9,13 +11,9 @@ type PdfHelpers = {
   certificateFooterHtml: (branding: CertificatePdfInput['branding'], certificateNumber: string) => string;
 };
 
-const BONDING_LABELS: Record<string, string> = {
-  '': '—',
-  pass: 'PASS',
-  fail: 'FAIL',
-  lim: 'LIM',
-  na: 'N/A',
-};
+function bondingBadge(value: string, esc: (s: string) => string): string {
+  return passFailOutcomeBadgeHtml(value, esc);
+}
 
 export function buildMinorWorksCertificatePdfHtml(input: CertificatePdfInput, h: PdfHelpers): string {
   const { document: doc, branding: b } = input;
@@ -65,6 +63,7 @@ export function buildMinorWorksCertificatePdfHtml(input: CertificatePdfInput, h:
 <title>${h.esc(input.certificateNumber)} – Minor Works Certificate</title>
 <style>
 ${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.4pt')}
+${CERTIFICATE_PRINT_CSS}
 </style>
 </head>
 <body>
@@ -101,11 +100,11 @@ ${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.4pt')}
   <section class="block">
     <h2>Earthing details</h2>
     <table class="kv">
-      ${h.row('Earthing conductor', BONDING_LABELS[mwc.earthingDetails.earthingConductor] ?? mwc.earthingDetails.earthingConductor)}
-      ${h.row('Water', BONDING_LABELS[mwc.earthingDetails.water] ?? mwc.earthingDetails.water)}
-      ${h.row('Gas', BONDING_LABELS[mwc.earthingDetails.gas] ?? mwc.earthingDetails.gas)}
-      ${h.row('Oil', BONDING_LABELS[mwc.earthingDetails.oil] ?? mwc.earthingDetails.oil)}
-      ${h.row('Structural steel', BONDING_LABELS[mwc.earthingDetails.structuralSteel] ?? mwc.earthingDetails.structuralSteel)}
+      <tr><td class="lbl">Earthing conductor</td><td>${bondingBadge(mwc.earthingDetails.earthingConductor, h.esc)}</td></tr>
+      <tr><td class="lbl">Water</td><td>${bondingBadge(mwc.earthingDetails.water, h.esc)}</td></tr>
+      <tr><td class="lbl">Gas</td><td>${bondingBadge(mwc.earthingDetails.gas, h.esc)}</td></tr>
+      <tr><td class="lbl">Oil</td><td>${bondingBadge(mwc.earthingDetails.oil, h.esc)}</td></tr>
+      <tr><td class="lbl">Structural steel</td><td>${bondingBadge(mwc.earthingDetails.structuralSteel, h.esc)}</td></tr>
       ${h.row('Other', mwc.earthingDetails.other)}
     </table>
   </section>

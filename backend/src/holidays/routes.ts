@@ -21,6 +21,12 @@ function parseDate(raw: unknown): string | null {
   return m ? m[0] : null;
 }
 
+function parseTimestamp(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const t = new Date(raw).getTime();
+  return Number.isFinite(t) ? new Date(raw).toISOString() : null;
+}
+
 function str(raw: unknown, max = 500): string | null {
   if (typeof raw !== 'string') return null;
   const v = raw.trim();
@@ -51,11 +57,11 @@ function holidayRequestRow(row: Record<string, unknown>) {
     officer_id: row.officer_id == null ? null : Number(row.officer_id),
     officer_name: (row.officer_name as string | null) ?? null,
     start_date: row.start_date instanceof Date
-      ? row.start_date.toISOString().slice(0, 10)
-      : String(row.start_date ?? '').slice(0, 10),
+      ? row.start_date.toISOString()
+      : String(row.start_date ?? ''),
     end_date: row.end_date instanceof Date
-      ? row.end_date.toISOString().slice(0, 10)
-      : String(row.end_date ?? '').slice(0, 10),
+      ? row.end_date.toISOString()
+      : String(row.end_date ?? ''),
     leave_type: (row.leave_type as string) ?? 'annual',
     reason: (row.reason as string | null) ?? null,
     status: (row.status as string) ?? 'pending',
@@ -99,6 +105,8 @@ export async function ensureHolidaySchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query('ALTER TABLE holiday_requests ALTER COLUMN start_date TYPE TIMESTAMPTZ USING start_date::timestamp WITH TIME ZONE');
+  await pool.query('ALTER TABLE holiday_requests ALTER COLUMN end_date TYPE TIMESTAMPTZ USING end_date::timestamp WITH TIME ZONE');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_officer ON holiday_requests(officer_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_status ON holiday_requests(status)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_dates ON holiday_requests(start_date, end_date)');
@@ -236,7 +244,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
         SELECT hr.*,
                o.full_name AS officer_name,
                u.full_name AS approved_by_name,
-               (hr.end_date - hr.start_date + 1)::int AS days_count
+               COALESCE(NULLIF(CEIL(EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400)::int, 0), 1) AS days_count
         FROM holiday_requests hr
         JOIN officers o ON o.id = hr.officer_id
         LEFT JOIN users u ON u.id = hr.approved_by
@@ -270,10 +278,10 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
   app.post('/api/holiday-requests', authenticate, async (req: AuthReq, res: Response) => {
     const user = req.user!;
     const body = req.body as Record<string, unknown>;
-    const startDate = parseDate(body.start_date);
-    const endDate = parseDate(body.end_date);
-    if (!startDate) return res.status(400).json({ message: 'Valid start_date is required (YYYY-MM-DD)' });
-    if (!endDate) return res.status(400).json({ message: 'Valid end_date is required (YYYY-MM-DD)' });
+    const startDate = parseTimestamp(body.start_date);
+    const endDate = parseTimestamp(body.end_date);
+    if (!startDate) return res.status(400).json({ message: 'Valid start_date is required' });
+    if (!endDate) return res.status(400).json({ message: 'Valid end_date is required' });
     if (startDate > endDate) return res.status(400).json({ message: 'start_date must be before or equal to end_date' });
     const leaveType = str(body.leave_type, 50) || 'annual';
     const reason = str(body.reason, 2000);
@@ -291,7 +299,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
     try {
       const result = await pool.query(
         `INSERT INTO holiday_requests (officer_id, start_date, end_date, leave_type, reason, created_by)
-         VALUES ($1, $2::date, $3::date, $4, $5, $6)
+         VALUES ($1, $2::timestamptz, $3::timestamptz, $4, $5, $6)
          RETURNING *`,
         [targetOfficerId, startDate, endDate, leaveType, reason, user.userId],
       );
@@ -331,7 +339,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
         `SELECT hr.*,
                 o.full_name AS officer_name,
                 u.full_name AS approved_by_name,
-                (hr.end_date - hr.start_date + 1)::int AS days_count
+                COALESCE(NULLIF(CEIL(EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400)::int, 0), 1) AS days_count
          FROM holiday_requests hr
          JOIN officers o ON o.id = hr.officer_id
          LEFT JOIN users u ON u.id = hr.approved_by

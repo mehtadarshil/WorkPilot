@@ -8,9 +8,16 @@ import '../../core/services/storage_service.dart';
 import '../../core/values/app_constants.dart';
 
 class CertificatePrintWebViewPage extends StatefulWidget {
-  const CertificatePrintWebViewPage({super.key, required this.certificateId});
+  const CertificatePrintWebViewPage({
+    super.key,
+    required this.certificateId,
+    this.boardId,
+    this.title = 'Print certificate',
+  });
 
   final int certificateId;
+  final String? boardId;
+  final String title;
 
   @override
   State<CertificatePrintWebViewPage> createState() => _CertificatePrintWebViewPageState();
@@ -26,7 +33,11 @@ class _CertificatePrintWebViewPageState extends State<CertificatePrintWebViewPag
     if (token == null || token.isEmpty) return null;
     final origin = AppConstants.resolvedWebAppOrigin;
     final t = Uri.encodeComponent(token);
-    return '$origin/certificate-print/${widget.certificateId}?token=$t';
+    final boardId = widget.boardId?.trim();
+    final path = boardId != null && boardId.isNotEmpty
+        ? '$origin/certificate-print/${widget.certificateId}/boards/$boardId'
+        : '$origin/certificate-print/${widget.certificateId}';
+    return '$path?token=$t&embed=1';
   }
 
   @override
@@ -70,7 +81,7 @@ class _CertificatePrintWebViewPageState extends State<CertificatePrintWebViewPag
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('Print certificate', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        title: Text(widget.title, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         actions: [
           if (_printUrl != null)
             IconButton(

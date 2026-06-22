@@ -92,6 +92,7 @@ const SCHEDULE_STATES = [
   { value: 'dispatched', label: 'Dispatched', color: 'bg-blue-100 text-blue-800' },
   { value: 'in_progress', label: 'In Progress', color: 'bg-amber-100 text-amber-800' },
   { value: 'completed', label: 'Completed', color: 'bg-emerald-100 text-emerald-800' },
+  { value: 'need_to_be_rescheduled', label: 'Need to be rescheduling', color: 'bg-orange-100 text-orange-800' },
 ] as const;
 
 const PRIORITY_OPTIONS = [

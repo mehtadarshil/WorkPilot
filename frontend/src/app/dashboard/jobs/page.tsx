@@ -31,6 +31,7 @@ interface Job {
   updated_at: string;
   is_quotation_visit?: boolean;
   charge_type?: string;
+  profit?: number;
 }
 
 interface JobsResponse {
@@ -68,6 +69,7 @@ const JOB_STATES = [
   { value: 'in_progress', label: 'In Progress', color: 'bg-amber-100 text-amber-800' },
   { value: 'paused', label: 'Paused', color: 'bg-orange-100 text-orange-800' },
   { value: 'completed', label: 'Completed', color: 'bg-emerald-100 text-emerald-800' },
+  { value: 'need_to_be_rescheduled', label: 'Need to be rescheduling', color: 'bg-orange-100 text-orange-800' },
   { value: 'closed', label: 'Closed', color: 'bg-slate-200 text-slate-600' },
 ] as const;
 const PRIORITY_OPTIONS = [
@@ -80,6 +82,10 @@ const PRIORITY_OPTIONS = [
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatCurrency(val: number): string {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(val || 0);
 }
 
 export default function JobsPage() {
@@ -316,7 +322,7 @@ export default function JobsPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="mx-auto max-w-6xl space-y-8">
+        <div className="w-full space-y-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Job Management</h1>
@@ -401,6 +407,7 @@ export default function JobsPage() {
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Priority</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Profit</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Deadline</th>
                     <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
                   </tr>
@@ -408,7 +415,7 @@ export default function JobsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {jobs.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                         No jobs yet. Create one to get started.
                       </td>
                     </tr>
@@ -461,6 +468,15 @@ export default function JobsPage() {
                               : j.officer_full_name || j.responsible_person || '—'}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{j.customer_full_name || '—'}</td>
+                          <td className="px-6 py-4 text-sm font-semibold">
+                            {j.profit != null ? (
+                              <span className={j.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                                {formatCurrency(j.profit)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatDate(j.deadline)}</td>
                           <td className="relative px-6 py-4 text-right">
                             <button

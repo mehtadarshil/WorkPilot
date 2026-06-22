@@ -196,7 +196,7 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
   };
 }
 
-async function buildJobCostPayload(pool: Pool, jobId: number) {
+export async function buildJobCostPayload(pool: Pool, jobId: number) {
   const rateConfig = await getJobRateConfig(pool, jobId);
   const manual = await pool.query(
     `SELECT e.id, e.cost_type, e.description, e.amount, e.currency, e.notes, e.proof_files, e.created_at,
@@ -246,7 +246,7 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
   );
 
   const expenses = await pool.query(
-    `SELECT je.id, je.expense_date, je.category, je.description, je.amount, je.created_at,
+    `SELECT je.id, je.expense_date, je.category, je.description, je.amount, je.expense_type, je.created_at,
             o.full_name AS officer_full_name
      FROM job_expenses je
      LEFT JOIN officers o ON o.id = je.officer_id
@@ -362,12 +362,14 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
   }
 
   for (const row of expenses.rows) {
+    const isCompany = row.expense_type === 'company';
     lines.push({
       id: `expense-${row.id}`,
       source: 'expense',
-      label: `Approved expense · ${row.category || 'Expense'}`,
+      label: `${isCompany ? 'Company expense' : 'Approved expense'} · ${row.category || 'Expense'}`,
       description: [
         row.description ? String(row.description) : null,
+        isCompany ? 'Company Account' : (row.officer_full_name ? `Officer: ${row.officer_full_name}` : null),
         row.expense_date ? `Expense date: ${iso(row.expense_date)?.slice(0, 10)}` : null,
       ].filter(Boolean).join('\n') || null,
       quantity: 1,
@@ -375,7 +377,7 @@ async function buildJobCostPayload(pool: Pool, jobId: number) {
       amount: n(row.amount),
       currency: 'GBP',
       created_at: iso(row.created_at),
-      created_by_name: row.officer_full_name ?? null,
+      created_by_name: isCompany ? 'Company' : (row.officer_full_name ?? null),
     });
   }
 

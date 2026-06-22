@@ -35,6 +35,11 @@ export const POST_REPORT_JOB_STAGES = [
     label: 'Ready for invoicing',
     description: 'Job is finished; a draft invoice is created when possible.',
   },
+  {
+    state: 'need_to_be_rescheduled',
+    label: 'Need to be rescheduling',
+    description: 'Office will pick a new appointment time.',
+  },
 ] as const;
 
 export type PostReportJobState = (typeof POST_REPORT_JOB_STAGES)[number]['state'];

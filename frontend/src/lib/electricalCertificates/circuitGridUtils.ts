@@ -71,6 +71,38 @@ export const FILLABLE_CIRCUIT_COLUMNS = CIRCUIT_COLUMNS.filter(
   (c) => !c.calculated && c.key !== 'circuitNumber' && c.key !== 'id',
 );
 
+const CIRCUIT_NA_FIELDS: (keyof CircuitRow)[] = [
+  'points',
+  'wiringType',
+  'refMethod',
+  'liveMm2',
+  'cpcMm2',
+  'maxDisconnectTime',
+  'ocpdBs',
+  'ocpdType',
+  'ocpdRatingA',
+  'ocpdBreakingKa',
+  'maxZs',
+  'rcdBs',
+  'rcdType',
+  'rcdRatingMa',
+  'rcdRatingA',
+  'ringR1',
+  'ringRn',
+  'ringR2End',
+  'r1r2',
+  'r2',
+  'insulation',
+  'insulationTestVoltage',
+  'insulationLL',
+  'insulationLE',
+  'polarity',
+  'zs',
+  'rcdTripMs',
+  'afdd',
+  'remarks',
+];
+
 export function isNaDescription(value: string) {
   const text = value.trim().toLowerCase();
   return text === 'spare' || text === 'unknown';
@@ -78,6 +110,14 @@ export function isNaDescription(value: string) {
 
 export function isSpareOrUnknownCircuit(circuit: CircuitRow) {
   return isNaDescription(String(circuit.description ?? ''));
+}
+
+export function applySpareOrUnknownCircuitDefaults(circuit: CircuitRow): CircuitRow {
+  const next = { ...circuit, tested: false, calcOverrides: { ...(circuit.calcOverrides ?? {}) } };
+  for (const key of CIRCUIT_NA_FIELDS) {
+    next[key] = 'N/A' as never;
+  }
+  return next;
 }
 
 export function clampCircuitField(key: keyof CircuitRow, value: string) {

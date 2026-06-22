@@ -9,6 +9,7 @@ import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalc
 import { INSPECTION_SCHEDULE_PRESETS } from '@/lib/electricalCertificates/inspectionSchedulePresets';
 import { REINSPECTION_QUICK_OPTIONS, sortObservationsByCodeAndLocation } from '@/lib/electricalCertificates/certificateUxUtils';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
+import { DeclarationSignatureField } from './DeclarationSignatureField';
 import { useCertificateEditor } from '../CertificateEditorContext';
 import {
   INSPECTION_SCHEDULE_ITEMS,
@@ -309,6 +310,11 @@ export function InstallationDetailsSection() {
           value={inst.inspectedDate}
           onChange={(v) => patch({ inspectedDate: v })}
         />
+        <DeclarationSignatureField
+          label="Inspector signature"
+          value={inst.inspectedBySignatureDataUrl ?? ''}
+          onChange={(inspectedBySignatureDataUrl) => patch({ inspectedBySignatureDataUrl })}
+        />
         <TextField label="Authorised for issue by" value={inst.authorisedBy} onChange={(v) => patch({ authorisedBy: v })} />
         <TextField label="Authorised position" value={inst.authorisedPosition} onChange={(v) => patch({ authorisedPosition: v })} />
         <TextField
@@ -316,6 +322,11 @@ export function InstallationDetailsSection() {
           type="date"
           value={inst.authorisedDate}
           onChange={(v) => patch({ authorisedDate: v })}
+        />
+        <DeclarationSignatureField
+          label="Authoriser signature"
+          value={inst.authorisedBySignatureDataUrl ?? ''}
+          onChange={(authorisedBySignatureDataUrl) => patch({ authorisedBySignatureDataUrl })}
         />
         <TextField
           label="Recommended re-inspection"

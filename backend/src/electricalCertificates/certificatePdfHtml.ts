@@ -14,7 +14,6 @@ import {
 } from './domesticFireAlarmInstItems';
 import {
   FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS,
-  FIRE_ALARM_OUTCOME_LABELS,
   FIRE_ALARM_SECTION_LABELS,
 } from './fireAlarmInspectionScheduleItems';
 import {
@@ -30,6 +29,10 @@ import { buildEmergencyLightingCertificatePdfHtml } from './emergencyLightingPdf
 import { buildEicrCertificatePdfHtml } from './eicrPdfHtml';
 import { buildElectricalInstallationCertificatePdfHtml } from './electricalInstallationPdfHtml';
 import { buildMinorWorksCertificatePdfHtml } from './mwcPdfHtml';
+import { CERTIFICATE_PRINT_CSS } from './certificatePrint/printStyles';
+import { printPageFooterHtml } from './certificatePrint/pageFooter';
+import { assessmentBannerHtml } from './certificatePrint/outcomes';
+import { passFailOutcomeBadgeHtml } from './certificatePrint/passFailOutcomes';
 import type { ElectricalCertificateDocument, InspectionOutcome } from './types';
 
 export type CertificatePdfInput = {
@@ -89,10 +92,16 @@ function certificateFooterHtml(branding: CompanyBranding, certificateNumber: str
   </footer>`;
 }
 
+function pdfBlock(title: string, body: string, esc: (value: string) => string): string {
+  return `<div class="block"><h2>${esc(title)}</h2>${body}</div>`;
+}
+
+export { pdfBlock };
+
 function certificatePdfStyles(accent: string, _accentEnd: string, fontSize = '8.7pt'): string {
   return `
   @page { size: A4; margin: 10mm; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: ${fontSize}; line-height: 1.28; color: #111; margin: 0; background: #fff; }
   .header { display: grid; grid-template-columns: 96px 1fr 178px; gap: 10px; align-items: stretch; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #111; }
   .logo { min-height: 68px; display: flex; align-items: center; justify-content: center; padding: 5px; border: 1px solid #111; background: #fff; }
@@ -104,7 +113,8 @@ function certificatePdfStyles(accent: string, _accentEnd: string, fontSize = '8.
   .cert-meta strong { display: block; margin-bottom: 5px; font-size: 10.2pt; line-height: 1.15; text-transform: uppercase; }
   .cert-meta span { display: block; margin-top: 3px; font-size: 7.5pt; color: #222; }
   .block, .info-block, .board { margin-bottom: 8px; padding: 7px; border: 1px solid #9ca3af; background: #fff; page-break-inside: avoid; }
-  h2 { margin: -7px -7px 7px; padding: 4px 7px; background: #111; color: #fff; font-size: 8.8pt; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
+  .block > h2 { margin: -7px -7px 7px; padding: 4px 7px; background: #111; color: #fff; font-size: 8.8pt; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
+  h2 { margin: 0 0 7px; padding: 4px 7px; background: #111; color: #fff; font-size: 8.8pt; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
   h3 { margin: 8px 0 5px; padding-bottom: 2px; border-bottom: 1px solid #9ca3af; color: #111; font-size: 8.4pt; text-transform: uppercase; }
   p { margin: 2px 0; color: #111; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 8px; }
@@ -217,8 +227,8 @@ function buildPatCertificatePdfHtml(input: CertificatePdfInput): string {
   const accentEnd = b.accent_end_color;
   const applianceRows = pat.appliances
     .map((a) => {
-      const status = a.status ? a.status[0].toUpperCase() + a.status.slice(1) : '—';
-      return `<tr><td>${esc(a.applianceId)}</td><td>${esc(a.brand || 'N/A')}</td><td>${esc(a.description)}</td><td>${esc(a.location)}</td><td>${esc(a.serialNo || 'N/A')}</td><td>${esc(a.retestPeriod)}</td><td class="status">${esc(status)}</td></tr>`;
+      const status = a.status || '';
+      return `<tr><td>${esc(a.applianceId)}</td><td>${esc(a.brand || 'N/A')}</td><td>${esc(a.description)}</td><td>${esc(a.location)}</td><td>${esc(a.serialNo || 'N/A')}</td><td>${esc(a.retestPeriod)}</td><td class="status">${passFailOutcomeBadgeHtml(status, esc)}</td></tr>`;
     })
     .join('');
   const block = (title: string, lines: string[]) => `
@@ -234,6 +244,7 @@ function buildPatCertificatePdfHtml(input: CertificatePdfInput): string {
 <title>${esc(input.certificateNumber)} — PAT</title>
 <style>
 ${certificatePdfStyles(accent, accentEnd, '8.8pt')}
+${CERTIFICATE_PRINT_CSS}
 </style>
 </head>
 <body>
@@ -282,7 +293,7 @@ function buildFireAlarmCertificatePdfHtml(input: CertificatePdfInput): string {
       const rows = items
         .map((item) => {
           const outcome = fa.inspectionSchedule[item.id] ?? '';
-          return `<tr><td class="mono">${esc(item.id)}</td><td>${esc(item.label)}</td><td class="outcome">${esc(FIRE_ALARM_OUTCOME_LABELS[outcome] ?? outcome)}</td></tr>`;
+          return `<tr><td class="mono">${esc(item.id)}</td><td>${esc(item.label)}</td><td class="outcome">${passFailOutcomeBadgeHtml(outcome, esc)}</td></tr>`;
         })
         .join('');
       return `<h3>${esc(sec)}. ${esc(FIRE_ALARM_SECTION_LABELS[sec] ?? sec)}</h3><table class="sched"><thead><tr><th>Ref</th><th>Item</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -300,6 +311,49 @@ function buildFireAlarmCertificatePdfHtml(input: CertificatePdfInput): string {
       : '<p class="muted">No variations recorded</p>';
 
   const appendixPhotos = doc.appendix.photos ?? [];
+  const footerBar = printPageFooterHtml(input.certificateNumber, esc, 'BS 5839-1:2025');
+
+  const page1 = `<section class="cert-print-page">
+    ${pdfBlock('Client & installation', `<table class="kv">
+      ${row('Client', input.customerName ?? '—')}
+      ${row('Installation', input.installationLabel ?? '—')}
+      ${row('Occupier', fa.installation.occupierName)}
+      ${row('Details of system', fa.installation.detailsOfSystem)}
+      ${row('Extent covered', fa.installation.extentOfSystem)}
+      ${row('Previous service', fa.installation.previousServiceUnknown ? 'Unknown' : fa.installation.previousServiceDate)}
+    </table>`, esc)}
+    ${pdfBlock('Limitations & documentation', `<table class="kv">
+      ${row('Limitations', fa.limitations.limitationsText)}
+      ${row('Related documents', fa.limitations.relatedDocuments)}
+      ${row('Essential references', fa.limitations.essentialReferenceDocs)}
+    </table>`, esc)}
+    ${pdfBlock('Condition & summary', `<table class="kv">
+      ${row('General condition', fa.condition.generalCondition)}
+      ${row('Inspection date', fa.condition.inspectionDate)}
+      ${row('Outstanding defects reported', fa.condition.outstandingDefectsReported || '—')}
+      ${row('Log book updated', fa.condition.logBookUpdated || '—')}
+      ${row('False alarms (12 months)', fa.condition.falseAlarmsNa ? 'N/A' : fa.condition.falseAlarmsCount)}
+      ${row('False alarms rate', fa.condition.falseAlarmsEquatesNa ? 'N/A' : fa.condition.falseAlarmsEquates)}
+      ${assessmentBannerHtml(fa.summary.overallAssessment, esc, 'Overall assessment')}
+      ${row('Next inspection', fa.summary.nextInspectionDate || fa.summary.nextInspectionPreset || '—')}
+    </table>`, esc)}
+  </section>`;
+
+  const page2 = `<section class="cert-print-page">
+    ${pdfBlock('Declaration', `<table class="kv">
+      ${row('Inspected by', fa.declaration.inspectedBy)}
+      ${row('Inspector position', fa.declaration.inspectedPosition)}
+      ${row('Inspection date', fa.declaration.inspectionDate)}
+      ${row('Authorised by', fa.declaration.authorisedBy)}
+      ${row('Authorised position', fa.declaration.authorisedPosition)}
+      ${row('Authorised date', fa.declaration.authorisedDate)}
+    </table>`, esc)}
+    ${pdfBlock('Variations', `${variationsHtml}${fa.remedialActions.trim() ? `<h3>Remedial actions</h3><p style="white-space:pre-wrap">${esc(fa.remedialActions)}</p>` : ''}`, esc)}
+  </section>`;
+
+  const page3 = `<section class="cert-print-page">
+    ${pdfBlock('Inspection schedule', scheduleSections, esc)}
+  </section>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -308,75 +362,24 @@ function buildFireAlarmCertificatePdfHtml(input: CertificatePdfInput): string {
 <title>${esc(input.certificateNumber)} — Fire Alarm</title>
 <style>
 ${certificatePdfStyles(accent, accentEnd, '8.8pt')}
+${CERTIFICATE_PRINT_CSS}
+  @page { margin: 10mm 10mm 16mm 10mm; }
+  body { padding-bottom: 10mm; }
 </style>
 </head>
 <body>
   ${certificateHeaderHtml(input, 'Fire Alarm Inspection & Servicing Report', 'BS 5839-1:2025')}
-
-  <section class="block">
-    <h2>Installation</h2>
-    <table class="kv">
-      ${row('Occupier', fa.installation.occupierName)}
-      ${row('Details of system', fa.installation.detailsOfSystem)}
-      ${row('Extent covered', fa.installation.extentOfSystem)}
-      ${row('Previous service', fa.installation.previousServiceUnknown ? 'Unknown' : fa.installation.previousServiceDate)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Limitations &amp; documentation</h2>
-    <table class="kv">
-      ${row('Limitations', fa.limitations.limitationsText)}
-      ${row('Related documents', fa.limitations.relatedDocuments)}
-      ${row('Essential references', fa.limitations.essentialReferenceDocs)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Condition &amp; summary</h2>
-    <table class="kv">
-      ${row('General condition', fa.condition.generalCondition)}
-      ${row('Inspection date', fa.condition.inspectionDate)}
-      ${row('Outstanding defects reported', fa.condition.outstandingDefectsReported || '—')}
-      ${row('Log book updated', fa.condition.logBookUpdated || '—')}
-      ${row('False alarms (12 months)', fa.condition.falseAlarmsNa ? 'N/A' : fa.condition.falseAlarmsCount)}
-      ${row('False alarms rate', fa.condition.falseAlarmsEquatesNa ? 'N/A' : fa.condition.falseAlarmsEquates)}
-      ${row('Overall assessment', fa.summary.overallAssessment || '—')}
-      ${row('Next inspection', fa.summary.nextInspectionDate || fa.summary.nextInspectionPreset || '—')}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Declaration</h2>
-    <table class="kv">
-      ${row('Inspected by', fa.declaration.inspectedBy)}
-      ${row('Inspector position', fa.declaration.inspectedPosition)}
-      ${row('Inspection date', fa.declaration.inspectionDate)}
-      ${row('Authorised by', fa.declaration.authorisedBy)}
-      ${row('Authorised position', fa.declaration.authorisedPosition)}
-      ${row('Authorised date', fa.declaration.authorisedDate)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Variations</h2>
-    ${variationsHtml}
-    ${fa.remedialActions.trim() ? `<h3>Remedial actions</h3><p style="white-space:pre-wrap">${esc(fa.remedialActions)}</p>` : ''}
-  </section>
-
-  <section class="block">
-    <h2>Inspection schedule</h2>
-    ${scheduleSections}
-  </section>
-
+  ${page1}
+  ${page2}
+  ${page3}
   ${
     doc.appendix.content.trim()
       ? `<section class="block"><h2>Appendix</h2><p style="white-space:pre-wrap">${esc(doc.appendix.content)}</p></section>`
       : ''
   }
   ${appendixPhotos.length ? photosHtml(appendixPhotos, 'Appendix photographs') : ''}
-
   ${certificateFooterHtml(b, input.certificateNumber)}
+  ${footerBar}
 </body>
 </html>`;
 }
@@ -393,7 +396,7 @@ function buildDomesticFireAlarmCertificatePdfHtml(input: CertificatePdfInput): s
       const rows = DOMESTIC_FIRE_ALARM_CHECKLIST_ITEMS.filter((i) => i.section === sec)
         .map((item) => {
           const outcome = domestic.checklist[item.id] ?? '';
-          return `<tr><td>${esc(item.label)}</td><td class="outcome">${esc(DOMESTIC_FIRE_ALARM_CHECKLIST_OUTCOME_LABELS[outcome] ?? '-')}</td></tr>`;
+          return `<tr><td>${esc(item.label)}</td><td class="outcome">${passFailOutcomeBadgeHtml(outcome, esc)}</td></tr>`;
         })
         .join('');
       return `<h3>${esc(domesticChecklistSectionLabel(sec))}</h3><table class="sched"><thead><tr><th>Item</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -414,6 +417,46 @@ function buildDomesticFireAlarmCertificatePdfHtml(input: CertificatePdfInput): s
     )
     .join('');
 
+  const footerBar = printPageFooterHtml(
+    input.certificateNumber,
+    esc,
+    `${DOMESTIC_FIRE_ALARM_STANDARD}`,
+  );
+
+  const page1 = `<section class="cert-print-page">
+    ${pdfBlock('Installation details', `<table class="kv">
+      ${row('Client', input.customerName ?? '—')}
+      ${row('Installation', input.installationLabel ?? '—')}
+      ${row('Occupier', domestic.installation.occupierName)}
+      ${row('System grade', domestic.installation.systemGrade)}
+      ${row('System category', domestic.installation.systemCategory)}
+      ${row('Extent covered', domestic.installation.extentOfSystem)}
+      ${row('Limitations', domestic.installation.limitations)}
+      ${row('General condition', domestic.installation.generalCondition)}
+      ${assessmentBannerHtml(domestic.summary.overallAssessment, esc, 'Overall assessment')}
+      ${row('Next inspection', domestic.summary.nextInspectionDate || domestic.summary.nextInspectionPreset)}
+    </table>`, esc)}
+  </section>`;
+
+  const page2 = `<section class="cert-print-page">
+    ${pdfBlock('Declaration', `<table class="kv">
+      ${row('Inspected by', domestic.declaration.inspectedBy)}
+      ${row('Inspector position', domestic.declaration.inspectedPosition)}
+      ${row('Inspection date', domestic.declaration.inspectionDate)}
+      ${row('Authorised by', domestic.declaration.authorisedBy)}
+      ${row('Authorised position', domestic.declaration.authorisedPosition)}
+      ${row('Authorised date', domestic.declaration.authorisedDate)}
+    </table>`, esc)}
+    ${pdfBlock('Variations', variationsHtml, esc)}
+    ${domestic.remedialActions.trim() ? pdfBlock('Remedial actions', `<p style="white-space:pre-wrap">${esc(domestic.remedialActions)}</p>`, esc) : ''}
+  </section>`;
+
+  const page3 = `<section class="cert-print-page">${pdfBlock('Checklist', checklistHtml, esc)}</section>`;
+
+  const page4 = `${detectorRows ? `<section class="cert-print-page">${pdfBlock('Detectors', `<table class="sched"><thead><tr><th>Ref</th><th>Location</th><th>Make</th><th>Model</th><th>Type</th><th>Power</th><th>Interlink</th><th>Fit</th></tr></thead><tbody>${detectorRows}</tbody></table>`, esc)}</section>` : ''}
+  ${doc.appendix.content.trim() ? pdfBlock('Appendix', `<p style="white-space:pre-wrap">${esc(doc.appendix.content)}</p>`, esc) : ''}
+  ${doc.appendix.photos.length ? photosHtml(doc.appendix.photos, 'Appendix photographs') : ''}`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -421,44 +464,19 @@ function buildDomesticFireAlarmCertificatePdfHtml(input: CertificatePdfInput): s
 <title>${esc(input.certificateNumber)} - Domestic Fire Alarm</title>
 <style>
 ${certificatePdfStyles(accent, accentEnd, '8.8pt')}
+${CERTIFICATE_PRINT_CSS}
+  @page { margin: 10mm 10mm 16mm 10mm; }
+  body { padding-bottom: 10mm; }
 </style>
 </head>
 <body>
   ${certificateHeaderHtml(input, 'Domestic Fire Alarm Inspection & Servicing Report', `Standard: ${DOMESTIC_FIRE_ALARM_STANDARD} · Revision: ${DOMESTIC_FIRE_ALARM_REVISION}`)}
-
-  <section class="block">
-    <h2>Installation details</h2>
-    <table class="kv">
-      ${row('Occupier', domestic.installation.occupierName)}
-      ${row('System grade', domestic.installation.systemGrade)}
-      ${row('System category', domestic.installation.systemCategory)}
-      ${row('Extent covered', domestic.installation.extentOfSystem)}
-      ${row('Limitations', domestic.installation.limitations)}
-      ${row('General condition', domestic.installation.generalCondition)}
-      ${row('Overall assessment', domestic.summary.overallAssessment)}
-      ${row('Next inspection', domestic.summary.nextInspectionDate || domestic.summary.nextInspectionPreset)}
-    </table>
-  </section>
-
-  <section class="block">
-    <h2>Declaration</h2>
-    <table class="kv">
-      ${row('Inspected by', domestic.declaration.inspectedBy)}
-      ${row('Inspector position', domestic.declaration.inspectedPosition)}
-      ${row('Inspection date', domestic.declaration.inspectionDate)}
-      ${row('Authorised by', domestic.declaration.authorisedBy)}
-      ${row('Authorised position', domestic.declaration.authorisedPosition)}
-      ${row('Authorised date', domestic.declaration.authorisedDate)}
-    </table>
-  </section>
-
-  <section class="block"><h2>Variations</h2>${variationsHtml}</section>
-  ${domestic.remedialActions.trim() ? `<section class="block"><h2>Remedial actions</h2><p style="white-space:pre-wrap">${esc(domestic.remedialActions)}</p></section>` : ''}
-  <section class="block"><h2>Checklist</h2>${checklistHtml}</section>
-  ${detectorRows ? `<section class="block"><h2>Detectors</h2><table class="sched"><thead><tr><th>Ref</th><th>Location</th><th>Make</th><th>Model</th><th>Type</th><th>Power</th><th>Interlink</th><th>Fit</th></tr></thead><tbody>${detectorRows}</tbody></table></section>` : ''}
-  ${doc.appendix.content.trim() ? `<section class="block"><h2>Appendix</h2><p style="white-space:pre-wrap">${esc(doc.appendix.content)}</p></section>` : ''}
-  ${doc.appendix.photos.length ? photosHtml(doc.appendix.photos, 'Appendix photographs') : ''}
+  ${page1}
+  ${page2}
+  ${page3}
+  ${page4}
   ${certificateFooterHtml(b, input.certificateNumber)}
+  ${footerBar}
 </body>
 </html>`;
 }
@@ -473,8 +491,6 @@ function buildFireExtinguisherCertificatePdfHtml(input: CertificatePdfInput): st
   if (!fire) throw new Error('FIRE_EXTINGUISHER_DOCUMENT_MISSING');
   const accent = b.accent_color;
   const accentEnd = b.accent_end_color;
-  const checklistOutcome = (value: string) => FIRE_EXTINGUISHER_CHECKLIST_OUTCOME_LABELS[value] ?? '—';
-  const blanketOutcome = (value: string) => FIRE_EXTINGUISHER_BLANKET_OUTCOME_LABELS[value] ?? '—';
   const capacity = (item: (typeof fire.extinguishers)[number]) =>
     [item.capacity, item.capacityUnit].filter(Boolean).join(' ') || '—';
 
@@ -488,7 +504,7 @@ function buildFireExtinguisherCertificatePdfHtml(input: CertificatePdfInput): st
   const blanketRows = fire.blankets
     .map(
       (item) =>
-        `<tr><td>${esc(item.reference)}</td><td>${esc(item.location)}</td><td>${esc(item.make)}</td><td>${esc(item.installationDateUnknown ? 'Unknown' : item.installationDate)}</td><td>${esc(item.expiryDate)}</td><td class="outcome">${esc(blanketOutcome(item.outcome))}</td><td>${esc(item.notes)}</td></tr>`,
+        `<tr><td>${esc(item.reference)}</td><td>${esc(item.location)}</td><td>${esc(item.make)}</td><td>${esc(item.installationDateUnknown ? 'Unknown' : item.installationDate)}</td><td>${esc(item.expiryDate)}</td><td class="outcome">${passFailOutcomeBadgeHtml(item.outcome, esc)}</td><td>${esc(item.notes)}</td></tr>`,
     )
     .join('');
 
@@ -496,7 +512,7 @@ function buildFireExtinguisherCertificatePdfHtml(input: CertificatePdfInput): st
     ? ''
     : FIRE_EXTINGUISHER_CHECKLIST_ITEMS.map(
         (item) =>
-          `<tr><td>${esc(item.label)}</td><td class="outcome">${esc(checklistOutcome(fire.checklist[item.id] ?? ''))}</td></tr>`,
+          `<tr><td>${esc(item.label)}</td><td class="outcome">${passFailOutcomeBadgeHtml(fire.checklist[item.id] ?? '', esc)}</td></tr>`,
       ).join('');
 
   return `<!DOCTYPE html>
@@ -506,6 +522,7 @@ function buildFireExtinguisherCertificatePdfHtml(input: CertificatePdfInput): st
 <title>${esc(input.certificateNumber)} - Fire Extinguisher Inspection</title>
 <style>
 ${certificatePdfStyles(accent, accentEnd, '8.5pt')}
+${CERTIFICATE_PRINT_CSS}
 </style>
 </head>
 <body>
@@ -571,6 +588,7 @@ function buildDomesticFireAlarmInstCertificatePdfHtml(input: CertificatePdfInput
 <title>${esc(input.certificateNumber)} - Domestic Fire Alarm Installation</title>
 <style>
 ${certificatePdfStyles(accent, accentEnd, '8.8pt')}
+${CERTIFICATE_PRINT_CSS}
 </style>
 </head>
 <body>

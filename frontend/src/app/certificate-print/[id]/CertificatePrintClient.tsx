@@ -15,6 +15,7 @@ export default function CertificatePrintClient() {
   const searchParams = useSearchParams();
   const id = typeof params?.id === 'string' ? params.id : '';
   const token = searchParams.get('token');
+  const embed = searchParams.get('embed') === '1';
   const [certificate, setCertificate] = useState<ElectricalCertificate | null>(null);
   const [branding, setBranding] = useState<CompanyBranding>(DEFAULT_COMPANY_BRANDING);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +59,10 @@ export default function CertificatePrintClient() {
   }, [id, token]);
 
   useEffect(() => {
-    if (!certificate || loading) return;
+    if (!certificate || loading || embed) return;
     const t = setTimeout(() => window.print(), 400);
     return () => clearTimeout(t);
-  }, [certificate, loading]);
+  }, [certificate, loading, embed]);
 
   if (error) {
     return <p className="p-8 text-sm text-rose-600">{error}</p>;
@@ -71,7 +72,7 @@ export default function CertificatePrintClient() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f8f8] p-6 print:bg-white print:p-0">
+    <div className={`min-h-screen bg-[#f6f8f8] print:bg-white print:p-0 ${embed ? 'p-0' : 'p-6'}`}>
       <CertificatePrintTemplate certificate={certificate} branding={branding} />
     </div>
   );

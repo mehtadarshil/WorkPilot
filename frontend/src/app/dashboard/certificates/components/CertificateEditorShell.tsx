@@ -46,6 +46,9 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
   const activeSection =
     EDITOR_SECTIONS.find((s) => pathname.includes(`/${s.key}`))?.key ?? 'installation-details';
 
+  const isBoardCircuitEditor =
+    /\/boards\/[^/]+$/.test(pathname) && !pathname.endsWith('/print');
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#f0f4f8]">
       <header className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
@@ -145,7 +148,13 @@ export function CertificateEditorShell({ children }: { children: React.ReactNode
           })}
         </nav>
       </header>
-      <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5 pb-24">{children}</main>
+      <main
+        className={`min-h-0 flex-1 overflow-y-auto pb-24 ${
+          isBoardCircuitEditor ? 'overflow-x-hidden p-1 md:p-2' : 'p-3 md:p-5'
+        }`}
+      >
+        {children}
+      </main>
       <EditorQuickNav />
       <ValidateSheet />
     </div>

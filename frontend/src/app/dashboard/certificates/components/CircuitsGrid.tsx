@@ -13,6 +13,7 @@ import {
   CIRCUIT_OPTION_VALUES,
   clampCircuitField,
   isNaDescription,
+  applySpareOrUnknownCircuitDefaults,
 } from '@/lib/electricalCertificates/circuitGridUtils';
 import { CircuitCellInput } from './CircuitCellInput';
 
@@ -25,47 +26,7 @@ const CALC_KEY_MAP: Partial<Record<keyof CircuitRow, CalcFieldKey>> = {
   zs: 'zs',
 };
 
-const CIRCUIT_NA_FIELDS: (keyof CircuitRow)[] = [
-  'points',
-  'wiringType',
-  'refMethod',
-  'liveMm2',
-  'cpcMm2',
-  'maxDisconnectTime',
-  'ocpdBs',
-  'ocpdType',
-  'ocpdRatingA',
-  'ocpdBreakingKa',
-  'maxZs',
-  'rcdBs',
-  'rcdType',
-  'rcdRatingMa',
-  'rcdRatingA',
-  'ringR1',
-  'ringRn',
-  'ringR2End',
-  'r1r2',
-  'r2',
-  'insulation',
-  'insulationTestVoltage',
-  'insulationLL',
-  'insulationLE',
-  'polarity',
-  'zs',
-  'rcdTripMs',
-  'afdd',
-  'remarks',
-];
-
 const UNTESTED_ZS_VALUES = new Set(['', '-', '--', '---', 'lim', 'n/v', 'n/a', 'na', 'x']);
-
-function applyNaCircuitDefaults(circuit: CircuitRow): CircuitRow {
-  const next = { ...circuit, tested: false, calcOverrides: { ...(circuit.calcOverrides ?? {}) } };
-  for (const key of CIRCUIT_NA_FIELDS) {
-    next[key] = 'N/A' as never;
-  }
-  return next;
-}
 
 export function isCircuitTested(circuit: CircuitRow) {
   return !UNTESTED_ZS_VALUES.has(circuit.zs.trim().toLowerCase());
@@ -152,7 +113,7 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
         }
         let updated = { ...c, [key]: nextValue, calcOverrides: overrides } as CircuitRow;
         if (key === 'description' && typeof nextValue === 'string' && isNaDescription(nextValue)) {
-          updated = applyNaCircuitDefaults(updated);
+          updated = applySpareOrUnknownCircuitDefaults(updated);
         }
         if (key === 'zs' && typeof nextValue === 'string') {
           updated.tested = !UNTESTED_ZS_VALUES.has(nextValue.trim().toLowerCase());
@@ -224,7 +185,7 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
   };
 
   return (
-    <div data-circuit-grid className="relative overflow-x-auto overflow-y-visible rounded-lg border border-slate-200 bg-white shadow-inner">
+    <div data-circuit-grid className="relative w-full overflow-x-auto overflow-y-visible rounded-none border-0 bg-white">
       <table className="min-w-[2400px] border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-50">
           <tr className="border-b border-slate-200">

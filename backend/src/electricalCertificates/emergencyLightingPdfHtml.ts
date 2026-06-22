@@ -1,10 +1,12 @@
 import {
   EMERGENCY_LIGHTING_LUMINAIRE_TYPE_LABELS,
-  EMERGENCY_LIGHTING_OUTCOME_LABELS,
   EMERGENCY_LIGHTING_STANDARD_LABEL,
   EMERGENCY_LIGHTING_SUPPLY_MODE_LABELS,
 } from './emergencyLightingItems';
 import type { CertificatePdfInput } from './certificatePdfHtml';
+import { passFailOutcomeBadgeHtml } from './certificatePrint/passFailOutcomes';
+import { assessmentBannerHtml } from './certificatePrint/outcomes';
+import { CERTIFICATE_PRINT_CSS } from './certificatePrint/printStyles';
 
 type PdfHelpers = {
   esc: (value: string) => string;
@@ -19,7 +21,7 @@ export function buildEmergencyLightingCertificatePdfHtml(input: CertificatePdfIn
   const { document: doc, branding: b } = input;
   const em = doc.emergencyLighting;
   if (!em) throw new Error('EMERGENCY_LIGHTING_DOCUMENT_MISSING');
-  const outcome = (value: string) => EMERGENCY_LIGHTING_OUTCOME_LABELS[value] ?? '-';
+  const outcomeBadge = (value: string) => passFailOutcomeBadgeHtml(value, h.esc);
 
   const modifications = em.modifications
     .map(
@@ -31,14 +33,14 @@ export function buildEmergencyLightingCertificatePdfHtml(input: CertificatePdfIn
   const testRows = em.testSchedule
     .map(
       (item) =>
-        `<tr><td>${h.esc(item.reference)}</td><td>${h.esc(item.location)}</td><td>${h.esc(EMERGENCY_LIGHTING_LUMINAIRE_TYPE_LABELS[item.luminaireType] ?? item.luminaireType)}</td><td>${h.esc(EMERGENCY_LIGHTING_SUPPLY_MODE_LABELS[item.supplyMode] ?? item.supplyMode)}</td><td>${h.esc(item.durationMinutes)}</td><td class="outcome">${h.esc(outcome(item.chargeIndicator))}</td><td class="outcome">${h.esc(outcome(item.functionalTest))}</td><td class="outcome">${h.esc(outcome(item.durationTest))}</td><td class="outcome">${h.esc(outcome(item.result))}</td><td>${h.esc(item.notes)}</td></tr>`,
+        `<tr><td>${h.esc(item.reference)}</td><td>${h.esc(item.location)}</td><td>${h.esc(EMERGENCY_LIGHTING_LUMINAIRE_TYPE_LABELS[item.luminaireType] ?? item.luminaireType)}</td><td>${h.esc(EMERGENCY_LIGHTING_SUPPLY_MODE_LABELS[item.supplyMode] ?? item.supplyMode)}</td><td>${h.esc(item.durationMinutes)}</td><td class="outcome">${outcomeBadge(item.chargeIndicator)}</td><td class="outcome">${outcomeBadge(item.functionalTest)}</td><td class="outcome">${outcomeBadge(item.durationTest)}</td><td class="outcome">${outcomeBadge(item.result)}</td><td>${h.esc(item.notes)}</td></tr>`,
     )
     .join('');
 
   const faultRows = em.faultsAndRepairs
     .map(
       (item) =>
-        `<tr><td>${h.esc(item.reference)}</td><td>${h.esc(item.location)}</td><td>${h.esc(item.fault)}</td><td>${h.esc(item.repair)}</td><td>${h.esc(item.repairedBy)}</td><td>${h.esc(item.repairedDate)}</td><td class="outcome">${h.esc(outcome(item.result))}</td></tr>`,
+        `<tr><td>${h.esc(item.reference)}</td><td>${h.esc(item.location)}</td><td>${h.esc(item.fault)}</td><td>${h.esc(item.repair)}</td><td>${h.esc(item.repairedBy)}</td><td>${h.esc(item.repairedDate)}</td><td class="outcome">${outcomeBadge(item.result)}</td></tr>`,
     )
     .join('');
 
@@ -53,7 +55,7 @@ export function buildEmergencyLightingCertificatePdfHtml(input: CertificatePdfIn
 <head>
 <meta charset="utf-8"/>
 <title>${h.esc(input.certificateNumber)} - Emergency Lighting PIR</title>
-<style>${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.3pt')}</style>
+<style>${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.3pt')}${CERTIFICATE_PRINT_CSS}</style>
 </head>
 <body>
   ${h.certificateHeaderHtml(input, 'Emergency Lighting - Periodic Inspection Report', EMERGENCY_LIGHTING_STANDARD_LABEL)}
@@ -66,7 +68,7 @@ export function buildEmergencyLightingCertificatePdfHtml(input: CertificatePdfIn
       ${h.row('System description', em.installation.systemDescription)}
       ${h.row('Inspection date', em.installation.inspectionDate)}
       ${h.row('Next inspection', em.installation.nextInspectionDate)}
-      ${h.row('Overall assessment', em.installation.overallAssessment)}
+      ${assessmentBannerHtml(em.installation.overallAssessment, h.esc, 'Overall assessment')}
     </table>
   </section>
 

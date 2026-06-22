@@ -26,6 +26,7 @@ interface Invoice {
   currency: string;
   state: string;
   created_at: string;
+  profit?: number;
 }
 
 interface InvoicesResponse {
@@ -36,6 +37,7 @@ interface InvoicesResponse {
   totalPages: number;
   stateStats: Record<string, { count: number; total_amount: number }>;
   overallOutstanding: number;
+  overallProfit?: number;
 }
 
 interface Customer {
@@ -96,6 +98,7 @@ export default function InvoicesPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [stateStats, setStateStats] = useState<Record<string, { count: number; total_amount: number }>>({});
   const [overallOutstanding, setOverallOutstanding] = useState(0);
+  const [overallProfit, setOverallProfit] = useState(0);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -169,12 +172,14 @@ export default function InvoicesPage() {
       setTotalPages(data.totalPages ?? 1);
       setStateStats(data.stateStats ?? {});
       setOverallOutstanding(data.overallOutstanding ?? 0);
+      setOverallProfit(data.overallProfit ?? 0);
     } catch {
       setInvoices([]);
       setTotal(0);
       setTotalPages(1);
       setStateStats({});
       setOverallOutstanding(0);
+      setOverallProfit(0);
     }
   }, [token, page, searchDebounced, stateFilter]);
 
@@ -395,7 +400,7 @@ export default function InvoicesPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-9">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -404,6 +409,16 @@ export default function InvoicesPage() {
               <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-rose-500">Outstanding</p>
               <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallOutstanding, 'GBP')}</h3>
               <p className="text-[10px] text-slate-400">across all invoices</p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-emerald-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600">Net Profit</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallProfit, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">subtotal minus job costs</p>
             </motion.div>
 
             {INVOICE_STATES.map((s) => (
@@ -465,6 +480,7 @@ export default function InvoicesPage() {
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Due</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Amount</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Profit</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500"></th>
                   </tr>
@@ -495,6 +511,15 @@ export default function InvoicesPage() {
                         <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.invoice_date)}</td>
                         <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.due_date)}</td>
                         <td className="px-6 py-4 text-sm font-medium text-slate-900">{formatCurrency(inv.total_amount, inv.currency)}</td>
+                        <td className="px-6 py-4 text-sm font-semibold">
+                          {inv.profit != null ? (
+                            <span className={inv.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                              {formatCurrency(inv.profit, inv.currency)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4">{stateBadge(inv.state)}</td>
                         <td className="px-6 py-4">
                           <Link

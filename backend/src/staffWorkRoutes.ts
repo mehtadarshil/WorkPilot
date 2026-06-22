@@ -74,6 +74,7 @@ function expenseRow(row: Record<string, unknown>) {
     description: (row.description as string | null) ?? null,
     amount: Number(row.amount ?? 0),
     status: (row.status as string | null) ?? 'submitted',
+    expense_type: (row.expense_type as string | null) ?? 'personal',
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
   };
 }
@@ -99,6 +100,7 @@ export async function ensureStaffWorkSchema(pool: Pool): Promise<void> {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_job_expenses_status ON job_expenses(status)');
   await pool.query('ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS approved_by INTEGER');
   await pool.query('ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ');
+  await pool.query("ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS expense_type VARCHAR(40) NOT NULL DEFAULT 'personal'");
 }
 
 export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps): void {
@@ -142,6 +144,7 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
          WHERE je.expense_date >= $1::date
            AND je.expense_date < ($2::date + INTERVAL '1 day')
            AND je.status = 'approved'
+           AND je.expense_type = 'personal'
            ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
          GROUP BY je.officer_id`,
         isSuperAdmin ? [from, to] : [from, to, userId],
@@ -153,6 +156,7 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
          WHERE je.expense_date >= $1::date
            AND je.expense_date < ($2::date + INTERVAL '1 day')
            AND je.status = 'submitted'
+           AND je.expense_type = 'personal'
            ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
          GROUP BY je.officer_id`,
         isSuperAdmin ? [from, to] : [from, to, userId],
@@ -292,12 +296,16 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
         ? Number((req.body as Record<string, unknown>).officer_id)
         : null;
     const officerId = user.role === 'OFFICER' ? (user.officerId ?? null) : requestedOfficerId;
+    const rawType = typeof (req.body as Record<string, unknown>).expense_type === 'string'
+      ? String((req.body as Record<string, unknown>).expense_type).trim().toLowerCase()
+      : 'personal';
+    const expenseType = rawType === 'company' ? 'company' : 'personal';
     try {
       const result = await pool.query(
-        `INSERT INTO job_expenses (job_id, officer_id, expense_date, category, description, amount, created_by)
-         VALUES ($1, $2, $3::date, $4, $5, $6, $7)
+        `INSERT INTO job_expenses (job_id, officer_id, expense_date, category, description, amount, expense_type, created_by)
+         VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)
          RETURNING *`,
-        [jobId, officerId, isoDate((req.body as Record<string, unknown>).expense_date), category, description, amount, user.userId],
+        [jobId, officerId, isoDate((req.body as Record<string, unknown>).expense_date), category, description, amount, expenseType, user.userId],
       );
       return res.status(201).json({ expense: expenseRow(result.rows[0] as Record<string, unknown>) });
     } catch (error) {
@@ -313,28 +321,64 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     if (!assertStaffPermissionAny(user, ['field_users'])) {
       return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
     }
-    const rawStatus = typeof (req.body as Record<string, unknown>).status === 'string'
-      ? String((req.body as Record<string, unknown>).status).trim()
-      : '';
-    if (rawStatus !== 'approved' && rawStatus !== 'rejected' && rawStatus !== 'submitted') {
-      return res.status(400).json({ message: 'Status must be submitted, approved, or rejected' });
+    const body = req.body as Record<string, unknown>;
+
+    // Build update query dynamically
+    const updates: string[] = [];
+    const params: unknown[] = [];
+
+    if (typeof body.status === 'string' && body.status.trim()) {
+      const status = body.status.trim();
+      if (status === 'approved' || status === 'rejected' || status === 'submitted') {
+        updates.push(`status = $${params.length + 1}`);
+        params.push(status);
+
+        updates.push(`approved_by = CASE WHEN $${params.length - 1 + 1} = 'approved' THEN $${params.length + 1}::integer ELSE NULL END`);
+        params.push(user.userId);
+
+        updates.push(`approved_at = CASE WHEN $${params.length - 2 + 1} = 'approved' THEN NOW() ELSE NULL END`);
+      } else {
+        return res.status(400).json({ message: 'Status must be submitted, approved, or rejected' });
+      }
     }
+
+    if (typeof body.expense_type === 'string' && body.expense_type.trim()) {
+      const et = body.expense_type.trim().toLowerCase();
+      if (et === 'personal' || et === 'company') {
+        updates.push(`expense_type = $${params.length + 1}`);
+        params.push(et);
+      } else {
+        return res.status(400).json({ message: 'expense_type must be personal or company' });
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    updates.push(`updated_at = NOW()`);
+
     const userId = getTenantScopeUserId(user);
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
+
     try {
-      const result = await pool.query(
-        `UPDATE job_expenses je
-         SET status = $1,
-             approved_by = CASE WHEN $1 = 'approved' THEN $2 ELSE NULL END,
-             approved_at = CASE WHEN $1 = 'approved' THEN NOW() ELSE NULL END,
-             updated_at = NOW()
-         FROM jobs j
-         WHERE je.id = $3
-           AND j.id = je.job_id
-           ${isSuperAdmin ? '' : 'AND j.created_by = $4'}
-         RETURNING je.*, j.title AS job_title, j.job_number, NULL::text AS officer_name, NULL::text AS customer_name`,
-        isSuperAdmin ? [rawStatus, user.userId, expenseId] : [rawStatus, user.userId, expenseId, userId],
-      );
+      let query = `
+        UPDATE job_expenses je
+        SET ${updates.join(', ')}
+        FROM jobs j
+        WHERE je.id = $${params.length + 1}
+          AND j.id = je.job_id
+      `;
+      params.push(expenseId);
+
+      if (!isSuperAdmin) {
+        query += ` AND j.created_by = $${params.length + 1}`;
+        params.push(userId);
+      }
+
+      query += ` RETURNING je.*, j.title AS job_title, j.job_number, NULL::text AS officer_name, NULL::text AS customer_name`;
+
+      const result = await pool.query(query, params);
       if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Expense not found' });
       return res.json({ expense: expenseRow(result.rows[0] as Record<string, unknown>) });
     } catch (error) {

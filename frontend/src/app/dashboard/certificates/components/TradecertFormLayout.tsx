@@ -3,8 +3,18 @@
 import type { HTMLAttributes, ReactNode } from 'react';
 
 /** Wider certificate form container (Tradecert uses full workspace width). */
-export function TradecertFormLayout({ children }: { children: ReactNode }) {
-  return <div className="mx-auto w-full max-w-6xl space-y-4">{children}</div>;
+export function TradecertFormLayout({
+  children,
+  wide = false,
+}: {
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`w-full space-y-4 ${wide ? 'max-w-none' : 'mx-auto max-w-6xl'}`}>
+      {children}
+    </div>
+  );
 }
 
 export function TradecertFieldGrid({
@@ -32,10 +42,13 @@ export function TradecertPanel({
   title,
   children,
   toolbar,
+  flush = false,
 }: {
   title: string;
   children: ReactNode;
   toolbar?: ReactNode;
+  /** Remove side padding — for full-width data grids. */
+  flush?: boolean;
 }) {
   return (
     <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
@@ -43,7 +56,7 @@ export function TradecertPanel({
         <h3 className="text-xs font-bold uppercase tracking-wide text-slate-800">{title}</h3>
         {toolbar}
       </div>
-      <div className="space-y-3 p-4">{children}</div>
+      <div className={flush ? 'p-0' : 'space-y-3 p-4'}>{children}</div>
     </section>
   );
 }

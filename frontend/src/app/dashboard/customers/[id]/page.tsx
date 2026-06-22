@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getJson, postJson, patchJson, deleteRequest } from '../../../apiClient';
-import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, Trash2, X, Check, ImagePlus } from 'lucide-react';
+import { getJson, postJson, patchJson, deleteRequest, getBlob } from '../../../apiClient';
+import { ArrowLeft, Edit, MapPin, Phone, Mail, User, Plus, Search, Filter, ChevronRight, Trash2, X, Check, ImagePlus, Download } from 'lucide-react';
 import dayjs from 'dayjs';
 import CustomerCommunicationsTab from './CustomerCommunicationsTab';
 import CustomerContactsTab from './CustomerContactsTab';
@@ -339,6 +339,8 @@ export default function CustomerDetailsPage() {
   const [workAddressDetails, setWorkAddressDetails] = useState<WorkAddressDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadingStatement, setDownloadingStatement] = useState(false);
+  const [quickLinksOpen, setQuickLinksOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
@@ -442,18 +444,42 @@ export default function CustomerDetailsPage() {
   }, [id, token, workAddressId]);
 
   const fetchWorkAddressDetails = useCallback(async () => {
-    if (!token || !id || !workAddressId) {
-      setWorkAddressDetails(null);
-      return;
-    }
+    if (!token || !id) return;
     try {
-      const res = await getJson<{ work_address: WorkAddressDetails }>(`/customers/${id}/work-addresses/${workAddressId}`, token);
-      setWorkAddressDetails(res.work_address || null);
+      if (workAddressId) {
+        const res = await getJson<{ work_address: WorkAddressDetails }>(`/customers/${id}/work-addresses/${workAddressId}`, token);
+        setWorkAddressDetails(res.work_address || null);
+      } else {
+        const res = await getJson<{ work_addresses: WorkAddressDetails[] }>(`/customers/${id}/work-addresses?status=active`, token);
+        setWorkAddressDetails(res.work_addresses?.[0] || null);
+      }
     } catch (err) {
       console.error('Failed to fetch work address details', err);
       setWorkAddressDetails(null);
     }
   }, [id, token, workAddressId]);
+
+  const handleDownloadStatement = async () => {
+    if (!token || !id || downloadingStatement) return;
+    setDownloadingStatement(true);
+    setQuickLinksOpen(false);
+    try {
+      const blob = await getBlob(`/customers/${id}/statement.pdf`, token);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `customer-${String(id).padStart(4, '0')}-statement.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to download statement';
+      alert(msg);
+    } finally {
+      setDownloadingStatement(false);
+    }
+  };
 
   useEffect(() => {
     fetchDetails();
@@ -472,6 +498,13 @@ export default function CustomerDetailsPage() {
     if (!id || !token || workAddressId) return;
     void fetchServiceReminderSchedule();
   }, [id, token, fetchServiceReminderSchedule]);
+
+  useEffect(() => {
+    if (!quickLinksOpen) return;
+    const handler = () => setQuickLinksOpen(false);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [quickLinksOpen]);
 
   useEffect(() => {
     if (!data || String(data.id) !== id) return;
@@ -1346,8 +1379,8 @@ export default function CustomerDetailsPage() {
           <div className="flex-1 bg-slate-50/50 flex flex-col min-w-0">
              
              {/* Tabs Header */}
-             <div className="pt-4 px-6 border-b border-slate-200 bg-white flex items-end justify-between overflow-x-auto no-scrollbar">
-                <div className="flex gap-2">
+             <div className="pt-4 px-6 border-b border-slate-200 bg-white flex items-end justify-between">
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
                   {tabs.map((tab) => (
                     <button 
                       key={tab.key} 
@@ -1365,10 +1398,28 @@ export default function CustomerDetailsPage() {
                     </button>
                   ))}
                 </div>
-                <div className="pb-2 hidden sm:block">
-                  <select className="border border-slate-200 text-sm rounded bg-white px-3 py-1.5 font-medium text-slate-600 outline-none hover:border-slate-300">
-                     <option>Quick links</option>
-                  </select>
+                <div className="pb-2 shrink-0 pl-4 relative">
+                  <button
+                    type="button"
+                    onClick={() => setQuickLinksOpen((v) => !v)}
+                    className="flex items-center gap-1.5 border border-slate-200 text-sm rounded bg-white px-3 py-1.5 font-medium text-slate-600 outline-none hover:border-slate-300"
+                  >
+                    Quick links
+                    <ChevronRight className={`size-3 transition-transform ${quickLinksOpen ? 'rotate-90' : ''}`} />
+                  </button>
+                  {quickLinksOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-slate-200 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        disabled={downloadingStatement}
+                        onClick={() => void handleDownloadStatement()}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 rounded-t-lg"
+                      >
+                        <Download className="size-3.5 shrink-0 text-slate-500" />
+                        {downloadingStatement ? 'Downloading...' : 'Full Statement'}
+                      </button>
+                    </div>
+                  )}
                 </div>
              </div>
 
@@ -1619,6 +1670,32 @@ export default function CustomerDetailsPage() {
           </div>
         </div>
       </div>
+
+      {/* Premium Loading Dialog for Statement Download */}
+      {downloadingStatement && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="h-1 w-full bg-gradient-to-r from-[#14B8A6] via-[#0ea5e9] to-[#14B8A6] bg-[length:200%_100%] animate-[shimmer_1.5s_linear_infinite]" />
+            <div className="flex flex-col items-center px-8 py-10 text-center">
+              <div className="relative mb-5">
+                <div className="size-14 rounded-full border-4 border-slate-100 bg-slate-50 flex items-center justify-center">
+                  <Download className="size-6 text-[#14B8A6] animate-bounce" />
+                </div>
+                <div className="absolute -inset-1 rounded-full border-2 border-[#14B8A6]/20 animate-ping" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800 mb-1.5">Generating Statement</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Preparing your customer statement PDF with all jobs and invoices&hellip;
+              </p>
+              <div className="mt-6 flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-[#14B8A6] animate-[pulse_1.2s_ease-in-out_0s_infinite]" />
+                <span className="size-1.5 rounded-full bg-[#14B8A6] animate-[pulse_1.2s_ease-in-out_0.2s_infinite]" />
+                <span className="size-1.5 rounded-full bg-[#14B8A6] animate-[pulse_1.2s_ease-in-out_0.4s_infinite]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

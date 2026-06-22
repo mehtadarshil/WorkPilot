@@ -42,7 +42,7 @@ import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderC
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
 import { mountJobNotesRoutes } from './jobNotesRoutes';
-import { mountJobCostsRoutes } from './jobCostsRoutes';
+import { mountJobCostsRoutes, buildJobCostPayload } from './jobCostsRoutes';
 import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
 import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
@@ -71,7 +71,7 @@ import {
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
-import { generateJobStatementPdfBuffer } from './jobStatementPdf';
+import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
 import { normalizeTemplateSiteReportDocument, collectTemplateDocumentImageIds } from './siteReportTemplates/documentNormalize';
 import type { TemplateSiteReportDocument } from './siteReportTemplates/types';
@@ -244,6 +244,42 @@ async function ensureQuotationInternalNoteDir(quotationId: number, noteId: numbe
   const dir = path.join(getQuotationInternalNotesRootDir(), String(quotationId), String(noteId));
   await fs.mkdir(dir, { recursive: true });
   return dir;
+}
+
+async function checkOfficerHolidayConflict(
+  pool: Pool,
+  officerIds: number[],
+  startTime: Date | string,
+  durationMinutes: number
+): Promise<{ conflict: boolean; officerName?: string; holidayStart?: Date; holidayEnd?: Date } | null> {
+  if (!officerIds || officerIds.length === 0) return null;
+  const start = new Date(startTime);
+  const end = new Date(start.getTime() + (durationMinutes || 60) * 60000);
+
+  for (const oId of officerIds) {
+    const res = await pool.query<{ officer_name: string; start_date: Date; end_date: Date }>(
+      `SELECT o.full_name AS officer_name, hr.start_date, hr.end_date
+       FROM holiday_requests hr
+       JOIN officers o ON o.id = hr.officer_id
+       WHERE hr.officer_id = $1
+         AND hr.status = 'approved'
+         AND $2::timestamptz < hr.end_date
+         AND $3::timestamptz > hr.start_date
+       LIMIT 1`,
+      [oId, start, end]
+    );
+
+    if ((res.rowCount ?? 0) > 0) {
+      const row = res.rows[0];
+      return {
+        conflict: true,
+        officerName: row.officer_name,
+        holidayStart: row.start_date,
+        holidayEnd: row.end_date,
+      };
+    }
+  }
+  return null;
 }
 
 function sanitizeStoredOriginalName(name: string): string {
@@ -1805,7 +1841,7 @@ async function initDb() {
 
   try {
     await pool.query(`ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_state_check`);
-    await pool.query(`ALTER TABLE jobs ADD CONSTRAINT jobs_state_check CHECK (state IN ('draft', 'created', 'scheduled', 'assigned', 'in_progress', 'paused', 'completed', 'closed', 'unscheduled', 'rescheduled', 'dispatched'))`);
+    await pool.query(`ALTER TABLE jobs ADD CONSTRAINT jobs_state_check CHECK (state IN ('draft', 'created', 'scheduled', 'assigned', 'in_progress', 'paused', 'completed', 'closed', 'unscheduled', 'rescheduled', 'dispatched', 'need_to_be_rescheduled'))`);
   } catch { /* constraint may already allow these */ }
 
   await pool.query(`
@@ -2593,6 +2629,7 @@ const POST_REPORT_NEXT_JOB_STATES = new Set<string>([
   'created',
   'in_progress',
   'completed',
+  'need_to_be_rescheduled',
 ]);
 
 function parsePostReportNextJobState(raw: unknown): string | null {
@@ -6110,7 +6147,7 @@ app.get('/api/certifications/compliance-hub', authenticate, requireTenantCrmAcce
 });
 
 // ---------- Jobs (Admin only) ----------
-const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed'] as const;
+const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed', 'need_to_be_rescheduled'] as const;
 const JOB_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 
 app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
@@ -6236,6 +6273,19 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       officersByJob.set(or.job_id, list);
     }
 
+    const pageCostsMap = await calculateJobsCosts(pool, jobIds);
+    const revenueRes = await pool.query<{ job_id: number; invoiced_subtotal: string }>(
+      `SELECT job_id, SUM(subtotal)::numeric AS invoiced_subtotal FROM invoices WHERE job_id = ANY($1::int[]) GROUP BY job_id`,
+      [jobIds]
+    );
+    const revenueMap: Record<number, number> = {};
+    for (const r of jobIds) {
+      revenueMap[r] = 0;
+    }
+    for (const row of revenueRes.rows) {
+      revenueMap[row.job_id] = parseFloat(row.invoiced_subtotal || '0');
+    }
+
     const jobs = listResult.rows.map((r) => ({
       id: r.id,
       job_number: r.job_number ?? null,
@@ -6263,6 +6313,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       updated_at: (r.updated_at as Date).toISOString(),
       created_by: r.created_by,
       is_quotation_visit: !!r.is_quotation_visit,
+      profit: Math.round(((revenueMap[r.id] ?? 0) - (pageCostsMap[r.id] ?? 0)) * 100) / 100,
     }));
 
     return res.json({
@@ -6996,6 +7047,13 @@ app.post('/api/quotation-visits', authenticate, requireTenantCrmAccess('quotatio
   if (!customerId) return res.status(400).json({ message: 'customer_id is required' });
   if (!officerId) return res.status(400).json({ message: 'officer_id is required' });
   if (!startTime || isNaN(startTime.getTime())) return res.status(400).json({ message: 'start_time is required' });
+
+  const holidayConflict = await checkOfficerHolidayConflict(pool, [officerId], startTime, durationMinutes);
+  if (holidayConflict) {
+    return res.status(400).json({
+      message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
+    });
+  }
 
   const userId = getTenantScopeUserId(req.user!);
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -10485,7 +10543,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
   if (!nextJobState) {
     return res.status(400).json({
       message:
-        'next_job_state is required. Allowed: unscheduled, scheduled, rescheduled, paused, created, in_progress, completed.',
+        'next_job_state is required. Allowed: unscheduled, scheduled, rescheduled, paused, created, in_progress, completed, need_to_be_rescheduled.',
     });
   }
 
@@ -11288,6 +11346,40 @@ app.get('/api/jobs/:id/statement.pdf', authenticate, requireTenantCrmAccess('job
   }
 });
 
+app.get('/api/customers/:id/statement.pdf', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid customer id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const custCheck = await pool.query<{ created_by: number | null; full_name: string | null }>(
+      'SELECT created_by, full_name FROM customers WHERE id = $1',
+      [id],
+    );
+    if ((custCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && custCheck.rows[0].created_by !== userId) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+
+    const pdf = await generateCustomerStatementPdfBuffer(pool, id);
+    const custName = custCheck.rows[0].full_name?.trim() || 'customer';
+    const safeTail = `customer-${custName.replace(/[^\w.-]+/g, '_').slice(0, 60)}-statement`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTail}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error) {
+    if (error instanceof PdfRenderUnavailableError) {
+      return res.status(503).json({ message: error.message });
+    }
+    console.error('Customer statement PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 function escapeHtmlForEmail(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -11496,6 +11588,13 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
       : (officer_id ? [officer_id] : []);
     const primaryOfficerId = deOfficerIds.length > 0 ? (deOfficerIds[0] as number) : (officer_id || null);
 
+    const holidayConflict = await checkOfficerHolidayConflict(pool, deOfficerIds, start_time, duration_minutes || 60);
+    if (holidayConflict) {
+      return res.status(400).json({
+        message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
+      });
+    }
+
     const result = await pool.query(
       `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -11542,6 +11641,41 @@ app.patch(
     const updates: string[] = ['updated_at = NOW()'];
     const values: unknown[] = [];
     let idx = 1;
+
+    try {
+      const currentEventRes = await pool.query<{ officer_id: number | null; start_time: Date; duration_minutes: number }>(
+        `SELECT officer_id, start_time, duration_minutes FROM diary_events WHERE id = $1`,
+        [id]
+      );
+      if ((currentEventRes.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Diary event not found' });
+      }
+      const current = currentEventRes.rows[0];
+
+      const newStartTime = body.start_time !== undefined ? (body.start_time ? new Date(body.start_time) : null) : current.start_time;
+      const newDuration = body.duration_minutes !== undefined ? (body.duration_minutes || 60) : current.duration_minutes;
+
+      if (newStartTime && !isNaN(newStartTime.getTime())) {
+        const officersRes = await pool.query<{ officer_id: number }>(
+          `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1`,
+          [id]
+        );
+        const officerIds = officersRes.rows.map(o => o.officer_id);
+        if (current.officer_id != null && !officerIds.includes(current.officer_id)) {
+          officerIds.push(current.officer_id);
+        }
+
+        const holidayConflict = await checkOfficerHolidayConflict(pool, officerIds, newStartTime, newDuration);
+        if (holidayConflict) {
+          return res.status(400).json({
+            message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
+          });
+        }
+      }
+    } catch (err) {
+      console.error('reschedule check error:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
 
     if (body.start_time !== undefined) {
       const ts = body.start_time ? new Date(body.start_time) : null;
@@ -13235,6 +13369,117 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
   return invoiceId;
 }
 
+async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<number, number>> {
+  const costsMap: Record<number, number> = {};
+  if (jobIds.length === 0) return costsMap;
+  for (const id of jobIds) {
+    costsMap[id] = 0;
+  }
+  try {
+    const manualRes = await pool.query<{ job_id: number; amount: string | number }>(
+      `SELECT job_id, amount FROM job_cost_entries WHERE job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    for (const row of manualRes.rows) {
+      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
+    }
+    const partsRes = await pool.query<{ job_id: number; quantity: string | number; unit_cost_price: string | number }>(
+      `SELECT job_id, quantity, unit_cost_price FROM job_parts WHERE job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    for (const row of partsRes.rows) {
+      const qty = typeof row.quantity === 'number' ? row.quantity : parseFloat(row.quantity || '0');
+      const unit = typeof row.unit_cost_price === 'number' ? row.unit_cost_price : parseFloat(row.unit_cost_price || '0');
+      costsMap[row.job_id] += qty * unit;
+    }
+    const expensesRes = await pool.query<{ job_id: number; amount: string | number }>(
+      `SELECT job_id, amount FROM job_expenses WHERE job_id = ANY($1::int[]) AND status = 'approved'`,
+      [jobIds]
+    );
+    for (const row of expensesRes.rows) {
+      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
+    }
+    const rateResult = await pool.query<{
+      job_id: number;
+      default_hourly_rate: string | number;
+      travel_hourly_rate: string | number | null;
+      on_site_hourly_rate: string | number | null;
+      first_hour_labour_rate: string | number | null;
+      additional_hour_labour_rate: string | number | null;
+    }>(
+      `SELECT j.id AS job_id,
+              COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
+              o.travel_hourly_rate,
+              o.on_site_hourly_rate,
+              o.first_hour_labour_rate,
+              o.additional_hour_labour_rate
+       FROM jobs j
+       LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN LATERAL (
+         SELECT basic_rate_per_hr
+         FROM price_book_labour_rates
+         WHERE price_book_id = c.price_book_id
+         ORDER BY id ASC
+         LIMIT 1
+       ) lr ON true
+       LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
+       WHERE j.id = ANY($1::int[])`,
+      [jobIds]
+    );
+    const ratesByJob: Record<number, {
+      travel: number;
+      firstHour: number;
+      additionalHour: number;
+    }> = {};
+    for (const row of rateResult.rows) {
+      const def = typeof row.default_hourly_rate === 'number' ? row.default_hourly_rate : parseFloat(row.default_hourly_rate || '0');
+      const travel = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : def;
+      const onsite = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : def;
+      const first = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : onsite;
+      const additional = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : onsite;
+      ratesByJob[row.job_id] = {
+        travel,
+        firstHour: first,
+        additionalHour: additional
+      };
+    }
+    const timesheetRes = await pool.query<{
+      job_id: number;
+      segment_type: string;
+      duration_seconds: string | number;
+    }>(
+      `SELECT d.job_id, te.segment_type,
+              EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::numeric AS duration_seconds
+       FROM timesheet_entries te
+       INNER JOIN diary_events d ON d.id = te.diary_event_id
+       WHERE d.job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    for (const row of timesheetRes.rows) {
+      const rates = ratesByJob[row.job_id];
+      if (!rates) continue;
+      const seconds = typeof row.duration_seconds === 'number' ? row.duration_seconds : parseFloat(row.duration_seconds || '0');
+      const hours = seconds / 3600;
+      const isTravel = row.segment_type === 'travelling';
+      let amount = 0;
+      if (isTravel) {
+        amount = hours * rates.travel;
+      } else {
+        const firstHour = Math.min(hours, 1);
+        const additionalHours = Math.max(0, hours - 1);
+        amount = firstHour * rates.firstHour + additionalHours * rates.additionalHour;
+      }
+      costsMap[row.job_id] += amount;
+    }
+  } catch (err) {
+    console.error('Error calculating job costs bulk:', err);
+  }
+  for (const id of jobIds) {
+    costsMap[id] = Math.round(costsMap[id] * 100) / 100;
+  }
+  return costsMap;
+}
+
 app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
@@ -13255,7 +13500,6 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     const countParams: unknown[] = [];
     const listParams: unknown[] = [];
     let p = 1;
-    /* Listing a specific job's invoices must include auto-generated drafts owned by the job creator. */
     if (!isSuperAdmin && !listScopedToJob) {
       conditions.push(`i.created_by = $${p++}`);
       countParams.push(userId);
@@ -13281,7 +13525,6 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       countParams.push(customerId);
       listParams.push(customerId);
       if (!includeWorkAddressInvoices && !(invoiceWorkAddressId && Number.isFinite(invoiceWorkAddressId)) && !(jobId && Number.isFinite(jobId))) {
-        /* Customer-level list: only invoices not tied to a work / site; work-site invoices use invoice_work_address_id. */
         conditions.push(`i.invoice_work_address_id IS NULL`);
       }
     }
@@ -13343,24 +13586,56 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     );
     const overallOutstanding = parseFloat(String((overallRes.rows[0] as { outstanding: string | null }).outstanding ?? '0'));
 
-    const invoices = listResult.rows.map((r) => ({
-      id: r.id,
-      invoice_number: r.invoice_number,
-      customer_id: r.customer_id,
-      customer_full_name: r.customer_full_name ?? null,
-      job_id: r.job_id ?? null,
-      job_title: r.job_title ?? null,
-      work_address_name: r.work_address_name ?? null,
-      invoice_date: formatInvoiceDateFromDb(r.invoice_date),
-      due_date: formatInvoiceDateFromDb(r.due_date),
-      subtotal: parseFloat(r.subtotal),
-      tax_amount: parseFloat(r.tax_amount),
-      total_amount: parseFloat(r.total_amount),
-      total_paid: parseFloat(r.total_paid),
-      currency: r.currency,
-      state: r.state,
-      created_at: (r.created_at as Date).toISOString(),
-    }));
+    // 1. Calculate overall profit across all invoices matching ownerClause
+    const overallInvoicesRes = await pool.query<{ job_id: number | null; subtotal: string }>(
+      `SELECT job_id, subtotal FROM invoices ${ownerClause}`,
+      countParams2,
+    );
+    const overallJobIds = overallInvoicesRes.rows
+      .map(r => r.job_id)
+      .filter((id): id is number => id !== null);
+    const uniqueOverallJobIds = Array.from(new Set(overallJobIds));
+    const overallCostsMap = await calculateJobsCosts(pool, uniqueOverallJobIds);
+
+    let overallProfit = 0;
+    for (const r of overallInvoicesRes.rows) {
+      const sub = parseFloat(r.subtotal || '0');
+      const cost = r.job_id ? (overallCostsMap[r.job_id] ?? 0) : 0;
+      overallProfit += (sub - cost);
+    }
+    overallProfit = Math.round(overallProfit * 100) / 100;
+
+    // 2. Calculate page job costs for row level details
+    const pageJobIds = listResult.rows
+      .map(r => r.job_id)
+      .filter((id): id is number => id !== null);
+    const uniquePageJobIds = Array.from(new Set(pageJobIds));
+    const pageCostsMap = await calculateJobsCosts(pool, uniquePageJobIds);
+
+    const invoices = listResult.rows.map((r) => {
+      const sub = parseFloat(r.subtotal || '0');
+      const cost = r.job_id ? (pageCostsMap[r.job_id] ?? 0) : 0;
+      const profit = Math.round((sub - cost) * 100) / 100;
+      return {
+        id: r.id,
+        invoice_number: r.invoice_number,
+        customer_id: r.customer_id,
+        customer_full_name: r.customer_full_name ?? null,
+        job_id: r.job_id ?? null,
+        job_title: r.job_title ?? null,
+        work_address_name: r.work_address_name ?? null,
+        invoice_date: formatInvoiceDateFromDb(r.invoice_date),
+        due_date: formatInvoiceDateFromDb(r.due_date),
+        subtotal: sub,
+        tax_amount: parseFloat(r.tax_amount),
+        total_amount: parseFloat(r.total_amount),
+        total_paid: parseFloat(r.total_paid),
+        currency: r.currency,
+        state: r.state,
+        created_at: (r.created_at as Date).toISOString(),
+        profit: profit,
+      };
+    });
 
     return res.json({
       invoices,
@@ -13370,6 +13645,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       totalPages,
       stateStats,
       overallOutstanding,
+      overallProfit,
     });
   } catch (error) {
     console.error('List invoices error:', error);

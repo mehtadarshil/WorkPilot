@@ -7,6 +7,7 @@ import '../certificate_editor_controller.dart';
 import '../widgets/cert_form_widgets.dart';
 import 'circuit_calculations.dart';
 import 'circuit_helpers.dart';
+import '../certificate_print_webview_page.dart';
 import 'board_circuits_editor_view.dart';
 
 class BoardsListEditor extends StatelessWidget {
@@ -124,13 +125,19 @@ class BoardsListEditor extends StatelessWidget {
                                     PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
                                       onSelected: (val) {
-                                        if (val == 'duplicate') {
+                                        if (val == 'print') {
+                                          _printBoardSchedule(board);
+                                        } else if (val == 'duplicate') {
                                           _duplicateBoard(idx, boards);
                                         } else if (val == 'delete') {
                                           _deleteBoard(idx, boards);
                                         }
                                       },
                                       itemBuilder: (context) => [
+                                        PopupMenuItem(
+                                          value: 'print',
+                                          child: Text('Print schedule', style: GoogleFonts.inter(color: Colors.white)),
+                                        ),
                                         PopupMenuItem(
                                           value: 'duplicate',
                                           child: Text('Duplicate', style: GoogleFonts.inter(color: Colors.white)),
@@ -260,5 +267,21 @@ class BoardsListEditor extends StatelessWidget {
     }).toList();
     controller.updatePath('boards', nextBoards);
     Get.snackbar('Recalculated', 'All circuits in all boards have been recalculated.');
+  }
+
+  Future<void> _printBoardSchedule(Map<String, dynamic> board) async {
+    final boardId = board['id']?.toString().trim() ?? '';
+    if (boardId.isEmpty) {
+      Get.snackbar('Print unavailable', 'Board is missing an id.');
+      return;
+    }
+    final name = board['name']?.toString().trim();
+    await Get.to(
+      () => CertificatePrintWebViewPage(
+        certificateId: controller.certificateId,
+        boardId: boardId,
+        title: name != null && name.isNotEmpty ? 'Print $name' : 'Print board schedule',
+      ),
+    );
   }
 }

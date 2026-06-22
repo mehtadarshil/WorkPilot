@@ -1,11 +1,12 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
+import { AssessmentBanner } from '@/lib/electricalCertificates/certificatePrint/AssessmentBanner';
+import { PassFailOutcomeBadge } from '@/lib/electricalCertificates/certificatePrint/PassFailOutcomeBadge';
+import { CERTIFICATE_PRINT_CSS } from '@/lib/electricalCertificates/certificatePrint/printStyles.css';
 import {
-  DOMESTIC_FIRE_ALARM_CHECKLIST_ITEMS,
-  DOMESTIC_FIRE_ALARM_CHECKLIST_OUTCOME_LABELS,
-  DOMESTIC_FIRE_ALARM_CHECKLIST_SECTION_LABELS,
   DOMESTIC_FIRE_ALARM_REVISION,
   DOMESTIC_FIRE_ALARM_STANDARD,
 } from '@/lib/electricalCertificates/domesticFireAlarmItems';
@@ -16,20 +17,15 @@ import {
   DOMESTIC_FIRE_ALARM_SYSTEM_IS_OPTIONS,
 } from '@/lib/electricalCertificates/domesticFireAlarmInstItems';
 import {
-  FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS,
-  FIRE_ALARM_OUTCOME_LABELS,
-  FIRE_ALARM_SECTION_LABELS,
-} from '@/lib/electricalCertificates/fireAlarmInspectionScheduleItems';
-import {
-  FIRE_EXTINGUISHER_BLANKET_OUTCOME_LABELS,
   FIRE_EXTINGUISHER_CHECKLIST_ITEMS,
-  FIRE_EXTINGUISHER_CHECKLIST_OUTCOME_LABELS,
   FIRE_EXTINGUISHER_PREMISES_LABELS,
   FIRE_EXTINGUISHER_SERVICE_CODE_LABELS,
   FIRE_EXTINGUISHER_TYPE_OPTIONS,
 } from '@/lib/electricalCertificates/fireExtinguisherItems';
 import { CertificateBrandedHeader } from './CertificateBrandedHeader';
 import { EicrPrintTemplate } from './EicrPrintTemplate';
+import { FireAlarmPrintTemplate } from './FireAlarmPrintTemplate';
+import { DomesticFireAlarmPrintTemplate } from './DomesticFireAlarmPrintTemplate';
 
 function CertificateFooter({ branding, certificateNumber }: { branding: CompanyBranding; certificateNumber: string }) {
   const primary = branding.footer_text?.trim()
@@ -189,231 +185,6 @@ export function CertificatePrintTemplate({
   );
 }
 
-function FireAlarmPrintTemplate({
-  certificate,
-  branding,
-}: {
-  certificate: ElectricalCertificate;
-  branding: CompanyBranding;
-}) {
-  const fa = certificate.document.fireAlarm;
-  if (!fa) return null;
-  const sections = [...new Set(FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.map((i) => i.section))];
-
-  return (
-    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
-      <CertificateBrandedHeader
-        branding={branding}
-        title="Fire Alarm Inspection & Servicing Report"
-        subtitle="BS 5839-1:2025"
-        certificateNumber={certificate.certificate_number}
-      />
-      <section className="mb-6">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Client &amp; installation</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            <PrintRow label="Client" value={certificate.customer_full_name ?? '—'} />
-            <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
-            <PrintRow label="Occupier" value={fa.installation.occupierName} />
-            <PrintRow label="Details of system" value={fa.installation.detailsOfSystem} />
-            <PrintRow label="Extent" value={fa.installation.extentOfSystem} />
-          </tbody>
-        </table>
-      </section>
-      <section className="mb-6">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Summary</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            <PrintRow label="Overall assessment" value={fa.summary.overallAssessment} />
-            <PrintRow label="Next inspection" value={fa.summary.nextInspectionDate || fa.summary.nextInspectionPreset} />
-            <PrintRow label="Inspected by" value={fa.declaration.inspectedBy} />
-            <PrintRow label="Inspector position" value={fa.declaration.inspectedPosition} />
-            <PrintRow label="Inspection date" value={fa.declaration.inspectionDate} />
-            <PrintRow label="Authorised by" value={fa.declaration.authorisedBy} />
-            <PrintRow label="Authorised position" value={fa.declaration.authorisedPosition} />
-            <PrintRow label="Authorised date" value={fa.declaration.authorisedDate} />
-          </tbody>
-        </table>
-      </section>
-      {fa.variations.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Variations</h2>
-          <ul className="list-disc pl-5 text-sm">
-            {fa.variations.map((v) => (
-              <li key={v.id}>
-                <strong>{v.code || '—'}</strong> {v.location}: {v.details}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {sections.map((sec) => {
-        const items = FIRE_ALARM_INSPECTION_SCHEDULE_ITEMS.filter((i) => i.section === sec);
-        return (
-          <section key={sec} className="mb-4 break-inside-avoid">
-            <h3 className="mb-1 font-bold">
-              {sec}. {FIRE_ALARM_SECTION_LABELS[sec]}
-            </h3>
-            <table className="w-full border-collapse text-[9px]">
-              <thead>
-                <tr className="bg-slate-100">
-                  <th className="border border-slate-300 px-1 py-0.5">Ref</th>
-                  <th className="border border-slate-300 px-1 py-0.5">Item</th>
-                  <th className="border border-slate-300 px-1 py-0.5">Outcome</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="border border-slate-200 px-1 font-mono">{item.id}</td>
-                    <td className="border border-slate-200 px-1">{item.label}</td>
-                    <td className="border border-slate-200 px-1 text-center font-bold">
-                      {FIRE_ALARM_OUTCOME_LABELS[fa.inspectionSchedule[item.id] ?? '']}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        );
-      })}
-      {certificate.document.appendix.content.trim() && (
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
-          <p className="whitespace-pre-wrap text-sm">{certificate.document.appendix.content}</p>
-        </section>
-      )}
-      {certificate.document.appendix.photos.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix photographs</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {certificate.document.appendix.photos.map((p) => (
-              <figure key={p.id}>
-                <img src={p.dataUrl} alt={p.caption} className="max-h-48 w-full object-contain" />
-                {p.caption && <figcaption className="mt-1 text-xs text-slate-600">{p.caption}</figcaption>}
-              </figure>
-            ))}
-          </div>
-        </section>
-      )}
-      <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
-    </div>
-  );
-}
-
-function DomesticFireAlarmPrintTemplate({
-  certificate,
-  branding,
-}: {
-  certificate: ElectricalCertificate;
-  branding: CompanyBranding;
-}) {
-  const domestic = certificate.document.domesticFireAlarm;
-  if (!domestic) return null;
-  const sections = [...new Set(DOMESTIC_FIRE_ALARM_CHECKLIST_ITEMS.map((i) => i.section))];
-
-  return (
-    <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
-      <CertificateBrandedHeader
-        branding={branding}
-        title="Domestic Fire Alarm Inspection and Servicing Report"
-        subtitle={`Standard: ${DOMESTIC_FIRE_ALARM_STANDARD} | Revision: ${DOMESTIC_FIRE_ALARM_REVISION}`}
-        certificateNumber={certificate.certificate_number}
-      />
-      <section className="mb-6">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Installation details</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            <PrintRow label="Client" value={certificate.customer_full_name ?? '-'} />
-            <PrintRow label="Installation" value={certificate.installation_label ?? '-'} />
-            <PrintRow label="Occupier" value={domestic.installation.occupierName} />
-            <PrintRow label="System grade" value={domestic.installation.systemGrade} />
-            <PrintRow label="System category" value={domestic.installation.systemCategory} />
-            <PrintRow label="Overall assessment" value={domestic.summary.overallAssessment} />
-            <PrintRow label="Next inspection" value={domestic.summary.nextInspectionDate || domestic.summary.nextInspectionPreset} />
-            <PrintRow label="Extent" value={domestic.installation.extentOfSystem} />
-            <PrintRow label="Limitations" value={domestic.installation.limitations} />
-            <PrintRow label="General condition" value={domestic.installation.generalCondition} />
-          </tbody>
-        </table>
-      </section>
-      <section className="mb-6">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Declaration</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            <PrintRow label="Inspected by" value={domestic.declaration.inspectedBy} />
-            <PrintRow label="Inspector position" value={domestic.declaration.inspectedPosition} />
-            <PrintRow label="Inspection date" value={domestic.declaration.inspectionDate} />
-            <PrintRow label="Authorised by" value={domestic.declaration.authorisedBy} />
-            <PrintRow label="Authorised position" value={domestic.declaration.authorisedPosition} />
-            <PrintRow label="Authorised date" value={domestic.declaration.authorisedDate} />
-          </tbody>
-        </table>
-      </section>
-      {domestic.variations.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Variations</h2>
-          <ul className="list-disc pl-5 text-sm">
-            {domestic.variations.map((v) => (
-              <li key={v.id}><strong>{v.code || '-'}</strong> {v.location}: {v.details}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <section className="mb-6 break-inside-avoid">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Checklist</h2>
-        {sections.map((sec) => {
-          const items = DOMESTIC_FIRE_ALARM_CHECKLIST_ITEMS.filter((i) => i.section === sec);
-          return (
-            <div key={sec} className="mb-4">
-              <h3 className="text-xs font-bold text-slate-700">{DOMESTIC_FIRE_ALARM_CHECKLIST_SECTION_LABELS[sec]}</h3>
-              <table className="mt-1 w-full border-collapse text-[9px]">
-                <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td className="border border-slate-200 px-1">{item.label}</td>
-                      <td className="w-14 border border-slate-200 px-1 text-center font-bold">
-                        {DOMESTIC_FIRE_ALARM_CHECKLIST_OUTCOME_LABELS[domestic.checklist[item.id] ?? '']}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        })}
-      </section>
-      <section className="mb-6">
-        <h2 className="mb-2 border-b border-slate-300 font-bold">Detectors</h2>
-        <table className="w-full border-collapse text-[9px]">
-          <thead><tr className="bg-slate-100">{['Ref', 'Location', 'Make', 'Model', 'Type', 'Power', 'Interlink', 'Fit'].map((h) => <th key={h} className="border border-slate-300 px-1 py-0.5 text-left">{h}</th>)}</tr></thead>
-          <tbody>
-            {domestic.detectors.map((d) => (
-              <tr key={d.id}>
-                <td className="border border-slate-200 px-1">{d.reference}</td>
-                <td className="border border-slate-200 px-1">{d.location}</td>
-                <td className="border border-slate-200 px-1">{d.make}</td>
-                <td className="border border-slate-200 px-1">{d.model}</td>
-                <td className="border border-slate-200 px-1">{d.detectorTypes.join(', ')}</td>
-                <td className="border border-slate-200 px-1">{d.powerSource}</td>
-                <td className="border border-slate-200 px-1">{d.interlink}</td>
-                <td className="border border-slate-200 px-1">{d.fitForContinuedService.toUpperCase()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      {certificate.document.appendix.content.trim() && (
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
-          <p className="whitespace-pre-wrap text-sm">{certificate.document.appendix.content}</p>
-        </section>
-      )}
-      <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
-    </div>
-  );
-}
-
 function DomesticFireAlarmInstPrintTemplate({
   certificate,
   branding,
@@ -562,7 +333,7 @@ function PatPrintTemplate({ certificate, branding }: { certificate: ElectricalCe
                 <td className="border border-slate-200 px-1">{row.location}</td>
                 <td className="border border-slate-200 px-1">{row.serialNo || 'N/A'}</td>
                 <td className="border border-slate-200 px-1">{row.retestPeriod}</td>
-                <td className="border border-slate-200 px-1 font-bold">{row.status ? row.status[0].toUpperCase() + row.status.slice(1) : '—'}</td>
+                <td className="border border-slate-200 px-1 text-center"><PassFailOutcomeBadge value={row.status} /></td>
               </tr>
             ))}
           </tbody>
@@ -703,8 +474,6 @@ function MinorWorksPrintTemplate({ certificate, branding }: { certificate: Elect
 function FireExtinguisherPrintTemplate({ certificate, branding }: { certificate: ElectricalCertificate; branding: CompanyBranding }) {
   const fire = certificate.document.fireExtinguisher;
   if (!fire) return null;
-  const checklistOutcome = (value: string) => FIRE_EXTINGUISHER_CHECKLIST_OUTCOME_LABELS[value] ?? '—';
-  const blanketOutcome = (value: string) => FIRE_EXTINGUISHER_BLANKET_OUTCOME_LABELS[value] ?? '—';
   const typeLabel = (value: string) => FIRE_EXTINGUISHER_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
   const capacityLabel = (item: (typeof fire.extinguishers)[number]) =>
     [item.capacity, item.capacityUnit].filter(Boolean).join(' ') || '—';
@@ -760,7 +529,7 @@ function FireExtinguisherPrintTemplate({ certificate, branding }: { certificate:
           item.make,
           item.installationDateUnknown ? 'Unknown' : item.installationDate,
           item.expiryDate,
-          blanketOutcome(item.outcome),
+          <PassFailOutcomeBadge key={`${item.id}-outcome`} value={item.outcome} />,
           item.notes,
         ])}
       />
@@ -772,7 +541,9 @@ function FireExtinguisherPrintTemplate({ certificate, branding }: { certificate:
               {FIRE_EXTINGUISHER_CHECKLIST_ITEMS.map((item) => (
                 <tr key={item.id}>
                   <td className="border border-slate-200 px-1 py-0.5">{item.label}</td>
-                  <td className="border border-slate-200 px-1 py-0.5 font-bold">{checklistOutcome(fire.checklist[item.id] ?? '')}</td>
+                  <td className="border border-slate-200 px-1 py-0.5 text-center">
+                    <PassFailOutcomeBadge value={fire.checklist[item.id] ?? ''} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -785,7 +556,7 @@ function FireExtinguisherPrintTemplate({ certificate, branding }: { certificate:
   );
 }
 
-function FireEquipmentTable({ title, headers, rows }: { title: string; headers: string[]; rows: string[][] }) {
+function FireEquipmentTable({ title, headers, rows }: { title: string; headers: string[]; rows: ReactNode[][] }) {
   if (!rows.length) return null;
   return (
     <section className="mb-6">

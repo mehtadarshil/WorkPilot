@@ -750,9 +750,11 @@ export function createDefaultDocument(typeSlug: ElectricalCertificateDocument['t
       inspectedBy: '',
       inspectedPosition: '',
       inspectedDate: today,
+      inspectedBySignatureDataUrl: '',
       authorisedBy: '',
       authorisedPosition: '',
       authorisedDate: today,
+      authorisedBySignatureDataUrl: '',
       reinspectionPeriod: '5 years',
     },
     observations: {

@@ -108,7 +108,7 @@ class _CircuitCellState extends State<CircuitCell> {
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       isDense: true,
     );
 

@@ -534,9 +534,11 @@ export interface ElectricalCertificateDocument {
     inspectedBy: string;
     inspectedPosition: string;
     inspectedDate: string;
+    inspectedBySignatureDataUrl: string;
     authorisedBy: string;
     authorisedPosition: string;
     authorisedDate: string;
+    authorisedBySignatureDataUrl: string;
     reinspectionPeriod: string;
   };
   observations: {

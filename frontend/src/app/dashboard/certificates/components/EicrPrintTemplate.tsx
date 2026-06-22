@@ -1,65 +1,26 @@
 'use client';
 
 import type { CompanyBranding } from '@/lib/electricalCertificates/companyBranding';
+import { AssessmentBanner } from '@/lib/electricalCertificates/certificatePrint/AssessmentBanner';
+import {
+  BoardDetailsGrid,
+  BoardTestingFooter,
+  CircuitScheduleTable,
+} from '@/lib/electricalCertificates/certificatePrint/CircuitScheduleTable';
+import { EICR_RECIPIENT_GUIDANCE, EICR_RECOMMENDATIONS_INTRO } from '@/lib/electricalCertificates/certificatePrint/eicrGuidance';
+import { InspectionOutcomeBadge } from '@/lib/electricalCertificates/certificatePrint/InspectionOutcomeBadge';
+import { InspectionScheduleLegend } from '@/lib/electricalCertificates/certificatePrint/InspectionScheduleLegend';
+import { ObservationSummaryGrid } from '@/lib/electricalCertificates/certificatePrint/ObservationSummaryGrid';
+import { PrintPageFooter } from '@/lib/electricalCertificates/certificatePrint/PrintPageFooter';
+import { DeclarationSignatoryRow } from '@/lib/electricalCertificates/certificatePrint/DeclarationSignatory';
+import { CERTIFICATE_PRINT_CSS } from '@/lib/electricalCertificates/certificatePrint/printStyles.css';
+import { SupplyParticularsGrid } from '@/lib/electricalCertificates/certificatePrint/SupplyParticularsGrid';
 import {
   INSPECTION_SCHEDULE_ITEMS,
   INSPECTION_SECTION_LABELS,
 } from '@/lib/electricalCertificates/inspectionScheduleItems';
-import type { CircuitRow, ElectricalCertificate, InspectionOutcome } from '@/lib/electricalCertificates/types';
+import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
 import { CertificateBrandedHeader } from './CertificateBrandedHeader';
-
-const OUTCOME_LABELS: Record<InspectionOutcome, string> = {
-  '': '—',
-  pass: '✓',
-  c1: 'C1',
-  c2: 'C2',
-  c3: 'C3',
-  fi: 'FI',
-  lim: 'LIM',
-  nv: 'N/V',
-  na: 'N/A',
-  x: 'X',
-};
-
-const CIRCUIT_SCHEDULE_COLUMNS = [
-  ['No', 'circuitNumber'],
-  ['Description', 'description'],
-  ['No. points', 'points'],
-  ['Wiring type', 'wiringType'],
-  ['Ref method', 'refMethod'],
-  ['Live mm²', 'liveMm2'],
-  ['CPC mm²', 'cpcMm2'],
-  ['Max disconnect secs', 'maxDisconnectTime'],
-  ['OCPD BS (EN)', 'ocpdBs'],
-  ['OCPD Type', 'ocpdType'],
-  ['OCPD A', 'ocpdRatingA'],
-  ['Breaking kA', 'ocpdBreakingKa'],
-  ['Max Zs Ω', 'maxZs'],
-  ['RCD BS (EN)', 'rcdBs'],
-  ['RCD Type', 'rcdType'],
-  ['IΔn mA', 'rcdRatingMa'],
-  ['RCD A', 'rcdRatingA'],
-  ['r1 Ω', 'ringR1'],
-  ['rn Ω', 'ringRn'],
-  ['r2 Ω', 'ringR2End'],
-  ['R1+R2 Ω', 'r1r2'],
-  ['R2 Ω', 'r2'],
-  ['IR V', 'insulationTestVoltage'],
-  ['IR L-L MΩ', 'insulationLL'],
-  ['IR L-E MΩ', 'insulationLE'],
-  ['Polarity', 'polarity'],
-  ['Measured Zs Ω', 'zs'],
-  ['RCD ms', 'rcdTripMs'],
-  ['AFDD', 'afdd'],
-  ['Remarks', 'remarks'],
-] as const;
-
-type CircuitScheduleKey = (typeof CIRCUIT_SCHEDULE_COLUMNS)[number][1];
-
-function circuitValue(circuit: CircuitRow, key: CircuitScheduleKey): string {
-  if (key === 'insulationLE') return circuit.insulationLE || circuit.insulation || '';
-  return circuit[key] ?? '';
-}
 
 export function EicrPrintTemplate({
   certificate,
@@ -72,82 +33,161 @@ export function EicrPrintTemplate({
   const inst = doc.installation;
   const sup = doc.supply;
   const sections = [...new Set(INSPECTION_SCHEDULE_ITEMS.map((item) => item.section))];
+  const clientLabel = inst.hideClientOnReport ? 'Withheld' : (certificate.customer_full_name ?? '—');
 
   return (
     <>
       <style jsx global>{`
+        ${CERTIFICATE_PRINT_CSS}
         @page eicrCircuitSchedule {
           size: A4 landscape;
           margin: 6mm;
+        }
+        @page {
+          margin: 10mm 10mm 16mm 10mm;
         }
         .eicr-circuit-page {
           page: eicrCircuitSchedule;
           break-before: page;
           break-after: page;
         }
+        .eicr-inspection-schedule th {
+          background: #111;
+          color: #fff;
+        }
       `}</style>
-      <div className="mx-auto max-w-[210mm] bg-white p-8 text-sm text-black print:p-6">
-        <CertificateBrandedHeader branding={branding} certificateNumber={certificate.certificate_number} />
 
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Certificate details</h2>
-          <table className="w-full text-sm">
-            <tbody>
-              <PrintRow label="Client" value={inst.hideClientOnReport ? 'Withheld' : (certificate.customer_full_name ?? '—')} />
-              <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
-              {certificate.job_number && <PrintRow label="Job" value={certificate.job_number} />}
-              <PrintRow label="Reason" value={inst.reason} />
-              <PrintRow label="Inspection date" value={inst.inspectionDate} />
-              <PrintRow label="Premises" value={inst.premisesType} />
-              <PrintRow label="Overall assessment" value={inst.overallAssessment} />
-              <PrintRow label="General condition" value={inst.generalCondition} />
-              <PrintRow label="Extent" value={inst.extent} />
-              <PrintRow label="Reinspection" value={inst.reinspectionPeriod} />
-            </tbody>
-          </table>
+      <div className="mx-auto max-w-[210mm] bg-white text-sm text-black print:p-0">
+        <div className="p-8 print:p-6">
+          <CertificateBrandedHeader branding={branding} certificateNumber={certificate.certificate_number} />
+        </div>
+
+        {/* Page 1 — Cover details */}
+        <section className="cert-print-page px-8 print:px-6">
+          <SectionTitle>Details of client or person ordering report</SectionTitle>
+          <KvTable>
+            <PrintRow label="Client" value={clientLabel} />
+            <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
+            {certificate.job_number && <PrintRow label="Job" value={certificate.job_number} />}
+          </KvTable>
+
+          <SectionTitle>Reason for producing this report</SectionTitle>
+          <KvTable>
+            <PrintRow label="Reason" value={inst.reason} />
+            <PrintRow label="Date inspection carried out" value={inst.inspectionDate} />
+          </KvTable>
+
+          <SectionTitle>Details of the installation</SectionTitle>
+          <KvTable>
+            <PrintRow label="Occupier name" value={inst.occupierName} />
+            <PrintRow label="Description of premises" value={inst.premisesType} />
+            <PrintRow label="Installation records available" value={inst.recordsAvailable} />
+            <PrintRow label="Date of previous inspection" value={inst.previousInspectionDate} />
+            <PrintRow label="Previous certificate number" value={inst.previousCertNumber} />
+            <PrintRow label="Evidence of additions/alterations" value={inst.alterationsEvidence} />
+            <PrintRow label="Estimated age of installation" value={inst.estimatedAge} />
+          </KvTable>
+
+          <SectionTitle>Extent and limitations of inspection and testing</SectionTitle>
+          <KvTable>
+            <PrintRow label="Extent covered" value={inst.extent} />
+            <PrintRow label="Agreed limitations" value={inst.agreedLimitations} />
+            <PrintRow label="Agreed with" value={inst.agreedWith} />
+            <PrintRow label="Operational limitations" value={inst.operationalLimitations} />
+          </KvTable>
+
+          <SectionTitle>Summary of the condition of the installation</SectionTitle>
+          <AssessmentBanner
+            label="Overall assessment of the installation in terms of its suitability for continued use"
+            value={inst.overallAssessment}
+          />
+          <div className="cp-recommendations">
+            <strong>Recommendations</strong>
+            <p className="mt-1">{EICR_RECOMMENDATIONS_INTRO}</p>
+            {inst.reinspectionPeriod.trim() && (
+              <p className="mt-2">
+                <strong>Recommended re-inspection:</strong> {inst.reinspectionPeriod}
+              </p>
+            )}
+          </div>
         </section>
 
-        {doc.observations.items.length > 0 && (
-          <section className="mb-6">
-            <h2 className="mb-2 border-b border-slate-300 font-bold">Observations</h2>
-            <ul className="list-disc pl-5">
-              {doc.observations.items.map((observation) => (
-                <li key={observation.id}>
-                  <strong>{observation.code.toUpperCase()}</strong> {observation.location}: {observation.details}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Supply characteristics</h2>
-          <table className="w-full text-sm">
-            <tbody>
-              <PrintRow label="Earthing" value={sup.earthing} />
-              <PrintRow label="Ze (Ω)" value={sup.ze} />
-              <PrintRow label="Ipf" value={sup.ipf} />
-              <PrintRow label="Phases" value={sup.phases} />
-              <PrintRow label="U / Uo" value={`${sup.nominalU} / ${sup.nominalUo}`} />
-            </tbody>
-          </table>
+        {/* Page 2 — Observations */}
+        <section className="cert-print-page px-8 print:px-6">
+          <SectionTitle>Observations and recommendations</SectionTitle>
+          <p className="mb-2 text-xs text-slate-600">
+            One of the following codes has been allocated to each observation to indicate the degree of urgency for remedial action.
+          </p>
+          <ObservationSummaryGrid items={doc.observations.items} />
+          {doc.observations.items.length > 0 ? (
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="border border-slate-400 px-2 py-1">No.</th>
+                  <th className="border border-slate-400 px-2 py-1 text-left">Observation</th>
+                  <th className="border border-slate-400 px-2 py-1">Code</th>
+                </tr>
+              </thead>
+              <tbody>
+                {doc.observations.items.map((observation, i) => (
+                  <tr key={observation.id}>
+                    <td className="border border-slate-200 px-2 py-1 text-center">{i + 1}</td>
+                    <td className="border border-slate-200 px-2 py-1">
+                      {observation.location}: {observation.details}
+                    </td>
+                    <td className="border border-slate-200 px-2 py-1 text-center">
+                      <InspectionOutcomeBadge outcome={observation.code} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-slate-600">No remedial action is required</p>
+          )}
         </section>
 
-        <section className="mb-6 break-before-page">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Inspection schedule</h2>
+        {/* Page 3 — Declaration + supply */}
+        <section className="cert-print-page px-8 print:px-6">
+          <AssessmentBanner label="General condition of the installation" value={inst.generalCondition} />
+          <SectionTitle>Declaration</SectionTitle>
+          <div className="cp-signatory-grid">
+            <DeclarationSignatoryRow
+              title="Inspected and tested by"
+              name={inst.inspectedBy}
+              position={inst.inspectedPosition}
+              date={inst.inspectedDate}
+              signatureDataUrl={inst.inspectedBySignatureDataUrl ?? ''}
+            />
+            <DeclarationSignatoryRow
+              title="Report authorised by"
+              name={inst.authorisedBy}
+              position={inst.authorisedPosition}
+              date={inst.authorisedDate}
+              signatureDataUrl={inst.authorisedBySignatureDataUrl ?? ''}
+            />
+          </div>
+          <SectionTitle>Supply characteristics and earthing arrangements</SectionTitle>
+          <SupplyParticularsGrid supply={sup} />
+        </section>
+
+        {/* Inspection schedule */}
+        <section className="cert-print-page px-8 print:px-6">
+          <SectionTitle>Inspection schedule</SectionTitle>
+          <InspectionScheduleLegend />
           {sections.map((section) => {
             const items = INSPECTION_SCHEDULE_ITEMS.filter((item) => item.section === section);
             return (
               <div key={section} className="mb-4 break-inside-avoid">
-                <h3 className="text-xs font-bold text-slate-700">
+                <h3 className="cp-schedule-section-title">
                   {section}. {INSPECTION_SECTION_LABELS[section]}
                 </h3>
-                <table className="mt-1 w-full border-collapse text-[8px]">
+                <table className="eicr-inspection-schedule mt-1 w-full border-collapse text-[8px]">
                   <thead>
-                    <tr className="bg-slate-100">
+                    <tr>
                       <th className="w-10 border border-slate-300 px-1 py-0.5">Item no</th>
                       <th className="border border-slate-300 px-1 py-0.5 text-left">Description</th>
-                      <th className="w-10 border border-slate-300 px-1 py-0.5">Outcome</th>
+                      <th className="w-12 border border-slate-300 px-1 py-0.5">Outcome</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -155,8 +195,8 @@ export function EicrPrintTemplate({
                       <tr key={item.id}>
                         <td className="border border-slate-200 px-1 font-mono text-slate-500">{item.id}</td>
                         <td className="border border-slate-200 px-1">{item.label}</td>
-                        <td className="border border-slate-200 px-1 text-center font-bold">
-                          {OUTCOME_LABELS[doc.inspectionSchedule[item.id] ?? '']}
+                        <td className="border border-slate-200 px-1 text-center">
+                          <InspectionOutcomeBadge outcome={doc.inspectionSchedule[item.id] ?? ''} />
                         </td>
                       </tr>
                     ))}
@@ -168,115 +208,53 @@ export function EicrPrintTemplate({
         </section>
 
         {doc.appendix.content.trim() && (
-          <section className="mb-6">
-            <h2 className="mb-2 border-b border-slate-300 font-bold">Appendix</h2>
+          <section className="px-8 print:px-6">
+            <SectionTitle>Appendix</SectionTitle>
             <p className="whitespace-pre-wrap">{doc.appendix.content}</p>
           </section>
         )}
 
-        <section className="mb-6">
-          <h2 className="mb-2 border-b border-slate-300 font-bold">Declaration</h2>
-          <table className="w-full text-sm">
-            <tbody>
-              <PrintRow label="Inspected and tested by" value={inst.inspectedBy} />
-              <PrintRow label="Inspector position" value={inst.inspectedPosition} />
-              <PrintRow label="Inspected date" value={inst.inspectedDate} />
-              <PrintRow label="Authorised for issue by" value={inst.authorisedBy} />
-              <PrintRow label="Authorised position" value={inst.authorisedPosition} />
-              <PrintRow label="Authorised date" value={inst.authorisedDate} />
-            </tbody>
-          </table>
+        <section className="cert-print-page px-8 print:px-6">
+          <SectionTitle>Guidance for recipients</SectionTitle>
+          <div className="cp-guidance">{EICR_RECIPIENT_GUIDANCE}</div>
+          <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
         </section>
-
-        <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
       </div>
 
       {doc.boards.map((board) => (
-        <section key={board.id} className="eicr-circuit-page mx-auto w-[297mm] bg-white p-4 text-[7px] text-black print:p-0">
-          <h2 className="mb-1 bg-black px-2 py-1 text-[9px] font-bold uppercase text-white">
-            Distribution Board - {board.name}
-          </h2>
-          <table className="mb-1 w-full table-fixed border-collapse text-[6px]">
-            <tbody>
-              <tr>
-                <BoardCell label="Location" value={board.location} />
-                <BoardCell label="Manufacturer" value={board.manufacturer} />
-                <BoardCell label="Supplied from" value={board.suppliedFrom} />
-                <BoardCell label="Polarity confirmed" value={board.polarityConfirmed} />
-                <BoardCell label="Phases" value={board.phases} />
-                <BoardCell label="Phase seq" value={board.phaseSequence} />
-              </tr>
-              <tr>
-                <BoardCell label="Zs at DB" value={board.zsAtDb ? `${board.zsAtDb} Ω` : ''} />
-                <BoardCell label="IPF at DB" value={board.ipfAtDb ? `${board.ipfAtDb} kA` : ''} />
-                <BoardCell label="Main switch" value={[board.mainSwitchBs, board.mainSwitchVoltage, board.mainSwitchRating].filter(Boolean).join(' / ')} />
-                <BoardCell label="RCD" value={[board.rcdRating, board.rcdTripTime].filter(Boolean).join(' / ')} />
-                <BoardCell label="SPD" value={[board.spdType, board.spdStatus].filter(Boolean).join(' / ')} />
-                <BoardCell label="OCPD" value={[board.ocpdBs, board.ocpdVoltage, board.ocpdRating].filter(Boolean).join(' / ')} />
-              </tr>
-              {board.notes.trim() && (
-                <tr>
-                  <td colSpan={6} className="border border-slate-400 bg-slate-50 px-1 py-0.5">
-                    <strong>Notes:</strong> {board.notes}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          <table className="w-full table-fixed border-collapse text-[5.5px] leading-tight">
-            <thead>
-              <tr className="bg-slate-200">
-                {CIRCUIT_SCHEDULE_COLUMNS.map(([label]) => (
-                  <th key={label} className="break-words border border-slate-400 px-0.5 py-0.5 text-center align-middle font-bold">
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {board.circuits.length > 0 ? (
-                board.circuits.map((circuit) => (
-                  <tr key={circuit.id} className="break-inside-avoid">
-                    {CIRCUIT_SCHEDULE_COLUMNS.map(([label, key]) => (
-                      <td
-                        key={label}
-                        className="break-words border border-slate-300 px-0.5 py-0.5 text-center align-middle"
-                      >
-                        {circuitValue(circuit, key)}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={CIRCUIT_SCHEDULE_COLUMNS.length} className="border border-slate-300 px-1 py-1 text-center text-slate-500">
-                    No circuits recorded
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <section key={board.id} className="eicr-circuit-page mx-auto w-[297mm] bg-white p-4 text-black print:p-3">
+          <h2 className="cp-board-title">Distribution Board — {board.name}</h2>
+          <BoardDetailsGrid board={board} />
+          <CircuitScheduleTable circuits={board.circuits} />
+          <BoardTestingFooter
+            boardName={board.name}
+            testedBy={inst.inspectedBy}
+            position={inst.inspectedPosition}
+            testedDate={inst.inspectedDate}
+          />
         </section>
       ))}
+
+      <PrintPageFooter certificateNumber={certificate.certificate_number} />
     </>
   );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="mb-2 mt-4 border-b border-slate-300 font-bold first:mt-0">{children}</h2>;
+}
+
+function KvTable({ children }: { children: React.ReactNode }) {
+  return <table className="mb-2 w-full text-sm"><tbody>{children}</tbody></table>;
 }
 
 function PrintRow({ label, value }: { label: string; value: string }) {
   if (!value?.trim()) return null;
   return (
     <tr>
-      <td className="w-40 py-0.5 font-semibold text-slate-600">{label}</td>
+      <td className="w-44 py-0.5 font-semibold text-slate-600">{label}</td>
       <td className="py-0.5">{value}</td>
     </tr>
-  );
-}
-
-function BoardCell({ label, value }: { label: string; value: string }) {
-  return (
-    <td className="border border-slate-400 bg-slate-50 px-1 py-0.5 align-top">
-      <strong>{label}:</strong> {value || '—'}
-    </td>
   );
 }
 

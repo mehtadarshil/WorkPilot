@@ -33,7 +33,10 @@ import { CircuitsGrid } from './CircuitsGrid';
 import { CircuitsToolbar } from './CircuitsToolbar';
 import { FindReplaceModal } from './FindReplaceModal';
 import { PasteCircuitsModal } from './PasteCircuitsModal';
+import { CircuitQuickAddModal } from './CircuitQuickAddModal';
 import { CertificatePhotoGallery } from './CertificatePhotoGallery';
+import { buildCircuitFromQuickAddTemplate } from '@/lib/electricalCertificates/circuitQuickAdd';
+import type { CircuitQuickAddTemplate } from '@/lib/electricalCertificates/circuitQuickAddTemplates';
 
 const BOARD_PHASE_OPTIONS = ['1', '2', '3', 'na', 'Other'].map((value) => ({
   value,
@@ -95,6 +98,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
   const base = `/dashboard/certificates/${certificate.id}`;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const readOnly = board?.status === 'done';
 
@@ -150,6 +154,12 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
     setCircuits([...board.circuits, ...added]);
   };
 
+  const addCircuitFromTemplate = (template: CircuitQuickAddTemplate) => {
+    const circuitNumber = String(board.circuits.length + 1);
+    const circuit = buildCircuitFromQuickAddTemplate(template, board, circuitNumber);
+    setCircuits([...board.circuits, circuit]);
+  };
+
   const markDone = () => {
     patchBoard({ status: board.status === 'done' ? 'in_progress' : 'done' });
   };
@@ -181,8 +191,8 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
   };
 
   return (
-    <TradecertFormLayout>
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <TradecertFormLayout wide>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href={`${base}/boards`} className="inline-flex items-center gap-1 text-sm font-semibold text-[#14B8A6]">
           <ChevronLeft className="size-4" /> Back
@@ -288,13 +298,14 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
         </TradecertPanel>
       )}
 
-      <TradecertPanel title="Circuit schedule">
-        <CircuitsToolbar
+      <TradecertPanel title="Circuit schedule" flush>
+        <div className="border-b border-slate-100 px-3 py-2">
+          <CircuitsToolbar
           board={board}
           readOnly={readOnly}
           onFindReplace={() => setFindReplaceOpen(true)}
           onPaste={() => setPasteOpen(true)}
-          onQuickAdd={(n) => addCircuits(n)}
+          onOpenQuickAdd={() => setQuickAddOpen(true)}
           onAdd={() => addCircuits(1)}
           onRenumber={() => {
             setCircuits(renumberCircuitsSmart(board.circuits));
@@ -335,7 +346,8 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             ]);
           }}
         />
-        <div className="mt-3 min-h-0 flex-1">
+        </div>
+        <div className="w-full min-h-[calc(100vh-17rem)]">
           <CircuitsGrid
             boardId={boardId}
             board={board}
@@ -345,6 +357,11 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
           />
         </div>
       </TradecertPanel>
+      <CircuitQuickAddModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onSelect={addCircuitFromTemplate}
+      />
       <FindReplaceModal
         open={findReplaceOpen}
         onClose={() => setFindReplaceOpen(false)}

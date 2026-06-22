@@ -42,6 +42,10 @@ interface DiaryEvent {
   site_contact_name?: string | null;
   charge_type?: string;
   is_free_job?: boolean;
+  notes?: string | null;
+  job_number?: string | null;
+  description?: string | null;
+  customer_email?: string | null;
 }
 
 interface Officer {
@@ -169,6 +173,8 @@ export default function DiaryPage() {
   const [diaryTimelineScrollHints, setDiaryTimelineScrollHints] = useState({ left: false, right: false });
   const [diaryTimelineHasOverflow, setDiaryTimelineHasOverflow] = useState(false);
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [hoveredEvent, setHoveredEvent] = useState<DiaryEvent | null>(null);
+  const [hoveredPos, setHoveredPos] = useState<{ x: number; y: number } | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -396,7 +402,19 @@ export default function DiaryPage() {
                           <div
                             key={evt.diary_id}
                             onClick={(e) => e.stopPropagation()}
-                            className="truncate rounded border border-slate-100 bg-slate-50 px-1 py-0.5 text-[10px] leading-tight text-slate-700"
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setHoveredEvent(evt);
+                              setHoveredPos({
+                                x: rect.left + rect.width / 2,
+                                y: rect.top,
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredEvent(null);
+                              setHoveredPos(null);
+                            }}
+                            className="truncate rounded border border-slate-100 bg-slate-50 px-1 py-0.5 text-[10px] leading-tight text-slate-700 cursor-help"
                           >
                             <span className="font-semibold text-slate-600">
                               {format(new Date(evt.start_time), 'HH:mm')}
@@ -489,8 +507,20 @@ export default function DiaryPage() {
                                     return (
                                       <div
                                         key={evt.diary_id}
-                                        className="shrink-0 rounded border border-l-4 border-slate-200 border-l-slate-400 bg-white p-1 text-[10px] leading-tight shadow-sm"
+                                        className="shrink-0 rounded border border-l-4 border-slate-200 border-l-slate-400 bg-white p-1 text-[10px] leading-tight shadow-sm cursor-help"
                                         onClick={(ev) => ev.stopPropagation()}
+                                        onMouseEnter={(e) => {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setHoveredEvent(evt);
+                                          setHoveredPos({
+                                            x: rect.left + rect.width / 2,
+                                            y: rect.top,
+                                          });
+                                        }}
+                                        onMouseLeave={() => {
+                                          setHoveredEvent(null);
+                                          setHoveredPos(null);
+                                        }}
                                       >
                                         <div className="font-bold text-slate-700">
                                           {format(s, 'HH:mm')}
@@ -605,8 +635,20 @@ export default function DiaryPage() {
                                 return (
                                   <div
                                     key={evt.diary_id}
-                                    className="absolute top-1 bottom-1 z-30 flex flex-col overflow-hidden rounded border border-slate-200 border-l-4 border-l-slate-400 bg-white p-1.5 text-[11px] leading-tight opacity-90 shadow-sm transition-shadow hover:opacity-100 hover:shadow-md"
+                                    className="absolute top-1 bottom-1 z-30 flex flex-col overflow-hidden rounded border border-slate-200 border-l-4 border-l-slate-400 bg-white p-1.5 text-[11px] leading-tight opacity-90 shadow-sm transition-shadow hover:opacity-100 hover:shadow-md cursor-help"
                                     style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                                    onMouseEnter={(e) => {
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setHoveredEvent(evt);
+                                      setHoveredPos({
+                                        x: rect.left + rect.width / 2,
+                                        y: rect.top,
+                                      });
+                                    }}
+                                    onMouseLeave={() => {
+                                      setHoveredEvent(null);
+                                      setHoveredPos(null);
+                                    }}
                                   >
                                     <div className="flex justify-between font-bold text-slate-700">
                                       <span>
@@ -835,6 +877,107 @@ export default function DiaryPage() {
                 <button type="submit" className="px-4 py-2 text-sm font-bold text-white bg-[#14B8A6] rounded hover:brightness-110">Save Event</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Detailed Hover Tooltip */}
+      {hoveredEvent && hoveredPos && (
+        <div
+          className="fixed z-[9999] w-80 rounded-xl bg-slate-900/95 backdrop-blur-md p-4 text-white shadow-2xl border border-slate-700/50 pointer-events-none transition-all duration-200"
+          style={{
+            left: `${hoveredPos.x}px`,
+            top: hoveredPos.y < 250 ? `${hoveredPos.y + 24}px` : `${hoveredPos.y - 12}px`,
+            transform: hoveredPos.y < 250 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+          }}
+        >
+          <div className="flex items-start justify-between gap-2 border-b border-slate-700/50 pb-2 mb-2">
+            <div className="flex-1 min-w-0">
+              <h4 className="font-bold text-sm text-white truncate">
+                {hoveredEvent.title || 'Untitled Visit'}
+              </h4>
+              {hoveredEvent.job_number && (
+                <span className="text-[10px] bg-slate-800 text-teal-400 font-bold px-1.5 py-0.5 rounded mt-1 inline-block">
+                  Job #{hoveredEvent.job_number}
+                </span>
+              )}
+            </div>
+            
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+              hoveredEvent.event_status === 'arrived_at_site' || hoveredEvent.event_status === 'arrived'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : hoveredEvent.event_status === 'travelling_to_site'
+                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                : hoveredEvent.event_status === 'completed'
+                ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                : hoveredEvent.event_status === 'cancelled' || hoveredEvent.event_status === 'aborted'
+                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+            }`}>
+              {hoveredEvent.event_status === 'arrived_at_site' || hoveredEvent.event_status === 'arrived'
+                ? '🟢 Arrived'
+                : hoveredEvent.event_status === 'travelling_to_site'
+                ? '🔵 En Route'
+                : hoveredEvent.event_status === 'completed'
+                ? '✅ Completed'
+                : hoveredEvent.event_status === 'cancelled' || hoveredEvent.event_status === 'aborted'
+                ? '❌ Cancelled'
+                : '📅 Scheduled'}
+            </span>
+          </div>
+
+          <div className="space-y-2 text-[11px] text-slate-300">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 font-medium">Time:</span>
+              <span>
+                {format(new Date(hoveredEvent.start_time), 'HH:mm')} -{' '}
+                {format(
+                  new Date(new Date(hoveredEvent.start_time).getTime() + hoveredEvent.duration_minutes * 60000),
+                  'HH:mm'
+                )}{' '}
+                ({hoveredEvent.duration_minutes}m)
+              </span>
+            </div>
+
+            <div className="flex items-start gap-1.5">
+              <span className="text-slate-400 font-medium shrink-0">Customer:</span>
+              <div className="truncate">
+                <p className="text-white font-medium">{hoveredEvent.customer_full_name}</p>
+                {hoveredEvent.customer_email && (
+                  <p className="text-slate-400 text-[10px] truncate">{hoveredEvent.customer_email}</p>
+                )}
+              </div>
+            </div>
+
+            {hoveredEvent.site_contact_name && hoveredEvent.site_contact_name !== hoveredEvent.customer_full_name && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-medium">Contact:</span>
+                <span>{hoveredEvent.site_contact_name}</span>
+              </div>
+            )}
+
+            <div className="flex items-start gap-1.5">
+              <span className="text-slate-400 font-medium shrink-0">Address:</span>
+              <span className="text-slate-200 line-clamp-2">{hoveredEvent.customer_address || 'Not listed'}</span>
+            </div>
+
+            <div className="flex items-start gap-1.5">
+              <span className="text-slate-400 font-medium shrink-0">Staff:</span>
+              <span className="text-white">
+                {hoveredEvent.officers && hoveredEvent.officers.length > 0
+                  ? hoveredEvent.officers.map((o) => o.full_name).join(', ')
+                  : hoveredEvent.officer_full_name || 'Unassigned'}
+              </span>
+            </div>
+
+            {hoveredEvent.notes && (
+              <div className="mt-1 pt-1.5 border-t border-slate-800/80">
+                <span className="text-slate-400 font-medium block mb-0.5">Notes:</span>
+                <p className="text-slate-200 italic line-clamp-3 bg-slate-800/50 p-1.5 rounded text-[10px]">
+                  {hoveredEvent.notes}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

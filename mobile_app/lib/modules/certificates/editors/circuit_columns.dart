@@ -44,39 +44,51 @@ const Map<String, List<String>> circuitColumnOptions = {
   'remarks': ['N/A', 'LIM', 'N/V', '---'],
 };
 
+const double circuitRowHeight = 44.0;
+
+const Set<String> stickyCircuitColumnKeys = {'actions', 'circuitNumber', 'description'};
+
 const Map<String, double> circuitColWidths = {
-  'actions': 96.0,
-  'circuitNumber': 50.0,
-  'description': 160.0,
-  'points': 80.0,
-  'wiringType': 100.0,
-  'refMethod': 85.0,
-  'liveMm2': 90.0,
-  'cpcMm2': 90.0,
-  'maxDisconnectTime': 90.0,
-  'ocpdBs': 110.0,
-  'ocpdType': 85.0,
-  'ocpdRatingA': 90.0,
-  'ocpdBreakingKa': 90.0,
-  'maxZs': 85.0,
-  'rcdBs': 110.0,
-  'rcdType': 80.0,
-  'rcdRatingMa': 80.0,
-  'rcdRatingA': 80.0,
-  'ringR1': 80.0,
-  'ringRn': 80.0,
-  'ringR2End': 80.0,
-  'r1r2': 85.0,
-  'r2': 80.0,
-  'insulationTestVoltage': 100.0,
-  'insulationLL': 80.0,
-  'insulationLE': 80.0,
-  'polarity': 80.0,
-  'zs': 85.0,
-  'rcdTripMs': 80.0,
-  'afdd': 80.0,
-  'remarks': 180.0,
+  'actions': 104.0,
+  'circuitNumber': 56.0,
+  'description': 200.0,
+  'points': 92.0,
+  'wiringType': 112.0,
+  'refMethod': 96.0,
+  'liveMm2': 96.0,
+  'cpcMm2': 96.0,
+  'maxDisconnectTime': 96.0,
+  'ocpdBs': 120.0,
+  'ocpdType': 92.0,
+  'ocpdRatingA': 96.0,
+  'ocpdBreakingKa': 96.0,
+  'maxZs': 92.0,
+  'rcdBs': 120.0,
+  'rcdType': 88.0,
+  'rcdRatingMa': 88.0,
+  'rcdRatingA': 88.0,
+  'ringR1': 88.0,
+  'ringRn': 88.0,
+  'ringR2End': 88.0,
+  'r1r2': 92.0,
+  'r2': 88.0,
+  'insulationTestVoltage': 108.0,
+  'insulationLL': 88.0,
+  'insulationLE': 88.0,
+  'polarity': 88.0,
+  'zs': 92.0,
+  'rcdTripMs': 88.0,
+  'afdd': 88.0,
+  'remarks': 200.0,
 };
+
+double stickyCircuitColumnsWidth() {
+  var total = 0.0;
+  for (final key in stickyCircuitColumnKeys) {
+    total += circuitColWidths[key] ?? 80.0;
+  }
+  return total;
+}
 
 const Map<String, String> circuitGroupLabels = {
   'conductors': 'Conductors',

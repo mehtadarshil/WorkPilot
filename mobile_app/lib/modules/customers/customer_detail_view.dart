@@ -366,6 +366,37 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                 ),
                               ),
                             ],
+                            if (ctStr(preview, 'site_notes').isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.amber.withOpacity(0.2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'SITE NOTES',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.8,
+                                        color: const Color(0xFFFBBF24),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      ctStr(preview, 'site_notes'),
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.82), height: 1.35),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ],
                       ),

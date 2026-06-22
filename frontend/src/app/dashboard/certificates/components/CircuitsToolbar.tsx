@@ -14,7 +14,7 @@ type Props = {
   readOnly?: boolean;
   onFindReplace: () => void;
   onPaste: () => void;
-  onQuickAdd: (n: number) => void;
+  onOpenQuickAdd: () => void;
   onAdd: () => void;
   onRenumber: () => void;
   onToggle100MaxZs: () => void;
@@ -29,7 +29,7 @@ export function CircuitsToolbar({
   readOnly = false,
   onFindReplace,
   onPaste,
-  onQuickAdd,
+  onOpenQuickAdd,
   onAdd,
   onRenumber,
   onToggle100MaxZs,
@@ -49,10 +49,10 @@ export function CircuitsToolbar({
         <button
           type="button"
           disabled={readOnly}
-          onClick={() => onQuickAdd(6)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          onClick={onOpenQuickAdd}
+          className="rounded-lg border border-[#14B8A6] bg-[#ecfdf9] px-3 py-1.5 text-xs font-semibold text-[#0f766e] hover:bg-[#d1faf4] disabled:opacity-40"
         >
-          Quick add 6
+          Quick add
         </button>
         <button
           type="button"

@@ -142,6 +142,7 @@ class JobDetailController extends GetxController {
     required double amount,
     String? description,
     String? expenseDate,
+    String? expenseType,
   }) async {
     await _jobs.postJobExpense(
       jobId,
@@ -149,6 +150,7 @@ class JobDetailController extends GetxController {
       amount: amount,
       description: description,
       expenseDate: expenseDate,
+      expenseType: expenseType,
     );
     await refreshAll();
   }

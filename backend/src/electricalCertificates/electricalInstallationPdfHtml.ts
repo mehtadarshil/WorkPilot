@@ -1,6 +1,12 @@
 import type { CertificatePdfInput } from './certificatePdfHtml';
+import { boardCircuitPageHtml } from './certificatePrint/circuitScheduleHtml';
+import { CERTIFICATE_PRINT_CSS } from './certificatePrint/printStyles';
+import {
+  inspectionOutcomeBadgeHtml,
+  inspectionScheduleLegendHtml,
+} from './certificatePrint/outcomes';
+import { signatureBlockHtml } from './certificatePrint/signatureHtml';
 import { INSPECTION_SCHEDULE_ITEMS, INSPECTION_SECTION_LABELS } from './inspectionScheduleItems';
-import type { CircuitRow, InspectionOutcome } from './types';
 
 type PdfHelpers = {
   esc: (value: string) => string;
@@ -11,64 +17,11 @@ type PdfHelpers = {
   certificateFooterHtml: (branding: CertificatePdfInput['branding'], certificateNumber: string) => string;
 };
 
-const OUTCOME_LABELS: Record<InspectionOutcome, string> = {
-  '': '-',
-  pass: 'OK',
-  c1: 'C1',
-  c2: 'C2',
-  c3: 'C3',
-  fi: 'FI',
-  lim: 'LIM',
-  nv: 'N/V',
-  na: 'N/A',
-  x: 'X',
-};
-
 const WORK_TYPE_LABELS: Record<string, string> = {
   new: 'New installation',
   addition: 'Addition to existing installation',
   alteration: 'Alteration to existing installation',
 };
-
-const CIRCUIT_SCHEDULE_COLUMNS = [
-  ['No', 'circuitNumber', '4.2mm'],
-  ['Description', 'description', '24mm'],
-  ['No. points', 'points', '6mm'],
-  ['Wiring type', 'wiringType', '7mm'],
-  ['Ref method', 'refMethod', '7mm'],
-  ['Live mm²', 'liveMm2', '7mm'],
-  ['CPC mm²', 'cpcMm2', '7mm'],
-  ['Max disconnect secs', 'maxDisconnectTime', '8mm'],
-  ['OCPD BS (EN)', 'ocpdBs', '11mm'],
-  ['OCPD Type', 'ocpdType', '7mm'],
-  ['OCPD A', 'ocpdRatingA', '7mm'],
-  ['Breaking kA', 'ocpdBreakingKa', '8mm'],
-  ['Max Zs Ω', 'maxZs', '8mm'],
-  ['RCD BS (EN)', 'rcdBs', '10mm'],
-  ['RCD Type', 'rcdType', '7mm'],
-  ['IΔn mA', 'rcdRatingMa', '7mm'],
-  ['RCD A', 'rcdRatingA', '7mm'],
-  ['r1 Ω', 'ringR1', '7mm'],
-  ['rn Ω', 'ringRn', '7mm'],
-  ['r2 Ω', 'ringR2End', '7mm'],
-  ['R1+R2 Ω', 'r1r2', '8mm'],
-  ['R2 Ω', 'r2', '7mm'],
-  ['IR V', 'insulationTestVoltage', '7mm'],
-  ['IR L-L MΩ', 'insulationLL', '8mm'],
-  ['IR L-E MΩ', 'insulationLE', '8mm'],
-  ['Polarity', 'polarity', '9mm'],
-  ['Measured Zs Ω', 'zs', '8mm'],
-  ['RCD ms', 'rcdTripMs', '8mm'],
-  ['AFDD', 'afdd', '7mm'],
-  ['Remarks', 'remarks', '12mm'],
-] as const;
-
-type CircuitScheduleKey = (typeof CIRCUIT_SCHEDULE_COLUMNS)[number][1];
-
-function circuitValue(c: CircuitRow, key: CircuitScheduleKey): string {
-  if (key === 'insulationLE') return c.insulationLE || c.insulation || '';
-  return c[key] ?? '';
-}
 
 function signatoryRows(
   h: PdfHelpers,
@@ -77,7 +30,7 @@ function signatoryRows(
 ): string {
   return `<h3>${h.esc(title)}</h3><table class="kv">
     ${h.row('Name', s.name)}
-    ${h.row('Signature', s.signature)}
+    <tr><td class="lbl">Signature</td><td>${signatureBlockHtml(s.signature, h.esc, s.signature, '')}</td></tr>
     ${h.row('Date', s.date)}
     ${h.row('Company', s.company)}
     ${h.row('Phone', s.phone)}
@@ -107,52 +60,21 @@ export function buildElectricalInstallationCertificatePdfHtml(input: Certificate
           if (item.id === '5.12' || item.id === '5.17') {
             return `<tr class="sched-subheading"><td class="mono" style="font-weight:bold">${h.esc(item.id)}</td><td colspan="2" style="font-weight:bold">${h.esc(item.label)}</td></tr>`;
           }
-          return `<tr><td class="mono">${h.esc(item.id)}</td><td>${h.esc(item.label)}</td><td class="outcome">${h.esc(OUTCOME_LABELS[outcome] ?? outcome)}</td></tr>`;
+          return `<tr><td class="mono">${h.esc(item.id)}</td><td>${h.esc(item.label)}</td><td class="outcome">${inspectionOutcomeBadgeHtml(outcome, h.esc)}</td></tr>`;
         })
         .join('');
-      return `<h3>${h.esc(section)}. ${h.esc(INSPECTION_SECTION_LABELS[section] ?? section)}</h3><table class="sched"><thead><tr><th>Ref</th><th>Description</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table>`;
+      return `<section class="schedule-section"><h3 class="cp-schedule-section-title">${h.esc(section)}. ${h.esc(INSPECTION_SECTION_LABELS[section] ?? section)}</h3><table class="sched"><thead><tr><th>Ref</th><th>Description</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table></section>`;
     })
     .join('');
 
   const boardsHtml = doc.boards
-    .map((board) => {
-      const circuits = board.circuits
-        .map(
-          (c) => `<tr>${CIRCUIT_SCHEDULE_COLUMNS.map(([, key]) => `<td>${h.esc(circuitValue(c, key))}</td>`).join('')}</tr>`,
-        )
-        .join('');
-      const headers = CIRCUIT_SCHEDULE_COLUMNS.map(([label]) => `<th>${h.esc(label)}</th>`).join('');
-      const colgroup = CIRCUIT_SCHEDULE_COLUMNS.map(([, , width]) => `<col style="width:${width}">`).join('');
-      return `<section class="circuit-page">
-        <h2>Schedule of circuit details and test results - ${h.esc(board.name)}</h2>
-        <table class="board-details">
-          <tbody>
-            <tr>
-              <td><strong>Location:</strong> ${h.esc(board.location)}</td>
-              <td><strong>Manufacturer:</strong> ${h.esc(board.manufacturer)}</td>
-              <td><strong>Supplied from:</strong> ${h.esc(board.suppliedFrom)}</td>
-              <td><strong>Polarity:</strong> ${h.esc(board.polarityConfirmed)}</td>
-              <td><strong>Phases:</strong> ${h.esc(board.phases)}</td>
-              <td><strong>Phase seq:</strong> ${h.esc(board.phaseSequence)}</td>
-            </tr>
-            <tr>
-              <td><strong>Zs at DB:</strong> ${h.esc(board.zsAtDb)} Ω</td>
-              <td><strong>Ipf at DB:</strong> ${h.esc(board.ipfAtDb)} kA</td>
-              <td><strong>Main switch:</strong> ${h.esc([board.mainSwitchBs, board.mainSwitchVoltage, board.mainSwitchRating].filter(Boolean).join(' / '))}</td>
-              <td><strong>RCD:</strong> ${h.esc([board.rcdRating, board.rcdTripTime].filter(Boolean).join(' / '))}</td>
-              <td><strong>SPD:</strong> ${h.esc([board.spdType, board.spdStatus].filter(Boolean).join(' / '))}</td>
-              <td><strong>OCPD:</strong> ${h.esc([board.ocpdBs, board.ocpdVoltage, board.ocpdRating].filter(Boolean).join(' / '))}</td>
-            </tr>
-            ${board.notes.trim() ? `<tr><td colspan="6"><strong>Notes:</strong> ${h.esc(board.notes)}</td></tr>` : ''}
-          </tbody>
-        </table>
-        <table class="sched circuit-schedule">
-          <colgroup>${colgroup}</colgroup>
-          <thead><tr>${headers}</tr></thead>
-          <tbody>${circuits || `<tr><td colspan="${CIRCUIT_SCHEDULE_COLUMNS.length}" class="muted">No circuits recorded</td></tr>`}</tbody>
-        </table>
-      </section>`;
-    })
+    .map((board) =>
+      boardCircuitPageHtml(board, h.esc, {
+        testedBy: eic.inspection.inspector.name,
+        position: '',
+        testedDate: eic.inspection.inspector.date,
+      }),
+    )
     .join('');
 
   const boardPhotos = doc.boards.flatMap((board) => board.photos ?? []);
@@ -163,6 +85,7 @@ export function buildElectricalInstallationCertificatePdfHtml(input: Certificate
 <meta charset="utf-8"/>
 <title>${h.esc(input.certificateNumber)} - Electrical Installation Certificate</title>
 <style>${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.2pt')}
+${CERTIFICATE_PRINT_CSS}
   @page circuitSchedule { size: A4 landscape; margin: 6mm; }
   .circuit-page {
     page: circuitSchedule;
@@ -174,22 +97,6 @@ export function buildElectricalInstallationCertificatePdfHtml(input: Certificate
     border: 0;
     background: #fff;
   }
-  .circuit-page h2 { margin: 0 0 3px; padding: 4px 6px; font-size: 9pt; background: #111; color: #fff; }
-  .board-details { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 4px; font-size: 6.2pt; }
-  .board-details td { border: 1px solid #b7b7b7; padding: 2px 3px; background: #f3f4f6; vertical-align: top; }
-  .circuit-schedule { width: 100%; font-size: 5.7pt; table-layout: fixed; border: 1px solid #8b8b8b; }
-  .circuit-schedule th, .circuit-schedule td {
-    padding: 1.4px 1.8px;
-    line-height: 1.08;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    vertical-align: middle;
-    text-align: center;
-  }
-  .circuit-schedule th { background: #d9d9d9; font-size: 5pt; font-weight: 800; }
-  .circuit-schedule th:nth-child(2), .circuit-schedule td:nth-child(2), .circuit-schedule th:last-child, .circuit-schedule td:last-child { text-align: left; }
-  .circuit-schedule thead { display: table-header-group; }
-  .circuit-schedule tr { page-break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -250,7 +157,7 @@ export function buildElectricalInstallationCertificatePdfHtml(input: Certificate
     </table>
   </section>
 
-  <section class="block"><h2>Schedule of inspections</h2>${inspectionRows}</section>
+  <section class="block"><h2>Schedule of inspections</h2>${inspectionScheduleLegendHtml(h.esc)}${inspectionRows}</section>
   ${boardsHtml}
 
   <section class="block">

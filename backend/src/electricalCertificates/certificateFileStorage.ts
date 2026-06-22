@@ -16,7 +16,7 @@ function fileNameFromCertificatePath(value: string, certificateId: number): stri
 
 export async function storeCertificateDocumentInlineFiles(certificateId: number, raw: unknown): Promise<unknown> {
   async function walk(value: unknown, keyHint: string): Promise<unknown> {
-    if (typeof value === 'string' && (keyHint === 'dataUrl' || keyHint === 'signatureDataUrl') && value.startsWith('data:')) {
+    if (typeof value === 'string' && (keyHint === 'dataUrl' || keyHint === 'signatureDataUrl' || /SignatureDataUrl$/i.test(keyHint)) && value.startsWith('data:')) {
       const parsed = parseInlineDataUrl(value);
       if (!parsed) return value;
       const filename = `${keyHint}_${Date.now()}_${Math.random().toString(16).slice(2)}${parsed.extension}`;
@@ -40,7 +40,7 @@ export async function storeCertificateDocumentInlineFiles(certificateId: number,
 
 export async function resolveCertificateDocumentFileRefs(certificateId: number, raw: unknown): Promise<unknown> {
   async function walk(value: unknown, keyHint: string): Promise<unknown> {
-    if (typeof value === 'string' && (keyHint === 'dataUrl' || keyHint === 'signatureDataUrl')) {
+    if (typeof value === 'string' && (keyHint === 'dataUrl' || keyHint === 'signatureDataUrl' || /SignatureDataUrl$/i.test(keyHint))) {
       const filename = fileNameFromCertificatePath(value, certificateId);
       if (!filename) return value;
       const file = await loadWorkpilotFile('electrical-certificate-files', [certificateId], filename);

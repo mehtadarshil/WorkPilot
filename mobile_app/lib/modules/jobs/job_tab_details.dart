@@ -437,6 +437,7 @@ class JobTabDetails extends StatelessWidget {
 
   Future<void> _showAddExpense(BuildContext context, JobDetailController c) async {
     var expenseDate = DateTime.now();
+    var expenseType = 'personal';
     final categoryC = TextEditingController(text: 'Parking');
     final amountC = TextEditingController();
     final descriptionC = TextEditingController();
@@ -451,6 +452,17 @@ class JobTabDetails extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    DropdownButtonFormField<String>(
+                      value: expenseType,
+                      decoration: const InputDecoration(labelText: 'Expense type'),
+                      items: const [
+                        DropdownMenuItem(value: 'personal', child: Text('Personal')),
+                        DropdownMenuItem(value: 'company', child: Text('Company')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setS(() => expenseType = val);
+                      },
+                    ),
                     TextField(
                       controller: categoryC,
                       decoration: const InputDecoration(labelText: 'Category'),
@@ -502,6 +514,7 @@ class JobTabDetails extends StatelessWidget {
           amount: amount,
           description: descriptionC.text.trim().isEmpty ? null : descriptionC.text.trim(),
           expenseDate: expenseDate.toIso8601String().split('T').first,
+          expenseType: expenseType,
         );
       } catch (e) {
         if (context.mounted) {

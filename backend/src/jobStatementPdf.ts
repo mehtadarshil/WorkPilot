@@ -658,3 +658,455 @@ export async function generateJobStatementPdfBuffer(pool: Pool, jobId: number): 
 
   return renderHtmlReportToPdf(html);
 }
+
+type CustomerJobBrief = {
+  id: number;
+  job_number: string | null;
+  title: string;
+  work_site_label: string;
+};
+
+function buildCustomerStatementHtml(input: {
+  accent: string;
+  accentEnd: string;
+  companyName: string;
+  companyAddress: string | null;
+  companyPhone: string | null;
+  companyEmail: string | null;
+  companyWebsite: string | null;
+  companyTaxId: string | null;
+  logoUrl: string | null;
+  defaultLogoUrl: string | null;
+  taxLabel: string;
+  footerText: string | null;
+  customerName: string;
+  customerAddress: string;
+  statementDate: string;
+  jobs: { brief: CustomerJobBrief; invoices: StatementInvoice[] }[];
+  currency: string;
+  totals: {
+    jobCount: number;
+    invoiceCount: number;
+    grandTotal: number;
+    totalPaid: number;
+    totalPending: number;
+    overdueBalance: number;
+  };
+}): string {
+  const {
+    accent,
+    accentEnd,
+    companyName,
+    companyAddress,
+    companyPhone,
+    companyEmail,
+    companyWebsite,
+    companyTaxId,
+    logoUrl,
+    defaultLogoUrl,
+    taxLabel,
+    footerText,
+    customerName,
+    customerAddress,
+    statementDate,
+    jobs,
+    currency,
+    totals,
+  } = input;
+
+  const logoBlock =
+    logoUrl != null
+      ? `<img src="${escapeHtml(logoUrl)}" alt="" class="logo-img" />`
+      : defaultLogoUrl != null
+        ? `<img src="${escapeHtml(defaultLogoUrl)}" alt="" class="logo-img" />`
+        : `<div class="logo-fallback">${escapeHtml(companyName.slice(0, 2).toUpperCase())}</div>`;
+
+  const companyLines: string[] = [];
+  if (companyAddress) companyLines.push(`<p class="co-line">${escapeHtml(companyAddress)}</p>`);
+  if (companyWebsite) companyLines.push(`<p class="co-line">${escapeHtml(companyWebsite)}</p>`);
+  if (companyTaxId) companyLines.push(`<p class="co-line">Tax ID: ${escapeHtml(companyTaxId)}</p>`);
+  if (companyPhone) companyLines.push(`<p class="co-line">${escapeHtml(companyPhone)}</p>`);
+  if (companyEmail) companyLines.push(`<p class="co-line">${escapeHtml(companyEmail)}</p>`);
+
+  const jobSections =
+    jobs.length === 0
+      ? `<div class="empty-box"><p>No jobs have been raised for this customer yet.</p></div>`
+      : jobs
+          .map(({ brief, invoices: jobInvoices }) => {
+            const jobInvoiceRows =
+              jobInvoices.length === 0
+                ? `<tr><td colspan="5" class="td-muted">No invoices for this job</td></tr>`
+                : jobInvoices
+                    .map(
+                      (inv, i) => `
+        <tr class="${i % 2 === 1 ? 'tr-alt' : ''}">
+          <td>${escapeHtml(inv.invoice_number)}</td>
+          <td>${escapeHtml(formatDateFromDb(inv.invoice_date))}</td>
+          <td class="td-num">${escapeHtml(formatMoney(inv.total_amount, inv.currency))}</td>
+          <td class="td-num">${escapeHtml(formatMoney(inv.total_paid, inv.currency))}</td>
+          <td class="td-num"><strong class="${inv.balance_due > 0.005 ? 'bal-due' : 'bal-ok'}">${escapeHtml(formatMoney(inv.balance_due, inv.currency))}</strong></td>
+        </tr>`,
+                    )
+                    .join('');
+
+            const jobSubtotal = jobInvoices.reduce((s, inv) => s + inv.total_amount, 0);
+            const jobPaid = jobInvoices.reduce((s, inv) => s + inv.total_paid, 0);
+            const jobBal = Math.round((jobSubtotal - jobPaid) * 100) / 100;
+
+            return `
+      <section class="job-section">
+        <div class="job-head">
+          <h3 class="job-title">Job ${escapeHtml(brief.job_number ?? '')} — ${escapeHtml(brief.title)}</h3>
+          ${brief.work_site_label ? `<span class="job-site">${escapeHtml(brief.work_site_label)}</span>` : ''}
+        </div>
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Date</th>
+              <th class="th-num">Total</th>
+              <th class="th-num">Paid</th>
+              <th class="th-num">Balance</th>
+            </tr>
+          </thead>
+          <tbody>${jobInvoiceRows}</tbody>
+        </table>
+        ${jobInvoices.length > 0 ? `<p class="job-sum">Job total: <strong>${escapeHtml(formatMoney(jobSubtotal, currency))}</strong> · Paid: <strong>${escapeHtml(formatMoney(jobPaid, currency))}</strong> · Balance: <strong class="${jobBal > 0.005 ? 'bal-due' : 'bal-ok'}">${escapeHtml(formatMoney(jobBal, currency))}</strong></p>` : ''}
+      </section>`;
+          })
+          .join('');
+
+  const footerBlock = footerText?.trim() ? `<p class="footer-t">${escapeHtml(footerText.trim())}</p>` : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Customer Statement — ${escapeHtml(customerName)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: #fff; color: #0f172a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .doc { max-width: 900px; margin: 0 auto; overflow: hidden; border-radius: 16px; border: 1px solid #e2e8f0; background: #fff; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.08); }
+    .gradient-bar { height: 4px; width: 100%; background: linear-gradient(to right, ${accent}, ${accentEnd}); }
+    .head { border-bottom: 1px solid #e2e8f0; padding: 40px 32px; }
+    .head-inner { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 16px; }
+    .logo-wrap { width: 56px; height: 56px; overflow: hidden; border-radius: 12px; border: 1px solid #f1f5f9; }
+    .logo-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .logo-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #64748b; background: #f8fafc; }
+    .co-name { font-size: 24px; font-weight: 700; margin: 0; }
+    .co-sub { margin: 4px 0 0; font-size: 14px; color: #64748b; }
+    .co-line { margin: 2px 0; font-size: 12px; color: #475569; }
+    .stmt-right { text-align: right; }
+    .stmt-title { font-size: 24px; font-weight: 700; color: ${accent}; margin: 0; }
+    .stmt-sub { margin: 8px 0 0; font-size: 13px; color: #64748b; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 32px; }
+    .card { border-radius: 8px; border: 1px solid #f1f5f9; background: rgba(248,250,252,0.5); padding: 20px; margin-bottom: 16px; }
+    .card-k { margin: 0 0 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
+    .cust-name { margin: 0; font-size: 16px; font-weight: 600; }
+    .cust-line { margin: 4px 0 0; font-size: 14px; color: #475569; }
+    .body { padding: 0 32px 32px; }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+    .sum-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; background: #f8fafc; }
+    .sum-k { margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; }
+    .sum-v { margin: 6px 0 0; font-size: 18px; font-weight: 700; color: #0f172a; }
+    .sum-v.warn { color: #b45309; }
+    .job-section { border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; page-break-inside: avoid; }
+    .job-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .job-title { margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; }
+    .job-site { font-size: 12px; color: #64748b; }
+    .job-sum { margin: 12px 0 0; font-size: 12px; color: #334155; }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tbl th { text-align: left; padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; color: #64748b; }
+    .th-num, .td-num { text-align: right; }
+    .tbl td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .tr-alt { background: #fafbfc; }
+    .td-muted { color: #94a3b8; font-style: italic; }
+    .empty-box { border: 1px dashed #cbd5e1; border-radius: 12px; padding: 32px; text-align: center; color: #64748b; }
+    .footer-t { margin: 24px 0 0; text-align: center; font-size: 11px; color: #94a3b8; }
+    .bal-due { color: #b45309; }
+    .bal-ok { color: #059669; }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="gradient-bar"></div>
+    <div class="head">
+      <div class="head-inner">
+        <div class="brand">
+          <div class="logo-wrap">${logoBlock}</div>
+          <div>
+            <h1 class="co-name">${escapeHtml(companyName)}</h1>
+            <p class="co-sub">Customer statement</p>
+            <div class="co-meta">${companyLines.join('')}</div>
+          </div>
+        </div>
+        <div class="stmt-right">
+          <h2 class="stmt-title">Full statement</h2>
+          <p class="stmt-sub">${escapeHtml(customerName)} · ${escapeHtml(statementDate)}</p>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="card">
+          <p class="card-k">Customer</p>
+          <p class="cust-name">${escapeHtml(customerName)}</p>
+          <p class="cust-line">${escapeHtml(customerAddress || '—')}</p>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <p class="card-k">Summary</p>
+          <p class="cust-line"><strong>${totals.jobCount}</strong> job${totals.jobCount === 1 ? '' : 's'} · <strong>${totals.invoiceCount}</strong> invoice${totals.invoiceCount === 1 ? '' : 's'}</p>
+          <p class="cust-line">Grand total: <strong>${escapeHtml(formatMoney(totals.grandTotal, currency))}</strong></p>
+          <p class="cust-line">Paid: <strong>${escapeHtml(formatMoney(totals.totalPaid, currency))}</strong></p>
+          <p class="cust-line">Balance: <strong class="${totals.totalPending > 0.005 ? 'bal-due' : 'bal-ok'}">${escapeHtml(formatMoney(totals.totalPending, currency))}</strong></p>
+        </div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="summary">
+        <div class="sum-card"><p class="sum-k">Jobs</p><p class="sum-v">${totals.jobCount}</p></div>
+        <div class="sum-card"><p class="sum-k">Invoices</p><p class="sum-v">${totals.invoiceCount}</p></div>
+        <div class="sum-card"><p class="sum-k">Grand total</p><p class="sum-v">${escapeHtml(formatMoney(totals.grandTotal, currency))}</p></div>
+        <div class="sum-card"><p class="sum-k">Total paid</p><p class="sum-v">${escapeHtml(formatMoney(totals.totalPaid, currency))}</p></div>
+        <div class="sum-card"><p class="sum-k">Balance due</p><p class="sum-v ${totals.totalPending > 0.005 ? 'warn' : ''}">${escapeHtml(formatMoney(totals.totalPending, currency))}</p></div>
+      </div>
+      ${totals.overdueBalance > 0.005 ? `<p class="cust-line"><strong>Overdue balance:</strong> ${escapeHtml(formatMoney(totals.overdueBalance, currency))}</p>` : ''}
+      ${jobSections}
+      ${footerBlock}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export async function generateCustomerStatementPdfBuffer(pool: Pool, customerId: number): Promise<Buffer> {
+  const custResult = await pool.query<{
+    id: number;
+    full_name: string;
+    address_line_1: string | null;
+    address_line_2: string | null;
+    address_line_3: string | null;
+    town: string | null;
+    county: string | null;
+    postcode: string | null;
+    address: string | null;
+    city: string | null;
+    region: string | null;
+    country: string | null;
+    created_by: number | null;
+  }>(
+    `SELECT id, full_name, address_line_1, address_line_2, address_line_3, town, county, postcode, address, city, region, country, created_by
+     FROM customers WHERE id = $1`,
+    [customerId],
+  );
+  if ((custResult.rowCount ?? 0) === 0) throw new Error('Customer not found');
+  const cust = custResult.rows[0];
+
+  const jobsResult = await pool.query<{
+    id: number;
+    job_number: string | null;
+    title: string;
+    work_address_id: number | null;
+    wa_name: string | null;
+    wa_address_line_1: string | null;
+    wa_town: string | null;
+    wa_postcode: string | null;
+  }>(
+    `SELECT j.id, j.job_number, j.title, j.work_address_id,
+            wa.name AS wa_name, wa.address_line_1 AS wa_address_line_1, wa.town AS wa_town, wa.postcode AS wa_postcode
+     FROM jobs j
+     LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+     WHERE j.customer_id = $1
+     ORDER BY j.created_at ASC`,
+    [customerId],
+  );
+
+  const jobIds = jobsResult.rows.map((r) => r.id);
+
+  let allInvoices: StatementInvoice[] = [];
+  const invoicesByJob = new Map<number, StatementInvoice[]>();
+
+  if (jobIds.length > 0) {
+    const invResult = await pool.query<{
+      job_id: number;
+      id: number;
+      invoice_number: string;
+      state: string;
+      invoice_date: Date;
+      due_date: Date;
+      subtotal: string;
+      tax_amount: string;
+      total_amount: string;
+      total_paid: string;
+      currency: string;
+      description: string | null;
+    }>(
+      `SELECT job_id, id, invoice_number, state, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, description
+       FROM invoices WHERE job_id = ANY($1::int[]) ORDER BY invoice_date ASC, id ASC`,
+      [jobIds],
+    );
+
+    const invoiceIds = invResult.rows.map((r) => r.id);
+    const lineItemsByInvoice = new Map<number, StatementLineItem[]>();
+    const paymentsByInvoice = new Map<number, StatementPayment[]>();
+
+    if (invoiceIds.length > 0) {
+      const linesRes = await pool.query<{
+        invoice_id: number;
+        description: string;
+        quantity: string;
+        unit_price: string;
+        amount: string;
+        sort_order: number;
+      }>(
+        `SELECT invoice_id, description, quantity, unit_price, amount, sort_order
+         FROM invoice_line_items WHERE invoice_id = ANY($1::int[])
+         ORDER BY sort_order ASC, id ASC`,
+        [invoiceIds],
+      );
+      for (const row of linesRes.rows) {
+        const list = lineItemsByInvoice.get(row.invoice_id) || [];
+        list.push({
+          description: row.description || '',
+          quantity: parseFloat(row.quantity),
+          unit_price: parseFloat(row.unit_price),
+          amount: parseFloat(row.amount),
+        });
+        lineItemsByInvoice.set(row.invoice_id, list);
+      }
+
+      const payRes = await pool.query<{
+        invoice_id: number;
+        amount: string;
+        payment_method: string | null;
+        payment_date: Date;
+        reference_number: string | null;
+      }>(
+        `SELECT invoice_id, amount, payment_method, payment_date, reference_number
+         FROM invoice_payments WHERE invoice_id = ANY($1::int[])
+         ORDER BY payment_date ASC, id ASC`,
+        [invoiceIds],
+      );
+      for (const row of payRes.rows) {
+        const list = paymentsByInvoice.get(row.invoice_id) || [];
+        list.push({
+          amount: parseFloat(row.amount),
+          payment_method: row.payment_method,
+          payment_date: row.payment_date,
+          reference_number: row.reference_number,
+        });
+        paymentsByInvoice.set(row.invoice_id, list);
+      }
+    }
+
+    const primaryCurrency = invResult.rows[0]?.currency || 'GBP';
+    for (const inv of invResult.rows) {
+      const subtotal = parseFloat(inv.subtotal);
+      const taxAmount = parseFloat(inv.tax_amount);
+      const totalAmount = parseFloat(inv.total_amount);
+      const paid = parseFloat(inv.total_paid);
+      const balanceDue = Math.round((totalAmount - paid) * 100) / 100;
+      const stmtInv: StatementInvoice = {
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        state: inv.state,
+        invoice_date: inv.invoice_date,
+        due_date: inv.due_date,
+        subtotal,
+        tax_amount: taxAmount,
+        total_amount: totalAmount,
+        total_paid: paid,
+        balance_due: balanceDue,
+        currency: inv.currency || primaryCurrency,
+        description: inv.description,
+        line_items: lineItemsByInvoice.get(inv.id) || [],
+        payments: paymentsByInvoice.get(inv.id) || [],
+      };
+      allInvoices.push(stmtInv);
+      const list = invoicesByJob.get(inv.job_id) || [];
+      list.push(stmtInv);
+      invoicesByJob.set(inv.job_id, list);
+    }
+  }
+
+  const today = new Date();
+  let grandTotal = 0;
+  let totalPaid = 0;
+  let totalPending = 0;
+  let overdueBalance = 0;
+
+  for (const inv of allInvoices) {
+    grandTotal += inv.total_amount;
+    totalPaid += inv.total_paid;
+    totalPending += inv.balance_due;
+    if (inv.balance_due > 0.005 && daysBetween(inv.due_date, today) < 0) {
+      overdueBalance += inv.balance_due;
+    }
+  }
+
+  const primaryCurrency = allInvoices[0]?.currency || 'GBP';
+
+  const jobsForHtml = jobsResult.rows.map((j) => {
+    const jobNum = j.job_number?.trim() || String(j.id).padStart(4, '0');
+    const siteParts = [j.wa_name, j.wa_address_line_1, j.wa_town, j.wa_postcode].filter((p) => p?.trim()).join(', ');
+    return {
+      brief: {
+        id: j.id,
+        job_number: jobNum,
+        title: j.title,
+        work_site_label: siteParts || '',
+      },
+      invoices: invoicesByJob.get(j.id) || [],
+    };
+  });
+
+  const ownerId = cust.created_by ?? 1;
+  const settingsRow = await pool.query('SELECT * FROM invoice_settings WHERE created_by = $1', [ownerId]);
+  const settings = (settingsRow.rows[0] as Record<string, unknown> | undefined) ?? undefined;
+  const companyName = (settings?.company_name as string) || 'WorkPilot';
+  const companyAddress = (settings?.company_address as string) || null;
+  const companyPhone = (settings?.company_phone as string) || null;
+  const companyEmail = (settings?.company_email as string) || null;
+  const companyWebsite = (settings?.company_website as string) || null;
+  const companyTaxId = (settings?.company_tax_id as string) || null;
+  const taxLabel = (settings?.tax_label as string) || 'Tax';
+  const footerText = (settings?.footer_text as string) || null;
+  const accent = parseSafeHexColor(settings?.invoice_accent_color, '#14B8A6');
+  const accentEnd = parseSafeHexColor(settings?.invoice_accent_end_color, '#0d9488');
+  const logoResolved = await resolveCompanyLogoForPdf(settings?.company_logo as string | null, ownerId);
+
+  const customerAddressStr = formatCustomerAddressSingleLine(cust as unknown as Record<string, unknown>);
+
+  const html = buildCustomerStatementHtml({
+    accent,
+    accentEnd,
+    companyName,
+    companyAddress,
+    companyPhone,
+    companyEmail,
+    companyWebsite,
+    companyTaxId,
+    logoUrl: logoResolved,
+    defaultLogoUrl: null,
+    taxLabel,
+    footerText,
+    customerName: cust.full_name?.trim() || 'Customer',
+    customerAddress: customerAddressStr,
+    statementDate: formatDateFromDb(today),
+    jobs: jobsForHtml,
+    currency: primaryCurrency,
+    totals: {
+      jobCount: jobsResult.rows.length,
+      invoiceCount: allInvoices.length,
+      grandTotal: Math.round(grandTotal * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      totalPending: Math.round(totalPending * 100) / 100,
+      overdueBalance: Math.round(overdueBalance * 100) / 100,
+    },
+  });
+
+  return renderHtmlReportToPdf(html);
+}

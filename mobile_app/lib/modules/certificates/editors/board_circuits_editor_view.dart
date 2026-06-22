@@ -16,6 +16,9 @@ import 'circuit_columns.dart';
 import 'circuit_find_replace_sheet.dart';
 import 'circuit_paste_sheet.dart';
 import 'circuit_helpers.dart';
+import 'circuit_quick_add_presets.dart';
+import 'circuit_quick_add_sheet.dart';
+import '../certificate_print_webview_page.dart';
 
 class BoardCircuitsEditorView extends StatefulWidget {
   const BoardCircuitsEditorView({
@@ -38,18 +41,39 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
   String _fillColumnKey = 'wiringType';
   final TextEditingController _fillValueController = TextEditingController();
   final Map<String, FocusNode> _cellFocusNodes = {};
+  late final ScrollController _gridVerticalScroll;
+  late final ScrollController _gridVerticalOverlayScroll;
+  bool _syncingGridScroll = false;
+
+  static const _stickyColumns = stickyCircuitColumnKeys;
+
+  List<CircuitColSpec> get _stickyColumnSpecs =>
+      CIRCUIT_COLUMNS_SPEC.where((c) => _stickyColumns.contains(c.key)).toList();
 
   @override
   void initState() {
     super.initState();
+    _gridVerticalScroll = ScrollController();
+    _gridVerticalOverlayScroll = ScrollController();
+    _gridVerticalScroll.addListener(_syncOverlayScrollFromMain);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
   }
 
+  void _syncOverlayScrollFromMain() {
+    if (_syncingGridScroll || !_gridVerticalOverlayScroll.hasClients) return;
+    _syncingGridScroll = true;
+    _gridVerticalOverlayScroll.jumpTo(_gridVerticalScroll.offset);
+    _syncingGridScroll = false;
+  }
+
   @override
   void dispose() {
+    _gridVerticalScroll.removeListener(_syncOverlayScrollFromMain);
+    _gridVerticalScroll.dispose();
+    _gridVerticalOverlayScroll.dispose();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -93,7 +117,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
   @override
   Widget build(BuildContext context) {
     final compact = _isCompact(context);
-    final chromeMaxHeight = MediaQuery.sizeOf(context).height * (compact ? 0.42 : 0.55);
+    final chromeMaxHeight = MediaQuery.sizeOf(context).height * (compact ? 0.28 : 0.45);
 
     return CertificateGradientScaffold(
       appBar: AppBar(
@@ -109,6 +133,29 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
+          Obx(() {
+            final boards = widget.controller.listAt('boards');
+            if (widget.boardIndex < 0 || widget.boardIndex >= boards.length) {
+              return const SizedBox.shrink();
+            }
+            final board = boards[widget.boardIndex];
+            final boardId = board['id']?.toString().trim() ?? '';
+            final boardName = board['name']?.toString().trim();
+            if (boardId.isEmpty) return const SizedBox.shrink();
+            return IconButton(
+              tooltip: 'Print schedule',
+              icon: const Icon(Icons.print_rounded, color: Colors.white),
+              onPressed: () async {
+                await Get.to(
+                  () => CertificatePrintWebViewPage(
+                    certificateId: widget.controller.certificateId,
+                    boardId: boardId,
+                    title: boardName != null && boardName.isNotEmpty ? 'Print $boardName' : 'Print board schedule',
+                  ),
+                );
+              },
+            );
+          }),
           Obx(() {
             final boards = widget.controller.listAt('boards');
             if (widget.boardIndex < 0 || widget.boardIndex >= boards.length) {
@@ -170,6 +217,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        _buildBoardNameBar(board, boards, readOnly, compact: compact),
                         _buildCollapsibleDetails(board, photos, boards, readOnly, compact: compact),
                         _buildToolbar(
                           board,
@@ -203,31 +251,77 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _buildGroupHeaderRow(),
-                              _buildHeaderRow(),
-                              ...circuits.asMap().entries.map((entry) {
-                                final rowIndex = entry.key;
-                                final circuit = entry.value;
-                                return _buildCircuitRow(
-                                  circuit,
-                                  rowIndex,
-                                  board,
-                                  circuits,
-                                  boards,
-                                  use100Percent,
-                                  readOnly,
-                                );
-                              }),
-                            ],
+                      child: Stack(
+                        children: [
+                          SingleChildScrollView(
+                            controller: _gridVerticalScroll,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildGroupHeaderRow(),
+                                  _buildHeaderRow(),
+                                  ...circuits.asMap().entries.map((entry) {
+                                    return _buildCircuitRow(
+                                      entry.value,
+                                      entry.key,
+                                      board,
+                                      circuits,
+                                      boards,
+                                      use100Percent,
+                                      readOnly,
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: stickyCircuitColumnsWidth(),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0B1220),
+                                border: Border(
+                                  right: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.35),
+                                    blurRadius: 8,
+                                    offset: const Offset(2, 0),
+                                  ),
+                                ],
+                              ),
+                              child: SingleChildScrollView(
+                                controller: _gridVerticalOverlayScroll,
+                                physics: const NeverScrollableScrollPhysics(),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildGroupHeaderRow(columns: _stickyColumnSpecs),
+                                    _buildHeaderRow(columns: _stickyColumnSpecs),
+                                    ...circuits.asMap().entries.map((entry) {
+                                      return _buildCircuitRow(
+                                        entry.value,
+                                        entry.key,
+                                        board,
+                                        circuits,
+                                        boards,
+                                        use100Percent,
+                                        readOnly,
+                                        columns: _stickyColumnSpecs,
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -236,6 +330,47 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             ],
           );
         }),
+      ),
+    );
+  }
+
+  Widget _buildBoardNameBar(
+    Map<String, dynamic> board,
+    List<Map<String, dynamic>> boards,
+    bool readOnly, {
+    bool compact = false,
+  }) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, compact ? 4 : 8, 16, compact ? 2 : 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextFormField(
+              key: ValueKey('board-name-bar:${board['id']}:${board['name']}'),
+              initialValue: board['name']?.toString() ?? '',
+              readOnly: readOnly,
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+              decoration: InputDecoration(
+                labelText: 'Board name',
+                labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 11),
+                filled: true,
+                fillColor: AppColors.whiteOverlay(0.06),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                ),
+              ),
+              onChanged: readOnly ? null : (val) => _patchBoardField(board, 'name', val, boards),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            boardStatusLabel(board['status']?.toString()),
+            style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
@@ -617,6 +752,11 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
           children: [
             if (compact) ...[
               IconButton(
+                tooltip: 'Quick add',
+                onPressed: readOnly ? null : () => _openQuickAdd(board, circuits, boards),
+                icon: const Icon(Icons.bolt_rounded, color: AppColors.primary, size: 20),
+              ),
+              IconButton(
                 tooltip: 'Quick add 6',
                 onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, 6),
                 icon: const Icon(Icons.playlist_add_rounded, color: Colors.white, size: 20),
@@ -691,6 +831,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 icon: const Icon(Icons.calculate_outlined, color: AppColors.primary, size: 20),
               ),
             ] else ...[
+            ElevatedButton(
+              onPressed: readOnly ? null : () => _openQuickAdd(board, circuits, boards),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary.withValues(alpha: 0.15), foregroundColor: AppColors.primary),
+              child: Text('Quick add', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
             ElevatedButton(
               onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, 6),
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.whiteOverlay(0.1), foregroundColor: Colors.white),
@@ -947,13 +1093,14 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     );
   }
 
-  Widget _buildGroupHeaderRow() {
+  Widget _buildGroupHeaderRow({List<CircuitColSpec>? columns}) {
+    final cols = columns ?? CIRCUIT_COLUMNS_SPEC;
     final spans = <Map<String, dynamic>>[];
     var currentGroup = '';
     var span = 0;
     var start = 0;
-    for (var i = 0; i < CIRCUIT_COLUMNS_SPEC.length; i++) {
-      final group = CIRCUIT_COLUMNS_SPEC[i].group;
+    for (var i = 0; i < cols.length; i++) {
+      final group = cols[i].group;
       if (group != currentGroup) {
         if (span > 0) {
           spans.add({'label': currentGroup, 'span': span, 'start': start});
@@ -976,7 +1123,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
           final spanCount = entry['span'] as int;
           var totalWidth = 0.0;
           for (var i = startIndex; i < startIndex + spanCount; i++) {
-            totalWidth += circuitColWidths[CIRCUIT_COLUMNS_SPEC[i].key] ?? 80.0;
+            totalWidth += circuitColWidths[cols[i].key] ?? 80.0;
           }
           final labelKey = entry['label'] as String;
           final label = labelKey.isEmpty ? '' : (circuitGroupLabels[labelKey] ?? labelKey);
@@ -999,11 +1146,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     );
   }
 
-  Widget _buildHeaderRow() {
+  Widget _buildHeaderRow({List<CircuitColSpec>? columns}) {
+    final cols = columns ?? CIRCUIT_COLUMNS_SPEC;
     return Container(
       color: AppColors.slate900,
       child: Row(
-        children: CIRCUIT_COLUMNS_SPEC.map((col) {
+        children: cols.map((col) {
           final width = circuitColWidths[col.key] ?? 80.0;
           return Container(
             width: width,
@@ -1058,8 +1206,10 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     List<Map<String, dynamic>> circuits,
     List<Map<String, dynamic>> boards,
     bool use100Percent,
-    bool readOnly,
-  ) {
+    bool readOnly, {
+    List<CircuitColSpec>? columns,
+  }) {
+    final cols = columns ?? CIRCUIT_COLUMNS_SPEC;
     final editableCols = CIRCUIT_COLUMNS_SPEC.where((c) => c.key != 'actions').toList();
 
     return Container(
@@ -1068,12 +1218,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
         border: Border(bottom: BorderSide(color: AppColors.whiteOverlay(0.04))),
       ),
       child: Row(
-        children: CIRCUIT_COLUMNS_SPEC.map((col) {
+        children: cols.map((col) {
           final width = circuitColWidths[col.key] ?? 80.0;
           if (col.key == 'actions') {
             return Container(
               width: width,
-              height: 36,
+              height: circuitRowHeight,
               decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.whiteOverlay(0.08)))),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1108,7 +1258,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
 
           return Container(
             width: width,
-            height: 36,
+            height: circuitRowHeight,
             decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.whiteOverlay(0.08)))),
             child: CircuitCell(
               columnKey: col.key,
@@ -1205,6 +1355,22 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     final nextB = Map<String, dynamic>.from(board);
     nextB[key] = value;
     _saveBoardAndRecalculate(nextB, boards, recalc || key == 'zsAtDb' || key == 'ipfAtDb' || key == 'maxZsUse100Percent');
+  }
+
+  void _openQuickAdd(
+    Map<String, dynamic> board,
+    List<Map<String, dynamic>> circuits,
+    List<Map<String, dynamic>> boards,
+  ) {
+    showCircuitQuickAddSheet(
+      context: context,
+      onSelect: (preset) {
+        final nextCircuits = List<Map<String, dynamic>>.from(circuits);
+        final circuitNumber = '${nextCircuits.length + 1}';
+        nextCircuits.add(buildCircuitFromQuickAddPreset(preset, board, circuitNumber));
+        _saveCircuitsList(nextCircuits, board, boards);
+      },
+    );
   }
 
   void _addCircuits(
