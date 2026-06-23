@@ -48,6 +48,9 @@ interface ReportListRow {
   updated_at: string;
   created_at: string;
   certificate_number: string | null;
+  job_id?: number | null;
+  job_number?: string | null;
+  installation_label?: string | null;
 }
 
 interface TemplateRow {

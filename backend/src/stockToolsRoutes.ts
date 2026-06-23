@@ -90,6 +90,14 @@ export async function ensureStockToolsSchema(pool: Pool) {
     await pool.query(`
       ALTER TABLE job_parts ADD COLUMN IF NOT EXISTS stock_item_id INTEGER REFERENCES stock_items(id) ON DELETE SET NULL;
     `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS stock_tools_settings (
+        created_by INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        location_options JSONB NOT NULL DEFAULT '["Van","House","Store","Other"]'::jsonb,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
     console.log('Stock and Tools schema verified successfully.');
   } catch (error) {
     console.error('Error ensuring Stock and Tools schema:', error);
@@ -187,8 +195,63 @@ export async function syncStockTransaction(
   }
 }
 
+const DEFAULT_STOCK_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
+
+async function loadStockLocationOptions(pool: Pool, userId: number, isSuperAdmin: boolean): Promise<string[]> {
+  const row = await pool.query<{ location_options: unknown }>(
+    `SELECT location_options FROM stock_tools_settings WHERE created_by = $1`,
+    [userId],
+  );
+  if ((row.rowCount ?? 0) === 0) return [...DEFAULT_STOCK_LOCATIONS];
+  const raw = row.rows[0].location_options;
+  if (!Array.isArray(raw)) return [...DEFAULT_STOCK_LOCATIONS];
+  const cleaned = raw
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter((v) => v.length > 0);
+  return cleaned.length > 0 ? cleaned : [...DEFAULT_STOCK_LOCATIONS];
+}
+
 export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; authenticate: any }) {
   const { pool, authenticate } = deps;
+
+  app.get('/api/settings/stock-tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    try {
+      const location_options = await loadStockLocationOptions(pool, userId, req.user!.role === 'SUPER_ADMIN');
+      return res.json({ location_options });
+    } catch (error) {
+      console.error('Get stock tools settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/settings/stock-tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const body = req.body as { location_options?: unknown };
+    if (!Array.isArray(body.location_options)) {
+      return res.status(400).json({ message: 'location_options must be an array of strings' });
+    }
+    const location_options = body.location_options
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .filter((v) => v.length > 0)
+      .slice(0, 30);
+    if (location_options.length === 0) {
+      return res.status(400).json({ message: 'Add at least one location option' });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO stock_tools_settings (created_by, location_options, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (created_by) DO UPDATE
+         SET location_options = EXCLUDED.location_options, updated_at = NOW()`,
+        [userId, JSON.stringify(location_options)],
+      );
+      return res.json({ location_options });
+    } catch (error) {
+      console.error('Patch stock tools settings error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
 
   // Serve Stock & Tool Photos securely (only authenticated users)
   app.get(

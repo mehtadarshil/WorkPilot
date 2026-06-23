@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { deleteRequest, getJson, postJson } from '../../apiClient';
-import { FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, X } from 'lucide-react';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import CustomerSiteReportTab from '../customers/[id]/CustomerSiteReportTab';
+import { formatSiteReportJobRef, SITE_REPORT_TABLE_HEAD } from './siteReportTableUtils';
 
 interface SiteReportRow {
   id: number;
@@ -16,10 +17,12 @@ interface SiteReportRow {
   created_at: string;
   certificate_number: string | null;
   job_id: number | null;
+  job_number?: string | null;
   customer_id: number;
   customer_full_name: string | null;
   work_address_id: number | null;
   work_address_name: string | null;
+  installation_label?: string | null;
 }
 
 interface CustomerOption {
@@ -197,7 +200,7 @@ export default function SiteReportsList({ token }: Props) {
         <CustomerSiteReportTab
           customerId={String(selectedReport.customer_id)}
           workAddressId={selectedReport.work_address_id ? String(selectedReport.work_address_id) : undefined}
-          clientDisplayName={selectedReport.customer_full_name || 'Customer'}
+          clientDisplayName={selectedReport.customer_full_name || 'Client'}
           siteAddressLabel={selectedReport.work_address_name || 'No address'}
           jobId={selectedReport.job_id ? String(selectedReport.job_id) : null}
           initialReportId={selectedReport.id}
@@ -213,7 +216,7 @@ export default function SiteReportsList({ token }: Props) {
         <div>
           <h2 className="text-xl font-black tracking-tight text-slate-900">Site Reports</h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            All site reports and certificates (FRA, Fire Risk Assessments, etc.) across customers.
+            All site reports and certificates (FRA, Fire Risk Assessments, etc.) across clients.
           </p>
         </div>
         <button
@@ -239,14 +242,14 @@ export default function SiteReportsList({ token }: Props) {
                 <X className="size-5" />
               </button>
             </div>
-            <p className="mt-1 text-sm text-slate-500">Select a customer and template to start a draft report.</p>
+            <p className="mt-1 text-sm text-slate-500">Select a client and template to start a draft report.</p>
 
             {createError && (
               <p className="mt-3 text-sm text-rose-600">{createError}</p>
             )}
 
             <label className="mt-5 block">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</span>
               <select
                 value={createCustomerId}
                 onChange={(e) => setCreateCustomerId(e.target.value)}
@@ -260,7 +263,7 @@ export default function SiteReportsList({ token }: Props) {
 
             {workAddresses.length > 0 && (
               <label className="mt-4 block">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Work / site address (optional)</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Installation address (optional)</span>
                 <select
                   value={createWorkAddressId}
                   onChange={(e) => setCreateWorkAddressId(e.target.value)}
@@ -309,61 +312,68 @@ export default function SiteReportsList({ token }: Props) {
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <table className="w-full text-sm">
+          <thead className={SITE_REPORT_TABLE_HEAD}>
             <tr>
-              <th className="px-5 py-3">Report</th>
-              <th className="px-5 py-3">Customer</th>
-              <th className="px-5 py-3">Template</th>
-              <th className="px-5 py-3">Certificate</th>
-              <th className="px-5 py-3">Updated</th>
-              <th className="px-5 py-3 text-right">Action</th>
+              <th className="px-4 py-3">Report</th>
+              <th className="px-4 py-3">Client</th>
+              <th className="px-4 py-3">Installation</th>
+              <th className="px-4 py-3">Job</th>
+              <th className="px-4 py-3">Template</th>
+              <th className="px-4 py-3">Certificate</th>
+              <th className="px-4 py-3">Updated</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {reports.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
                   No site reports yet. Create your first report above.
                 </td>
               </tr>
             ) : (
               reports.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                        <FileText className="size-4" />
-                      </span>
-                      <div>
-                        <p className="font-bold text-slate-900">
-                          {r.report_title || r.template_name || `Report #${r.id}`}
-                        </p>
-                        {r.work_address_name && (
-                          <p className="text-xs text-slate-500">{r.work_address_name}</p>
-                        )}
-                        <p className="text-xs text-slate-500">
-                          Created {dayjs(r.created_at).format('D MMM YYYY HH:mm')}
-                        </p>
-                      </div>
-                    </div>
+                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-900">
+                      {r.report_title || r.template_name || `Report #${r.id}`}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Created {dayjs(r.created_at).format('D MMM YYYY HH:mm')}
+                    </p>
                   </td>
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3">
                     <Link
                       href={`/dashboard/customers/${r.customer_id}`}
                       className="font-semibold text-[#14B8A6] hover:text-[#119f8e] hover:underline"
                     >
-                      {r.customer_full_name || 'Customer'}
+                      {r.customer_full_name || '—'}
                     </Link>
                   </td>
-                  <td className="px-5 py-4 text-slate-600">{r.template_name || '—'}</td>
-                  <td className="px-5 py-4 font-mono text-xs text-slate-600">
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.installation_label?.trim() || r.work_address_name?.trim() || '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.job_id ? (
+                      <Link
+                        href={`/dashboard/jobs/${r.job_id}`}
+                        className="font-mono text-xs font-semibold text-[#14B8A6] hover:underline"
+                      >
+                        {formatSiteReportJobRef(r.job_number, r.job_id)}
+                      </Link>
+                    ) : (
+                      formatSiteReportJobRef(r.job_number, r.job_id)
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{r.template_name || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
                     {r.certificate_number || 'Draft'}
                   </td>
-                  <td className="px-5 py-4 text-slate-600">
+                  <td className="px-4 py-3 text-slate-600">
                     {dayjs(r.updated_at).format('D MMM YYYY HH:mm')}
                   </td>
-                  <td className="px-5 py-4 text-right">
+                  <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center justify-end gap-3">
                       <button
                         type="button"

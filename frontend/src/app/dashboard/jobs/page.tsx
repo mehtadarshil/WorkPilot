@@ -23,6 +23,7 @@ interface Job {
   deadline: string | null;
   customer_id: number | null;
   customer_full_name: string | null;
+  installation_label?: string | null;
   location: string | null;
   required_certifications: string | null;
   attachments: { filename?: string; url?: string }[];
@@ -407,6 +408,7 @@ export default function JobsPage() {
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Priority</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Installation</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Profit</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Deadline</th>
                     <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
@@ -415,7 +417,7 @@ export default function JobsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {jobs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
                         No jobs yet. Create one to get started.
                       </td>
                     </tr>
@@ -468,6 +470,11 @@ export default function JobsPage() {
                               : j.officer_full_name || j.responsible_person || '—'}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{j.customer_full_name || '—'}</td>
+                          <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">
+                            <span className="line-clamp-2" title={j.installation_label || undefined}>
+                              {j.installation_label?.trim() || '—'}
+                            </span>
+                          </td>
                           <td className="px-6 py-4 text-sm font-semibold">
                             {j.profit != null ? (
                               <span className={j.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>

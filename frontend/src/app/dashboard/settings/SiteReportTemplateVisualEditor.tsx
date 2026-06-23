@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlignLeft,
   Calendar,
@@ -36,6 +36,42 @@ function moveItem<T>(list: T[], index: number, delta: -1 | 1): T[] {
   const [it] = next.splice(index, 1);
   next.splice(j, 0, it);
   return next;
+}
+
+function parseChoicesInput(raw: string): string[] {
+  return raw.split(',').map((x) => x.trim()).filter(Boolean);
+}
+
+function ChoicesInput({
+  choices,
+  onChange,
+}: {
+  choices?: string[];
+  onChange: (choices: string[]) => void;
+}) {
+  const [draft, setDraft] = useState(choices?.join(', ') ?? '');
+  const choicesText = choices?.join(', ') ?? '';
+
+  useEffect(() => {
+    setDraft(choicesText);
+  }, [choicesText]);
+
+  const commit = () => {
+    const parsed = parseChoicesInput(draft);
+    onChange(parsed);
+    setDraft(parsed.join(', '));
+  };
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+      placeholder="Option 1, Option 2"
+    />
+  );
 }
 
 function slugFieldId(label: string, fallback: string): string {
@@ -249,12 +285,10 @@ export default function SiteReportTemplateVisualEditor({ value, onChange }: Prop
             {field.type === 'select' && (
               <div>
                 <label className="text-[11px] font-semibold uppercase text-slate-500">Choices (comma-separated)</label>
-                <input
-                  type="text"
-                  value={field.choices?.join(', ') ?? ''}
-                  onChange={(e) => onPatch({ choices: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })}
-                  className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-                  placeholder="Option 1, Option 2"
+                <ChoicesInput
+                  key={field.id}
+                  choices={field.choices}
+                  onChange={(choices) => onPatch({ choices })}
                 />
               </div>
             )}

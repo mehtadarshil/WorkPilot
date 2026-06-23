@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import dayjs from 'dayjs';
+import Link from 'next/link';
+import { formatSiteReportJobRef, SITE_REPORT_TABLE_HEAD } from '../../certificates/siteReportTableUtils';
 
 type ReportListRow = {
   id: number;
@@ -12,6 +14,9 @@ type ReportListRow = {
   updated_at: string;
   created_at: string;
   certificate_number: string | null;
+  job_id?: number | null;
+  job_number?: string | null;
+  installation_label?: string | null;
 };
 
 type TemplateRow = {
@@ -61,41 +66,49 @@ export default function CustomerSiteReportsList({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+        <table className="w-full text-sm">
+          <thead className={SITE_REPORT_TABLE_HEAD}>
             <tr>
-              <th className="px-5 py-3">Report</th>
-              <th className="px-5 py-3">Template</th>
-              <th className="px-5 py-3">Certificate</th>
-              <th className="px-5 py-3">Updated</th>
-              <th className="px-5 py-3 text-right">Action</th>
+              <th className="px-4 py-3">Report</th>
+              <th className="px-4 py-3">Installation</th>
+              <th className="px-4 py-3">Job</th>
+              <th className="px-4 py-3">Template</th>
+              <th className="px-4 py-3">Certificate</th>
+              <th className="px-4 py-3">Updated</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {reports.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
+                <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
                   No reports yet. Create a report from a template to start a draft.
                 </td>
               </tr>
             ) : (
               reports.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                        <FileText className="size-4" />
-                      </span>
-                      <div>
-                        <p className="font-bold text-slate-900">{r.report_title || r.template_name || `Report #${r.id}`}</p>
-                        <p className="text-xs text-slate-500">Created {dayjs(r.created_at).format('D MMM YYYY HH:mm')}</p>
-                      </div>
-                    </div>
+                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-900">{r.report_title || r.template_name || `Report #${r.id}`}</p>
+                    <p className="text-xs text-slate-500">Created {dayjs(r.created_at).format('D MMM YYYY HH:mm')}</p>
                   </td>
-                  <td className="px-5 py-4 text-slate-600">{r.template_name || 'Template'}</td>
-                  <td className="px-5 py-4 font-mono text-xs text-slate-600">{r.certificate_number || 'Draft'}</td>
-                  <td className="px-5 py-4 text-slate-600">{dayjs(r.updated_at).format('D MMM YYYY HH:mm')}</td>
-                  <td className="px-5 py-4 text-right">
+                  <td className="px-4 py-3 text-slate-600">{r.installation_label?.trim() || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.job_id ? (
+                      <Link
+                        href={`/dashboard/jobs/${r.job_id}`}
+                        className="font-mono text-xs font-semibold text-[#14B8A6] hover:underline"
+                      >
+                        {formatSiteReportJobRef(r.job_number, r.job_id)}
+                      </Link>
+                    ) : (
+                      formatSiteReportJobRef(r.job_number, r.job_id)
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{r.template_name || '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{r.certificate_number || 'Draft'}</td>
+                  <td className="px-4 py-3 text-slate-600">{dayjs(r.updated_at).format('D MMM YYYY HH:mm')}</td>
+                  <td className="px-4 py-3 text-right">
                     <button type="button" onClick={() => onOpen(r.id)} className="font-bold text-[#14B8A6] hover:text-[#119f8e]">
                       Open
                     </button>

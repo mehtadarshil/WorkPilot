@@ -112,7 +112,7 @@ interface Analytics {
 
 const STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC', 'General'];
 const TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
-const LOCATIONS = ['Van', 'House', 'Store', 'Other'];
+const DEFAULT_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
 const QUALITIES = ['New', 'Used - Good', 'Used - Fair', 'Damaged'];
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -187,8 +187,49 @@ export default function StockToolsPage() {
   });
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [locations, setLocations] = useState<string[]>(DEFAULT_LOCATIONS);
+  const [showLocationSettings, setShowLocationSettings] = useState(false);
+  const [locationDraft, setLocationDraft] = useState('');
+  const [savingLocations, setSavingLocations] = useState(false);
 
-  // --- API Fetches ---
+  const fetchLocationOptions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const data = await getJson<{ location_options: string[] }>('/settings/stock-tools', token);
+      const opts = data.location_options?.filter((v) => v.trim().length > 0) ?? [];
+      if (opts.length > 0) setLocations(opts);
+    } catch {
+      setLocations(DEFAULT_LOCATIONS);
+    }
+  }, [token]);
+
+  const saveLocationOptions = async () => {
+    if (!token) return;
+    setSavingLocations(true);
+    setErrorMsg(null);
+    try {
+      const location_options = locationDraft
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (location_options.length === 0) {
+        setErrorMsg('Add at least one location.');
+        return;
+      }
+      const res = await patchJson<{ location_options: string[] }>(
+        '/settings/stock-tools',
+        { location_options },
+        token,
+      );
+      setLocations(res.location_options);
+      setShowLocationSettings(false);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Could not save locations');
+    } finally {
+      setSavingLocations(false);
+    }
+  };
+
   const fetchOfficers = useCallback(async () => {
     if (!token) return;
     try {
@@ -242,7 +283,8 @@ export default function StockToolsPage() {
 
   useEffect(() => {
     fetchOfficers();
-  }, [fetchOfficers]);
+    void fetchLocationOptions();
+  }, [fetchOfficers, fetchLocationOptions]);
 
   useEffect(() => {
     if (activeTab === 'stock') {
@@ -557,7 +599,7 @@ export default function StockToolsPage() {
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
               >
                 <option value="All">All Locations</option>
-                {LOCATIONS.map((loc) => (
+                {locations.map((loc) => (
                   <option key={loc} value={loc}>
                     {loc}
                   </option>
@@ -565,12 +607,24 @@ export default function StockToolsPage() {
               </select>
             </div>
 
-            <button
-              onClick={handleOpenAddStock}
-              className="flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] shadow-sm transition animate-press"
-            >
-              <Plus className="size-4" /> Add Part to Stock
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setLocationDraft(locations.join('\n'));
+                  setShowLocationSettings(true);
+                }}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Manage locations
+              </button>
+              <button
+                onClick={handleOpenAddStock}
+                className="flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] shadow-sm transition animate-press"
+              >
+                <Plus className="size-4" /> Add Part to Stock
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1163,7 +1217,7 @@ export default function StockToolsPage() {
                     onChange={(e) => setStockForm((prev) => ({ ...prev, location: e.target.value }))}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                   >
-                    {LOCATIONS.map(loc => (
+                    {locations.map(loc => (
                       <option key={loc} value={loc}>{loc}</option>
                     ))}
                   </select>
@@ -1285,7 +1339,7 @@ export default function StockToolsPage() {
                     onChange={(e) => setToolForm((prev) => ({ ...prev, location: e.target.value }))}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                   >
-                    {LOCATIONS.map(loc => (
+                    {locations.map(loc => (
                       <option key={loc} value={loc}>{loc}</option>
                     ))}
                   </select>
@@ -1376,6 +1430,37 @@ export default function StockToolsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showLocationSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLocationSettings(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900">Stock location options</h3>
+            <p className="mt-1 text-sm text-slate-500">One location per line. These appear in the Location dropdown when adding stock or tools.</p>
+            <textarea
+              value={locationDraft}
+              onChange={(e) => setLocationDraft(e.target.value)}
+              rows={6}
+              className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLocationSettings(false)}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingLocations}
+                onClick={() => void saveLocationOptions()}
+                className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+              >
+                {savingLocations ? 'Saving…' : 'Save locations'}
+              </button>
+            </div>
           </div>
         </div>
       )}

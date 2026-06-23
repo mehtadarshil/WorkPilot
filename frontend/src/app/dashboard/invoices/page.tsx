@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Search, FileText, Plus, ChevronRight } from 'lucide-react';
+import { Search, FileText, Plus, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
@@ -29,6 +29,15 @@ interface Invoice {
   profit?: number;
 }
 
+interface ExpenseStats {
+  company_total: number;
+  company_count: number;
+  personal_total: number;
+  personal_count: number;
+  approved_total: number;
+  approved_count: number;
+}
+
 interface InvoicesResponse {
   invoices: Invoice[];
   total: number;
@@ -38,6 +47,7 @@ interface InvoicesResponse {
   stateStats: Record<string, { count: number; total_amount: number }>;
   overallOutstanding: number;
   overallProfit?: number;
+  expenseStats?: ExpenseStats;
 }
 
 interface Customer {
@@ -64,6 +74,55 @@ interface InvoiceSettings {
 }
 
 const PAGE_SIZE = 10;
+const REPORT_METRICS_STORAGE_KEY = 'wp_invoice_report_metrics';
+
+type ReportMetricKey =
+  | 'outstanding'
+  | 'net_profit'
+  | 'company_expenses'
+  | 'personal_expenses'
+  | 'approved_expenses'
+  | `state:${string}`;
+
+const DEFAULT_REPORT_METRICS: Record<ReportMetricKey, boolean> = {
+  outstanding: true,
+  net_profit: true,
+  company_expenses: true,
+  personal_expenses: true,
+  approved_expenses: false,
+  'state:draft': true,
+  'state:issued': true,
+  'state:pending_payment': true,
+  'state:partially_paid': true,
+  'state:paid': true,
+  'state:overdue': true,
+  'state:cancelled': true,
+};
+
+const REPORT_METRIC_LABELS: Record<Exclude<ReportMetricKey, `state:${string}`>, string> = {
+  outstanding: 'Outstanding',
+  net_profit: 'Net profit',
+  company_expenses: 'Company expenses',
+  personal_expenses: 'Personal expenses due',
+  approved_expenses: 'All approved expenses',
+};
+
+function loadReportMetrics(): Record<ReportMetricKey, boolean> {
+  const defaults = { ...DEFAULT_REPORT_METRICS };
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const raw = window.localStorage.getItem(REPORT_METRICS_STORAGE_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<Record<ReportMetricKey, boolean>>;
+    const merged = { ...defaults };
+    for (const key of Object.keys(defaults) as ReportMetricKey[]) {
+      if (typeof parsed[key] === 'boolean') merged[key] = parsed[key]!;
+    }
+    return merged;
+  } catch {
+    return defaults;
+  }
+}
 const INVOICE_STATES = [
   { value: 'draft', label: 'Draft', color: 'bg-slate-100 text-slate-600' },
   { value: 'issued', label: 'Issued', color: 'bg-blue-100 text-blue-800' },
@@ -99,6 +158,9 @@ export default function InvoicesPage() {
   const [stateStats, setStateStats] = useState<Record<string, { count: number; total_amount: number }>>({});
   const [overallOutstanding, setOverallOutstanding] = useState(0);
   const [overallProfit, setOverallProfit] = useState(0);
+  const [expenseStats, setExpenseStats] = useState<ExpenseStats | null>(null);
+  const [reportMetrics, setReportMetrics] = useState<Record<ReportMetricKey, boolean>>(DEFAULT_REPORT_METRICS);
+  const [metricsMenuOpen, setMetricsMenuOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -173,6 +235,7 @@ export default function InvoicesPage() {
       setStateStats(data.stateStats ?? {});
       setOverallOutstanding(data.overallOutstanding ?? 0);
       setOverallProfit(data.overallProfit ?? 0);
+      setExpenseStats(data.expenseStats ?? null);
     } catch {
       setInvoices([]);
       setTotal(0);
@@ -180,8 +243,23 @@ export default function InvoicesPage() {
       setStateStats({});
       setOverallOutstanding(0);
       setOverallProfit(0);
+      setExpenseStats(null);
     }
   }, [token, page, searchDebounced, stateFilter]);
+
+  useEffect(() => {
+    setReportMetrics(loadReportMetrics());
+  }, []);
+
+  const toggleReportMetric = (key: ReportMetricKey) => {
+    setReportMetrics((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(REPORT_METRICS_STORAGE_KEY, JSON.stringify(next));
+      }
+      return next;
+    });
+  };
 
   const fetchCustomers = useCallback(async () => {
     if (!token) return;
@@ -400,7 +478,65 @@ export default function InvoicesPage() {
             </button>
           </div>
 
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">Reporting summary</p>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMetricsMenuOpen((open) => !open)}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <SlidersHorizontal className="size-4" />
+                Customize metrics
+              </button>
+              {metricsMenuOpen && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Close metrics menu"
+                    className="fixed inset-0 z-10 cursor-default"
+                    onClick={() => setMetricsMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+                    <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Show on dashboard</p>
+                    <div className="space-y-2">
+                      {(Object.keys(REPORT_METRIC_LABELS) as Array<Exclude<ReportMetricKey, `state:${string}`>>).map((key) => (
+                        <label key={key} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={reportMetrics[key]}
+                            onChange={() => toggleReportMetric(key)}
+                            className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                          />
+                          {REPORT_METRIC_LABELS[key]}
+                        </label>
+                      ))}
+                      <div className="my-2 border-t border-slate-100 pt-2">
+                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Invoice states</p>
+                        {INVOICE_STATES.map((s) => {
+                          const key = `state:${s.value}` as ReportMetricKey;
+                          return (
+                            <label key={s.value} className="mb-2 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={reportMetrics[key]}
+                                onChange={() => toggleReportMetric(key)}
+                                className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                              />
+                              {s.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-9">
+            {reportMetrics.outstanding && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -410,7 +546,9 @@ export default function InvoicesPage() {
               <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallOutstanding, 'GBP')}</h3>
               <p className="text-[10px] text-slate-400">across all invoices</p>
             </motion.div>
+            )}
 
+            {reportMetrics.net_profit && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -420,8 +558,45 @@ export default function InvoicesPage() {
               <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallProfit, 'GBP')}</h3>
               <p className="text-[10px] text-slate-400">subtotal minus job costs</p>
             </motion.div>
+            )}
 
-            {INVOICE_STATES.map((s) => (
+            {reportMetrics.company_expenses && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-amber-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-600">Company Expenses</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(expenseStats?.company_total ?? 0, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">{expenseStats?.company_count ?? 0} approved job expenses</p>
+            </motion.div>
+            )}
+
+            {reportMetrics.personal_expenses && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-violet-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-violet-600">Personal Expenses</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(expenseStats?.personal_total ?? 0, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">{expenseStats?.personal_count ?? 0} approved reimbursements</p>
+            </motion.div>
+            )}
+
+            {reportMetrics.approved_expenses && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-slate-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">Approved Expenses</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(expenseStats?.approved_total ?? 0, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">{expenseStats?.approved_count ?? 0} total approved</p>
+            </motion.div>
+            )}
+
+            {INVOICE_STATES.filter((s) => reportMetrics[`state:${s.value}` as ReportMetricKey]).map((s) => (
               <motion.div
                 key={s.value}
                 initial={{ opacity: 0, y: 10 }}

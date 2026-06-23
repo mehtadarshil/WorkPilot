@@ -1416,6 +1416,7 @@ async function initDb() {
   await pool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_officers_linked_user_unique ON officers(linked_user_id) WHERE linked_user_id IS NOT NULL`,
   );
+  await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS calendar_color VARCHAR(16)`);
 
   await ensureMobileProfileColumns(pool);
 
@@ -1552,6 +1553,20 @@ async function initDb() {
   `);
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_service_reminder_sent_tenant ON service_reminder_sent(tenant_user_id)`,
+  );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS invoice_reminder_sent (
+      id SERIAL PRIMARY KEY,
+      invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      phase INTEGER NOT NULL,
+      sent_on DATE NOT NULL DEFAULT CURRENT_DATE,
+      tenant_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (invoice_id, phase)
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_invoice_reminder_sent_tenant ON invoice_reminder_sent(tenant_user_id)`,
   );
   await pool.query(
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS service_reminders_enabled BOOLEAN NOT NULL DEFAULT true`,
@@ -5111,7 +5126,7 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
     const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean; permissions: unknown; linked_user_id: number | null }>(
-      `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by,
+      `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, calendar_color, created_at, updated_at, created_by,
               permissions, linked_user_id,
               (password_hash IS NOT NULL OR linked_user_id IS NOT NULL) AS has_mobile_login
        FROM officers ${whereClause}
@@ -5145,6 +5160,7 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
       certifications: r.certifications ?? null,
       assigned_responsibilities: r.assigned_responsibilities ?? null,
       state: r.state,
+      calendar_color: (r as { calendar_color?: string | null }).calendar_color ?? null,
       created_at: (r.created_at as Date).toISOString(),
       updated_at: (r.updated_at as Date).toISOString(),
       created_by: r.created_by,
@@ -5178,7 +5194,7 @@ app.get('/api/officers/list', authenticate, async (req: AuthenticatedRequest, re
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
     const result = await pool.query<DbOfficer>(
-      `SELECT id, full_name, role_position, department, state
+      `SELECT id, full_name, role_position, department, state, calendar_color
        FROM officers${isSuperAdmin ? '' : ' WHERE created_by = $1'}
        ORDER BY full_name ASC
        LIMIT 200`,
@@ -5190,6 +5206,7 @@ app.get('/api/officers/list', authenticate, async (req: AuthenticatedRequest, re
       role_position: r.role_position ?? null,
       department: r.department ?? null,
       state: r.state,
+      calendar_color: (r as { calendar_color?: string | null }).calendar_color ?? null,
     }));
     return res.json({ officers });
   } catch (error) {
@@ -5360,6 +5377,14 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
   if (body.state && OFFICER_STATES.includes(body.state as typeof OFFICER_STATES[number])) {
     updates.push(`state = $${idx++}`);
     values.push(body.state);
+  }
+  if (body.calendar_color !== undefined) {
+    const rawColor = typeof body.calendar_color === 'string' ? body.calendar_color.trim() : '';
+    if (rawColor && !/^#[0-9A-Fa-f]{6}$/.test(rawColor)) {
+      return res.status(400).json({ message: 'calendar_color must be a hex colour like #14B8A6' });
+    }
+    updates.push(`calendar_color = $${idx++}`);
+    values.push(rawColor || null);
   }
   if (body.permissions != null) {
     const parsed = parsePermissionsBody(body.permissions);
@@ -6248,7 +6273,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       conditions.push('(j.is_quotation_visit IS NOT TRUE)');
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const joinClause = `LEFT JOIN customers c ON c.id = j.customer_id LEFT JOIN officers o ON o.id = j.officer_id`;
+    const joinClause = `LEFT JOIN customers c ON c.id = j.customer_id LEFT JOIN officers o ON o.id = j.officer_id LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id`;
     listParams.push(limit, offset);
 
     const countResult = await pool.query(
@@ -6257,13 +6282,21 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string }>(
+    const listResult = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string; installation_label?: string | null }>(
       `SELECT j.id, j.job_number, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
         j.customer_id, j.work_address_id, j.location, j.required_certifications, j.attachments, j.state,
         j.schedule_start, j.duration_minutes, j.scheduling_notes, j.dispatched_at,
         j.created_at, j.updated_at, j.created_by, j.is_quotation_visit, j.charge_type,
         c.full_name AS customer_full_name,
-        o.full_name AS officer_full_name
+        o.full_name AS officer_full_name,
+        COALESCE(
+          NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
+          NULLIF(TRIM(wa.name), ''),
+          NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1), ''), NULLIF(TRIM(c.address_line_2), ''), NULLIF(TRIM(c.address_line_3), ''), NULLIF(TRIM(c.town), ''), NULLIF(TRIM(c.county), ''), NULLIF(TRIM(c.postcode), ''))), ''),
+          NULLIF(TRIM(c.address), ''),
+          NULLIF(TRIM(j.location), ''),
+          ''
+        ) AS installation_label
        FROM jobs j
        ${joinClause}
        ${whereClause}
@@ -6329,6 +6362,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       customer_id: r.customer_id ?? null,
       work_address_id: r.work_address_id ?? null,
       customer_full_name: r.customer_full_name ?? null,
+      installation_label: (r as { installation_label?: string | null }).installation_label?.trim() || null,
       location: r.location ?? null,
       required_certifications: r.required_certifications ?? null,
       attachments: Array.isArray(r.attachments) ? r.attachments : [],
@@ -13830,6 +13864,36 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     }
     overallProfit = Math.round(overallProfit * 100) / 100;
 
+    const expenseStatsRes = await pool.query<{
+      company_total: string;
+      company_count: number;
+      personal_total: string;
+      personal_count: number;
+      approved_total: string;
+      approved_count: number;
+    }>(
+      `SELECT
+         COALESCE(SUM(je.amount) FILTER (WHERE je.expense_type = 'company'), 0)::numeric AS company_total,
+         COUNT(*) FILTER (WHERE je.expense_type = 'company')::int AS company_count,
+         COALESCE(SUM(je.amount) FILTER (WHERE je.expense_type = 'personal'), 0)::numeric AS personal_total,
+         COUNT(*) FILTER (WHERE je.expense_type = 'personal')::int AS personal_count,
+         COALESCE(SUM(je.amount), 0)::numeric AS approved_total,
+         COUNT(*)::int AS approved_count
+       FROM job_expenses je
+       JOIN jobs j ON j.id = je.job_id
+       ${ownerClause ? `${ownerClause} AND` : 'WHERE'} je.status = 'approved'`,
+      countParams2,
+    );
+    const expenseRow = expenseStatsRes.rows[0];
+    const expenseStats = {
+      company_total: parseFloat(expenseRow?.company_total ?? '0'),
+      company_count: Number(expenseRow?.company_count ?? 0),
+      personal_total: parseFloat(expenseRow?.personal_total ?? '0'),
+      personal_count: Number(expenseRow?.personal_count ?? 0),
+      approved_total: parseFloat(expenseRow?.approved_total ?? '0'),
+      approved_count: Number(expenseRow?.approved_count ?? 0),
+    };
+
     // 2. Calculate page job costs for row level details
     const pageJobIds = listResult.rows
       .map(r => r.job_id)
@@ -13871,6 +13935,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       stateStats,
       overallOutstanding,
       overallProfit,
+      expenseStats,
     });
   } catch (error) {
     console.error('List invoices error:', error);
@@ -15079,6 +15144,32 @@ app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('i
       },
       userId,
     );
+
+    let commWorkAddressId: number | null = inv.invoice_work_address_id ?? null;
+    if (commWorkAddressId == null && inv.job_id) {
+      const waRes = await pool.query<{ work_address_id: number | null }>(
+        'SELECT work_address_id FROM jobs WHERE id = $1',
+        [inv.job_id],
+      );
+      commWorkAddressId = waRes.rows[0]?.work_address_id ?? null;
+    }
+    await pool.query(
+      `INSERT INTO customer_communications
+        (customer_id, work_address_id, record_type, subject, message, status, to_value, cc_value, bcc_value, object_type, object_id, created_by)
+       VALUES ($1, $2, 'email', $3, $4, 'sent', $5, $6, $7, 'invoice', $8, $9)`,
+      [
+        inv.customer_id,
+        commWorkAddressId,
+        processedSubject,
+        bodyHtmlRaw,
+        to,
+        cc || null,
+        bcc || null,
+        id,
+        userId,
+      ],
+    );
+
     return res.json({ success: true, message: 'Invoice sent by email.' });
   } catch (error) {
     console.error('Send invoice email (compose) error:', error);
@@ -18532,6 +18623,9 @@ app.post(
         loadEmailSettingsPayload,
         sendUserEmail,
         runServiceCustomerReminders: runAutomatedServiceReminders,
+        buildInvoiceEmailTemplateVars: (inv, settings) =>
+          buildInvoiceEmailTemplateVars(inv as unknown as Parameters<typeof buildInvoiceEmailTemplateVars>[0], settings),
+        getInvoiceSettings,
       });
       return res.json(result);
     } catch (error) {
@@ -18552,6 +18646,9 @@ async function handleInternalRemindersCron(req: Request, res: Response) {
       loadEmailSettingsPayload,
       sendUserEmail,
       runServiceCustomerReminders: runAutomatedServiceReminders,
+      buildInvoiceEmailTemplateVars: (inv, settings) =>
+        buildInvoiceEmailTemplateVars(inv as unknown as Parameters<typeof buildInvoiceEmailTemplateVars>[0], settings),
+      getInvoiceSettings,
     });
     return res.json(result);
   } catch (error) {
@@ -20003,10 +20100,23 @@ app.get('/api/customers/:customerId/site-reports', authenticate, requireTenantCr
       created_at: Date;
       certificate_number: string | null;
       job_id: number | null;
+      job_number: string | null;
+      installation_label: string | null;
     }>(
-      `SELECT r.id, r.template_id, t.name AS template_name, r.report_title, r.updated_at, r.created_at, r.certificate_number, r.job_id
+      `SELECT r.id, r.template_id, t.name AS template_name, r.report_title, r.updated_at, r.created_at,
+              r.certificate_number, r.job_id, j.job_number,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
+                NULLIF(TRIM(wa.name), ''),
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1), ''), NULLIF(TRIM(c.address_line_2), ''), NULLIF(TRIM(c.address_line_3), ''), NULLIF(TRIM(c.town), ''), NULLIF(TRIM(c.county), ''), NULLIF(TRIM(c.postcode), ''))), ''),
+                NULLIF(TRIM(c.address), ''),
+                ''
+              ) AS installation_label
        FROM customer_site_reports r
        LEFT JOIN site_report_templates t ON t.id = r.template_id
+       LEFT JOIN customers c ON c.id = r.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = r.work_address_id
+       LEFT JOIN jobs j ON j.id = r.job_id
        WHERE r.customer_id = $1
          AND (($2::integer IS NULL AND r.work_address_id IS NULL) OR r.work_address_id = $2)
          AND ($3::integer IS NULL OR r.job_id = $3)
@@ -20024,6 +20134,8 @@ app.get('/api/customers/:customerId/site-reports', authenticate, requireTenantCr
         created_at: (r.created_at as Date).toISOString(),
         certificate_number: r.certificate_number,
         job_id: r.job_id != null ? Number(r.job_id) : null,
+        job_number: r.job_number,
+        installation_label: r.installation_label?.trim() || null,
       })),
     });
   } catch (error) {
@@ -20050,20 +20162,30 @@ app.get('/api/site-reports', authenticate, async (req: AuthenticatedRequest, res
       created_at: Date;
       certificate_number: string | null;
       job_id: number | null;
+      job_number: string | null;
       customer_id: number;
       customer_full_name: string | null;
       work_address_id: number | null;
       work_address_name: string | null;
+      installation_label: string | null;
     }>(
       `SELECT r.id, r.template_id, t.name AS template_name, r.report_title, r.updated_at, r.created_at,
-              r.certificate_number, r.job_id, r.customer_id,
+              r.certificate_number, r.job_id, j.job_number, r.customer_id,
               c.full_name AS customer_full_name,
               r.work_address_id,
-              wa.name AS work_address_name
+              wa.name AS work_address_name,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
+                NULLIF(TRIM(wa.name), ''),
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1), ''), NULLIF(TRIM(c.address_line_2), ''), NULLIF(TRIM(c.address_line_3), ''), NULLIF(TRIM(c.town), ''), NULLIF(TRIM(c.county), ''), NULLIF(TRIM(c.postcode), ''))), ''),
+                NULLIF(TRIM(c.address), ''),
+                ''
+              ) AS installation_label
        FROM customer_site_reports r
        LEFT JOIN site_report_templates t ON t.id = r.template_id
        LEFT JOIN customers c ON c.id = r.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = r.work_address_id
+       LEFT JOIN jobs j ON j.id = r.job_id
        ${isSuperAdmin ? '' : 'WHERE c.created_by = $1'}
        ORDER BY r.updated_at DESC
        LIMIT 200`,
@@ -20079,10 +20201,12 @@ app.get('/api/site-reports', authenticate, async (req: AuthenticatedRequest, res
         created_at: (r.created_at as Date).toISOString(),
         certificate_number: r.certificate_number,
         job_id: r.job_id != null ? Number(r.job_id) : null,
+        job_number: r.job_number,
         customer_id: r.customer_id,
         customer_full_name: r.customer_full_name,
         work_address_id: r.work_address_id != null ? Number(r.work_address_id) : null,
         work_address_name: r.work_address_name,
+        installation_label: r.installation_label?.trim() || null,
       })),
     });
   } catch (error) {
@@ -21426,6 +21550,9 @@ initDb()
           loadEmailSettingsPayload,
           sendUserEmail,
           runServiceCustomerReminders: runAutomatedServiceReminders,
+          buildInvoiceEmailTemplateVars: (inv, settings) =>
+            buildInvoiceEmailTemplateVars(inv as unknown as Parameters<typeof buildInvoiceEmailTemplateVars>[0], settings),
+          getInvoiceSettings,
         })
           .then((r) => {
             const loggable =
@@ -21436,7 +21563,9 @@ initDb()
               r.job_office_task_reminders.sent > 0 ||
               r.job_office_task_reminders.errors.length > 0 ||
               r.staff_reminders.sent > 0 ||
-              r.staff_reminders.errors.length > 0;
+              r.staff_reminders.errors.length > 0 ||
+              r.invoice_reminders.sent > 0 ||
+              r.invoice_reminders.errors.length > 0;
             if (loggable) console.log('[scheduled-reminders]', r);
           })
           .catch((e) => console.error('[scheduled-reminders]', e));

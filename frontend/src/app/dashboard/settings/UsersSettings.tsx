@@ -25,6 +25,7 @@ export interface User {
   updated_at: string;
   /** Mobile app login enabled (password set in User Management). */
   has_mobile_login?: boolean;
+  calendar_color?: string | null;
 }
 
 interface UsersResponse {
@@ -82,6 +83,7 @@ export default function UsersSettings() {
   const [formInitialPassword, setFormInitialPassword] = useState('');
   const [formNewPassword, setFormNewPassword] = useState('');
   const [formClearMobilePassword, setFormClearMobilePassword] = useState(false);
+  const [formCalendarColor, setFormCalendarColor] = useState('');
   const [showDashboardTeamSection, setShowDashboardTeamSection] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -161,6 +163,7 @@ export default function UsersSettings() {
     setFormInitialPassword('');
     setFormNewPassword('');
     setFormClearMobilePassword(false);
+    setFormCalendarColor('');
   };
 
   const openAdd = () => {
@@ -181,6 +184,7 @@ export default function UsersSettings() {
     setFormCertifications(u.certifications ?? '');
     setFormAssignedResponsibilities(u.assigned_responsibilities ?? '');
     setFormState(u.state);
+    setFormCalendarColor(u.calendar_color ?? '');
     setActionMenu(null);
     setEditModalOpen(true);
   };
@@ -257,6 +261,7 @@ export default function UsersSettings() {
           certifications: formCertifications.trim() || null,
           assigned_responsibilities: formAssignedResponsibilities.trim() || null,
           state: formState,
+          calendar_color: formCalendarColor.trim() || null,
           ...(formClearMobilePassword ? { clear_mobile_password: true } : {}),
           ...(newPw && !formClearMobilePassword ? { initial_password: newPw } : {}),
         },
@@ -548,6 +553,8 @@ export default function UsersSettings() {
           setFormNewPassword={setFormNewPassword}
           formClearMobilePassword={formClearMobilePassword}
           setFormClearMobilePassword={setFormClearMobilePassword}
+          formCalendarColor={formCalendarColor}
+          setFormCalendarColor={setFormCalendarColor}
           submitLabel="Add"
         />
       )}
@@ -584,6 +591,8 @@ export default function UsersSettings() {
           setFormNewPassword={setFormNewPassword}
           formClearMobilePassword={formClearMobilePassword}
           setFormClearMobilePassword={setFormClearMobilePassword}
+          formCalendarColor={formCalendarColor}
+          setFormCalendarColor={setFormCalendarColor}
           submitLabel="Save Changes"
         />
       )}
@@ -829,6 +838,8 @@ function UserModal({
   setFormNewPassword,
   formClearMobilePassword,
   setFormClearMobilePassword,
+  formCalendarColor,
+  setFormCalendarColor,
   submitLabel,
 }: {
   title: string;
@@ -861,6 +872,8 @@ function UserModal({
   setFormNewPassword: (v: string) => void;
   formClearMobilePassword: boolean;
   setFormClearMobilePassword: (v: boolean) => void;
+  formCalendarColor: string;
+  setFormCalendarColor: (v: string) => void;
   submitLabel: string;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -974,6 +987,25 @@ function UserModal({
                 ))}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Staff Work calendar colour</label>
+            <div className="mt-1 flex items-center gap-3">
+              <input
+                type="color"
+                value={formCalendarColor || '#14B8A6'}
+                onChange={(e) => setFormCalendarColor(e.target.value)}
+                className="h-10 w-14 cursor-pointer rounded border border-slate-200 bg-white p-1"
+              />
+              <input
+                type="text"
+                value={formCalendarColor}
+                onChange={(e) => setFormCalendarColor(e.target.value)}
+                placeholder="#14B8A6 (optional — auto colour if blank)"
+                className={inputClass}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Used on the Staff Work calendar for this officer&apos;s jobs and leave.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700">Certifications (text description)</label>

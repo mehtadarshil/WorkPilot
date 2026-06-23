@@ -191,6 +191,101 @@ export async function ensureStaffWorkSchema(pool: Pool): Promise<void> {
   await pool.query('ALTER TABLE job_expenses ALTER COLUMN expense_type SET NOT NULL').catch((err) => {
     console.warn('job_expenses.expense_type NOT NULL constraint skipped:', err);
   });
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS officer_payments (
+      id SERIAL PRIMARY KEY,
+      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+      payment_method VARCHAR(50) NOT NULL DEFAULT 'bank_transfer',
+      payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      reference_number VARCHAR(120),
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_officer_payments_officer ON officer_payments(officer_id, payment_date DESC)');
+}
+
+const OFFICER_PAYMENT_METHODS = ['bank_transfer', 'credit_card', 'cash', 'digital_payment', 'check', 'other'] as const;
+
+async function officerVisibleToUser(
+  pool: Pool,
+  officerId: number,
+  userId: number,
+  isSuperAdmin: boolean,
+): Promise<boolean> {
+  if (isSuperAdmin) {
+    const result = await pool.query('SELECT id FROM officers WHERE id = $1', [officerId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+  const result = await pool.query('SELECT id FROM officers WHERE id = $1 AND created_by = $2', [officerId, userId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+const RESOLVED_PERSONAL_EXPENSE_BASE = `
+  SELECT je.amount,
+         COALESCE(
+           je.officer_id,
+           (SELECT o.id
+            FROM officers o
+            LEFT JOIN users cu ON cu.id = je.created_by
+            WHERE o.created_by = j.created_by
+              AND (
+                o.linked_user_id = je.created_by
+                OR (
+                  cu.email IS NOT NULL
+                  AND o.email IS NOT NULL
+                  AND LOWER(TRIM(o.email)) = LOWER(TRIM(cu.email))
+                )
+              )
+            ORDER BY CASE WHEN o.linked_user_id = je.created_by THEN 0 ELSE 1 END, o.id
+            LIMIT 1)
+         ) AS resolved_officer_id
+  FROM job_expenses je
+  JOIN jobs j ON j.id = je.job_id
+  WHERE je.status = 'approved'
+    AND je.expense_type = 'personal'
+`;
+
+async function loadOfficerPaymentSummary(
+  pool: Pool,
+  officerId: number,
+  userId: number,
+  isSuperAdmin: boolean,
+) {
+  const approvedRes = await pool.query<{ approved_total: string; approved_count: number }>(
+    `WITH resolved AS (${RESOLVED_PERSONAL_EXPENSE_BASE}
+       ${isSuperAdmin ? '' : 'AND j.created_by = $2'}
+     )
+     SELECT COALESCE(SUM(amount), 0)::numeric AS approved_total,
+            COUNT(*)::int AS approved_count
+     FROM resolved
+     WHERE resolved_officer_id = $1`,
+    isSuperAdmin ? [officerId] : [officerId, userId],
+  );
+
+  const paidRes = await pool.query<{ paid_total: string; paid_count: number }>(
+    `SELECT COALESCE(SUM(op.amount), 0)::numeric AS paid_total,
+            COUNT(*)::int AS paid_count
+     FROM officer_payments op
+     JOIN officers o ON o.id = op.officer_id
+     WHERE op.officer_id = $1
+       ${isSuperAdmin ? '' : 'AND o.created_by = $2'}`,
+    isSuperAdmin ? [officerId] : [officerId, userId],
+  );
+
+  const approvedTotal = Number(approvedRes.rows[0]?.approved_total ?? 0);
+  const paidTotal = Number(paidRes.rows[0]?.paid_total ?? 0);
+  const outstanding = Math.round((approvedTotal - paidTotal) * 100) / 100;
+
+  return {
+    approved_total: approvedTotal,
+    approved_count: Number(approvedRes.rows[0]?.approved_count ?? 0),
+    paid_total: paidTotal,
+    paid_count: Number(paidRes.rows[0]?.paid_count ?? 0),
+    outstanding,
+  };
 }
 
 export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps): void {
@@ -228,28 +323,152 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
         isSuperAdmin ? [from, to] : [from, to, userId],
       );
       const approvedExpenseResult = await pool.query(
-        `SELECT je.officer_id, COALESCE(SUM(je.amount), 0)::numeric AS expenses_total, COUNT(*)::int AS expenses_count
-         FROM job_expenses je
-         JOIN jobs j ON j.id = je.job_id
-         WHERE je.expense_date >= $1::date
-           AND je.expense_date < ($2::date + INTERVAL '1 day')
-           AND je.status = 'approved'
-           AND je.expense_type = 'personal'
-           ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
-         GROUP BY je.officer_id`,
+        `WITH resolved AS (
+           SELECT je.amount,
+                  COALESCE(
+                    je.officer_id,
+                    (SELECT o.id
+                     FROM officers o
+                     LEFT JOIN users cu ON cu.id = je.created_by
+                     WHERE o.created_by = j.created_by
+                       AND (
+                         o.linked_user_id = je.created_by
+                         OR (
+                           cu.email IS NOT NULL
+                           AND o.email IS NOT NULL
+                           AND LOWER(TRIM(o.email)) = LOWER(TRIM(cu.email))
+                         )
+                       )
+                     ORDER BY CASE WHEN o.linked_user_id = je.created_by THEN 0 ELSE 1 END, o.id
+                     LIMIT 1)
+                  ) AS resolved_officer_id
+           FROM job_expenses je
+           JOIN jobs j ON j.id = je.job_id
+           WHERE je.expense_date >= $1::date
+             AND je.expense_date < ($2::date + INTERVAL '1 day')
+             AND je.status = 'approved'
+             AND je.expense_type = 'personal'
+             ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
+         )
+         SELECT resolved_officer_id AS officer_id,
+                COALESCE(SUM(amount), 0)::numeric AS expenses_total,
+                COUNT(*)::int AS expenses_count
+         FROM resolved
+         WHERE resolved_officer_id IS NOT NULL
+         GROUP BY resolved_officer_id`,
         isSuperAdmin ? [from, to] : [from, to, userId],
       );
       const pendingExpenseResult = await pool.query(
-        `SELECT je.officer_id, COALESCE(SUM(je.amount), 0)::numeric AS pending_expenses_total, COUNT(*)::int AS pending_expenses_count
+        `WITH resolved AS (
+           SELECT je.amount,
+                  COALESCE(
+                    je.officer_id,
+                    (SELECT o.id
+                     FROM officers o
+                     LEFT JOIN users cu ON cu.id = je.created_by
+                     WHERE o.created_by = j.created_by
+                       AND (
+                         o.linked_user_id = je.created_by
+                         OR (
+                           cu.email IS NOT NULL
+                           AND o.email IS NOT NULL
+                           AND LOWER(TRIM(o.email)) = LOWER(TRIM(cu.email))
+                         )
+                       )
+                     ORDER BY CASE WHEN o.linked_user_id = je.created_by THEN 0 ELSE 1 END, o.id
+                     LIMIT 1)
+                  ) AS resolved_officer_id
+           FROM job_expenses je
+           JOIN jobs j ON j.id = je.job_id
+           WHERE je.expense_date >= $1::date
+             AND je.expense_date < ($2::date + INTERVAL '1 day')
+             AND je.status = 'submitted'
+             AND je.expense_type = 'personal'
+             ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
+         )
+         SELECT resolved_officer_id AS officer_id,
+                COALESCE(SUM(amount), 0)::numeric AS pending_expenses_total,
+                COUNT(*)::int AS pending_expenses_count
+         FROM resolved
+         WHERE resolved_officer_id IS NOT NULL
+         GROUP BY resolved_officer_id`,
+        isSuperAdmin ? [from, to] : [from, to, userId],
+      );
+      const companyApprovedExpenseResult = await pool.query(
+        `WITH resolved AS (
+           SELECT je.amount,
+                  COALESCE(
+                    je.officer_id,
+                    (SELECT o.id
+                     FROM officers o
+                     LEFT JOIN users cu ON cu.id = je.created_by
+                     WHERE o.created_by = j.created_by
+                       AND (
+                         o.linked_user_id = je.created_by
+                         OR (
+                           cu.email IS NOT NULL
+                           AND o.email IS NOT NULL
+                           AND LOWER(TRIM(o.email)) = LOWER(TRIM(cu.email))
+                         )
+                       )
+                     ORDER BY CASE WHEN o.linked_user_id = je.created_by THEN 0 ELSE 1 END, o.id
+                     LIMIT 1)
+                  ) AS resolved_officer_id
+           FROM job_expenses je
+           JOIN jobs j ON j.id = je.job_id
+           WHERE je.expense_date >= $1::date
+             AND je.expense_date < ($2::date + INTERVAL '1 day')
+             AND je.status = 'approved'
+             AND je.expense_type = 'company'
+             ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
+         )
+         SELECT resolved_officer_id AS officer_id,
+                COALESCE(SUM(amount), 0)::numeric AS company_expenses_total,
+                COUNT(*)::int AS company_expenses_count
+         FROM resolved
+         WHERE resolved_officer_id IS NOT NULL
+         GROUP BY resolved_officer_id`,
+        isSuperAdmin ? [from, to] : [from, to, userId],
+      );
+      const periodExpenseTotals = await pool.query<{
+        personal_approved_total: string;
+        personal_approved_count: number;
+        company_approved_total: string;
+        company_approved_count: number;
+      }>(
+        `SELECT
+           COALESCE(SUM(je.amount) FILTER (WHERE je.status = 'approved' AND je.expense_type = 'personal'), 0)::numeric AS personal_approved_total,
+           COUNT(*) FILTER (WHERE je.status = 'approved' AND je.expense_type = 'personal')::int AS personal_approved_count,
+           COALESCE(SUM(je.amount) FILTER (WHERE je.status = 'approved' AND je.expense_type = 'company'), 0)::numeric AS company_approved_total,
+           COUNT(*) FILTER (WHERE je.status = 'approved' AND je.expense_type = 'company')::int AS company_approved_count
          FROM job_expenses je
          JOIN jobs j ON j.id = je.job_id
          WHERE je.expense_date >= $1::date
            AND je.expense_date < ($2::date + INTERVAL '1 day')
-           AND je.status = 'submitted'
-           AND je.expense_type = 'personal'
-           ${isSuperAdmin ? '' : 'AND j.created_by = $3'}
-         GROUP BY je.officer_id`,
+           ${isSuperAdmin ? '' : 'AND j.created_by = $3'}`,
         isSuperAdmin ? [from, to] : [from, to, userId],
+      );
+      const allTimePersonalResult = await pool.query(
+        `WITH resolved AS (${RESOLVED_PERSONAL_EXPENSE_BASE}
+           ${isSuperAdmin ? '' : 'AND j.created_by = $1'}
+         )
+         SELECT resolved_officer_id AS officer_id,
+                COALESCE(SUM(amount), 0)::numeric AS personal_approved_total,
+                COUNT(*)::int AS personal_approved_count
+         FROM resolved
+         WHERE resolved_officer_id IS NOT NULL
+         GROUP BY resolved_officer_id`,
+        isSuperAdmin ? [] : [userId],
+      );
+      const officerPaymentsResult = await pool.query(
+        `SELECT op.officer_id,
+                COALESCE(SUM(op.amount), 0)::numeric AS paid_total,
+                COUNT(*)::int AS paid_count
+         FROM officer_payments op
+         JOIN officers o ON o.id = op.officer_id
+         ${isSuperAdmin ? '' : 'WHERE o.created_by = $1'}
+         GROUP BY op.officer_id`,
+        isSuperAdmin ? [] : [userId],
       );
 
       const byOfficer = new Map<number, Record<string, unknown>>();
@@ -262,10 +481,29 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
       for (const row of pendingExpenseResult.rows) {
         if (row.officer_id != null) pendingByOfficer.set(Number(row.officer_id), row);
       }
+      const companyByOfficer = new Map<number, Record<string, unknown>>();
+      for (const row of companyApprovedExpenseResult.rows) {
+        if (row.officer_id != null) companyByOfficer.set(Number(row.officer_id), row);
+      }
+      const allTimePersonalByOfficer = new Map<number, Record<string, unknown>>();
+      for (const row of allTimePersonalResult.rows) {
+        if (row.officer_id != null) allTimePersonalByOfficer.set(Number(row.officer_id), row);
+      }
+      const paymentsByOfficer = new Map<number, Record<string, unknown>>();
+      for (const row of officerPaymentsResult.rows) {
+        if (row.officer_id != null) paymentsByOfficer.set(Number(row.officer_id), row);
+      }
+      const periodTotals = periodExpenseTotals.rows[0];
       const officers = officerResult.rows.map((o) => {
         const ts = byOfficer.get(Number(o.id));
         const ex = expByOfficer.get(Number(o.id));
         const pending = pendingByOfficer.get(Number(o.id));
+        const company = companyByOfficer.get(Number(o.id));
+        const allTimePersonal = allTimePersonalByOfficer.get(Number(o.id));
+        const paid = paymentsByOfficer.get(Number(o.id));
+        const personalApprovedAllTime = Number(allTimePersonal?.personal_approved_total ?? 0);
+        const personalPaidTotal = Number(paid?.paid_total ?? 0);
+        const personalOutstanding = Math.round((personalApprovedAllTime - personalPaidTotal) * 100) / 100;
         return {
           id: Number(o.id),
           full_name: o.full_name as string,
@@ -278,8 +516,14 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
           on_site_seconds: Number(ts?.on_site_seconds ?? 0),
           expenses_total: Number(ex?.expenses_total ?? 0),
           expenses_count: Number(ex?.expenses_count ?? 0),
+          company_expenses_total: Number(company?.company_expenses_total ?? 0),
+          company_expenses_count: Number(company?.company_expenses_count ?? 0),
           pending_expenses_total: Number(pending?.pending_expenses_total ?? 0),
           pending_expenses_count: Number(pending?.pending_expenses_count ?? 0),
+          personal_approved_all_time: personalApprovedAllTime,
+          personal_paid_total: personalPaidTotal,
+          personal_paid_count: Number(paid?.paid_count ?? 0),
+          personal_outstanding: personalOutstanding,
         };
       });
       const totals = officers.reduce(
@@ -290,8 +534,12 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
           on_site_seconds: acc.on_site_seconds + o.on_site_seconds,
           expenses_total: acc.expenses_total + o.expenses_total,
           expenses_count: acc.expenses_count + o.expenses_count,
+          company_expenses_total: acc.company_expenses_total + o.company_expenses_total,
+          company_expenses_count: acc.company_expenses_count + o.company_expenses_count,
           pending_expenses_total: acc.pending_expenses_total + o.pending_expenses_total,
           pending_expenses_count: acc.pending_expenses_count + o.pending_expenses_count,
+          personal_paid_total: acc.personal_paid_total + o.personal_paid_total,
+          personal_outstanding: acc.personal_outstanding + o.personal_outstanding,
         }),
         {
           days_worked: 0,
@@ -300,10 +548,18 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
           on_site_seconds: 0,
           expenses_total: 0,
           expenses_count: 0,
+          company_expenses_total: 0,
+          company_expenses_count: 0,
           pending_expenses_total: 0,
           pending_expenses_count: 0,
+          personal_paid_total: 0,
+          personal_outstanding: 0,
         },
       );
+      totals.expenses_total = Number(periodTotals?.personal_approved_total ?? totals.expenses_total);
+      totals.expenses_count = Number(periodTotals?.personal_approved_count ?? totals.expenses_count);
+      totals.company_expenses_total = Number(periodTotals?.company_approved_total ?? 0);
+      totals.company_expenses_count = Number(periodTotals?.company_approved_count ?? 0);
       return res.json({ from, to, officers, totals });
     } catch (error) {
       console.error('Staff work summary error:', error);
@@ -549,6 +805,116 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
         pgError.code ? `code=${pgError.code}` : '',
         pgError.detail ? `detail=${pgError.detail}` : '',
       );
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/officers/:officerId/payments', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const officerId = parseId(req.params.officerId);
+    if (!officerId) return res.status(400).json({ message: 'Invalid officer id' });
+    const userId = getTenantScopeUserId(user);
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    if (!(await officerVisibleToUser(pool, officerId, userId, isSuperAdmin))) {
+      return res.status(404).json({ message: 'Officer not found' });
+    }
+    const from = parseDateParam(req.query.from);
+    const to = parseDateParam(req.query.to);
+    try {
+      const summary = await loadOfficerPaymentSummary(pool, officerId, userId, isSuperAdmin);
+      const params: unknown[] = [officerId];
+      let dateFilter = '';
+      if (from && to) {
+        params.push(from, to);
+        dateFilter = ` AND op.payment_date >= $2::date AND op.payment_date < ($3::date + INTERVAL '1 day')`;
+      }
+      const paymentsRes = await pool.query(
+        `SELECT op.id, op.amount, op.payment_method, op.payment_date, op.reference_number, op.notes, op.created_at,
+                u.full_name AS created_by_name
+         FROM officer_payments op
+         JOIN officers o ON o.id = op.officer_id
+         LEFT JOIN users u ON u.id = op.created_by
+         WHERE op.officer_id = $1
+           ${isSuperAdmin ? '' : `AND o.created_by = $${params.length + 1}`}
+           ${dateFilter}
+         ORDER BY op.payment_date DESC, op.id DESC`,
+        isSuperAdmin ? params : [...params, userId],
+      );
+      const payments = paymentsRes.rows.map((row) => ({
+        id: Number(row.id),
+        amount: Number(row.amount ?? 0),
+        payment_method: (row.payment_method as string | null) ?? 'other',
+        payment_date:
+          row.payment_date instanceof Date
+            ? row.payment_date.toISOString().slice(0, 10)
+            : String(row.payment_date ?? '').slice(0, 10),
+        reference_number: (row.reference_number as string | null) ?? null,
+        notes: (row.notes as string | null) ?? null,
+        created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
+        created_by_name: (row.created_by_name as string | null) ?? null,
+      }));
+      return res.json({ summary, payments });
+    } catch (error) {
+      console.error('Officer payments list error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/officers/:officerId/payments', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const officerId = parseId(req.params.officerId);
+    if (!officerId) return res.status(400).json({ message: 'Invalid officer id' });
+    const userId = getTenantScopeUserId(user);
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    if (!(await officerVisibleToUser(pool, officerId, userId, isSuperAdmin))) {
+      return res.status(404).json({ message: 'Officer not found' });
+    }
+    const body = req.body as Record<string, unknown>;
+    const amount = money(body.amount);
+    if (amount == null || amount <= 0) {
+      return res.status(400).json({ message: 'Payment amount must be greater than zero' });
+    }
+    const paymentMethod =
+      typeof body.payment_method === 'string' &&
+      OFFICER_PAYMENT_METHODS.includes(body.payment_method as (typeof OFFICER_PAYMENT_METHODS)[number])
+        ? body.payment_method
+        : 'bank_transfer';
+    const paymentDate = isoDate(body.payment_date);
+    const referenceNumber =
+      typeof body.reference_number === 'string' ? body.reference_number.trim().slice(0, 120) || null : null;
+    const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 500) || null : null;
+    try {
+      const insert = await pool.query(
+        `INSERT INTO officer_payments (officer_id, amount, payment_method, payment_date, reference_number, notes, created_by)
+         VALUES ($1, $2, $3, $4::date, $5, $6, $7)
+         RETURNING id, amount, payment_method, payment_date, reference_number, notes, created_at`,
+        [officerId, amount, paymentMethod, paymentDate, referenceNumber, notes, user.userId],
+      );
+      const row = insert.rows[0];
+      const summary = await loadOfficerPaymentSummary(pool, officerId, userId, isSuperAdmin);
+      return res.status(201).json({
+        payment: {
+          id: Number(row.id),
+          amount: Number(row.amount ?? 0),
+          payment_method: row.payment_method as string,
+          payment_date:
+            row.payment_date instanceof Date
+              ? row.payment_date.toISOString().slice(0, 10)
+              : String(row.payment_date ?? '').slice(0, 10),
+          reference_number: (row.reference_number as string | null) ?? null,
+          notes: (row.notes as string | null) ?? null,
+          created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
+        },
+        summary,
+      });
+    } catch (error) {
+      console.error('Record officer payment error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });

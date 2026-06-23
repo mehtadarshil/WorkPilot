@@ -18,6 +18,7 @@ import {
   ChevronRight,
   X,
   ImageIcon,
+  Wallet,
 } from 'lucide-react';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, addDays, getDay, addMonths, addHours, startOfDay, isSameDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -38,8 +39,14 @@ type OfficerWorkRow = {
   on_site_seconds: number;
   expenses_total: number;
   expenses_count: number;
+  company_expenses_total: number;
+  company_expenses_count: number;
   pending_expenses_total: number;
   pending_expenses_count: number;
+  personal_approved_all_time: number;
+  personal_paid_total: number;
+  personal_paid_count: number;
+  personal_outstanding: number;
 };
 
 type ExpenseProof = {
@@ -79,9 +86,32 @@ type StaffWorkSummary = {
     on_site_seconds: number;
     expenses_total: number;
     expenses_count: number;
+    company_expenses_total: number;
+    company_expenses_count: number;
     pending_expenses_total: number;
     pending_expenses_count: number;
+    personal_paid_total: number;
+    personal_outstanding: number;
   };
+};
+
+type OfficerPaymentRow = {
+  id: number;
+  amount: number;
+  payment_method: string;
+  payment_date: string;
+  reference_number: string | null;
+  notes: string | null;
+  created_at: string | null;
+  created_by_name: string | null;
+};
+
+type OfficerPaymentSummary = {
+  approved_total: number;
+  approved_count: number;
+  paid_total: number;
+  paid_count: number;
+  outstanding: number;
 };
 
 type Holiday = {
@@ -116,6 +146,7 @@ type Officer = {
   full_name: string;
   role_position: string | null;
   state: string;
+  calendar_color?: string | null;
 };
 
 type CalendarEvent = {
@@ -124,11 +155,13 @@ type CalendarEvent = {
   start: Date;
   end: Date;
   allDay?: boolean;
-  color: string;
+  backgroundColor: string;
   borderColor: string;
+  textColor: string;
   officerKey?: string;
   officerLabel?: string;
   type?: string;
+  raw?: unknown;
 };
 
 // --- Helpers ---
@@ -211,6 +244,14 @@ function officerCalendarColors(key: string) {
   return ENGINEER_CALENDAR_PALETTE[hash % ENGINEER_CALENDAR_PALETTE.length]!;
 }
 
+function officerCalendarStyle(key: string, customColor?: string | null) {
+  if (customColor && /^#[0-9A-Fa-f]{6}$/i.test(customColor)) {
+    return { backgroundColor: customColor, borderColor: customColor, textColor: '#ffffff' };
+  }
+  const palette = officerCalendarColors(key);
+  return { backgroundColor: palette.borderColor, borderColor: palette.borderColor, textColor: '#ffffff' };
+}
+
 function diaryEventOfficerKey(e: Record<string, unknown>): string {
   if (e.officer_id != null && Number.isFinite(Number(e.officer_id))) {
     return officerColorKey(Number(e.officer_id));
@@ -239,7 +280,7 @@ export default function StaffWorkPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'summary' | 'calendar' | 'holidays'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'calendar' | 'holidays'>('calendar');
 
   // --- Work Summary Tab States ---
   const [from, setFrom] = useState(monthStart());
@@ -250,6 +291,20 @@ export default function StaffWorkPage() {
   const [updatingExpenseId, setUpdatingExpenseId] = useState<number | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
+  const [paymentModalOfficer, setPaymentModalOfficer] = useState<OfficerWorkRow | null>(null);
+  const [paymentHistoryOfficer, setPaymentHistoryOfficer] = useState<OfficerWorkRow | null>(null);
+  const [officerPayments, setOfficerPayments] = useState<OfficerPaymentRow[]>([]);
+  const [officerPaymentSummary, setOfficerPaymentSummary] = useState<OfficerPaymentSummary | null>(null);
+  const [loadingOfficerPayments, setLoadingOfficerPayments] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: '',
+    payment_method: 'bank_transfer',
+    payment_date: today(),
+    reference_number: '',
+    notes: '',
+  });
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   // --- Holidays Tab States ---
   const [holidaySubTab, setHolidaySubTab] = useState<'requests' | 'holidays'>('requests');
@@ -266,6 +321,7 @@ export default function StaffWorkPage() {
 
   // --- Calendar Tab States ---
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [officerColorMap, setOfficerColorMap] = useState<Map<string, string>>(new Map());
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'agenda'>('month');
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
@@ -351,25 +407,35 @@ export default function StaffWorkPage() {
       const diaryQ = new URLSearchParams({ range_start: startIso, range_end: endIso }).toString();
       const holQ = new URLSearchParams({ from: startYmd, to: endYmd }).toString();
 
-      const [eventsRes, reqRes, holRes] = await Promise.all([
+      const [eventsRes, reqRes, holRes, offRes] = await Promise.all([
         getJson<{ events: any[] }>(`/diary-events?${diaryQ}`, token),
         getJson<{ requests: HolidayRequest[] }>('/holiday-requests', token),
         getJson<{ holidays: Holiday[] }>(`/holidays?${holQ}`, token),
+        getJson<{ officers: Officer[] }>('/officers/list', token),
       ]);
+
+      const colorMap = new Map<string, string>();
+      for (const officer of offRes.officers ?? []) {
+        if (officer.calendar_color) {
+          colorMap.set(officerColorKey(officer.id), officer.calendar_color);
+        }
+      }
+      setOfficerColorMap(colorMap);
 
       const diaryEvts = (eventsRes.events ?? []).map((e: any) => {
         const start = new Date(e.start_time);
         const end = new Date(start.getTime() + (e.duration_minutes || 60) * 60000);
         const oKey = diaryEventOfficerKey(e);
-        const palette = officerCalendarColors(oKey);
+        const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
         const officerLabel = diaryEventOfficerLabel(e);
         return {
           id: `diary-${e.diary_id}`,
           title: `🔧 ${e.job_number || 'Job'} (${officerLabel})`,
           start,
           end,
-          color: palette.color,
+          backgroundColor: palette.backgroundColor,
           borderColor: palette.borderColor,
+          textColor: palette.textColor,
           officerKey: oKey,
           officerLabel,
           type: 'diary',
@@ -383,8 +449,9 @@ export default function StaffWorkPage() {
         start: new Date(h.holiday_date + 'T00:00:00'),
         end: new Date(h.holiday_date + 'T23:59:59'),
         allDay: true,
-        color: 'bg-indigo-600 text-white',
+        backgroundColor: '#4f46e5',
         borderColor: '#4f46e5',
+        textColor: '#ffffff',
         type: 'holiday',
         raw: h,
       }));
@@ -398,15 +465,16 @@ export default function StaffWorkPage() {
         })
         .map((r: any) => {
           const oKey = officerColorKey(r.officer_id, r.officer_name);
-          const palette = officerCalendarColors(oKey);
+          const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
           return {
             id: `leave-${r.id}`,
             title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
             start: new Date(r.start_date),
             end: new Date(r.end_date),
             allDay: false,
-            color: palette.color,
+            backgroundColor: palette.backgroundColor,
             borderColor: palette.borderColor,
+            textColor: palette.textColor,
             officerKey: oKey,
             officerLabel: r.officer_name || 'Leave',
             type: 'leave',
@@ -420,16 +488,18 @@ export default function StaffWorkPage() {
     }
   }, [dateRange, token]);
 
-  // Trigger loads based on active tab
+  // Load summary totals for expense badges even when another tab is active.
   useEffect(() => {
-    if (activeTab === 'summary') {
-      void fetchSummaryData();
-    } else if (activeTab === 'holidays') {
+    void fetchSummaryData();
+  }, [fetchSummaryData]);
+
+  useEffect(() => {
+    if (activeTab === 'holidays') {
       void fetchHolidaysData();
     } else if (activeTab === 'calendar') {
       void fetchCalendarEvents();
     }
-  }, [activeTab, fetchSummaryData, fetchHolidaysData, fetchCalendarEvents]);
+  }, [activeTab, fetchHolidaysData, fetchCalendarEvents]);
 
   // Expenses management
   const updateExpenseStatus = async (expenseId: number, status: 'approved' | 'rejected') => {
@@ -477,6 +547,80 @@ export default function StaffWorkPage() {
   };
 
   const expenseClaimerLabel = (e: ExpenseRow) => e.claimed_by_name || e.officer_name || 'Unknown';
+
+  const paymentMethodLabel = (method: string) =>
+    method.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const fetchOfficerPayments = useCallback(async (officerId: number) => {
+    if (!token) return;
+    setLoadingOfficerPayments(true);
+    try {
+      const data = await getJson<{ payments: OfficerPaymentRow[]; summary: OfficerPaymentSummary }>(
+        `/officers/${officerId}/payments`,
+        token,
+      );
+      setOfficerPayments(data.payments ?? []);
+      setOfficerPaymentSummary(data.summary ?? null);
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Could not load officer payments');
+      setOfficerPayments([]);
+      setOfficerPaymentSummary(null);
+    } finally {
+      setLoadingOfficerPayments(false);
+    }
+  }, [token]);
+
+  const openPaymentModal = (officer: OfficerWorkRow) => {
+    setPaymentModalOfficer(officer);
+    setPaymentError(null);
+    setPaymentForm({
+      amount: officer.personal_outstanding > 0 ? officer.personal_outstanding.toFixed(2) : '',
+      payment_method: 'bank_transfer',
+      payment_date: today(),
+      reference_number: '',
+      notes: '',
+    });
+  };
+
+  const openPaymentHistory = (officer: OfficerWorkRow) => {
+    setPaymentHistoryOfficer(officer);
+    void fetchOfficerPayments(officer.id);
+  };
+
+  const submitOfficerPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !paymentModalOfficer) return;
+    setPaymentError(null);
+    const amount = parseFloat(paymentForm.amount.replace(/,/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError('Enter a valid payment amount greater than zero.');
+      return;
+    }
+    setPaymentSubmitting(true);
+    const officerId = paymentModalOfficer.id;
+    try {
+      await postJson(
+        `/officers/${officerId}/payments`,
+        {
+          amount,
+          payment_method: paymentForm.payment_method,
+          payment_date: paymentForm.payment_date,
+          reference_number: paymentForm.reference_number.trim() || undefined,
+          notes: paymentForm.notes.trim() || undefined,
+        },
+        token,
+      );
+      setPaymentModalOfficer(null);
+      await fetchSummaryData();
+      if (paymentHistoryOfficer?.id === officerId) {
+        void fetchOfficerPayments(officerId);
+      }
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : 'Could not record payment');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
 
   // Holidays management
   const submitRequest = async (e: React.FormEvent) => {
@@ -551,6 +695,14 @@ export default function StaffWorkPage() {
   const totals = summary?.totals;
   const pendingExpenses = expenses.filter((e) => e.status === 'submitted');
   const approvedExpenses = expenses.filter((e) => e.status === 'approved');
+  const approvedCompanyTotal = useMemo(
+    () => approvedExpenses.filter((e) => e.expense_type === 'company').reduce((sum, e) => sum + e.amount, 0),
+    [approvedExpenses],
+  );
+  const approvedPersonalTotal = useMemo(
+    () => approvedExpenses.filter((e) => e.expense_type === 'personal').reduce((sum, e) => sum + e.amount, 0),
+    [approvedExpenses],
+  );
 
   const calendarEngineerLegend = useMemo(() => {
     const map = new Map<string, string>();
@@ -559,9 +711,14 @@ export default function StaffWorkPage() {
       if (!map.has(evt.officerKey)) map.set(evt.officerKey, evt.officerLabel);
     }
     return Array.from(map.entries())
-      .map(([key, label]) => ({ key, label, ...officerCalendarColors(key) }))
+      .map(([key, label]) => {
+        const style = officerCalendarStyle(key, officerColorMap.get(key));
+        return { key, label, borderColor: style.borderColor };
+      })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [calendarEvents]);
+  }, [calendarEvents, officerColorMap]);
+
+  const pendingExpenseCount = summary?.totals?.pending_expenses_count ?? 0;
 
   const pendingHolidays = requests.filter((r) => r.status === 'pending');
   const processedHolidays = requests.filter((r) => r.status !== 'pending');
@@ -615,11 +772,20 @@ export default function StaffWorkPage() {
           <button
             type="button"
             onClick={() => setActiveTab('summary')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+            className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
               activeTab === 'summary' ? 'bg-[#14B8A6] text-white' : 'text-slate-600 hover:bg-slate-50'
             }`}
           >
             <Clock3 className="size-4" /> Work Summary
+            {pendingExpenseCount > 0 && (
+              <span
+                className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                  activeTab === 'summary' ? 'bg-white text-rose-600' : 'bg-rose-600 text-white'
+                }`}
+              >
+                {pendingExpenseCount}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -648,6 +814,11 @@ export default function StaffWorkPage() {
       {/* --- TAB CONTENT: WORK SUMMARY --- */}
       {activeTab === 'summary' && (
         <>
+          {pendingExpenseCount > 0 && (
+            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <strong>{pendingExpenseCount} expense{pendingExpenseCount === 1 ? '' : 's'}</strong> waiting for your approval in this period.
+            </div>
+          )}
           {/* Filters for Summary */}
           <div className="mb-6 flex justify-end">
             <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -679,19 +850,22 @@ export default function StaffWorkPage() {
             </div>
           </div>
 
-          <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
             <SummaryCard icon={<Clock3 className="size-5" />} label="Hours worked" value={formatHours(totals?.total_seconds ?? 0)} />
             <SummaryCard icon={<Route className="size-5" />} label="Travelling" value={formatHours(totals?.travelling_seconds ?? 0)} />
             <SummaryCard icon={<Gauge className="size-5" />} label="On site" value={formatHours(totals?.on_site_seconds ?? 0)} />
             <SummaryCard icon={<CalendarDays className="size-5" />} label="Days worked" value={`${totals?.days_worked ?? 0}`} />
-            <SummaryCard icon={<ReceiptText className="size-5" />} label="Approved expenses due" value={formatMoney(totals?.expenses_total ?? 0)} />
+            <SummaryCard icon={<ReceiptText className="size-5" />} label="Personal expenses (period)" value={formatMoney(totals?.expenses_total ?? 0)} sub={`${totals?.expenses_count ?? 0} approved`} />
+            <SummaryCard icon={<ReceiptText className="size-5" />} label="Company expenses (period)" value={formatMoney(totals?.company_expenses_total ?? 0)} sub={`${totals?.company_expenses_count ?? 0} approved`} />
+            <SummaryCard icon={<Wallet className="size-5" />} label="Paid to officers" value={formatMoney(totals?.personal_paid_total ?? 0)} sub="All time" />
+            <SummaryCard icon={<Wallet className="size-5" />} label="Outstanding to officers" value={formatMoney(totals?.personal_outstanding ?? 0)} sub="Approved personal minus paid" />
           </div>
 
           {/* Table: Officer hours */}
           <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-lg font-bold text-slate-900">Officer hours</h2>
-              <p className="text-sm text-slate-500">Totals come from mobile diary visit statuses: travelling and on site.</p>
+              <p className="text-sm text-slate-500">Period totals for hours and expenses. Paid and outstanding are all-time personal expense balances.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -702,14 +876,18 @@ export default function StaffWorkPage() {
                     <th className="px-5 py-3">Hours worked</th>
                     <th className="px-5 py-3">Travelling</th>
                     <th className="px-5 py-3">On site</th>
-                    <th className="px-5 py-3">Expenses</th>
+                    <th className="px-5 py-3">Personal</th>
+                    <th className="px-5 py-3">Company</th>
+                    <th className="px-5 py-3">Paid</th>
+                    <th className="px-5 py-3">Outstanding</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingSummary ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>Loading staff work…</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={10}>Loading staff work…</td></tr>
                   ) : sortedOfficers.length === 0 ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No officers found.</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={10}>No officers found.</td></tr>
                   ) : (
                     sortedOfficers.map((o) => (
                       <tr key={o.id} className="hover:bg-slate-50">
@@ -729,6 +907,34 @@ export default function StaffWorkPage() {
                               Pending: {formatMoney(o.pending_expenses_total)} ({o.pending_expenses_count})
                             </p>
                           )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="font-semibold text-slate-900">{formatMoney(o.company_expenses_total)}</span>
+                          <span className="ml-2 text-xs text-slate-500">approved ({o.company_expenses_count})</span>
+                        </td>
+                        <td className="px-5 py-4 font-semibold text-emerald-700">{formatMoney(o.personal_paid_total)}</td>
+                        <td className="px-5 py-4">
+                          <span className={`font-semibold ${o.personal_outstanding > 0 ? 'text-rose-700' : 'text-slate-700'}`}>
+                            {formatMoney(o.personal_outstanding)}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openPaymentModal(o)}
+                              className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0d9488]"
+                            >
+                              Record payment
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openPaymentHistory(o)}
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Payment history
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -908,6 +1114,17 @@ export default function StaffWorkPage() {
                     ))
                   )}
                 </tbody>
+                {approvedExpenses.length > 0 && (
+                  <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800">
+                    <tr>
+                      <td className="px-5 py-3" colSpan={5}>Period totals</td>
+                      <td className="px-5 py-3 text-right">
+                        <p>Personal: {formatMoney(approvedPersonalTotal)}</p>
+                        <p className="text-slate-600">Company: {formatMoney(approvedCompanyTotal)}</p>
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </section>
@@ -917,6 +1134,162 @@ export default function StaffWorkPage() {
               <div className="max-h-[90vh] max-w-4xl overflow-auto rounded-xl bg-white p-2" onClick={(e) => e.stopPropagation()}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={proofPreviewUrl} alt="Expense receipt" className="max-h-[80vh] w-full object-contain" />
+              </div>
+            </div>
+          )}
+
+          {paymentModalOfficer && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Record payment</h3>
+                    <p className="text-sm text-slate-500">{paymentModalOfficer.full_name}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Outstanding: {formatMoney(paymentModalOfficer.personal_outstanding)}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setPaymentModalOfficer(null)} className="rounded-lg p-1 hover:bg-slate-100">
+                    <X className="size-5 text-slate-500" />
+                  </button>
+                </div>
+                <form onSubmit={(e) => void submitOfficerPayment(e)} className="space-y-4">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Amount
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="0.00"
+                      required
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Payment date
+                    <input
+                      type="date"
+                      value={paymentForm.payment_date}
+                      onChange={(e) => setPaymentForm((f) => ({ ...f, payment_date: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      required
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Method
+                    <select
+                      value={paymentForm.payment_method}
+                      onChange={(e) => setPaymentForm((f) => ({ ...f, payment_method: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="cash">Cash</option>
+                      <option value="check">Cheque</option>
+                      <option value="credit_card">Credit card</option>
+                      <option value="digital_payment">Digital payment</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Reference
+                    <input
+                      type="text"
+                      value={paymentForm.reference_number}
+                      onChange={(e) => setPaymentForm((f) => ({ ...f, reference_number: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      placeholder="Optional"
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Notes
+                    <textarea
+                      value={paymentForm.notes}
+                      onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      rows={2}
+                      placeholder="Optional"
+                    />
+                  </label>
+                  {paymentError && <p className="text-sm font-medium text-rose-600">{paymentError}</p>}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentModalOfficer(null)}
+                      className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={paymentSubmitting}
+                      className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-60"
+                    >
+                      {paymentSubmitting ? 'Saving…' : 'Save payment'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {paymentHistoryOfficer && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-xl">
+                <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Payment history</h3>
+                    <p className="text-sm text-slate-500">{paymentHistoryOfficer.full_name}</p>
+                    {officerPaymentSummary && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Approved personal: {formatMoney(officerPaymentSummary.approved_total)} · Paid: {formatMoney(officerPaymentSummary.paid_total)} · Outstanding: {formatMoney(officerPaymentSummary.outstanding)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openPaymentModal(paymentHistoryOfficer)}
+                      className="rounded-lg bg-[#14B8A6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0d9488]"
+                    >
+                      Record payment
+                    </button>
+                    <button type="button" onClick={() => setPaymentHistoryOfficer(null)} className="rounded-lg p-1 hover:bg-slate-100">
+                      <X className="size-5 text-slate-500" />
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {loadingOfficerPayments ? (
+                    <p className="px-6 py-8 text-sm text-slate-500">Loading payments…</p>
+                  ) : officerPayments.length === 0 ? (
+                    <p className="px-6 py-8 text-sm text-slate-500">No payments recorded yet.</p>
+                  ) : (
+                    <table className="min-w-full divide-y divide-slate-100 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-6 py-3">Date</th>
+                          <th className="px-6 py-3">Method</th>
+                          <th className="px-6 py-3">Reference</th>
+                          <th className="px-6 py-3 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {officerPayments.map((p) => (
+                          <tr key={p.id}>
+                            <td className="px-6 py-4 text-slate-700">{p.payment_date}</td>
+                            <td className="px-6 py-4 text-slate-700">{paymentMethodLabel(p.payment_method)}</td>
+                            <td className="px-6 py-4 text-slate-600">
+                              {p.reference_number || '—'}
+                              {p.notes && <p className="text-xs text-slate-400">{p.notes}</p>}
+                            </td>
+                            <td className="px-6 py-4 text-right font-bold text-emerald-700">{formatMoney(p.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -968,13 +1341,14 @@ export default function StaffWorkPage() {
                 setShowDetailModal(true);
               }}
               views={['month', 'week', 'day', 'agenda']}
-              eventPropGetter={(evt: CalendarEvent) => {
-                const classes = evt.color || 'bg-[#14B8A6] text-white';
-                return {
-                  className: `${classes} font-semibold text-xs px-2 py-0.5 rounded shadow-sm cursor-pointer hover:opacity-90 transition border-l-[3px]`,
-                  style: { borderLeftColor: evt.borderColor || '#0d9488' },
-                };
-              }}
+              eventPropGetter={(evt: CalendarEvent) => ({
+                className: 'font-semibold text-xs px-2 py-0.5 rounded shadow-sm cursor-pointer hover:opacity-90 transition border-l-[3px]',
+                style: {
+                  backgroundColor: evt.backgroundColor,
+                  borderLeftColor: evt.borderColor,
+                  color: evt.textColor,
+                },
+              })}
             />
           </div>
 
@@ -1560,12 +1934,13 @@ export default function StaffWorkPage() {
   );
 }
 
-function SummaryCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function SummaryCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-[#14B8A6]/10 text-[#14B8A6]">{icon}</div>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
     </div>
   );
 }
