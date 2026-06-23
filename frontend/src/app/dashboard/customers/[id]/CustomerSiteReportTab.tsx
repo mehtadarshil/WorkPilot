@@ -21,8 +21,7 @@ import {
   readFileAsBase64,
 } from './customerSiteReportShared';
 import CustomerSiteReportRenewalCard, { type SiteReportRenewalState } from './CustomerSiteReportRenewalCard';
-import { CustomerSiteReportSectionView } from './CustomerSiteReportSectionView';
-import { CustomerSiteReportRepeatableSectionView } from './CustomerSiteReportRepeatableSectionView';
+import CustomerSiteReportFormNavigator from './CustomerSiteReportFormNavigator';
 import CustomerSiteReportsList from './CustomerSiteReportsList';
 
 interface ReportPayload {
@@ -808,57 +807,27 @@ export default function CustomerSiteReportTab({
         />
       ) : null}
 
-      <div className="space-y-8">
-        {def.sections.map((sec) =>
-          sec.repeatable ? (
-            <CustomerSiteReportRepeatableSectionView
-              key={sec.id}
-              sec={sec}
-              instances={repeatableValues[sec.id] || []}
-              fieldImages={fieldImages}
-              uploadingKey={uploadingKey}
-              signatureBusyFieldId={signatureBusyFieldId}
-              imageUrlFor={imageUrlFor}
-              h={sectionHandlers}
-              onAddInstance={() => addRepeatableInstance(sec.id)}
-              onRemoveInstance={(instanceId) => removeRepeatableInstance(sec, instanceId)}
-              onCopyInstance={(instance) => copyRepeatableInstance(sec.id, instance)}
-              onSetInstanceValue={(instanceId, fieldId, value) => setRepeatableInstanceValue(sec.id, instanceId, fieldId, value)}
-            />
-          ) : (
-            <CustomerSiteReportSectionView
-              key={sec.id}
-              sec={sec}
-              variant="default"
-              clientDisplayName={clientDisplayName}
-              siteAddressLabel={siteAddressLabel}
-              values={values}
-              sectionImages={sectionImages}
-              fieldImages={fieldImages}
-              uploadingKey={uploadingKey}
-              signatureBusyFieldId={signatureBusyFieldId}
-              imageUrlFor={imageUrlFor}
-              h={sectionHandlers}
-            />
-          ),
-        )}
-      </div>
-
-      {footerSection ? (
-        <CustomerSiteReportSectionView
-          sec={footerSection}
-          variant="footer"
-          clientDisplayName={clientDisplayName}
-          siteAddressLabel={siteAddressLabel}
-          values={values}
-          sectionImages={sectionImages}
-          fieldImages={fieldImages}
-          uploadingKey={uploadingKey}
-          signatureBusyFieldId={signatureBusyFieldId}
-          imageUrlFor={imageUrlFor}
-          h={sectionHandlers}
-        />
-      ) : null}
+      <CustomerSiteReportFormNavigator
+        def={def}
+        footerSection={footerSection}
+        clientDisplayName={clientDisplayName}
+        siteAddressLabel={siteAddressLabel}
+        values={values}
+        sectionImages={sectionImages}
+        fieldImages={fieldImages}
+        uploadingKey={uploadingKey}
+        signatureBusyFieldId={signatureBusyFieldId}
+        imageUrlFor={imageUrlFor}
+        h={sectionHandlers}
+        repeatableHandlers={(sec) => ({
+          instances: repeatableValues[sec.id] || [],
+          onAddInstance: () => addRepeatableInstance(sec.id),
+          onRemoveInstance: (instanceId) => removeRepeatableInstance(sec, instanceId),
+          onCopyInstance: (instance) => copyRepeatableInstance(sec.id, instance),
+          onSetInstanceValue: (instanceId, fieldId, value) =>
+            setRepeatableInstanceValue(sec.id, instanceId, fieldId, value),
+        })}
+      />
     </div>
   );
 }

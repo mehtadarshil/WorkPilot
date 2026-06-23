@@ -15,6 +15,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/jobs_repository.dart';
+import '../site_reports/site_report_page_nav.dart';
 import 'job_detail_controller.dart';
 
 /// Customer site / FRA report — mirrors web job tab **Reports** (`CustomerSiteReportTab`).
@@ -51,6 +52,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
   final Map<String, List<Map<String, dynamic>>> _repeatableInstances = {};
   final Map<String, bool> _repeatableCollapsed = {};
   TextEditingController? _titleCtr;
+  int _pageIndex = 0;
 
   @override
   void dispose() {
@@ -143,6 +145,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     setState(() {
       _loading = true;
       _err = null;
+      _pageIndex = 0;
       _disposeFieldControllers();
     });
 
@@ -712,6 +715,49 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     _load();
   }
 
+  List<Map<String, dynamic>> _formSections() {
+    final sections = _templateDef?['sections'];
+    if (sections is! List) return [];
+    return sections.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  bool _hasFooterPage() {
+    final footer = _templateDef?['footer'];
+    if (footer is! Map) return false;
+    return (footer['fields'] as List?)?.isNotEmpty == true;
+  }
+
+  int get _pageCount => _formSections().length + (_hasFooterPage() ? 1 : 0);
+
+  List<String> _pageLabels() {
+    final labels = <String>[];
+    final sections = _formSections();
+    for (var i = 0; i < sections.length; i++) {
+      final title = (sections[i]['title'] as String?)?.trim();
+      labels.add(title?.isNotEmpty == true ? title! : 'Page ${i + 1}');
+    }
+    if (_hasFooterPage()) {
+      final footer = _templateDef!['footer'] as Map;
+      final title = (footer['title'] as String?)?.trim();
+      labels.add(title?.isNotEmpty == true ? title! : 'Footer');
+    }
+    return labels;
+  }
+
+  List<Widget> _currentPageWidgets() {
+    final sections = _formSections();
+    final hideTitle = _pageCount > 1;
+    if (_pageIndex < sections.length) {
+      final sec = sections[_pageIndex];
+      if (sec['repeatable'] == true) return _repeatableSectionWidgets(sec);
+      return _sectionWidgets(sec, hideTitle: hideTitle);
+    }
+    if (_hasFooterPage() && _pageIndex == sections.length) {
+      return _sectionWidgets(Map<String, dynamic>.from(_templateDef!['footer'] as Map), hideTitle: hideTitle);
+    }
+    return const [];
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -735,64 +781,94 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     final rep = _report!;
     final cert = rep['certificate_number']?.toString();
     final updated = rep['updated_at']?.toString();
+    final pageCount = _pageCount;
+    final safePageIndex = pageCount == 0 ? 0 : _pageIndex.clamp(0, pageCount - 1);
+    if (safePageIndex != _pageIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _pageIndex = safePageIndex);
+      });
+    }
+    final isFirstPage = safePageIndex <= 0;
+    final isLastPage = pageCount <= 1 || safePageIndex >= pageCount - 1;
+    final pageLabels = _pageLabels();
 
-    final fields = <Map<String, dynamic>>[];
-    if (_templateDef != null) _collectFields(_templateDef!, fields);
-
-    return RefreshIndicator(
-      color: AppColors.primary,
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Site report',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
-                ),
-              ),
-              FilledButton.tonal(onPressed: _downloadPdf, child: const Text('PDF')),
-            ],
-          ),
-          if (cert != null && cert.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text('Certificate: $cert', style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13)),
-          ],
-          if (updated != null && updated.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text('Updated $updated', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
-          ],
-          const SizedBox(height: 16),
-          TextField(
-            controller: _titleCtr,
-            style: GoogleFonts.inter(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'Report title',
-              labelStyle: GoogleFonts.inter(color: AppColors.slate400),
-              filled: true,
-              fillColor: AppColors.whiteOverlay(0.06),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    return Column(
+      children: [
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.primary,
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              children: [
+                if (isFirstPage) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Site report',
+                          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                        ),
+                      ),
+                      FilledButton.tonal(onPressed: _downloadPdf, child: const Text('PDF')),
+                    ],
+                  ),
+                  if (cert != null && cert.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Certificate: $cert', style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13)),
+                  ],
+                  if (updated != null && updated.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('Updated $updated', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _titleCtr,
+                    style: GoogleFonts.inter(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Report title',
+                      labelStyle: GoogleFonts.inter(color: AppColors.slate400),
+                      filled: true,
+                      fillColor: AppColors.whiteOverlay(0.06),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ] else if (pageLabels.isNotEmpty) ...[
+                  Text(
+                    pageLabels[safePageIndex],
+                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                ..._currentPageWidgets(),
+                if (pageCount <= 1) ...[
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Save'),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (_templateDef != null && _templateDef!['sections'] is List)
-            for (final sec in (_templateDef!['sections'] as List))
-              if (sec is Map)
-                if (sec['repeatable'] == true)
-                  ..._repeatableSectionWidgets(Map<String, dynamic>.from(sec))
-                else
-                  ..._sectionWidgets(Map<String, dynamic>.from(sec)),
-          if (_templateDef != null && _templateDef!['footer'] is Map)
-            if ((_templateDef!['footer']['fields'] as List?)?.isNotEmpty == true)
-              ..._sectionWidgets(Map<String, dynamic>.from(_templateDef!['footer'])),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save'),
+        ),
+        if (pageCount > 1)
+          SiteReportPageNav(
+            pageIndex: safePageIndex,
+            pageCount: pageCount,
+            pageLabels: pageLabels,
+            onSelectPage: (i) => setState(() => _pageIndex = i),
+            onBack: () => setState(() => _pageIndex = (safePageIndex - 1).clamp(0, pageCount - 1)),
+            onNext: () => setState(() => _pageIndex = (safePageIndex + 1).clamp(0, pageCount - 1)),
+            isFirstPage: isFirstPage,
+            isLastPage: isLastPage,
+            onDone: _save,
+            saving: _saving,
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1002,13 +1078,13 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     ];
   }
 
-  List<Widget> _sectionWidgets(Map<String, dynamic> sec) {
+  List<Widget> _sectionWidgets(Map<String, dynamic> sec, {bool hideTitle = false}) {
     final title = (sec['title'] as String?) ?? (sec['id'] == 'footer' ? 'Footer' : '');
     final fields = sec['fields'];
     if (fields is! List || fields.isEmpty) return [];
 
     return [
-      if (title.isNotEmpty)
+      if (title.isNotEmpty && !hideTitle)
         Padding(
           padding: const EdgeInsets.only(top: 24, bottom: 8),
           child: Column(

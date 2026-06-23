@@ -17,6 +17,9 @@ interface LabourRate {
   name: string;
   description: string | null;
   basic_rate_per_hr: number;
+  travel_rate_per_hr?: number | null;
+  first_hour_rate_per_hr?: number | null;
+  additional_hour_rate_per_hr?: number | null;
   nominal_code: string | null;
   rounding_rule: string | null;
 }
@@ -51,6 +54,9 @@ export default function PriceBookConfigPage() {
   const [lName, setLName] = useState('');
   const [lDesc, setLDesc] = useState('');
   const [lBasicRate, setLBasicRate] = useState<number>(0);
+  const [lTravelRate, setLTravelRate] = useState<number | ''>('');
+  const [lFirstHourRate, setLFirstHourRate] = useState<number | ''>('');
+  const [lAdditionalHourRate, setLAdditionalHourRate] = useState<number | ''>('');
   const [lNominal, setLNominal] = useState('Sales');
   const [lRounding, setLRounding] = useState('Rounded up to nearest 15 min');
   const [editingLabourId, setEditingLabourId] = useState<number | null>(null);
@@ -111,6 +117,9 @@ export default function PriceBookConfigPage() {
         name: lName.trim(),
         description: lDesc.trim() || null,
         basic_rate_per_hr: lBasicRate,
+        travel_rate_per_hr: lTravelRate === '' ? null : lTravelRate,
+        first_hour_rate_per_hr: lFirstHourRate === '' ? null : lFirstHourRate,
+        additional_hour_rate_per_hr: lAdditionalHourRate === '' ? null : lAdditionalHourRate,
         nominal_code: lNominal,
         rounding_rule: lRounding
       }, token);
@@ -127,6 +136,9 @@ export default function PriceBookConfigPage() {
     setLName(rate.name);
     setLDesc(rate.description || '');
     setLBasicRate(Number(rate.basic_rate_per_hr || 0));
+    setLTravelRate(rate.travel_rate_per_hr == null ? '' : Number(rate.travel_rate_per_hr));
+    setLFirstHourRate(rate.first_hour_rate_per_hr == null ? '' : Number(rate.first_hour_rate_per_hr));
+    setLAdditionalHourRate(rate.additional_hour_rate_per_hr == null ? '' : Number(rate.additional_hour_rate_per_hr));
     setLNominal(rate.nominal_code || 'Sales');
     setLRounding(rate.rounding_rule || 'Rounded up to nearest 15 min');
   };
@@ -137,6 +149,9 @@ export default function PriceBookConfigPage() {
     setLName('');
     setLDesc('');
     setLBasicRate(0);
+    setLTravelRate('');
+    setLFirstHourRate('');
+    setLAdditionalHourRate('');
     setLNominal('Sales');
     setLRounding('Rounded up to nearest 15 min');
   };
@@ -148,6 +163,9 @@ export default function PriceBookConfigPage() {
         name: lName.trim(),
         description: lDesc.trim() || null,
         basic_rate_per_hr: lBasicRate,
+        travel_rate_per_hr: lTravelRate === '' ? null : lTravelRate,
+        first_hour_rate_per_hr: lFirstHourRate === '' ? null : lFirstHourRate,
+        additional_hour_rate_per_hr: lAdditionalHourRate === '' ? null : lAdditionalHourRate,
         nominal_code: lNominal,
         rounding_rule: lRounding
       }, token);
@@ -285,7 +303,7 @@ export default function PriceBookConfigPage() {
                   <div className="border-b border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
                     <div>
                         <h2 className="text-[15px] font-bold text-slate-800">Add Labour Rates</h2>
-                        <p className="text-xs text-slate-500 mt-1">Configure individual labour rates for this price book.</p>
+                        <p className="text-xs text-slate-500 mt-1">Set first-hour labour, additional-hour labour, and travel rates used for job cost calculations.</p>
                     </div>
                     {!addingLabour && editingLabourId == null && (
                       <button onClick={() => { resetLabourForm(); setAddingLabour(true); }} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
@@ -301,6 +319,9 @@ export default function PriceBookConfigPage() {
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Labour rate name</th>
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Description</th>
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Basic rate / hr</th>
+                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">First hour</th>
+                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Additional hr</th>
+                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Travel</th>
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Nominal code</th>
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Rounding rule</th>
                           <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 text-right">Actions</th>
@@ -318,6 +339,15 @@ export default function PriceBookConfigPage() {
                               </td>
                               <td className="px-6 py-3 min-w-[120px]">
                                 <input type="number" min="0" step="0.01" value={lBasicRate} onChange={e => setLBasicRate(Number(e.target.value))} className={inputClass} />
+                              </td>
+                              <td className="px-6 py-3 min-w-[110px]">
+                                <input type="number" min="0" step="0.01" value={lFirstHourRate} onChange={e => setLFirstHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 60" />
+                              </td>
+                              <td className="px-6 py-3 min-w-[110px]">
+                                <input type="number" min="0" step="0.01" value={lAdditionalHourRate} onChange={e => setLAdditionalHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 25" />
+                              </td>
+                              <td className="px-6 py-3 min-w-[110px]">
+                                <input type="number" min="0" step="0.01" value={lTravelRate} onChange={e => setLTravelRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 10" />
                               </td>
                               <td className="px-6 py-3 min-w-[160px]">
                                 <select value={lNominal} onChange={e => setLNominal(e.target.value)} className={inputClass}>
@@ -346,6 +376,9 @@ export default function PriceBookConfigPage() {
                               <td className="px-6 py-4 font-medium text-slate-900">{rate.name}</td>
                               <td className="px-6 py-4 text-slate-500">{rate.description || '—'}</td>
                               <td className="px-6 py-4 text-slate-900 font-medium">£ {Number(rate.basic_rate_per_hr).toFixed(2)}</td>
+                              <td className="px-6 py-4 text-slate-600">{rate.first_hour_rate_per_hr == null ? '—' : `£ ${Number(rate.first_hour_rate_per_hr).toFixed(2)}`}</td>
+                              <td className="px-6 py-4 text-slate-600">{rate.additional_hour_rate_per_hr == null ? '—' : `£ ${Number(rate.additional_hour_rate_per_hr).toFixed(2)}`}</td>
+                              <td className="px-6 py-4 text-slate-600">{rate.travel_rate_per_hr == null ? '—' : `£ ${Number(rate.travel_rate_per_hr).toFixed(2)}`}</td>
                               <td className="px-6 py-4 text-slate-500">{rate.nominal_code || '—'}</td>
                               <td className="px-6 py-4 text-slate-500">{rate.rounding_rule || '—'}</td>
                               <td className="px-6 py-4 text-right">
@@ -367,6 +400,15 @@ export default function PriceBookConfigPage() {
                              </td>
                              <td className="px-6 py-3 min-w-[120px]">
                                <input type="number" step="0.01" value={lBasicRate} onChange={e => setLBasicRate(Number(e.target.value))} className={inputClass} />
+                             </td>
+                             <td className="px-6 py-3 min-w-[110px]">
+                               <input type="number" step="0.01" value={lFirstHourRate} onChange={e => setLFirstHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 60" />
+                             </td>
+                             <td className="px-6 py-3 min-w-[110px]">
+                               <input type="number" step="0.01" value={lAdditionalHourRate} onChange={e => setLAdditionalHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 25" />
+                             </td>
+                             <td className="px-6 py-3 min-w-[110px]">
+                               <input type="number" step="0.01" value={lTravelRate} onChange={e => setLTravelRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 10" />
                              </td>
                              <td className="px-6 py-3 min-w-[160px]">
                                <select value={lNominal} onChange={e => setLNominal(e.target.value)} className={inputClass}>
@@ -390,7 +432,7 @@ export default function PriceBookConfigPage() {
                           </tr>
                         )}
                         {data.labour_rates.length === 0 && !addingLabour && (
-                           <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-400">No labour rates added yet.</td></tr>
+                           <tr><td colSpan={9} className="px-6 py-12 text-center text-slate-400">No labour rates added yet.</td></tr>
                         )}
                       </tbody>
                     </table>

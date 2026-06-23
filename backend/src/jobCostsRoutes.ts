@@ -5,6 +5,7 @@ import path from 'path';
 import { getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
 import { getWorkpilotFileRootDir, loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
+import { calculateTimesheetLabourTotals, formatDurationLabel } from './jobLabourCost';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -154,6 +155,9 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
   const rateResult = await pool.query(
     `SELECT COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
             lr.name AS default_rate_name,
+            lr.travel_rate_per_hr,
+            lr.first_hour_rate_per_hr,
+            lr.additional_hour_rate_per_hr,
             o.travel_hourly_rate,
             o.on_site_hourly_rate,
             o.first_hour_labour_rate,
@@ -163,7 +167,7 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
      FROM jobs j
      LEFT JOIN customers c ON c.id = j.customer_id
      LEFT JOIN LATERAL (
-       SELECT name, basic_rate_per_hr
+       SELECT name, basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
        FROM price_book_labour_rates
        WHERE price_book_id = c.price_book_id
        ORDER BY id ASC
@@ -176,6 +180,9 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
   );
   const row = rateResult.rows[0] ?? {};
   const defaultRate = n(row.default_hourly_rate);
+  const pbTravel = row.travel_rate_per_hr == null ? null : n(row.travel_rate_per_hr);
+  const pbFirstHour = row.first_hour_rate_per_hr == null ? null : n(row.first_hour_rate_per_hr);
+  const pbAdditionalHour = row.additional_hour_rate_per_hr == null ? null : n(row.additional_hour_rate_per_hr);
   const travelOverride = row.travel_hourly_rate == null ? null : n(row.travel_hourly_rate);
   const onSiteOverride = row.on_site_hourly_rate == null ? null : n(row.on_site_hourly_rate);
   const firstHourOverride = row.first_hour_labour_rate == null ? null : n(row.first_hour_labour_rate);
@@ -183,10 +190,10 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
   return {
     default_hourly_rate: defaultRate,
     default_rate_name: row.default_rate_name ? String(row.default_rate_name) : null,
-    travel_hourly_rate: travelOverride ?? defaultRate,
+    travel_hourly_rate: travelOverride ?? pbTravel ?? defaultRate,
     on_site_hourly_rate: onSiteOverride ?? defaultRate,
-    first_hour_labour_rate: firstHourOverride ?? onSiteOverride ?? defaultRate,
-    additional_hour_labour_rate: additionalHourOverride ?? onSiteOverride ?? defaultRate,
+    first_hour_labour_rate: firstHourOverride ?? pbFirstHour ?? onSiteOverride ?? defaultRate,
+    additional_hour_labour_rate: additionalHourOverride ?? pbAdditionalHour ?? onSiteOverride ?? defaultRate,
     travel_override: travelOverride,
     on_site_override: onSiteOverride,
     first_hour_override: firstHourOverride,
@@ -281,35 +288,50 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
     });
   }
 
+  let onSiteSeconds = 0;
+  let travelSeconds = 0;
   for (const row of timesheet.rows) {
     const seconds = n(row.duration_seconds);
-    const hours = seconds / 3600;
     const isTravel = row.segment_type === 'travelling';
-    const firstHour = Math.min(hours, 1);
-    const additionalHours = Math.max(0, hours - 1);
-    const rate = isTravel ? rateConfig.travel_hourly_rate : rateConfig.first_hour_labour_rate;
-    const amount = isTravel
-      ? Math.round(hours * rateConfig.travel_hourly_rate * 100) / 100
-      : Math.round(
-          (firstHour * rateConfig.first_hour_labour_rate +
-            additionalHours * rateConfig.additional_hour_labour_rate) *
-            100,
-        ) / 100;
+    if (isTravel) travelSeconds += seconds;
+    else onSiteSeconds += seconds;
+  }
+
+  const labourTotals = calculateTimesheetLabourTotals(onSiteSeconds, travelSeconds, {
+    travel_hourly_rate: rateConfig.travel_hourly_rate,
+    first_hour_labour_rate: rateConfig.first_hour_labour_rate,
+    additional_hour_labour_rate: rateConfig.additional_hour_labour_rate,
+  });
+
+  if (labourTotals.on_site_seconds > 0) {
+    const firstHour = Math.min(labourTotals.on_site_hours, 1);
+    const additionalHours = Math.max(0, labourTotals.on_site_hours - 1);
     lines.push({
-      id: `timesheet-${row.id}`,
+      id: 'timesheet-labour',
       source: 'timesheet',
-      label: `${isTravel ? 'Travel time' : 'On-site time'}${row.officer_full_name ? ` · ${row.officer_full_name}` : ''}`,
-      description: `${iso(row.clock_in) ?? ''}${row.clock_out ? ` to ${iso(row.clock_out) ?? ''}` : ' to open'}${
-        isTravel
-          ? ''
-          : `\nFirst hour ${firstHour.toFixed(2)}h @ £${rateConfig.first_hour_labour_rate.toFixed(2)}, additional ${additionalHours.toFixed(2)}h @ £${rateConfig.additional_hour_labour_rate.toFixed(2)}`
-      }`,
-      quantity: hours,
-      unit_amount: rate,
-      amount,
+      label: 'Labour',
+      description: `On-site time: ${formatDurationLabel(labourTotals.on_site_seconds)}\nFirst hour ${firstHour.toFixed(2)}h @ £${rateConfig.first_hour_labour_rate.toFixed(2)}, additional ${additionalHours.toFixed(2)}h @ £${rateConfig.additional_hour_labour_rate.toFixed(2)}`,
+      quantity: labourTotals.on_site_hours,
+      unit_amount: rateConfig.first_hour_labour_rate,
+      amount: labourTotals.labour_amount,
       currency: 'GBP',
-      created_at: iso(row.clock_in),
-      created_by_name: row.officer_full_name ?? null,
+      created_at: null,
+      created_by_name: null,
+    });
+  }
+
+  if (labourTotals.travel_seconds > 0) {
+    lines.push({
+      id: 'timesheet-travel',
+      source: 'timesheet',
+      label: 'Travel',
+      description: `Travel time: ${formatDurationLabel(labourTotals.travel_seconds)}`,
+      quantity: labourTotals.travel_hours,
+      unit_amount: rateConfig.travel_hourly_rate,
+      amount: labourTotals.travel_amount,
+      currency: 'GBP',
+      created_at: null,
+      created_by_name: null,
     });
   }
 
@@ -388,6 +410,20 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
 
   return {
     rate_config: rateConfig,
+    timesheet_summary:
+      labourTotals.on_site_seconds > 0 || labourTotals.travel_seconds > 0
+        ? {
+            on_site_duration_label: formatDurationLabel(labourTotals.on_site_seconds),
+            travel_duration_label: formatDurationLabel(labourTotals.travel_seconds),
+            on_site_hours: labourTotals.on_site_hours,
+            travel_hours: labourTotals.travel_hours,
+            labour_amount: labourTotals.labour_amount,
+            travel_amount: labourTotals.travel_amount,
+            first_hour_labour_rate: rateConfig.first_hour_labour_rate,
+            additional_hour_labour_rate: rateConfig.additional_hour_labour_rate,
+            travel_hourly_rate: rateConfig.travel_hourly_rate,
+          }
+        : null,
     summary: {
       total: Math.round(lines.reduce((acc, line) => acc + line.amount, 0) * 100) / 100,
       manual_total: bySource.manual ?? 0,

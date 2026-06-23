@@ -43,6 +43,7 @@ import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
 import { mountJobNotesRoutes } from './jobNotesRoutes';
 import { mountJobCostsRoutes, buildJobCostPayload } from './jobCostsRoutes';
+import { calculateTimesheetLabourTotals } from './jobLabourCost';
 import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
 import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
@@ -921,6 +922,9 @@ async function initDb() {
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
   `);
+  await pool.query(`ALTER TABLE price_book_labour_rates ADD COLUMN IF NOT EXISTS travel_rate_per_hr DECIMAL(10,2)`);
+  await pool.query(`ALTER TABLE price_book_labour_rates ADD COLUMN IF NOT EXISTS first_hour_rate_per_hr DECIMAL(10,2)`);
+  await pool.query(`ALTER TABLE price_book_labour_rates ADD COLUMN IF NOT EXISTS additional_hour_rate_per_hr DECIMAL(10,2)`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS business_units (
@@ -2529,6 +2533,7 @@ const JOB_REPORT_QUESTION_TYPES = [
   'officer_signature',
   'before_photo',
   'after_photo',
+  'page_break',
 ] as const;
 
 function isJobReportQuestionType(s: string): boolean {
@@ -13482,6 +13487,9 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
     const rateResult = await pool.query<{
       job_id: number;
       default_hourly_rate: string | number;
+      pb_travel_rate: string | number | null;
+      pb_first_hour_rate: string | number | null;
+      pb_additional_hour_rate: string | number | null;
       travel_hourly_rate: string | number | null;
       on_site_hourly_rate: string | number | null;
       first_hour_labour_rate: string | number | null;
@@ -13489,6 +13497,9 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
     }>(
       `SELECT j.id AS job_id,
               COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
+              lr.travel_rate_per_hr AS pb_travel_rate,
+              lr.first_hour_rate_per_hr AS pb_first_hour_rate,
+              lr.additional_hour_rate_per_hr AS pb_additional_hour_rate,
               o.travel_hourly_rate,
               o.on_site_hourly_rate,
               o.first_hour_labour_rate,
@@ -13496,7 +13507,7 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN LATERAL (
-         SELECT basic_rate_per_hr
+         SELECT basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
          FROM price_book_labour_rates
          WHERE price_book_id = c.price_book_id
          ORDER BY id ASC
@@ -13513,14 +13524,17 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
     }> = {};
     for (const row of rateResult.rows) {
       const def = typeof row.default_hourly_rate === 'number' ? row.default_hourly_rate : parseFloat(row.default_hourly_rate || '0');
-      const travel = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : def;
-      const onsite = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : def;
-      const first = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : onsite;
-      const additional = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : onsite;
+      const pbTravel = row.pb_travel_rate != null ? (typeof row.pb_travel_rate === 'number' ? row.pb_travel_rate : parseFloat(row.pb_travel_rate)) : null;
+      const pbFirst = row.pb_first_hour_rate != null ? (typeof row.pb_first_hour_rate === 'number' ? row.pb_first_hour_rate : parseFloat(row.pb_first_hour_rate)) : null;
+      const pbAdditional = row.pb_additional_hour_rate != null ? (typeof row.pb_additional_hour_rate === 'number' ? row.pb_additional_hour_rate : parseFloat(row.pb_additional_hour_rate)) : null;
+      const travelOverride = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : null;
+      const onsiteOverride = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : null;
+      const firstOverride = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : null;
+      const additionalOverride = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : null;
       ratesByJob[row.job_id] = {
-        travel,
-        firstHour: first,
-        additionalHour: additional
+        travel: travelOverride ?? pbTravel ?? def,
+        firstHour: firstOverride ?? pbFirst ?? onsiteOverride ?? def,
+        additionalHour: additionalOverride ?? pbAdditional ?? onsiteOverride ?? def,
       };
     }
     const timesheetRes = await pool.query<{
@@ -13535,21 +13549,27 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
        WHERE d.job_id = ANY($1::int[])`,
       [jobIds]
     );
+    const secondsByJob: Record<number, { onSite: number; travel: number }> = {};
+    for (const jobId of jobIds) {
+      secondsByJob[jobId] = { onSite: 0, travel: 0 };
+    }
     for (const row of timesheetRes.rows) {
-      const rates = ratesByJob[row.job_id];
-      if (!rates) continue;
+      const bucket = secondsByJob[row.job_id];
+      if (!bucket) continue;
       const seconds = typeof row.duration_seconds === 'number' ? row.duration_seconds : parseFloat(row.duration_seconds || '0');
-      const hours = seconds / 3600;
-      const isTravel = row.segment_type === 'travelling';
-      let amount = 0;
-      if (isTravel) {
-        amount = hours * rates.travel;
-      } else {
-        const firstHour = Math.min(hours, 1);
-        const additionalHours = Math.max(0, hours - 1);
-        amount = firstHour * rates.firstHour + additionalHours * rates.additionalHour;
-      }
-      costsMap[row.job_id] += amount;
+      if (row.segment_type === 'travelling') bucket.travel += seconds;
+      else bucket.onSite += seconds;
+    }
+    for (const [jobIdRaw, seconds] of Object.entries(secondsByJob)) {
+      const jobId = Number(jobIdRaw);
+      const rates = ratesByJob[jobId];
+      if (!rates) continue;
+      const totals = calculateTimesheetLabourTotals(seconds.onSite, seconds.travel, {
+        travel_hourly_rate: rates.travel,
+        first_hour_labour_rate: rates.firstHour,
+        additional_hour_labour_rate: rates.additionalHour,
+      });
+      costsMap[jobId] += totals.timesheet_total;
     }
   } catch (err) {
     console.error('Error calculating job costs bulk:', err);
@@ -17594,12 +17614,24 @@ app.delete('/api/settings/price-books/:id/items/:itemId', authenticate, requireA
 
 app.post('/api/settings/price-books/:id/labour-rates', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
-  const { name, description, basic_rate_per_hr, nominal_code, rounding_rule } = req.body;
+  const { name, description, basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr, nominal_code, rounding_rule } = req.body;
   if (!name) return res.status(400).json({ message: 'Name is required' });
   try {
     const result = await pool.query(
-      `INSERT INTO price_book_labour_rates (price_book_id, name, description, basic_rate_per_hr, nominal_code, rounding_rule) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [id, name, description || null, basic_rate_per_hr || 0, nominal_code || null, rounding_rule || null]
+      `INSERT INTO price_book_labour_rates (
+         price_book_id, name, description, basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr, nominal_code, rounding_rule
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [
+        id,
+        name,
+        description || null,
+        basic_rate_per_hr || 0,
+        travel_rate_per_hr ?? null,
+        first_hour_rate_per_hr ?? null,
+        additional_hour_rate_per_hr ?? null,
+        nominal_code || null,
+        rounding_rule || null,
+      ],
     );
     return res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -17611,11 +17643,26 @@ app.post('/api/settings/price-books/:id/labour-rates', authenticate, requireAdmi
 app.put('/api/settings/price-books/:id/labour-rates/:rateId', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const rateId = parseInt(String(req.params.rateId), 10);
-  const { name, description, basic_rate_per_hr, nominal_code, rounding_rule } = req.body;
+  const { name, description, basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr, nominal_code, rounding_rule } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE price_book_labour_rates SET name = $1, description = $2, basic_rate_per_hr = $3, nominal_code = $4, rounding_rule = $5, updated_at = NOW() WHERE id = $6 AND price_book_id = $7 RETURNING *`,
-      [name, description || null, basic_rate_per_hr || 0, nominal_code || null, rounding_rule || null, rateId, id]
+      `UPDATE price_book_labour_rates
+       SET name = $1, description = $2, basic_rate_per_hr = $3, travel_rate_per_hr = $4, first_hour_rate_per_hr = $5,
+           additional_hour_rate_per_hr = $6, nominal_code = $7, rounding_rule = $8, updated_at = NOW()
+       WHERE id = $9 AND price_book_id = $10
+       RETURNING *`,
+      [
+        name,
+        description || null,
+        basic_rate_per_hr || 0,
+        travel_rate_per_hr ?? null,
+        first_hour_rate_per_hr ?? null,
+        additional_hour_rate_per_hr ?? null,
+        nominal_code || null,
+        rounding_rule || null,
+        rateId,
+        id,
+      ],
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Labour rate not found' });
     return res.json(result.rows[0]);

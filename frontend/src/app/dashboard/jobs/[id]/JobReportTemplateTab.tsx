@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getJson, putJson } from '../../../apiClient';
 import { Plus, Trash2, ChevronUp, ChevronDown, Save, Type, AlignLeft, PenLine, Camera } from 'lucide-react';
 
@@ -10,7 +10,8 @@ export type JobReportQuestionType =
   | 'customer_signature'
   | 'officer_signature'
   | 'before_photo'
-  | 'after_photo';
+  | 'after_photo'
+  | 'page_break';
 
 export interface JobReportQuestionRow {
   id?: number;
@@ -29,6 +30,7 @@ const QUESTION_TYPES: { value: JobReportQuestionType; label: string }[] = [
   { value: 'officer_signature', label: 'Officer signature' },
   { value: 'before_photo', label: 'Before photo' },
   { value: 'after_photo', label: 'After photo' },
+  { value: 'page_break', label: 'Page break' },
 ];
 
 const QUESTION_PALETTE: { value: JobReportQuestionType; label: string; Icon: typeof Type }[] = [
@@ -39,6 +41,34 @@ const QUESTION_PALETTE: { value: JobReportQuestionType; label: string; Icon: typ
   { value: 'before_photo', label: 'Before photo', Icon: Camera },
   { value: 'after_photo', label: 'After photo', Icon: Camera },
 ];
+
+type QuestionPage = {
+  title: string;
+  breakIndex: number | null;
+  rowIndexes: number[];
+};
+
+function buildPages(questions: JobReportQuestionRow[]): QuestionPage[] {
+  const pages: QuestionPage[] = [];
+  let current: QuestionPage = { title: 'Page 1', breakIndex: null, rowIndexes: [] };
+
+  questions.forEach((q, index) => {
+    if (q.question_type === 'page_break') {
+      pages.push(current);
+      const fallbackTitle = `Page ${pages.length + 1}`;
+      current = {
+        title: q.prompt.trim() || fallbackTitle,
+        breakIndex: index,
+        rowIndexes: [],
+      };
+      return;
+    }
+    current.rowIndexes.push(index);
+  });
+
+  pages.push(current);
+  return pages;
+}
 
 interface Props {
   /** Required when [templateTarget] is `"job"` (per-job checklist on job detail). */
@@ -66,6 +96,7 @@ export default function JobReportTemplateTab({
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [activePageIndex, setActivePageIndex] = useState(0);
 
   const apiPath =
     templateTarget === 'default'
@@ -86,10 +117,11 @@ export default function JobReportTemplateTab({
         list.map((q, i) => ({
           ...q,
           sort_order: q.sort_order ?? i,
-          required: q.required !== false,
+          required: q.question_type === 'page_break' ? false : q.required !== false,
           helper_text: q.helper_text ?? null,
         })),
       );
+      setActivePageIndex(0);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -123,21 +155,32 @@ export default function JobReportTemplateTab({
 
   const addRow = (type: JobReportQuestionType = 'text') => {
     const label = QUESTION_TYPES.find((t) => t.value === type)?.label ?? 'New question';
-    setQuestions([
+    const next = [
       ...questions,
       {
         sort_order: questions.length,
         question_type: type,
-        prompt: type === 'text' || type === 'textarea' ? '' : label,
+        prompt: type === 'page_break' ? `Page ${buildPages(questions).length + 1}` : type === 'text' || type === 'textarea' ? '' : label,
         helper_text: null,
-        required: true,
+        required: type === 'page_break' ? false : true,
       },
-    ]);
-    setExpandedIndex(questions.length);
+    ].map((q, i) => ({ ...q, sort_order: i }));
+    setQuestions(next);
+    const nextPages = buildPages(next);
+    setActivePageIndex(Math.max(0, nextPages.length - 1));
+    setExpandedIndex(type === 'page_break' ? next.findIndex((q) => q.question_type === 'page_break' && q.sort_order === next.length - 1) : next.length - 1);
   };
 
   const removeRow = (index: number) => {
-    setQuestions(questions.filter((_, i) => i !== index).map((q, i) => ({ ...q, sort_order: i })));
+    const next = questions.filter((_, i) => i !== index).map((q, i) => ({ ...q, sort_order: i }));
+    setQuestions(next);
+    setExpandedIndex((prev) => (prev == null ? prev : prev === index ? null : prev > index ? prev - 1 : prev));
+    const nextPages = buildPages(next);
+    setActivePageIndex((prev) => Math.min(prev, Math.max(0, nextPages.length - 1)));
+  };
+
+  const addPage = () => {
+    addRow('page_break');
   };
 
   const save = async () => {
@@ -154,6 +197,10 @@ export default function JobReportTemplateTab({
       setSaving(false);
     }
   };
+
+  const pages = useMemo(() => buildPages(questions), [questions]);
+  const safeActivePageIndex = Math.min(activePageIndex, Math.max(0, pages.length - 1));
+  const activePage = pages[safeActivePageIndex] ?? pages[0];
 
   if (templateTarget === 'job' && !jobId) {
     return <div className="p-8 text-slate-500 text-sm font-medium">Missing job id.</div>;
@@ -225,15 +272,54 @@ export default function JobReportTemplateTab({
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={addPage}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#14B8A6]/40 bg-white px-2.5 py-2 text-xs font-semibold text-[#0d9488] shadow-sm hover:border-[#14B8A6] hover:bg-[#14B8A6]/5"
+            >
+              <Plus className="size-3.5" />
+              Add page
+            </button>
           </aside>
 
           <div className="min-w-0 flex-1 p-4 space-y-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
+              {pages.map((page, index) => (
+                <button
+                  key={`${page.breakIndex ?? 'page'}-${index}`}
+                  type="button"
+                  onClick={() => setActivePageIndex(index)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                    index === safeActivePageIndex
+                      ? 'bg-[#14B8A6] text-white shadow-sm'
+                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {page.title || `Page ${index + 1}`}
+                </button>
+              ))}
+            </div>
             {questions.length === 0 && (
               <p className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500">
                 Click a field type on the left to build your job report form.
               </p>
             )}
-            {questions.map((q, index) => {
+            {activePage?.breakIndex != null ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-3">
+                <label className="text-[11px] font-bold uppercase text-slate-500">Page title</label>
+                <input
+                  className="mt-1 w-full max-w-sm rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+                  value={questions[activePage.breakIndex]?.prompt ?? ''}
+                  placeholder={`Page ${safeActivePageIndex + 1}`}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setQuestions(questions.map((row, i) => (i === activePage.breakIndex ? { ...row, prompt: v } : row)));
+                  }}
+                />
+              </div>
+            ) : null}
+            {activePage?.rowIndexes.map((index) => {
+              const q = questions[index];
               const expanded = expandedIndex === index;
               const typeLabel = QUESTION_TYPES.find((t) => t.value === q.question_type)?.label ?? q.question_type;
               return (
@@ -290,7 +376,11 @@ export default function JobReportTemplateTab({
                           value={q.question_type}
                           onChange={(e) => {
                             const v = e.target.value as JobReportQuestionType;
-                            setQuestions(questions.map((row, i) => (i === index ? { ...row, question_type: v } : row)));
+                            setQuestions(
+                              questions.map((row, i) =>
+                                i === index ? { ...row, question_type: v, required: v === 'page_break' ? false : row.required } : row,
+                              ),
+                            );
                           }}
                         >
                           {questionTypeOptions.map((t) => (
@@ -330,6 +420,13 @@ export default function JobReportTemplateTab({
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
         >
           <Plus className="size-4" /> Add question
+        </button>
+        <button
+          type="button"
+          onClick={addPage}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+        >
+          <Plus className="size-4" /> Add page
         </button>
         <button
           type="button"

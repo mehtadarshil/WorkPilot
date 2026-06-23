@@ -33,6 +33,7 @@ class JobReportController extends GetxController {
   final RxString selectedNextJobState = 'completed'.obs;
   final RxBool showCompletionActions = false.obs;
   final RxBool submittedOffline = false.obs;
+  final RxInt currentPage = 0.obs;
   final Rxn<JobReportBundle> reportBundle = Rxn<JobReportBundle>();
   final RxBool loadingSiteReportTemplates = false.obs;
   final RxMap<int, String> textByQuestionId = <int, String>{}.obs;
@@ -116,6 +117,7 @@ class JobReportController extends GetxController {
       final bundle = await _mobile.fetchDiaryJobReport(diaryId);
       reportBundle.value = bundle;
       questions.assignAll(bundle.questions);
+      currentPage.value = 0;
       for (final q in bundle.questions) {
         final existing = bundle.answersByQuestionId[q.id];
         if (existing != null && existing.trim().isNotEmpty) {
@@ -188,6 +190,7 @@ class JobReportController extends GetxController {
 
   bool validateRequiredAnswers() {
     for (final q in questions) {
+      if (q.questionType == 'page_break') continue;
       if (!q.required) continue;
       String value;
       switch (q.questionType) {
@@ -213,6 +216,7 @@ class JobReportController extends GetxController {
   Future<List<Map<String, dynamic>>> _buildAnswersPayload() async {
     final answers = <Map<String, dynamic>>[];
     for (final q in questions) {
+      if (q.questionType == 'page_break') continue;
       String value;
       switch (q.questionType) {
         case 'customer_signature':
@@ -355,12 +359,7 @@ class JobReportController extends GetxController {
   }
 
   bool _isTextQuestion(String type) {
-    return type == 'text' ||
-        type == 'textarea' ||
-        (type != 'customer_signature' &&
-            type != 'officer_signature' &&
-            type != 'before_photo' &&
-            type != 'after_photo');
+    return type == 'text' || type == 'textarea';
   }
 
   TextEditingController? textControllerFor(int questionId) => textControllers[questionId];

@@ -11,6 +11,7 @@ import 'package:signature/signature.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/job_report_models.dart';
 import '../../data/post_report_job_stages.dart';
+import '../site_reports/site_report_page_nav.dart';
 import 'job_report_controller.dart';
 
 Uint8List? _bytesFromDataUrl(String? s) {
@@ -22,6 +23,35 @@ Uint8List? _bytesFromDataUrl(String? s) {
   } catch (_) {
     return null;
   }
+}
+
+class _JobReportPage {
+  const _JobReportPage({
+    required this.title,
+    required this.questions,
+  });
+
+  final String title;
+  final List<JobReportQuestion> questions;
+}
+
+List<_JobReportPage> _buildJobReportPages(List<JobReportQuestion> questions) {
+  final pages = <_JobReportPage>[];
+  var currentTitle = 'Page 1';
+  var currentQuestions = <JobReportQuestion>[];
+
+  for (final q in questions) {
+    if (q.questionType == 'page_break') {
+      pages.add(_JobReportPage(title: currentTitle, questions: currentQuestions));
+      currentTitle = q.prompt.trim().isNotEmpty ? q.prompt.trim() : 'Page ${pages.length + 1}';
+      currentQuestions = <JobReportQuestion>[];
+      continue;
+    }
+    currentQuestions.add(q);
+  }
+
+  pages.add(_JobReportPage(title: currentTitle, questions: currentQuestions));
+  return pages;
 }
 
 class JobReportView extends GetView<JobReportController> {
@@ -152,27 +182,62 @@ class JobReportView extends GetView<JobReportController> {
               return _ChangeJobStageBody(controller: controller);
             }
             final ro = controller.readonlyMode.value;
+            final pages = _buildJobReportPages(controller.questions.toList());
+            final pageCount = pages.length;
+            final safePageIndex = controller.currentPage.value.clamp(0, pageCount - 1);
+            final activePage = pages[safePageIndex];
             return Column(
               children: [
                 Expanded(
-                  child: ListView.builder(
+                  child: ListView(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                    itemCount: controller.questions.length,
-                    itemBuilder: (context, index) {
-                      final q = controller.questions[index];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _QuestionCard(
-                          q: q,
-                          controller: controller,
-                          readonly: ro,
-                          onPickImage: () => _pickSource(context, q.id),
+                    children: [
+                      if (pageCount > 1) ...[
+                        Text(
+                          activePage.title,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                          ),
                         ),
-                      );
-                    },
+                        const SizedBox(height: 12),
+                      ],
+                      if (activePage.questions.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            'No questions on this page yet.',
+                            style: GoogleFonts.inter(color: AppColors.slate400),
+                          ),
+                        ),
+                      for (final q in activePage.questions)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _QuestionCard(
+                            q: q,
+                            controller: controller,
+                            readonly: ro,
+                            onPickImage: () => _pickSource(context, q.id),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                if (!ro)
+                if (pageCount > 1)
+                  SiteReportPageNav(
+                    pageIndex: safePageIndex,
+                    pageCount: pageCount,
+                    pageLabels: pages.map((p) => p.title).toList(),
+                    onSelectPage: (index) => controller.currentPage.value = index,
+                    onBack: () => controller.currentPage.value = safePageIndex - 1,
+                    onNext: () => controller.currentPage.value = safePageIndex + 1,
+                    isFirstPage: safePageIndex == 0,
+                    isLastPage: safePageIndex >= pageCount - 1,
+                    onDone: ro ? null : controller.continueToJobStageStep,
+                    saving: controller.submitting.value,
+                  )
+                else if (!ro)
                   SafeArea(
                     top: false,
                     child: Padding(

@@ -44,6 +44,17 @@ interface CostPayload {
     updated_at: string | null;
     updated_by_name: string | null;
   };
+  timesheet_summary: {
+    on_site_duration_label: string;
+    travel_duration_label: string;
+    on_site_hours: number;
+    travel_hours: number;
+    labour_amount: number;
+    travel_amount: number;
+    first_hour_labour_rate: number;
+    additional_hour_labour_rate: number;
+    travel_hourly_rate: number;
+  } | null;
   summary: {
     total: number;
     manual_total: number;
@@ -142,7 +153,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
   }, [loadCosts]);
 
   const grouped = useMemo(() => {
-    const lines = payload?.lines ?? [];
+    const lines = (payload?.lines ?? []).filter((line) => line.source !== 'timesheet');
     return lines.reduce<Record<CostSource, CostLine[]>>(
       (acc, line) => {
         acc[line.source].push(line);
@@ -313,6 +324,11 @@ export default function JobCostsTab({ jobId, token }: Props) {
   const canSaveEdit = editDescription.trim().length > 0 && Number(editAmount) > 0 && !editSaving;
   const summary = payload?.summary;
   const rateConfig = payload?.rate_config;
+  const timesheetSummary = payload?.timesheet_summary;
+  const tableLines = useMemo(
+    () => (payload?.lines ?? []).filter((line) => line.source !== 'timesheet'),
+    [payload?.lines],
+  );
   const rateDirty =
     rateConfig != null &&
     (travelRateInput.trim() !== (rateConfig.travel_override == null ? '' : String(rateConfig.travel_override)) ||
@@ -371,7 +387,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   <div>
                     <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Timesheet labour rates</h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      Used for travel and on-site timesheet costs on this job. On-site labour charges the first hour separately from additional hours.
+                      Travel is charged separately. On-site labour uses the first hour rate, then any minutes over 60 minutes at the additional-hour rate.
                       Leave blank to use the customer price book default
                       {rateConfig.default_rate_name ? ` (${rateConfig.default_rate_name})` : ''}: {money(rateConfig.default_hourly_rate)}/hr.
                     </p>
@@ -434,6 +450,32 @@ export default function JobCostsTab({ jobId, token }: Props) {
                     </button>
                   </div>
                 </div>
+              </div>
+            ) : null}
+
+            {timesheetSummary ? (
+              <div className="space-y-4">
+                {timesheetSummary.on_site_hours > 0 ? (
+                  <TimesheetCostSection
+                    title="Labour"
+                    total={timesheetSummary.labour_amount}
+                    columns={[
+                      { label: 'On-site time', value: timesheetSummary.on_site_duration_label },
+                      { label: 'First hour rate', value: `${money(timesheetSummary.first_hour_labour_rate)}/hr` },
+                      { label: 'Additional hour rate', value: `${money(timesheetSummary.additional_hour_labour_rate)}/hr` },
+                    ]}
+                  />
+                ) : null}
+                {timesheetSummary.travel_hours > 0 ? (
+                  <TimesheetCostSection
+                    title="Travel"
+                    total={timesheetSummary.travel_amount}
+                    columns={[
+                      { label: 'Travel time', value: timesheetSummary.travel_duration_label },
+                      { label: 'Travel rate', value: `${money(timesheetSummary.travel_hourly_rate)}/hr` },
+                    ]}
+                  />
+                ) : null}
               </div>
             ) : null}
 
@@ -573,9 +615,9 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(payload?.lines ?? []).length === 0 ? (
+                  {(tableLines ?? []).length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center font-semibold text-slate-400">No costs found for this job.</td>
+                      <td colSpan={7} className="px-4 py-10 text-center font-semibold text-slate-400">No other costs found for this job.</td>
                     </tr>
                   ) : (
                     (Object.keys(grouped) as CostSource[]).flatMap((source) =>
@@ -643,6 +685,47 @@ export default function JobCostsTab({ jobId, token }: Props) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function TimesheetCostSection({
+  title,
+  total,
+  columns,
+}: {
+  title: string;
+  total: number;
+  columns: { label: string; value: string }[];
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">{title}</h3>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-700">{money(total)}</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-[13px]">
+          <thead className="border-b border-slate-100 bg-[#FBFCFD] text-[11px] font-black uppercase text-slate-500">
+            <tr>
+              {columns.map((col) => (
+                <th key={col.label} className="px-4 py-3">{col.label}</th>
+              ))}
+              <th className="px-4 py-3 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              {columns.map((col) => (
+                <td key={col.label} className="px-4 py-4 font-semibold text-slate-700">{col.value}</td>
+              ))}
+              <td className="px-4 py-4 text-right font-black text-slate-900">{money(total)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
