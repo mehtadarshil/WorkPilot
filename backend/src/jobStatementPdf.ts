@@ -682,6 +682,7 @@ function buildCustomerStatementHtml(input: {
   customerName: string;
   customerAddress: string;
   statementDate: string;
+  statementKind: 'full' | 'outstanding';
   jobs: { brief: CustomerJobBrief; invoices: StatementInvoice[] }[];
   currency: string;
   totals: {
@@ -709,10 +710,15 @@ function buildCustomerStatementHtml(input: {
     customerName,
     customerAddress,
     statementDate,
+    statementKind,
     jobs,
     currency,
     totals,
   } = input;
+
+  const isOutstanding = statementKind === 'outstanding';
+  const statementTitle = isOutstanding ? 'Outstanding statement' : 'Full statement';
+  const statementSubtitle = isOutstanding ? 'Outstanding invoices only' : 'Customer statement';
 
   const logoBlock =
     logoUrl != null
@@ -730,7 +736,7 @@ function buildCustomerStatementHtml(input: {
 
   const jobSections =
     jobs.length === 0
-      ? `<div class="empty-box"><p>No jobs have been raised for this customer yet.</p></div>`
+      ? `<div class="empty-box"><p>${isOutstanding ? 'No outstanding invoices for this customer.' : 'No jobs have been raised for this customer yet.'}</p></div>`
       : jobs
           .map(({ brief, invoices: jobInvoices }) => {
             const jobInvoiceRows =
@@ -837,12 +843,12 @@ function buildCustomerStatementHtml(input: {
           <div class="logo-wrap">${logoBlock}</div>
           <div>
             <h1 class="co-name">${escapeHtml(companyName)}</h1>
-            <p class="co-sub">Customer statement</p>
+            <p class="co-sub">${escapeHtml(statementSubtitle)}</p>
             <div class="co-meta">${companyLines.join('')}</div>
           </div>
         </div>
         <div class="stmt-right">
-          <h2 class="stmt-title">Full statement</h2>
+          <h2 class="stmt-title">${escapeHtml(statementTitle)}</h2>
           <p class="stmt-sub">${escapeHtml(customerName)} · ${escapeHtml(statementDate)}</p>
         </div>
       </div>
@@ -882,7 +888,20 @@ function buildCustomerStatementHtml(input: {
 </html>`;
 }
 
-export async function generateCustomerStatementPdfBuffer(pool: Pool, customerId: number): Promise<Buffer> {
+export type CustomerStatementOptions = {
+  outstandingOnly?: boolean;
+};
+
+function isOutstandingInvoice(inv: StatementInvoice): boolean {
+  return inv.balance_due > 0.005 && inv.state !== 'cancelled';
+}
+
+export async function generateCustomerStatementPdfBuffer(
+  pool: Pool,
+  customerId: number,
+  options: CustomerStatementOptions = {},
+): Promise<Buffer> {
+  const outstandingOnly = options.outstandingOnly === true;
   const custResult = await pool.query<{
     id: number;
     full_name: string;
@@ -1032,6 +1051,15 @@ export async function generateCustomerStatementPdfBuffer(pool: Pool, customerId:
     }
   }
 
+  if (outstandingOnly) {
+    allInvoices = allInvoices.filter(isOutstandingInvoice);
+    for (const [jobId, invs] of invoicesByJob) {
+      const filtered = invs.filter(isOutstandingInvoice);
+      if (filtered.length === 0) invoicesByJob.delete(jobId);
+      else invoicesByJob.set(jobId, filtered);
+    }
+  }
+
   const today = new Date();
   let grandTotal = 0;
   let totalPaid = 0;
@@ -1049,7 +1077,9 @@ export async function generateCustomerStatementPdfBuffer(pool: Pool, customerId:
 
   const primaryCurrency = allInvoices[0]?.currency || 'GBP';
 
-  const jobsForHtml = jobsResult.rows.map((j) => {
+  const jobsForHtml = jobsResult.rows
+    .filter((j) => !outstandingOnly || (invoicesByJob.get(j.id) || []).length > 0)
+    .map((j) => {
     const jobNum = j.job_number?.trim() || String(j.id).padStart(4, '0');
     const siteParts = [j.wa_name, j.wa_address_line_1, j.wa_town, j.wa_postcode].filter((p) => p?.trim()).join(', ');
     return {
@@ -1096,10 +1126,11 @@ export async function generateCustomerStatementPdfBuffer(pool: Pool, customerId:
     customerName: cust.full_name?.trim() || 'Customer',
     customerAddress: customerAddressStr,
     statementDate: formatDateFromDb(today),
+    statementKind: outstandingOnly ? 'outstanding' : 'full',
     jobs: jobsForHtml,
     currency: primaryCurrency,
     totals: {
-      jobCount: jobsResult.rows.length,
+      jobCount: jobsForHtml.length,
       invoiceCount: allInvoices.length,
       grandTotal: Math.round(grandTotal * 100) / 100,
       totalPaid: Math.round(totalPaid * 100) / 100,

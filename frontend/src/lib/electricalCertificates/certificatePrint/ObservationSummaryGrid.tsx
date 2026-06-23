@@ -1,5 +1,4 @@
 import type { ObservationItem } from '../types';
-import { InspectionOutcomeBadge } from './InspectionOutcomeBadge';
 import { OBSERVATION_CODE_SUMMARY, countObservationCodes } from './observationSummary';
 
 export function ObservationSummaryGrid({ items }: { items: ObservationItem[] }) {
@@ -9,7 +8,6 @@ export function ObservationSummaryGrid({ items }: { items: ObservationItem[] }) 
       {OBSERVATION_CODE_SUMMARY.map((box) => (
         <div key={box.code} className="cp-obs-summary-box">
           <div className="cp-obs-summary-badge" style={{ backgroundColor: box.bg, color: box.fg }}>
-            <InspectionOutcomeBadge outcome={box.code} />
             <span className="cp-obs-summary-code">{box.title}</span>
           </div>
           <p className="cp-obs-summary-count">{counts[box.code]} result{counts[box.code] === 1 ? '' : 's'}</p>

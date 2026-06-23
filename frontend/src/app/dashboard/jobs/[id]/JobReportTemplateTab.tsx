@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, putJson } from '../../../apiClient';
-import { Plus, Trash2, ChevronUp, ChevronDown, Save } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Save, Type, AlignLeft, PenLine, Camera } from 'lucide-react';
 
 export type JobReportQuestionType =
   | 'text'
@@ -31,6 +31,15 @@ const QUESTION_TYPES: { value: JobReportQuestionType; label: string }[] = [
   { value: 'after_photo', label: 'After photo' },
 ];
 
+const QUESTION_PALETTE: { value: JobReportQuestionType; label: string; Icon: typeof Type }[] = [
+  { value: 'text', label: 'Short text', Icon: Type },
+  { value: 'textarea', label: 'Long text', Icon: AlignLeft },
+  { value: 'officer_signature', label: 'Engineer signature', Icon: PenLine },
+  { value: 'customer_signature', label: 'Customer signature', Icon: PenLine },
+  { value: 'before_photo', label: 'Before photo', Icon: Camera },
+  { value: 'after_photo', label: 'After photo', Icon: Camera },
+];
+
 interface Props {
   /** Required when [templateTarget] is `"job"` (per-job checklist on job detail). */
   jobId?: string;
@@ -56,6 +65,7 @@ export default function JobReportTemplateTab({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   const apiPath =
     templateTarget === 'default'
@@ -111,17 +121,19 @@ export default function JobReportTemplateTab({
     setQuestions(next.map((q, i) => ({ ...q, sort_order: i })));
   };
 
-  const addRow = () => {
+  const addRow = (type: JobReportQuestionType = 'text') => {
+    const label = QUESTION_TYPES.find((t) => t.value === type)?.label ?? 'New question';
     setQuestions([
       ...questions,
       {
         sort_order: questions.length,
-        question_type: 'text',
-        prompt: '',
+        question_type: type,
+        prompt: type === 'text' || type === 'textarea' ? '' : label,
         helper_text: null,
         required: true,
       },
     ]);
+    setExpandedIndex(questions.length);
   };
 
   const removeRow = (index: number) => {
@@ -152,7 +164,7 @@ export default function JobReportTemplateTab({
   }
 
   return (
-    <div className="max-w-3xl space-y-6 p-6">
+    <div className="max-w-5xl space-y-5 p-6">
       <div>
         <h2 className="text-lg font-bold text-slate-900">
           {templateTarget === 'default'
@@ -196,102 +208,125 @@ export default function JobReportTemplateTab({
         </div>
       )}
 
-      <div className="space-y-3">
-        {questions.length === 0 && (
-          <p className="text-sm text-slate-500">No questions yet. Add rows for this job, then save.</p>
-        )}
-        {questions.map((q, index) => (
-          <div
-            key={`${index}-${q.id ?? 'new'}`}
-            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 w-8">#{index + 1}</span>
-              <select
-                className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-medium text-slate-800"
-                value={q.question_type}
-                onChange={(e) => {
-                  const v = e.target.value as JobReportQuestionType;
-                  setQuestions(questions.map((row, i) => (i === index ? { ...row, question_type: v } : row)));
-                }}
-              >
-                {questionTypeOptions.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <label className="ml-auto flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={q.required}
-                  onChange={(e) => {
-                    setQuestions(
-                      questions.map((row, i) => (i === index ? { ...row, required: e.target.checked } : row)),
-                    );
-                  }}
-                />
-                Required
-              </label>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100"
-                onClick={() => move(index, -1)}
-                title="Move up"
-              >
-                <ChevronUp className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100"
-                onClick={() => move(index, 1)}
-                title="Move down"
-              >
-                <ChevronDown className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-rose-600 hover:bg-rose-50"
-                onClick={() => removeRow(index)}
-                title="Remove"
-              >
-                <Trash2 className="size-4" />
-              </button>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex min-h-[320px] flex-col lg:flex-row">
+          <aside className="shrink-0 border-b border-slate-200 bg-slate-50 p-3 lg:w-48 lg:border-b-0 lg:border-r">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Add field</p>
+            <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
+              {QUESTION_PALETTE.map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => addRow(value)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left text-xs font-semibold text-slate-700 shadow-sm hover:border-[#14B8A6] hover:text-[#0d9488]"
+                >
+                  <Icon className="size-3.5 shrink-0 text-[#14B8A6]" />
+                  {label}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Question / label</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={q.prompt}
-                placeholder="e.g. Describe work completed"
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setQuestions(questions.map((row, i) => (i === index ? { ...row, prompt: v } : row)));
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Helper text (optional)</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={q.helper_text ?? ''}
-                placeholder="Shown under the field on the officer app"
-                onChange={(e) => {
-                  const v = e.target.value.trim() ? e.target.value : '';
-                  setQuestions(
-                    questions.map((row, i) => (i === index ? { ...row, helper_text: v || null } : row)),
-                  );
-                }}
-              />
-            </div>
+          </aside>
+
+          <div className="min-w-0 flex-1 p-4 space-y-2">
+            {questions.length === 0 && (
+              <p className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500">
+                Click a field type on the left to build your job report form.
+              </p>
+            )}
+            {questions.map((q, index) => {
+              const expanded = expandedIndex === index;
+              const typeLabel = QUESTION_TYPES.find((t) => t.value === q.question_type)?.label ?? q.question_type;
+              return (
+                <div key={`${index}-${q.id ?? 'new'}`} className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
+                    <span className="text-[10px] font-bold text-slate-400">#{index + 1}</span>
+                    <input
+                      className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-800 outline-none focus:border-slate-200 focus:bg-slate-50"
+                      value={q.prompt}
+                      placeholder="Question label"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setQuestions(questions.map((row, i) => (i === index ? { ...row, prompt: v } : row)));
+                      }}
+                    />
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                      {typeLabel}
+                    </span>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={q.required}
+                        onChange={(e) => {
+                          setQuestions(
+                            questions.map((row, i) => (i === index ? { ...row, required: e.target.checked } : row)),
+                          );
+                        }}
+                      />
+                      Required
+                    </label>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                      onClick={() => setExpandedIndex(expanded ? null : index)}
+                    >
+                      {expanded ? 'Less' : 'Options'}
+                    </button>
+                    <button type="button" className="rounded p-1 text-slate-500 hover:bg-slate-100" onClick={() => move(index, -1)} title="Move up">
+                      <ChevronUp className="size-4" />
+                    </button>
+                    <button type="button" className="rounded p-1 text-slate-500 hover:bg-slate-100" onClick={() => move(index, 1)} title="Move down">
+                      <ChevronDown className="size-4" />
+                    </button>
+                    <button type="button" className="rounded p-1 text-rose-600 hover:bg-rose-50" onClick={() => removeRow(index)} title="Remove">
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="border-t border-slate-100 bg-slate-50/80 px-3 py-3 space-y-3">
+                      <div>
+                        <label className="text-[11px] font-bold uppercase text-slate-500">Field type</label>
+                        <select
+                          className="mt-0.5 w-full max-w-xs rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                          value={q.question_type}
+                          onChange={(e) => {
+                            const v = e.target.value as JobReportQuestionType;
+                            setQuestions(questions.map((row, i) => (i === index ? { ...row, question_type: v } : row)));
+                          }}
+                        >
+                          {questionTypeOptions.map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold uppercase text-slate-500">Helper text (optional)</label>
+                        <input
+                          className="mt-0.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          value={q.helper_text ?? ''}
+                          placeholder="Shown under the field on the officer app"
+                          onChange={(e) => {
+                            const v = e.target.value.trim() ? e.target.value : '';
+                            setQuestions(
+                              questions.map((row, i) => (i === index ? { ...row, helper_text: v || null } : row)),
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={addRow}
+          onClick={() => addRow('text')}
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
         >
           <Plus className="size-4" /> Add question

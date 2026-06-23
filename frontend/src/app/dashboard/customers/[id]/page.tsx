@@ -339,7 +339,7 @@ export default function CustomerDetailsPage() {
   const [workAddressDetails, setWorkAddressDetails] = useState<WorkAddressDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [downloadingStatement, setDownloadingStatement] = useState(false);
+  const [downloadingStatement, setDownloadingStatement] = useState<'full' | 'outstanding' | null>(null);
   const [quickLinksOpen, setQuickLinksOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -459,16 +459,21 @@ export default function CustomerDetailsPage() {
     }
   }, [id, token, workAddressId]);
 
-  const handleDownloadStatement = async () => {
+  const handleDownloadStatement = async (kind: 'full' | 'outstanding') => {
     if (!token || !id || downloadingStatement) return;
-    setDownloadingStatement(true);
+    setDownloadingStatement(kind);
     setQuickLinksOpen(false);
     try {
-      const blob = await getBlob(`/customers/${id}/statement.pdf`, token);
+      const path =
+        kind === 'full' ? `/customers/${id}/statement.pdf` : `/customers/${id}/outstanding-statement.pdf`;
+      const blob = await getBlob(path, token);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `customer-${String(id).padStart(4, '0')}-statement.pdf`;
+      a.download =
+        kind === 'full'
+          ? `customer-${String(id).padStart(4, '0')}-statement.pdf`
+          : `customer-${String(id).padStart(4, '0')}-outstanding-statement.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -477,7 +482,7 @@ export default function CustomerDetailsPage() {
       const msg = err instanceof Error ? err.message : 'Failed to download statement';
       alert(msg);
     } finally {
-      setDownloadingStatement(false);
+      setDownloadingStatement(null);
     }
   };
 
@@ -1411,12 +1416,21 @@ export default function CustomerDetailsPage() {
                     <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-slate-200 bg-white shadow-lg">
                       <button
                         type="button"
-                        disabled={downloadingStatement}
-                        onClick={() => void handleDownloadStatement()}
+                        disabled={!!downloadingStatement}
+                        onClick={() => void handleDownloadStatement('full')}
                         className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 rounded-t-lg"
                       >
                         <Download className="size-3.5 shrink-0 text-slate-500" />
-                        {downloadingStatement ? 'Downloading...' : 'Full Statement'}
+                        {downloadingStatement === 'full' ? 'Downloading...' : 'Full statement'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!downloadingStatement}
+                        onClick={() => void handleDownloadStatement('outstanding')}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[13px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 border-t border-slate-100 rounded-b-lg"
+                      >
+                        <Download className="size-3.5 shrink-0 text-amber-600" />
+                        {downloadingStatement === 'outstanding' ? 'Downloading...' : 'Outstanding statement'}
                       </button>
                     </div>
                   )}
@@ -1685,7 +1699,9 @@ export default function CustomerDetailsPage() {
               </div>
               <h3 className="text-base font-bold text-slate-800 mb-1.5">Generating Statement</h3>
               <p className="text-sm text-slate-500 leading-relaxed">
-                Preparing your customer statement PDF with all jobs and invoices&hellip;
+                {downloadingStatement === 'outstanding'
+                  ? 'Preparing your outstanding invoices statement PDF…'
+                  : 'Preparing your customer statement PDF with all jobs and invoices…'}
               </p>
               <div className="mt-6 flex items-center gap-1.5">
                 <span className="size-1.5 rounded-full bg-[#14B8A6] animate-[pulse_1.2s_ease-in-out_0s_infinite]" />

@@ -92,6 +92,7 @@ class JobsRepository extends BaseRepository {
     String? description,
     String? expenseDate,
     String? expenseType,
+    List<Map<String, dynamic>>? proofFiles,
   }) async {
     final res = await api.post<Map<String, dynamic>>(
       '/jobs/$jobId/expenses',
@@ -101,6 +102,7 @@ class JobsRepository extends BaseRepository {
         if (description != null && description.trim().isNotEmpty) 'description': description.trim(),
         if (expenseDate != null && expenseDate.trim().isNotEmpty) 'expense_date': expenseDate.trim(),
         if (expenseType != null && expenseType.trim().isNotEmpty) 'expense_type': expenseType.trim(),
+        if (proofFiles != null && proofFiles.isNotEmpty) 'proof_files': proofFiles,
       },
     );
     final d = _asMap(res.data);

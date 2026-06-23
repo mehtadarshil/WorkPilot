@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getJson } from '../../../apiClient';
 import { format } from 'date-fns';
 import { ClipboardCheck, FileImage, FileVideo, Paperclip, User, Calendar } from 'lucide-react';
 import AuthenticatedDiaryFilePreview from './AuthenticatedDiaryFilePreview';
+import { JobReportAnswerValue } from './JobReportAnswerValue';
 
 interface ReportAnswer {
   question_id: number;
@@ -37,31 +38,6 @@ interface Submission {
   officer_full_name: string | null;
   answers: ReportAnswer[];
   extra_submissions: ExtraSubmission[];
-}
-
-function renderAnswer(q: { question_type: string; prompt: string }, raw: string | undefined): ReactNode {
-  const v = raw?.trim() ?? '';
-  if (!v) return <span className="text-slate-400 italic text-sm">No answer</span>;
-  const isImageAnswer =
-    q.question_type === 'customer_signature' ||
-    q.question_type === 'officer_signature' ||
-    q.question_type === 'before_photo' ||
-    q.question_type === 'after_photo' ||
-    v.startsWith('data:image');
-  if (isImageAnswer) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={v} alt="" className="max-h-52 rounded-md border border-slate-200 bg-white object-contain" />
-    );
-  }
-  if (q.question_type === 'textarea') {
-    return (
-      <pre className="whitespace-pre-wrap rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-        {v}
-      </pre>
-    );
-  }
-  return <p className="text-sm text-slate-800">{v}</p>;
 }
 
 interface Props {
@@ -167,7 +143,9 @@ export default function JobReportTab({ jobId, token }: Props) {
                       <span className="text-[11px] text-slate-400">({ans.helper_text})</span>
                     )}
                   </div>
-                  <div className="pl-0">{renderAnswer(ans, ans.value)}</div>
+                  <div className="pl-0">
+                    <JobReportAnswerValue questionType={ans.question_type} raw={ans.value} token={token} />
+                  </div>
                 </div>
               ))}
             </div>

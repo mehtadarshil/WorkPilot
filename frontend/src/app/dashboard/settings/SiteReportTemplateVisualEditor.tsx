@@ -1,14 +1,33 @@
 'use client';
 
-import { ChevronDown, ChevronUp, Plus, Trash2, ImageIcon } from 'lucide-react';
+import { useState } from 'react';
+import {
+  AlignLeft,
+  Calendar,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  ImageIcon,
+  List,
+  PenLine,
+  Plus,
+  Settings2,
+  Trash2,
+  Type,
+} from 'lucide-react';
 import type {
   SiteReportFieldType,
   SiteReportTemplateDefinition,
   SiteReportTemplateField,
   SiteReportTemplateSection,
-  SiteReportTemplateFooter,
 } from '@/lib/siteReportTemplateTypes';
-import { SITE_REPORT_FIELD_TYPE_OPTIONS, newTemplateField, newTemplateSection, emptyFooter } from '@/lib/siteReportTemplateTypes';
+import {
+  SITE_REPORT_FIELD_TYPE_OPTIONS,
+  emptyFooter,
+  newTemplateField,
+  newTemplateSection,
+} from '@/lib/siteReportTemplateTypes';
 
 function moveItem<T>(list: T[], index: number, delta: -1 | 1): T[] {
   const j = index + delta;
@@ -17,6 +36,16 @@ function moveItem<T>(list: T[], index: number, delta: -1 | 1): T[] {
   const [it] = next.splice(index, 1);
   next.splice(j, 0, it);
   return next;
+}
+
+function slugFieldId(label: string, fallback: string): string {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 80);
+  return slug || fallback;
 }
 
 function updateSection(def: SiteReportTemplateDefinition, index: number, patch: Partial<SiteReportTemplateSection>): SiteReportTemplateDefinition {
@@ -36,8 +65,8 @@ function updateFieldInSection(
   return updateSection(def, sIdx, { fields });
 }
 
-function updateFooter(def: SiteReportTemplateDefinition, patch: Partial<SiteReportTemplateFooter>): SiteReportTemplateDefinition {
-  const prev: SiteReportTemplateFooter = def.footer || { fields: [] };
+function updateFooter(def: SiteReportTemplateDefinition, patch: Partial<NonNullable<SiteReportTemplateDefinition['footer']>>): SiteReportTemplateDefinition {
+  const prev = def.footer || { fields: [] };
   return { ...def, footer: { ...prev, ...patch } };
 }
 
@@ -47,6 +76,20 @@ function updateFieldInFooter(def: SiteReportTemplateDefinition, fIdx: number, pa
   return { ...def, footer: { ...footer, fields } };
 }
 
+const FIELD_PALETTE: { type: SiteReportFieldType; label: string; Icon: typeof Type }[] = [
+  { type: 'text', label: 'Short text', Icon: Type },
+  { type: 'textarea', label: 'Long text', Icon: AlignLeft },
+  { type: 'date', label: 'Date', Icon: Calendar },
+  { type: 'yes_no_na', label: 'Yes / No / N/A', Icon: CheckSquare },
+  { type: 'pass_fail', label: 'Pass / Fail', Icon: CheckSquare },
+  { type: 'select', label: 'Dropdown', Icon: List },
+  { type: 'static_text', label: 'Read-only text', Icon: FileText },
+  { type: 'image', label: 'Photo', Icon: ImageIcon },
+  { type: 'signature', label: 'Signature', Icon: PenLine },
+];
+
+type ActiveTab = { kind: 'page'; index: number } | { kind: 'footer' };
+
 type Props = {
   value: SiteReportTemplateDefinition;
   onChange: (next: SiteReportTemplateDefinition) => void;
@@ -54,389 +97,394 @@ type Props = {
 
 export default function SiteReportTemplateVisualEditor({ value, onChange }: Props) {
   const def = value;
+  const [activeTab, setActiveTab] = useState<ActiveTab>({ kind: 'page', index: 0 });
+  const [showPageSettings, setShowPageSettings] = useState(false);
+  const [expandedField, setExpandedField] = useState<string | null>(null);
+
+  const activePageIndex = activeTab.kind === 'page' ? activeTab.index : 0;
+  const activeSection = def.sections[activePageIndex];
 
   const setReportTitleDefault = (report_title_default: string) => {
     onChange({ ...def, report_title_default: report_title_default.trim() ? report_title_default.trim().slice(0, 500) : undefined });
   };
 
-  const addSection = () => {
-    onChange({ ...def, sections: [...def.sections, newTemplateSection()] });
-  };
-
-  const removeSection = (idx: number) => {
-    if (def.sections.length <= 1) return;
-    onChange({ ...def, sections: def.sections.filter((_, i) => i !== idx) });
-  };
-
-  const moveSection = (idx: number, delta: -1 | 1) => {
-    onChange({ ...def, sections: moveItem(def.sections, idx, delta) });
-  };
-
-  const addField = (sIdx: number) => {
-    const sec = def.sections[sIdx];
-    onChange(updateSection(def, sIdx, { fields: [...sec.fields, newTemplateField()] }));
-  };
-
-  const removeField = (sIdx: number, fIdx: number) => {
-    const sec = def.sections[sIdx];
-    if (sec.fields.length <= 1) return;
-    onChange(updateSection(def, sIdx, { fields: sec.fields.filter((_, i) => i !== fIdx) }));
-  };
-
-  const moveField = (sIdx: number, fIdx: number, delta: -1 | 1) => {
-    const sec = def.sections[sIdx];
-    onChange(updateSection(def, sIdx, { fields: moveItem(sec.fields, fIdx, delta) }));
-  };
-
-  const ensureFooter = () => {
-    if (!def.footer) onChange({ ...def, footer: emptyFooter() });
-  };
-
-  const removeFooter = () => {
-    const next = { ...def };
-    delete next.footer;
+  const addPage = () => {
+    const next = { ...def, sections: [...def.sections, newTemplateSection()] };
     onChange(next);
+    setActiveTab({ kind: 'page', index: next.sections.length - 1 });
   };
 
-  const addFooterField = () => {
-    const footer = def.footer || emptyFooter();
-    onChange({ ...def, footer: { ...footer, fields: [...footer.fields, newTemplateField()] } });
+  const removePage = (idx: number) => {
+    if (def.sections.length <= 1) return;
+    const sections = def.sections.filter((_, i) => i !== idx);
+    onChange({ ...def, sections });
+    if (activeTab.kind === 'page') {
+      setActiveTab({ kind: 'page', index: Math.min(activeTab.index, sections.length - 1) });
+    }
   };
 
-  const removeFooterField = (fIdx: number) => {
-    const footer = def.footer;
-    if (!footer) return;
-    onChange(updateFooter(def, { fields: footer.fields.filter((_, i) => i !== fIdx) }));
+  const addField = (type: SiteReportFieldType, target: ActiveTab) => {
+    const opt = SITE_REPORT_FIELD_TYPE_OPTIONS.find((o) => o.value === type);
+    const field = newTemplateField({ type, label: opt?.label ?? 'New field' });
+    if (target.kind === 'footer') {
+      const footer = def.footer || emptyFooter();
+      onChange({ ...def, footer: { ...footer, fields: [...footer.fields, field] } });
+      setExpandedField(`footer-${footer.fields.length}`);
+      return;
+    }
+    const sIdx = target.index;
+    const sec = def.sections[sIdx];
+    onChange(updateSection(def, sIdx, { fields: [...sec.fields, field] }));
+    setExpandedField(`page-${sIdx}-${sec.fields.length}`);
   };
 
-  const moveFooterField = (fIdx: number, delta: -1 | 1) => {
-    const footer = def.footer;
-    if (!footer) return;
-    onChange(updateFooter(def, { fields: moveItem(footer.fields, fIdx, delta) }));
-  };
-
-  const renderFieldRow = (
+  const renderFieldCard = (
     field: SiteReportTemplateField,
     fIdx: number,
     fieldCount: number,
+    keyPrefix: string,
     onPatch: (patch: Partial<SiteReportTemplateField>) => void,
     onRemove: () => void,
     onMove: (d: -1 | 1) => void,
-    requireAtLeastOneField: boolean,
-  ) => (
-    <div key={field.id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="text-[11px] font-semibold uppercase text-slate-500">Field id (key)</label>
-          <input
-            value={field.id}
-            onChange={(e) => onPatch({ id: e.target.value.replace(/\s+/g, '_').slice(0, 120) })}
-            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 font-mono text-xs text-slate-800"
-            spellCheck={false}
-          />
-        </div>
-        <div>
-          <label className="text-[11px] font-semibold uppercase text-slate-500">Label</label>
+    requireAtLeastOne: boolean,
+  ) => {
+    const expandKey = `${keyPrefix}-${fIdx}`;
+    const expanded = expandedField === expandKey;
+    const typeLabel = SITE_REPORT_FIELD_TYPE_OPTIONS.find((o) => o.value === field.type)?.label ?? field.type;
+
+    return (
+      <div key={field.id} className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <div className="flex shrink-0 flex-col">
+            <button type="button" onClick={() => onMove(-1)} disabled={fIdx === 0} className="rounded p-0.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30" title="Move up">
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button type="button" onClick={() => onMove(1)} disabled={fIdx >= fieldCount - 1} className="rounded p-0.5 text-slate-400 hover:bg-slate-100 disabled:opacity-30" title="Move down">
+              <ChevronDown className="size-3.5" />
+            </button>
+          </div>
           <input
             value={field.label}
             onChange={(e) => onPatch({ label: e.target.value })}
-            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="Question or heading shown on the report"
+            onBlur={(e) => {
+              const label = e.target.value.trim();
+              if (label && (field.id.startsWith('field_') || !field.id)) {
+                onPatch({ id: slugFieldId(label, field.id) });
+              }
+            }}
+            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-sm font-semibold text-slate-800 outline-none focus:border-slate-200 focus:bg-slate-50"
+            placeholder="Field label"
           />
-        </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="text-[11px] font-semibold uppercase text-slate-500">Answer type</label>
-          <select
-            value={field.type}
-            onChange={(e) => onPatch({ type: e.target.value as SiteReportFieldType })}
-            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm bg-white"
+          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+            {typeLabel}
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpandedField(expanded ? null : expandKey)}
+            className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100"
           >
-            {SITE_REPORT_FIELD_TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {SITE_REPORT_FIELD_TYPE_OPTIONS.find((o) => o.value === field.type)?.hint}
-          </p>
+            {expanded ? 'Less' : 'Options'}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={requireAtLeastOne && fieldCount <= 1}
+            className="shrink-0 rounded-md p-1.5 text-rose-500 hover:bg-rose-50 disabled:opacity-30"
+            title="Remove field"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
         </div>
-        {field.type === 'textarea' ? (
-          <div>
-            <label className="text-[11px] font-semibold uppercase text-slate-500">Rows (height)</label>
-            <input
-              type="number"
-              min={2}
-              max={40}
-              value={field.rows ?? 4}
-              onChange={(e) => onPatch({ rows: Math.min(40, Math.max(2, parseInt(e.target.value, 10) || 4)) })}
-              className="mt-0.5 w-full max-w-[120px] rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-            />
+        {expanded && (
+          <div className="border-t border-slate-100 bg-slate-50/80 px-3 py-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-slate-500">Answer type</label>
+                <select
+                  value={field.type}
+                  onChange={(e) => onPatch({ type: e.target.value as SiteReportFieldType })}
+                  className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm bg-white"
+                >
+                  {SITE_REPORT_FIELD_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-slate-500">Field key (advanced)</label>
+                <input
+                  value={field.id}
+                  onChange={(e) => onPatch({ id: e.target.value.replace(/\s+/g, '_').slice(0, 120) })}
+                  className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 font-mono text-xs text-slate-700"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+            {field.type === 'textarea' && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-slate-500">Rows</label>
+                <input
+                  type="number"
+                  min={2}
+                  max={40}
+                  value={field.rows ?? 4}
+                  onChange={(e) => onPatch({ rows: Math.min(40, Math.max(2, parseInt(e.target.value, 10) || 4)) })}
+                  className="mt-0.5 w-full max-w-[120px] rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                />
+              </div>
+            )}
+            {field.type === 'static_text' && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-slate-500">Fixed text</label>
+                <textarea
+                  value={field.content ?? ''}
+                  onChange={(e) => onPatch({ content: e.target.value })}
+                  rows={4}
+                  className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm resize-y"
+                />
+              </div>
+            )}
+            {field.type === 'select' && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase text-slate-500">Choices (comma-separated)</label>
+                <input
+                  type="text"
+                  value={field.choices?.join(', ') ?? ''}
+                  onChange={(e) => onPatch({ choices: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })}
+                  className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+                  placeholder="Option 1, Option 2"
+                />
+              </div>
+            )}
           </div>
-        ) : (
-          <div />
         )}
       </div>
-      {field.type === 'static_text' ? (
-        <div>
-          <label className="text-[11px] font-semibold uppercase text-slate-500">Fixed text (shown to staff / on print)</label>
-          <textarea
-            value={field.content ?? ''}
-            onChange={(e) => onPatch({ content: e.target.value })}
-            rows={5}
-            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm text-slate-800 resize-y min-h-[100px]"
-          />
-        </div>
-      ) : null}
-      {field.type === 'select' ? (
-        <div>
-          <label className="text-[11px] font-semibold uppercase text-slate-500">Pre-defined Choices (comma-separated, e.g. FD-30, FD-60, FD-90)</label>
-          <input
-            type="text"
-            value={field.choices?.join(', ') ?? ''}
-            onChange={(e) => onPatch({ choices: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })}
-            className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-            placeholder="FD-30, FD-60, FD-90"
-          />
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
-        <button
-          type="button"
-          onClick={() => onMove(-1)}
-          disabled={fIdx === 0}
-          className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
-          title="Move up"
-        >
-          <ChevronUp className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onMove(1)}
-          disabled={fIdx >= fieldCount - 1}
-          className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30"
-          title="Move down"
-        >
-          <ChevronDown className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={requireAtLeastOneField && fieldCount <= 1}
-          className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-        >
-          <Trash2 className="size-3.5" />
-          Remove field
-        </button>
-      </div>
-    </div>
-  );
+    );
+  };
+
+  const paletteTarget: ActiveTab = activeTab;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Default report title</label>
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Form name (default report title)</label>
         <input
           value={def.report_title_default ?? ''}
           onChange={(e) => setReportTitleDefault(e.target.value)}
           placeholder="e.g. Fire Risk Assessment"
-          className="mt-1 w-full max-w-lg rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+          className="mt-1 w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/25"
         />
-        <p className="mt-1 text-xs text-slate-500">Suggested title when staff open a new report from a job.</p>
       </div>
 
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-slate-800">Sections</h3>
-          <button
-            type="button"
-            onClick={addSection}
-            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-          >
-            <Plus className="size-3.5" />
-            Add section
-          </button>
-        </div>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex min-h-[480px] flex-col lg:flex-row">
+          {/* Field palette */}
+          <aside className="shrink-0 border-b border-slate-200 bg-slate-50 p-3 lg:w-52 lg:border-b-0 lg:border-r">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Input types</p>
+            <p className="mb-3 text-xs text-slate-500">Click to add to the active page.</p>
+            <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
+              {FIELD_PALETTE.map(({ type, label, Icon }) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => addField(type, paletteTarget)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left text-xs font-semibold text-slate-700 shadow-sm transition hover:border-[#14B8A6] hover:text-[#0d9488]"
+                >
+                  <Icon className="size-3.5 shrink-0 text-[#14B8A6]" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </aside>
 
-        {def.sections.map((sec, sIdx) => (
-          <div key={sec.id} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200/80 pb-3 mb-3">
-              <div className="flex flex-wrap items-center gap-2">
+          {/* Canvas */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50/80 px-2 py-2">
+              {def.sections.map((sec, sIdx) => (
                 <button
+                  key={sec.id}
                   type="button"
-                  onClick={() => moveSection(sIdx, -1)}
-                  disabled={sIdx === 0}
-                  className="rounded p-1 text-slate-500 hover:bg-white disabled:opacity-30"
-                  title="Move section up"
+                  onClick={() => {
+                    setActiveTab({ kind: 'page', index: sIdx });
+                    setShowPageSettings(false);
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    activeTab.kind === 'page' && activeTab.index === sIdx
+                      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:bg-white/70'
+                  }`}
                 >
-                  <ChevronUp className="size-4" />
+                  Page {sIdx + 1}
+                  {sec.title && sec.title !== 'New section' ? ` · ${sec.title.slice(0, 18)}${sec.title.length > 18 ? '…' : ''}` : ''}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => moveSection(sIdx, 1)}
-                  disabled={sIdx >= def.sections.length - 1}
-                  className="rounded p-1 text-slate-500 hover:bg-white disabled:opacity-30"
-                  title="Move section down"
-                >
-                  <ChevronDown className="size-4" />
-                </button>
-              </div>
+              ))}
               <button
                 type="button"
-                onClick={() => removeSection(sIdx)}
-                disabled={def.sections.length <= 1}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                onClick={addPage}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#14B8A6] hover:bg-white"
               >
-                <Trash2 className="size-3.5" />
-                Remove section
+                <Plus className="size-3.5" />
+                Add page
               </button>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 mb-3">
-              <div>
-                <label className="text-[11px] font-semibold uppercase text-slate-500">Section id</label>
-                <input
-                  value={sec.id}
-                  onChange={(e) => onChange(updateSection(def, sIdx, { id: e.target.value.replace(/\s+/g, '_').slice(0, 120) }))}
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (!v) onChange(updateSection(def, sIdx, { id: `section_${sIdx + 1}` }));
+              {def.footer ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab({ kind: 'footer' });
+                    setShowPageSettings(false);
                   }}
-                  className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold uppercase text-slate-500">Section title</label>
-                <input
-                  value={sec.title}
-                  onChange={(e) => onChange(updateSection(def, sIdx, { title: e.target.value }))}
-                  className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold"
-                />
-              </div>
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    activeTab.kind === 'footer'
+                      ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:bg-white/70'
+                  }`}
+                >
+                  Footer
+                </button>
+              ) : null}
             </div>
-            <div className="mb-3">
-              <label className="text-[11px] font-semibold uppercase text-slate-500">Intro / guidance (optional)</label>
-              <textarea
-                value={sec.helper_text ?? ''}
-                onChange={(e) => onChange(updateSection(def, sIdx, { helper_text: e.target.value || undefined }))}
-                rows={2}
-                className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm resize-y"
-                placeholder="Optional helper text under the section title"
-              />
-            </div>
-            <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={!!sec.allow_section_images}
-                onChange={(e) => onChange(updateSection(def, sIdx, { allow_section_images: e.target.checked ? true : undefined }))}
-                className="size-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              <ImageIcon className="size-4 text-slate-400" />
-              Allow photos under this section (e.g. evidence, signatures)
-            </label>
-            <label className="mb-3 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={!!sec.omit_from_pdf}
-                onChange={(e) => onChange(updateSection(def, sIdx, { omit_from_pdf: e.target.checked ? true : undefined }))}
-                className="size-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              <span>
-                Hide entire section from PDF{' '}
-                <span className="text-slate-500 font-normal">(still shown on the customer report screen)</span>
-              </span>
-            </label>
 
-            <p className="mb-2 text-[11px] font-semibold uppercase text-slate-500">Fields in this section</p>
-            <div className="space-y-3">
-              {sec.fields.map((field, fIdx) =>
-                renderFieldRow(
-                  field,
-                  fIdx,
-                  sec.fields.length,
-                  (patch) => onChange(updateFieldInSection(def, sIdx, fIdx, patch)),
-                  () => removeField(sIdx, fIdx),
-                  (d) => moveField(sIdx, fIdx, d),
-                  true,
-                ),
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => addField(sIdx)}
-              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-[#14B8A6] hover:text-[#14B8A6]"
-            >
-              <Plus className="size-3.5" />
-              Add field
-            </button>
-          </div>
-        ))}
-      </div>
+            {activeTab.kind === 'page' && activeSection && (
+              <>
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
+                  <input
+                    value={activeSection.title}
+                    onChange={(e) => onChange(updateSection(def, activePageIndex, { title: e.target.value }))}
+                    className="min-w-[140px] flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-800"
+                    placeholder="Page title"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPageSettings((v) => !v)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    <Settings2 className="size-3.5" />
+                    Page options
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removePage(activePageIndex)}
+                    disabled={def.sections.length <= 1}
+                    className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-40"
+                  >
+                    Delete page
+                  </button>
+                </div>
+                {showPageSettings && (
+                  <div className="border-b border-slate-100 bg-slate-50/50 px-3 py-3 space-y-2">
+                    <textarea
+                      value={activeSection.helper_text ?? ''}
+                      onChange={(e) => onChange(updateSection(def, activePageIndex, { helper_text: e.target.value || undefined }))}
+                      rows={2}
+                      className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm resize-y"
+                      placeholder="Optional intro text for this page"
+                    />
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={!!activeSection.allow_section_images}
+                        onChange={(e) => onChange(updateSection(def, activePageIndex, { allow_section_images: e.target.checked ? true : undefined }))}
+                        className="size-4 rounded border-slate-300 text-[#14B8A6]"
+                      />
+                      Allow extra photos on this page
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={!!activeSection.omit_from_pdf}
+                        onChange={(e) => onChange(updateSection(def, activePageIndex, { omit_from_pdf: e.target.checked ? true : undefined }))}
+                        className="size-4 rounded border-slate-300 text-[#14B8A6]"
+                      />
+                      Hide this page from PDF (screen only)
+                    </label>
+                  </div>
+                )}
+                <div className="flex-1 space-y-2 p-4">
+                  {activeSection.fields.map((field, fIdx) =>
+                    renderFieldCard(
+                      field,
+                      fIdx,
+                      activeSection.fields.length,
+                      `page-${activePageIndex}`,
+                      (patch) => onChange(updateFieldInSection(def, activePageIndex, fIdx, patch)),
+                      () => {
+                        if (activeSection.fields.length <= 1) return;
+                        onChange(updateSection(def, activePageIndex, { fields: activeSection.fields.filter((_, i) => i !== fIdx) }));
+                      },
+                      (d) => onChange(updateSection(def, activePageIndex, { fields: moveItem(activeSection.fields, fIdx, d) })),
+                      true,
+                    ),
+                  )}
+                  <div className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-xs text-slate-500">
+                    Click an input type on the left to add a field to this page
+                  </div>
+                </div>
+              </>
+            )}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-slate-800">Footer / certificate block</h3>
-          {!def.footer ? (
-            <button type="button" onClick={ensureFooter} className="text-xs font-semibold text-[#14B8A6] hover:underline">
-              Add footer block
-            </button>
-          ) : (
-            <button type="button" onClick={removeFooter} className="text-xs font-semibold text-rose-600 hover:underline">
-              Remove footer block
-            </button>
-          )}
-        </div>
-        {def.footer ? (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="text-[11px] font-semibold uppercase text-slate-500">Footer title</label>
+            {activeTab.kind === 'footer' && def.footer && (
+              <div className="flex-1 p-4 space-y-3">
                 <input
                   value={def.footer.title ?? ''}
                   onChange={(e) => onChange(updateFooter(def, { title: e.target.value || undefined }))}
-                  className="mt-0.5 w-full max-w-lg rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-                  placeholder="e.g. Certificate of commissioning"
+                  className="w-full max-w-md rounded-md border border-slate-200 px-2 py-1.5 text-sm font-semibold"
+                  placeholder="Footer title"
                 />
+                {def.footer.fields.map((field, fIdx) =>
+                  renderFieldCard(
+                    field,
+                    fIdx,
+                    def.footer!.fields.length,
+                    'footer',
+                    (patch) => onChange(updateFieldInFooter(def, fIdx, patch)),
+                    () => onChange(updateFooter(def, { fields: def.footer!.fields.filter((_, i) => i !== fIdx) })),
+                    (d) => onChange(updateFooter(def, { fields: moveItem(def.footer!.fields, fIdx, d) })),
+                    false,
+                  ),
+                )}
+                <div className="rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-xs text-slate-500">
+                  Add signature, date, or legal text fields for the footer
+                </div>
               </div>
-            </div>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={!!def.footer.allow_section_images}
-                onChange={(e) => onChange(updateFooter(def, { allow_section_images: e.target.checked ? true : undefined }))}
-                className="size-4 rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
-              />
-              <ImageIcon className="size-4 text-slate-400" />
-              Allow images in footer (e.g. scanned signature)
-            </label>
-            <p className="text-[11px] font-semibold uppercase text-slate-500">Footer fields</p>
-            <div className="space-y-3">
-              {def.footer.fields.map((field, fIdx) =>
-                renderFieldRow(
-                  field,
-                  fIdx,
-                  def.footer!.fields.length,
-                  (patch) => onChange(updateFieldInFooter(def, fIdx, patch)),
-                  () => removeFooterField(fIdx),
-                  (d) => moveFooterField(fIdx, d),
-                  false,
-                ),
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={addFooterField}
-              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-[#14B8A6] hover:text-[#14B8A6]"
-            >
-              <Plus className="size-3.5" />
-              Add footer field
-            </button>
-          </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        {!def.footer ? (
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ ...def, footer: emptyFooter() });
+              setActiveTab({ kind: 'footer' });
+            }}
+            className="font-semibold text-[#14B8A6] hover:underline"
+          >
+            + Add footer / certificate page
+          </button>
         ) : (
-          <p className="text-sm text-slate-500">Optional closing block (legal text, sign-off fields, date).</p>
+          <button
+            type="button"
+            onClick={() => {
+              const next = { ...def };
+              delete next.footer;
+              onChange(next);
+              setActiveTab({ kind: 'page', index: 0 });
+            }}
+            className="font-semibold text-rose-600 hover:underline"
+          >
+            Remove footer page
+          </button>
         )}
+        <p className="text-xs text-slate-500">
+          {def.sections.length} page{def.sections.length === 1 ? '' : 's'}
+          {def.footer ? ' + footer' : ''} · Split long forms across pages so mobile stays easy to complete
+        </p>
       </div>
     </div>
   );
+
 }

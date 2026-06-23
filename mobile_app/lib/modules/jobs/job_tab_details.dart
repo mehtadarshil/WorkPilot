@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
@@ -231,6 +234,10 @@ class JobTabDetails extends StatelessWidget {
                       final category = _str(e, 'category').isEmpty ? 'Expense' : _str(e, 'category');
                       final description = _str(e, 'description');
                       final status = _str(e, 'status').isEmpty ? 'submitted' : _str(e, 'status');
+                      final claimer = _str(e, 'claimed_by_name').isNotEmpty
+                          ? _str(e, 'claimed_by_name')
+                          : (_str(e, 'officer_name').isNotEmpty ? _str(e, 'officer_name') : 'Unknown');
+                      final proofCount = e['proof_files'] is List ? (e['proof_files'] as List).length : 0;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Row(
@@ -243,7 +250,9 @@ class JobTabDetails extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('$category · ${_formatMoney(e['amount'])}', style: GoogleFonts.inter(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w700)),
+                                  Text('Claimed by: $claimer', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate300, fontWeight: FontWeight.w600)),
                                   Text('Status: $status', style: GoogleFonts.inter(fontSize: 12, color: status == 'approved' ? AppColors.primary : AppColors.slate400, fontWeight: FontWeight.w600)),
+                                  if (proofCount > 0) Text('Receipt attached', style: GoogleFonts.inter(fontSize: 12, color: AppColors.primary)),
                                   if (description.isNotEmpty) Text(description, style: _bodyStyle),
                                   if (date.isNotEmpty) Text(date, style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400)),
                                 ],
@@ -438,6 +447,8 @@ class JobTabDetails extends StatelessWidget {
   Future<void> _showAddExpense(BuildContext context, JobDetailController c) async {
     var expenseDate = DateTime.now();
     var expenseType = 'personal';
+    XFile? proof;
+    final picker = ImagePicker();
     final categoryC = TextEditingController(text: 'Parking');
     final amountC = TextEditingController();
     final descriptionC = TextEditingController();
@@ -481,6 +492,22 @@ class JobTabDetails extends StatelessWidget {
                     const SizedBox(height: 8),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
+                      title: const Text('Receipt photo'),
+                      subtitle: Text(proof?.name ?? 'Required — take or choose a photo'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.photo_camera_outlined),
+                        onPressed: () async {
+                          final x = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+                          if (x != null) setS(() => proof = x);
+                        },
+                      ),
+                      onTap: () async {
+                        final x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+                        if (x != null) setS(() => proof = x);
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
                       title: const Text('Expense date'),
                       subtitle: Text(expenseDate.toIso8601String().split('T').first),
                       onTap: () async {
@@ -509,12 +536,21 @@ class JobTabDetails extends StatelessWidget {
       try {
         final amount = double.tryParse(amountC.text.trim().replaceAll(',', '')) ?? 0;
         if (amount <= 0) throw Exception('Enter an expense amount greater than zero.');
+        if (proof == null) throw Exception('A receipt photo is required.');
+        final bytes = await proof!.readAsBytes();
         await c.postExpense(
           category: categoryC.text.trim().isEmpty ? 'Expense' : categoryC.text.trim(),
           amount: amount,
           description: descriptionC.text.trim().isEmpty ? null : descriptionC.text.trim(),
           expenseDate: expenseDate.toIso8601String().split('T').first,
           expenseType: expenseType,
+          proofFiles: [
+            {
+              'filename': proof!.name.isNotEmpty ? proof!.name : 'expense-receipt.jpg',
+              'content_type': 'image/jpeg',
+              'content_base64': base64Encode(bytes),
+            },
+          ],
         );
       } catch (e) {
         if (context.mounted) {

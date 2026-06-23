@@ -5,15 +5,21 @@ import { useRouter, useParams } from 'next/navigation';
 import { deleteRequest, getBlob, getJson, patchJson, postJson } from '../../../apiClient';
 import JobOfficeTasksTab from './JobOfficeTasksTab';
 import JobReportTab from './JobReportTab';
+import { JobReportAnswerValue } from './JobReportAnswerValue';
+import { hasJobReportSignatureAnswer } from './jobReportAnswerMedia';
 import JobClientPanelTab from './JobClientPanelTab';
 import JobFilesTab from './JobFilesTab';
 import JobNotesTab from './JobNotesTab';
 import JobCostsTab from './JobCostsTab';
+import JobExpensesTab from './JobExpensesTab';
 import JobDynamicReportsTab from './JobDynamicReportsTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
 import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key, ChevronDown, Download } from 'lucide-react';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
+import { pickJobScheduledDateIso } from '../jobScheduledDate';
+import { VisitJobSheetTimeline } from './VisitJobSheetTimeline';
+import type { VisitStatusLog } from './visitStatusLabels';
 
 interface JobContact {
   id: number;
@@ -227,34 +233,6 @@ function normalizeDiaryJobReportPayload(data: {
   return { questions, answers };
 }
 
-function renderSubmittedJobReportAnswer(
-  q: { question_type: string; prompt: string },
-  raw: string | undefined,
-): ReactNode {
-  const v = raw?.trim() ?? '';
-  if (!v) return <span className="text-slate-400 italic text-sm">No answer</span>;
-  const isImageAnswer =
-    q.question_type === 'customer_signature' ||
-    q.question_type === 'officer_signature' ||
-    q.question_type === 'before_photo' ||
-    q.question_type === 'after_photo' ||
-    v.startsWith('data:image');
-  if (isImageAnswer) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={v} alt="" className="max-h-52 rounded-md border border-slate-200 bg-white object-contain" />
-    );
-  }
-  if (q.question_type === 'textarea') {
-    return (
-      <pre className="whitespace-pre-wrap rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-        {v}
-      </pre>
-    );
-  }
-  return <p className="text-sm text-slate-800">{v}</p>;
-}
-
 interface VisitTimesheetEntry {
   id: number;
   officer_id: number;
@@ -398,6 +376,7 @@ export default function JobDetailsPage() {
     null | 'customer_confirmation' | 'address_reminder' | 'engineer_job_sheet'
   >(null);
   const [visitTimesheetEntries, setVisitTimesheetEntries] = useState<VisitTimesheetEntry[]>([]);
+  const [visitStatusLogs, setVisitStatusLogs] = useState<VisitStatusLog[]>([]);
   const [visitTimesheetLoading, setVisitTimesheetLoading] = useState(false);
   const [visitTimesheetError, setVisitTimesheetError] = useState<string | null>(null);
   const [deletingDiaryEventId, setDeletingDiaryEventId] = useState<number | null>(null);
@@ -411,6 +390,11 @@ export default function JobDetailsPage() {
   const [togglingChargeType, setTogglingChargeType] = useState(false);
   const [downloadingStatement, setDownloadingStatement] = useState(false);
   const quickLinksRef = useRef<HTMLDivElement>(null);
+
+  const serviceTypeScheduledIso = useMemo(
+    () => (job ? pickJobScheduledDateIso(job.expected_completion, diaryEvents) : null),
+    [job, diaryEvents],
+  );
 
   const visitTimesheetTravelSeconds = useMemo(
     () =>
@@ -516,6 +500,7 @@ export default function JobDetailsPage() {
   useEffect(() => {
     if (!viewingEvent || !token) {
       setVisitTimesheetEntries([]);
+      setVisitStatusLogs([]);
       setVisitTimesheetError(null);
       setVisitTimesheetLoading(false);
       return;
@@ -557,9 +542,11 @@ export default function JobDetailsPage() {
         const res = await getJson<{
           event?: { abort_reason?: string | null };
           extra_submissions: DiaryExtraSubmission[];
+          status_logs?: VisitStatusLog[];
         }>(`/diary-events/${viewingEvent.id}`, token);
         if (!cancelled) {
           setDiaryExtraSubmissions(res.extra_submissions ?? []);
+          setVisitStatusLogs(res.status_logs ?? []);
           const ar =
             typeof res.event?.abort_reason === 'string' && res.event.abort_reason.trim()
               ? res.event.abort_reason.trim()
@@ -574,6 +561,7 @@ export default function JobDetailsPage() {
       } catch {
         if (!cancelled) {
           setDiaryExtraSubmissions([]);
+          setVisitStatusLogs([]);
         }
       } finally {
         if (!cancelled) setDiaryExtraSubmissionsLoading(false);
@@ -751,6 +739,7 @@ export default function JobDetailsPage() {
     'Files',
     'Invoices',
     'Costs',
+    'Expenses',
     'Items to invoice',
   ];
 
@@ -1150,6 +1139,12 @@ export default function JobDetailsPage() {
             ) : (
               <div className="p-8 text-slate-500 text-sm">Sign in to manage job costs.</div>
             )
+          ) : activeTab === 'Expenses' ? (
+            token ? (
+              <JobExpensesTab jobId={id} token={token} />
+            ) : (
+              <div className="p-8 text-slate-500 text-sm">Sign in to manage job expenses.</div>
+            )
           ) : activeTab === 'Items to invoice' ? (
             token ? (
               <div className="space-y-6">
@@ -1276,7 +1271,7 @@ export default function JobDetailsPage() {
                     <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
                        <span className="text-[13px] font-bold text-slate-500">Service type</span>
                        <span className="text-[13px] text-slate-800 font-medium col-span-2">
-                         {job.description_name || 'Standard'} ({job.expected_completion ? dayjs(job.expected_completion).format('dddd D MMMM YYYY') : 'Not scheduled'})
+                         {job.description_name || 'Standard'} ({serviceTypeScheduledIso ? dayjs(serviceTypeScheduledIso).format('dddd D MMMM YYYY') : 'Not scheduled'})
                        </span>
                     </div>
                     <div className="grid grid-cols-3 gap-4 border-t border-slate-50 pt-4">
@@ -1701,13 +1696,14 @@ export default function JobDetailsPage() {
                           )}
                           {!visitTimesheetLoading &&
                             !visitTimesheetError &&
-                            visitTimesheetEntries.length === 0 && (
+                            visitTimesheetEntries.length === 0 &&
+                            visitStatusLogs.length === 0 && (
                               <p className="text-sm text-slate-500">
-                                No timesheet segments are linked to this visit yet. Totals appear when the officer records
-                                travelling or on-site time from the mobile app.
+                                No travel or status updates recorded yet. Timestamps and GPS appear when the engineer
+                                marks travelling, on site, and completed from the mobile app.
                               </p>
                             )}
-                          {!visitTimesheetLoading && !visitTimesheetError && visitTimesheetEntries.length > 0 && (
+                          {(visitTimesheetEntries.length > 0 || visitStatusLogs.length > 0) && (
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
@@ -1727,6 +1723,10 @@ export default function JobDetailsPage() {
                               </div>
                             </div>
                           )}
+                          <VisitJobSheetTimeline
+                            statusLogs={visitStatusLogs}
+                            timesheetEntries={visitTimesheetEntries}
+                          />
                         </div>
                         {showDiaryEngineerJobSheetEmail && (
                           <div className="p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-white hover:bg-slate-50">
@@ -1901,10 +1901,11 @@ export default function JobDetailsPage() {
                                       {q.helper_text && (
                                         <p className="text-xs text-slate-500">{q.helper_text}</p>
                                       )}
-                                      {renderSubmittedJobReportAnswer(
-                                        q,
-                                        diaryJobReport.answers[String(q.id)],
-                                      )}
+                                      <JobReportAnswerValue
+                                        questionType={q.question_type}
+                                        raw={diaryJobReport.answers[String(q.id)]}
+                                        token={token}
+                                      />
                                     </div>
                                   ))}
                                 </div>
@@ -2188,12 +2189,7 @@ export default function JobDetailsPage() {
                          <div className="p-6 flex flex-col items-stretch text-center sm:text-left">
                             {diaryVisitIsCompleted(viewingEvent.status) &&
                             diaryJobReport &&
-                            diaryJobReport.questions.some(
-                              (q) =>
-                                (q.question_type === 'customer_signature' ||
-                                  q.question_type === 'officer_signature') &&
-                                diaryJobReport.answers[String(q.id)]?.startsWith('data:image'),
-                            ) ? (
+                            hasJobReportSignatureAnswer(diaryJobReport.questions, diaryJobReport.answers) ? (
                               <div className="space-y-4 w-full max-w-lg mx-auto sm:mx-0">
                                 {diaryJobReport.questions.map((q) => {
                                   if (
@@ -2203,15 +2199,14 @@ export default function JobDetailsPage() {
                                     return null;
                                   }
                                   const src = diaryJobReport.answers[String(q.id)];
-                                  if (!src?.startsWith('data:image')) return null;
+                                  if (!src?.trim()) return null;
                                   return (
                                     <div key={q.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-left">
                                       <div className="text-xs font-bold text-slate-600 mb-2">{q.prompt}</div>
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={src}
-                                        alt=""
-                                        className="max-h-40 rounded border border-slate-200 bg-white object-contain"
+                                      <JobReportAnswerValue
+                                        questionType={q.question_type}
+                                        raw={src}
+                                        token={token}
                                       />
                                     </div>
                                   );

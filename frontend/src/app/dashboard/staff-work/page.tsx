@@ -17,12 +17,13 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  ImageIcon,
 } from 'lucide-react';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, addDays, getDay, addMonths, addHours, startOfDay, isSameDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { getBlob, getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 
 // --- Type Definitions ---
 type OfficerWorkRow = {
@@ -41,11 +42,19 @@ type OfficerWorkRow = {
   pending_expenses_count: number;
 };
 
+type ExpenseProof = {
+  stored_filename: string;
+  original_filename: string;
+  content_type: string;
+  href: string;
+};
+
 type ExpenseRow = {
   id: number;
   job_id: number;
   officer_id: number | null;
   officer_name: string | null;
+  claimed_by_name: string | null;
   job_title: string | null;
   job_number: string | null;
   customer_name: string | null;
@@ -55,6 +64,7 @@ type ExpenseRow = {
   amount: number;
   status: string;
   expense_type: string;
+  proof_files?: ExpenseProof[];
   created_at: string | null;
 };
 
@@ -116,6 +126,9 @@ type CalendarEvent = {
   allDay?: boolean;
   color: string;
   borderColor: string;
+  officerKey?: string;
+  officerLabel?: string;
+  type?: string;
 };
 
 // --- Helpers ---
@@ -171,6 +184,56 @@ function formatDateTimeString(d: string) {
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
 const selectClass = inputClass;
 
+const ENGINEER_CALENDAR_PALETTE = [
+  { color: 'bg-[#14B8A6] text-white', borderColor: '#0d9488', swatch: 'bg-[#14B8A6]' },
+  { color: 'bg-blue-600 text-white', borderColor: '#2563eb', swatch: 'bg-blue-600' },
+  { color: 'bg-violet-600 text-white', borderColor: '#7c3aed', swatch: 'bg-violet-600' },
+  { color: 'bg-rose-600 text-white', borderColor: '#e11d48', swatch: 'bg-rose-600' },
+  { color: 'bg-amber-600 text-white', borderColor: '#d97706', swatch: 'bg-amber-600' },
+  { color: 'bg-cyan-600 text-white', borderColor: '#0891b2', swatch: 'bg-cyan-600' },
+  { color: 'bg-fuchsia-600 text-white', borderColor: '#c026d3', swatch: 'bg-fuchsia-600' },
+  { color: 'bg-lime-700 text-white', borderColor: '#65a30d', swatch: 'bg-lime-700' },
+  { color: 'bg-orange-600 text-white', borderColor: '#ea580c', swatch: 'bg-orange-600' },
+  { color: 'bg-sky-600 text-white', borderColor: '#0284c7', swatch: 'bg-sky-600' },
+  { color: 'bg-pink-600 text-white', borderColor: '#db2777', swatch: 'bg-pink-600' },
+  { color: 'bg-teal-700 text-white', borderColor: '#0f766e', swatch: 'bg-teal-700' },
+] as const;
+
+function officerColorKey(id: number | string | null | undefined, name?: string | null): string {
+  if (id != null && id !== '' && Number.isFinite(Number(id))) return `id:${id}`;
+  const n = (name ?? '').trim().toLowerCase();
+  return n ? `name:${n}` : 'unassigned';
+}
+
+function officerCalendarColors(key: string) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return ENGINEER_CALENDAR_PALETTE[hash % ENGINEER_CALENDAR_PALETTE.length]!;
+}
+
+function diaryEventOfficerKey(e: Record<string, unknown>): string {
+  if (e.officer_id != null && Number.isFinite(Number(e.officer_id))) {
+    return officerColorKey(Number(e.officer_id));
+  }
+  const officers = Array.isArray(e.officers) ? e.officers : [];
+  const primary = officers.find((o) => o && typeof o === 'object' && (o as { is_primary?: boolean }).is_primary) ?? officers[0];
+  if (primary && typeof primary === 'object') {
+    const p = primary as { id?: number; full_name?: string };
+    return officerColorKey(p.id ?? null, p.full_name ?? null);
+  }
+  return officerColorKey(null, typeof e.officer_full_name === 'string' ? e.officer_full_name : null);
+}
+
+function diaryEventOfficerLabel(e: Record<string, unknown>): string {
+  if (typeof e.officer_full_name === 'string' && e.officer_full_name.trim()) return e.officer_full_name.trim();
+  const officers = Array.isArray(e.officers) ? e.officers : [];
+  const names = officers
+    .map((o) => (o && typeof o === 'object' ? (o as { full_name?: string }).full_name : null))
+    .filter((n): n is string => typeof n === 'string' && n.trim().length > 0);
+  if (names.length > 0) return names.join(', ');
+  return 'Unassigned';
+}
+
 // --- Component ---
 export default function StaffWorkPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -186,6 +249,7 @@ export default function StaffWorkPage() {
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [updatingExpenseId, setUpdatingExpenseId] = useState<number | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
 
   // --- Holidays Tab States ---
   const [holidaySubTab, setHolidaySubTab] = useState<'requests' | 'holidays'>('requests');
@@ -296,13 +360,18 @@ export default function StaffWorkPage() {
       const diaryEvts = (eventsRes.events ?? []).map((e: any) => {
         const start = new Date(e.start_time);
         const end = new Date(start.getTime() + (e.duration_minutes || 60) * 60000);
+        const oKey = diaryEventOfficerKey(e);
+        const palette = officerCalendarColors(oKey);
+        const officerLabel = diaryEventOfficerLabel(e);
         return {
           id: `diary-${e.diary_id}`,
-          title: `🔧 ${e.job_number || 'Job'} (${e.officer_full_name || 'Staff'})`,
+          title: `🔧 ${e.job_number || 'Job'} (${officerLabel})`,
           start,
           end,
-          color: 'bg-[#14B8A6] text-white',
-          borderColor: '#0d9488',
+          color: palette.color,
+          borderColor: palette.borderColor,
+          officerKey: oKey,
+          officerLabel,
           type: 'diary',
           raw: e,
         };
@@ -327,17 +396,23 @@ export default function StaffWorkPage() {
           const end = new Date(r.end_date);
           return start <= dateRange.end && end >= dateRange.start;
         })
-        .map((r: any) => ({
-          id: `leave-${r.id}`,
-          title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
-          start: new Date(r.start_date),
-          end: new Date(r.end_date),
-          allDay: false,
-          color: r.status === 'approved' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white',
-          borderColor: r.status === 'approved' ? '#059669' : '#d97706',
-          type: 'leave',
-          raw: r,
-        }));
+        .map((r: any) => {
+          const oKey = officerColorKey(r.officer_id, r.officer_name);
+          const palette = officerCalendarColors(oKey);
+          return {
+            id: `leave-${r.id}`,
+            title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
+            start: new Date(r.start_date),
+            end: new Date(r.end_date),
+            allDay: false,
+            color: palette.color,
+            borderColor: palette.borderColor,
+            officerKey: oKey,
+            officerLabel: r.officer_name || 'Leave',
+            type: 'leave',
+            raw: r,
+          };
+        });
 
       setCalendarEvents([...diaryEvts, ...companyHols, ...leaveEvts]);
     } catch (e) {
@@ -384,6 +459,24 @@ export default function StaffWorkPage() {
       setUpdatingExpenseId(null);
     }
   };
+
+  const openExpenseProof = async (href: string) => {
+    if (!token) return;
+    try {
+      const blob = await getBlob(href, token);
+      const url = URL.createObjectURL(blob);
+      setProofPreviewUrl(url);
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Could not open receipt');
+    }
+  };
+
+  const closeExpenseProof = () => {
+    if (proofPreviewUrl) URL.revokeObjectURL(proofPreviewUrl);
+    setProofPreviewUrl(null);
+  };
+
+  const expenseClaimerLabel = (e: ExpenseRow) => e.claimed_by_name || e.officer_name || 'Unknown';
 
   // Holidays management
   const submitRequest = async (e: React.FormEvent) => {
@@ -458,6 +551,17 @@ export default function StaffWorkPage() {
   const totals = summary?.totals;
   const pendingExpenses = expenses.filter((e) => e.status === 'submitted');
   const approvedExpenses = expenses.filter((e) => e.status === 'approved');
+
+  const calendarEngineerLegend = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const evt of calendarEvents) {
+      if (evt.type === 'holiday' || !evt.officerKey || !evt.officerLabel) continue;
+      if (!map.has(evt.officerKey)) map.set(evt.officerKey, evt.officerLabel);
+    }
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label, ...officerCalendarColors(key) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [calendarEvents]);
 
   const pendingHolidays = requests.filter((r) => r.status === 'pending');
   const processedHolidays = requests.filter((r) => r.status !== 'pending');
@@ -645,20 +749,26 @@ export default function StaffWorkPage() {
                 <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Officer</th>
+                    <th className="px-5 py-3">Claimed by</th>
                     <th className="px-5 py-3">Job</th>
                     <th className="px-5 py-3">Expense</th>
+                    <th className="px-5 py-3">Receipt</th>
                     <th className="px-5 py-3 text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pendingExpenses.length === 0 ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={5}>No pending expenses for this period.</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No pending expenses for this period.</td></tr>
                   ) : (
                     pendingExpenses.map((e) => (
                       <tr key={e.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
-                        <td className="px-5 py-4 font-semibold text-slate-900">{e.officer_name || 'Unassigned'}</td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-900">{expenseClaimerLabel(e)}</p>
+                          {e.officer_name && e.claimed_by_name && e.officer_name !== e.claimed_by_name && (
+                            <p className="text-xs text-slate-500">Officer: {e.officer_name}</p>
+                          )}
+                        </td>
                         <td className="px-5 py-4">
                           <Link href={`/dashboard/jobs/${e.job_id}`} className="inline-flex items-center gap-1 font-semibold text-[#14B8A6] hover:underline">
                             <Briefcase className="size-3.5" />
@@ -681,6 +791,20 @@ export default function StaffWorkPage() {
                               <option value="company">Company</option>
                             </select>
                           </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          {e.proof_files?.length ? (
+                            <button
+                              type="button"
+                              onClick={() => void openExpenseProof(e.proof_files![0]!.href)}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-emerald-50"
+                            >
+                              <ImageIcon className="size-3.5" />
+                              View receipt
+                            </button>
+                          ) : (
+                            <span className="text-xs text-amber-700">No receipt</span>
+                          )}
                         </td>
                         <td className="px-5 py-4 text-right">
                           <p className="font-bold text-slate-900">{formatMoney(e.amount)}</p>
@@ -722,20 +846,26 @@ export default function StaffWorkPage() {
                 <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3">Officer</th>
+                    <th className="px-5 py-3">Claimed by</th>
                     <th className="px-5 py-3">Job</th>
                     <th className="px-5 py-3">Expense</th>
+                    <th className="px-5 py-3">Receipt</th>
                     <th className="px-5 py-3 text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {approvedExpenses.length === 0 ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={5}>No approved outstanding expenses for this period.</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No approved outstanding expenses for this period.</td></tr>
                   ) : (
                     approvedExpenses.map((e) => (
                       <tr key={e.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
-                        <td className="px-5 py-4 font-semibold text-slate-900">{e.officer_name || 'Unassigned'}</td>
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-900">{expenseClaimerLabel(e)}</p>
+                          {e.officer_name && e.claimed_by_name && e.officer_name !== e.claimed_by_name && (
+                            <p className="text-xs text-slate-500">Officer: {e.officer_name}</p>
+                          )}
+                        </td>
                         <td className="px-5 py-4">
                           <Link href={`/dashboard/jobs/${e.job_id}`} className="inline-flex items-center gap-1 font-semibold text-[#14B8A6] hover:underline">
                             <Briefcase className="size-3.5" />
@@ -759,6 +889,20 @@ export default function StaffWorkPage() {
                             </select>
                           </div>
                         </td>
+                        <td className="px-5 py-4">
+                          {e.proof_files?.length ? (
+                            <button
+                              type="button"
+                              onClick={() => void openExpenseProof(e.proof_files![0]!.href)}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-emerald-50"
+                            >
+                              <ImageIcon className="size-3.5" />
+                              View receipt
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">No receipt</span>
+                          )}
+                        </td>
                         <td className="px-5 py-4 text-right font-bold text-slate-900">{formatMoney(e.amount)}</td>
                       </tr>
                     ))
@@ -767,6 +911,15 @@ export default function StaffWorkPage() {
               </table>
             </div>
           </section>
+
+          {proofPreviewUrl && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeExpenseProof}>
+              <div className="max-h-[90vh] max-w-4xl overflow-auto rounded-xl bg-white p-2" onClick={(e) => e.stopPropagation()}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={proofPreviewUrl} alt="Expense receipt" className="max-h-[80vh] w-full object-contain" />
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -815,15 +968,34 @@ export default function StaffWorkPage() {
                 setShowDetailModal(true);
               }}
               views={['month', 'week', 'day', 'agenda']}
-              eventPropGetter={(evt: any) => {
-                let classes = 'bg-[#14B8A6] border-[#0d9488]';
-                if (evt.color) classes = evt.color;
+              eventPropGetter={(evt: CalendarEvent) => {
+                const classes = evt.color || 'bg-[#14B8A6] text-white';
                 return {
-                  className: `${classes} text-white font-semibold text-xs px-2 py-0.5 rounded shadow-sm cursor-pointer hover:opacity-90 transition`,
+                  className: `${classes} font-semibold text-xs px-2 py-0.5 rounded shadow-sm cursor-pointer hover:opacity-90 transition border-l-[3px]`,
+                  style: { borderLeftColor: evt.borderColor || '#0d9488' },
                 };
               }}
             />
           </div>
+
+          {calendarEngineerLegend.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Engineers</span>
+              {calendarEngineerLegend.map((item) => (
+                <span
+                  key={item.key}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200"
+                >
+                  <span className="size-2.5 rounded-full" style={{ backgroundColor: item.borderColor }} />
+                  {item.label}
+                </span>
+              ))}
+              <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">
+                <span className="size-2.5 rounded-full bg-indigo-600" />
+                Company holiday
+              </span>
+            </div>
+          )}
         </div>
       )}
 

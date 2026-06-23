@@ -24,6 +24,7 @@ export type WorkpilotFileCategory =
   | 'diary-technical-notes'
   | 'job-client-submissions'
   | 'job-cost-proofs'
+  | 'job-expense-proofs'
   | 'mobile-profile-photos';
 
 export type StoredFileRef = {
@@ -55,6 +56,7 @@ const CATEGORY_ENV: Record<WorkpilotFileCategory, string> = {
   'diary-technical-notes': 'DIARY_TECHNICAL_NOTE_FILES_DIR',
   'job-client-submissions': 'JOB_CLIENT_FILES_DIR',
   'job-cost-proofs': 'JOB_COST_PROOF_FILES_DIR',
+  'job-expense-proofs': 'JOB_EXPENSE_PROOF_FILES_DIR',
   'mobile-profile-photos': 'WORKPILOT_MOBILE_PROFILE_PHOTOS_DIR',
 };
 

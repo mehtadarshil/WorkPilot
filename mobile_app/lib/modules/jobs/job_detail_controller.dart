@@ -143,6 +143,7 @@ class JobDetailController extends GetxController {
     String? description,
     String? expenseDate,
     String? expenseType,
+    List<Map<String, dynamic>>? proofFiles,
   }) async {
     await _jobs.postJobExpense(
       jobId,
@@ -151,6 +152,7 @@ class JobDetailController extends GetxController {
       description: description,
       expenseDate: expenseDate,
       expenseType: expenseType,
+      proofFiles: proofFiles,
     );
     await refreshAll();
   }

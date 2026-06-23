@@ -1,5 +1,4 @@
 import type { ObservationItem } from '../types';
-import { inspectionOutcomeBadgeHtml } from './outcomes';
 
 export type ObservationCodeCounts = Record<'c1' | 'c2' | 'c3' | 'fi', number>;
 
@@ -24,8 +23,7 @@ export function observationSummaryGridHtml(items: ObservationItem[], esc: (s: st
   const boxes = OBSERVATION_CODE_SUMMARY.map(
     (box) => `<div class="cp-obs-summary-box">
       <div class="cp-obs-summary-badge" style="background:${box.bg};color:${box.fg}">
-        ${inspectionOutcomeBadgeHtml(box.code, esc)}
-        <span class="cp-obs-summary-code">${box.title}</span>
+        <span class="cp-obs-summary-code">${esc(box.title)}</span>
       </div>
       <p class="cp-obs-summary-count">${counts[box.code]} result${counts[box.code] === 1 ? '' : 's'}</p>
       <p class="cp-obs-summary-text">${esc(box.subtitle)}</p>

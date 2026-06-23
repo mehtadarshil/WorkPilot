@@ -70,6 +70,7 @@ import {
   requireTenantCrmOrMobileJobDocs,
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
+import { syncJobDatesFromDiaryEvents } from './jobDiaryDateSync';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
@@ -6397,7 +6398,13 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
       isSuperAdmin ? [id] : [id, userId],
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
-    const r = result.rows[0];
+    await syncJobDatesFromDiaryEvents(pool, id);
+    const datesRes = await pool.query<{ expected_completion: Date | null; schedule_start: Date | null }>(
+      'SELECT expected_completion, schedule_start FROM jobs WHERE id = $1',
+      [id],
+    );
+    const syncedDates = datesRes.rows[0];
+    const r = { ...result.rows[0], ...syncedDates };
 
     // Fetch pricing items for this specific job
     const pItems = await pool.query('SELECT * FROM job_pricing_items WHERE job_id=$1 ORDER BY sort_order', [id]);
@@ -8484,7 +8491,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
     const statusLogs = logsRes.rows.map(r => ({
       status: r.status,
       latitude: r.latitude != null ? parseFloat(String(r.latitude)) : null,
-      longitude: r.longitude != null ? parseFloat(String(String(r.latitude)) !== 'null' ? String(r.longitude) : '0') : null,
+      longitude: r.longitude != null ? parseFloat(String(r.longitude)) : null,
       timestamp: (r.timestamp as Date).toISOString()
     }));
 
@@ -11380,6 +11387,40 @@ app.get('/api/customers/:id/statement.pdf', authenticate, requireTenantCrmAccess
   }
 });
 
+app.get('/api/customers/:id/outstanding-statement.pdf', authenticate, requireTenantCrmAccess('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid customer id' });
+
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const custCheck = await pool.query<{ created_by: number | null; full_name: string | null }>(
+      'SELECT created_by, full_name FROM customers WHERE id = $1',
+      [id],
+    );
+    if ((custCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && custCheck.rows[0].created_by !== userId) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+
+    const pdf = await generateCustomerStatementPdfBuffer(pool, id, { outstandingOnly: true });
+    const custName = custCheck.rows[0].full_name?.trim() || 'customer';
+    const safeTail = `customer-${custName.replace(/[^\w.-]+/g, '_').slice(0, 60)}-outstanding-statement`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTail}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    return res.send(pdf);
+  } catch (error) {
+    if (error instanceof PdfRenderUnavailableError) {
+      return res.status(503).json({ message: error.message });
+    }
+    console.error('Customer outstanding statement PDF error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 function escapeHtmlForEmail(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -11613,6 +11654,7 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
 
     // Update the job status to scheduled if it was created/draft
     await pool.query('UPDATE jobs SET state = \'scheduled\' WHERE id = $1 AND state IN (\'draft\', \'created\', \'unscheduled\')', [jobId]);
+    await syncJobDatesFromDiaryEvents(pool, jobId);
 
     res.status(201).json({ event: result.rows[0] });
   } catch (error) {
@@ -11723,6 +11765,7 @@ app.patch(
         notes: string | null;
         updated_at: Date;
       };
+      await syncJobDatesFromDiaryEvents(pool, row.job_id);
       return res.json({
         event: {
           id: row.id,
@@ -11909,8 +11952,8 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermissio
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
-    const ev = await pool.query<{ status: string | null; job_created_by: number | null }>(
-      `SELECT d.status, j.created_by AS job_created_by
+    const ev = await pool.query<{ status: string | null; job_created_by: number | null; job_id: number }>(
+      `SELECT d.status, j.created_by AS job_created_by, d.job_id
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
@@ -11928,6 +11971,7 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermissio
     }
 
     await pool.query('DELETE FROM diary_events WHERE id = $1', [id]);
+    await syncJobDatesFromDiaryEvents(pool, row.job_id);
     return res.status(204).send();
   } catch (error) {
     console.error('delete diary event error:', error);
@@ -11959,9 +12003,23 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
     }
     const includeUnscheduled = req.query.include_unscheduled === 'true';
     conditions.push(`(
-      (j.schedule_start >= $${p}::timestamptz AND j.schedule_start < ($${p + 1}::date + INTERVAL '1 day'))
+      EXISTS (
+        SELECT 1 FROM diary_events d
+        WHERE d.job_id = j.id
+          AND NOT (LOWER(TRIM(COALESCE(d.status, ''))) IN ('cancelled', 'aborted'))
+          AND d.start_time >= $${p}::timestamptz
+          AND d.start_time < ($${p + 1}::date + INTERVAL '1 day')
+      )
+      OR (j.schedule_start >= $${p}::timestamptz AND j.schedule_start < ($${p + 1}::date + INTERVAL '1 day'))
       OR (j.schedule_start IS NULL AND j.start_date >= $${p}::date AND j.start_date <= $${p + 1}::date)
-      ${includeUnscheduled ? 'OR (j.schedule_start IS NULL AND j.start_date IS NULL)' : ''}
+      ${includeUnscheduled ? `OR (
+        j.schedule_start IS NULL AND j.start_date IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM diary_events d2
+          WHERE d2.job_id = j.id
+            AND NOT (LOWER(TRIM(COALESCE(d2.status, ''))) IN ('cancelled', 'aborted'))
+        )
+      )` : ''}
     )`);
     params.push(fromDate, toDate);
     p += 2;
@@ -11976,18 +12034,31 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
     }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const result = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string }>(
+    const result = await pool.query<DbJob & { customer_full_name?: string; officer_full_name?: string; diary_start_time?: Date | null; diary_duration_minutes?: number | null }>(
       `SELECT j.id, j.title, j.description, j.priority, j.responsible_person, j.officer_id, j.start_date, j.deadline,
         j.customer_id, j.location, j.required_certifications, j.state,
         j.schedule_start, j.duration_minutes, j.scheduling_notes, j.dispatched_at,
         j.created_at, j.updated_at,
         c.full_name AS customer_full_name,
-        o.full_name AS officer_full_name
+        o.full_name AS officer_full_name,
+        de_pick.start_time AS diary_start_time,
+        de_pick.duration_minutes AS diary_duration_minutes
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN officers o ON o.id = j.officer_id
+       LEFT JOIN LATERAL (
+         SELECT d.start_time, d.duration_minutes
+         FROM diary_events d
+         WHERE d.job_id = j.id
+           AND NOT (LOWER(TRIM(COALESCE(d.status, ''))) IN ('cancelled', 'aborted'))
+         ORDER BY
+           CASE WHEN d.start_time >= NOW() THEN 0 ELSE 1 END ASC,
+           CASE WHEN d.start_time >= NOW() THEN d.start_time END ASC NULLS LAST,
+           d.start_time DESC
+         LIMIT 1
+       ) de_pick ON TRUE
        ${whereClause}
-       ORDER BY COALESCE(j.schedule_start, j.start_date) ASC NULLS LAST`,
+       ORDER BY COALESCE(de_pick.start_time, j.schedule_start, j.start_date) ASC NULLS LAST`,
       params,
     );
 
@@ -12006,7 +12077,11 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
       officersByJob.set(or.job_id, list);
     }
 
-    const jobs = result.rows.map((r) => ({
+    const jobs = result.rows.map((r) => {
+      const diaryStart = (r as { diary_start_time?: Date | null }).diary_start_time ?? null;
+      const effectiveStart = diaryStart ?? r.schedule_start ?? null;
+      const diaryDuration = (r as { diary_duration_minutes?: number | null }).diary_duration_minutes ?? null;
+      return {
       id: r.id,
       title: r.title,
       description: r.description ?? null,
@@ -12022,13 +12097,14 @@ app.get('/api/scheduling', authenticate, requireAdmin, requirePermission('schedu
       location: r.location ?? null,
       required_certifications: r.required_certifications ?? null,
       state: r.state,
-      schedule_start: r.schedule_start ? (r.schedule_start as Date).toISOString() : null,
-      duration_minutes: r.duration_minutes ?? null,
+      schedule_start: effectiveStart ? (effectiveStart as Date).toISOString() : null,
+      duration_minutes: diaryDuration ?? r.duration_minutes ?? null,
       scheduling_notes: r.scheduling_notes ?? null,
       dispatched_at: r.dispatched_at ? (r.dispatched_at as Date).toISOString() : null,
       created_at: (r.created_at as Date).toISOString(),
       updated_at: (r.updated_at as Date).toISOString(),
-    }));
+    };
+    });
 
     return res.json({ jobs });
   } catch (error) {
@@ -12064,6 +12140,10 @@ app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, requirePermissio
     const values: unknown[] = [];
     let idx = 1;
     if (scheduleStart !== undefined) { updates.push(`schedule_start = $${idx++}`); values.push(scheduleStart); }
+    if (scheduleStart !== undefined && scheduleStart) {
+      updates.push(`expected_completion = $${idx++}`);
+      values.push(scheduleStart);
+    }
     if (durationMinutes !== undefined) { updates.push(`duration_minutes = $${idx++}`); values.push(durationMinutes); }
     if (officerId !== undefined) { updates.push(`officer_id = $${idx++}`); values.push(officerId); }
     if (schedulingNotes !== undefined) { updates.push(`scheduling_notes = $${idx++}`); values.push(schedulingNotes); }

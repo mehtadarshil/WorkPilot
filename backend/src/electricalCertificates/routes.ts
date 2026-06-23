@@ -472,9 +472,9 @@ async function loadCertificate(
   const r = await pool.query(
     `SELECT ec.*, c.full_name AS customer_full_name,
       COALESCE(
+        NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
         NULLIF(TRIM(wa.name), ''),
-        NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.town, wa.postcode)), ''),
-        NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), ''),
+        NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1), ''), NULLIF(TRIM(c.address_line_2), ''), NULLIF(TRIM(c.address_line_3), ''), NULLIF(TRIM(c.town), ''), NULLIF(TRIM(c.county), ''), NULLIF(TRIM(c.postcode), ''))), ''),
         NULLIF(TRIM(c.address), ''),
         'Installation'
       ) AS installation_label
@@ -538,9 +538,9 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     const listR = await pool.query(
       `SELECT ec.*, c.full_name AS customer_full_name,
         COALESCE(
+          NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
           NULLIF(TRIM(wa.name), ''),
-          NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.town, wa.postcode)), ''),
-          NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), ''),
+          NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1), ''), NULLIF(TRIM(c.address_line_2), ''), NULLIF(TRIM(c.address_line_3), ''), NULLIF(TRIM(c.town), ''), NULLIF(TRIM(c.county), ''), NULLIF(TRIM(c.postcode), ''))), ''),
           NULLIF(TRIM(c.address), ''),
           'Installation'
         ) AS installation_label

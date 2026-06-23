@@ -1,8 +1,11 @@
+import crypto from 'crypto';
+import path from 'path';
 import type { Application, Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { assertStaffPermissionAny, getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
 import { officerAssignedToJob } from './jobAssignment';
+import { loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -10,6 +13,15 @@ type StaffWorkRouteDeps = {
   pool: Pool;
   authenticate: (req: Request, res: Response, next: () => void) => void;
 };
+
+const EXPENSE_SELECT = `
+  je.*,
+  o.full_name AS officer_name,
+  COALESCE(o.full_name, cu.full_name, cu.email) AS claimed_by_name,
+  j.title AS job_title,
+  j.job_number,
+  c.full_name AS customer_name
+`;
 
 function parseId(raw: unknown): number | null {
   const n = parseInt(String(Array.isArray(raw) ? raw[0] : raw), 10);
@@ -41,6 +53,46 @@ function isoDate(raw: unknown): string {
   return value ?? new Date().toISOString().slice(0, 10);
 }
 
+function cleanFilename(raw: string): string {
+  return raw.replace(/[^\w.\-()+ ]/g, '_').slice(0, 180) || 'proof.bin';
+}
+
+function decodeProofFiles(raw: unknown): { buf: Buffer; original: string; contentType: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { buf: Buffer; original: string; contentType: string }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const m = item as Record<string, unknown>;
+    const original = cleanFilename(typeof m.filename === 'string' ? m.filename : 'proof.jpg');
+    const contentType =
+      typeof m.content_type === 'string' && m.content_type.trim() ? m.content_type.trim() : 'image/jpeg';
+    const b64 = typeof m.content_base64 === 'string' ? m.content_base64 : '';
+    if (!b64.trim()) continue;
+    const buf = Buffer.from(b64, 'base64');
+    if (buf.length > 0) out.push({ buf, original, contentType });
+  }
+  return out;
+}
+
+function mapProofFiles(jobId: number, expenseId: number, raw: unknown) {
+  const proof = Array.isArray(raw) ? raw : [];
+  return proof
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const p = item as Record<string, unknown>;
+      const stored = typeof p.stored_filename === 'string' ? p.stored_filename : '';
+      if (!stored) return null;
+      return {
+        stored_filename: stored,
+        original_filename: typeof p.original_filename === 'string' ? p.original_filename : stored,
+        content_type: typeof p.content_type === 'string' ? p.content_type : 'image/jpeg',
+        byte_size: typeof p.byte_size === 'number' ? p.byte_size : null,
+        href: `/api/jobs/${jobId}/expenses/${expenseId}/proof/${encodeURIComponent(stored)}`,
+      };
+    })
+    .filter((p): p is NonNullable<typeof p> => p != null);
+}
+
 async function jobVisibleToUser(pool: Pool, jobId: number, user: TenantAuthUser): Promise<boolean> {
   if (user.role === 'SUPER_ADMIN') {
     const result = await pool.query('SELECT id FROM jobs WHERE id = $1', [jobId]);
@@ -58,11 +110,14 @@ async function jobVisibleToUser(pool: Pool, jobId: number, user: TenantAuthUser)
 }
 
 function expenseRow(row: Record<string, unknown>) {
+  const jobId = Number(row.job_id);
+  const expenseId = Number(row.id);
   return {
-    id: Number(row.id),
-    job_id: Number(row.job_id),
+    id: expenseId,
+    job_id: jobId,
     officer_id: row.officer_id == null ? null : Number(row.officer_id),
     officer_name: (row.officer_name as string | null) ?? null,
+    claimed_by_name: (row.claimed_by_name as string | null) ?? null,
     job_title: (row.job_title as string | null) ?? null,
     job_number: (row.job_number as string | null) ?? null,
     customer_name: (row.customer_name as string | null) ?? null,
@@ -75,8 +130,33 @@ function expenseRow(row: Record<string, unknown>) {
     amount: Number(row.amount ?? 0),
     status: (row.status as string | null) ?? 'submitted',
     expense_type: (row.expense_type as string | null) ?? 'personal',
+    proof_files: mapProofFiles(jobId, expenseId, row.proof_files),
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
   };
+}
+
+async function loadExpenseRow(
+  pool: Pool,
+  expenseId: number,
+  userId: number,
+  isSuperAdmin: boolean,
+): Promise<Record<string, unknown> | null> {
+  const params: unknown[] = [expenseId];
+  let sql = `
+    SELECT ${EXPENSE_SELECT}
+    FROM job_expenses je
+    JOIN jobs j ON j.id = je.job_id
+    LEFT JOIN officers o ON o.id = je.officer_id
+    LEFT JOIN users cu ON cu.id = je.created_by
+    LEFT JOIN customers c ON c.id = j.customer_id
+    WHERE je.id = $1
+  `;
+  if (!isSuperAdmin) {
+    sql += ' AND j.created_by = $2';
+    params.push(userId);
+  }
+  const result = await pool.query(sql, params);
+  return (result.rows[0] as Record<string, unknown> | undefined) ?? null;
 }
 
 export async function ensureStaffWorkSchema(pool: Pool): Promise<void> {
@@ -100,7 +180,17 @@ export async function ensureStaffWorkSchema(pool: Pool): Promise<void> {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_job_expenses_status ON job_expenses(status)');
   await pool.query('ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS approved_by INTEGER');
   await pool.query('ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ');
-  await pool.query("ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS expense_type VARCHAR(40) NOT NULL DEFAULT 'personal'");
+  await pool.query('ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS expense_type VARCHAR(40)');
+  await pool.query(`ALTER TABLE job_expenses ADD COLUMN IF NOT EXISTS proof_files JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`
+    UPDATE job_expenses
+    SET expense_type = 'personal'
+    WHERE expense_type IS NULL OR TRIM(expense_type) = ''
+  `);
+  await pool.query("ALTER TABLE job_expenses ALTER COLUMN expense_type SET DEFAULT 'personal'");
+  await pool.query('ALTER TABLE job_expenses ALTER COLUMN expense_type SET NOT NULL').catch((err) => {
+    console.warn('job_expenses.expense_type NOT NULL constraint skipped:', err);
+  });
 }
 
 export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps): void {
@@ -232,10 +322,11 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
     try {
       const result = await pool.query(
-        `SELECT je.*, o.full_name AS officer_name, j.title AS job_title, j.job_number, c.full_name AS customer_name
+        `SELECT ${EXPENSE_SELECT}
          FROM job_expenses je
          JOIN jobs j ON j.id = je.job_id
          LEFT JOIN officers o ON o.id = je.officer_id
+         LEFT JOIN users cu ON cu.id = je.created_by
          LEFT JOIN customers c ON c.id = j.customer_id
          WHERE je.expense_date >= $1::date
            AND je.expense_date < ($2::date + INTERVAL '1 day')
@@ -258,10 +349,11 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     }
     try {
       const result = await pool.query(
-        `SELECT je.*, o.full_name AS officer_name, j.title AS job_title, j.job_number, c.full_name AS customer_name
+        `SELECT ${EXPENSE_SELECT}
          FROM job_expenses je
          JOIN jobs j ON j.id = je.job_id
          LEFT JOIN officers o ON o.id = je.officer_id
+         LEFT JOIN users cu ON cu.id = je.created_by
          LEFT JOIN customers c ON c.id = j.customer_id
          WHERE je.job_id = $1
          ORDER BY je.expense_date DESC, je.id DESC`,
@@ -281,35 +373,99 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     if (!(await jobVisibleToUser(pool, jobId, user))) {
       return res.status(404).json({ message: 'Job not found' });
     }
-    const amount = money((req.body as Record<string, unknown>).amount);
+    const body = req.body as Record<string, unknown>;
+    const amount = money(body.amount);
     if (amount == null || amount <= 0) return res.status(400).json({ message: 'Amount must be greater than zero' });
     const category =
-      typeof (req.body as Record<string, unknown>).category === 'string'
-        ? String((req.body as Record<string, unknown>).category).trim().slice(0, 80) || 'Expense'
-        : 'Expense';
-    const description =
-      typeof (req.body as Record<string, unknown>).description === 'string'
-        ? String((req.body as Record<string, unknown>).description).trim() || null
-        : null;
+      typeof body.category === 'string' ? body.category.trim().slice(0, 80) || 'Expense' : 'Expense';
+    const description = typeof body.description === 'string' ? body.description.trim() || null : null;
     const requestedOfficerId =
-      typeof (req.body as Record<string, unknown>).officer_id === 'number' && Number.isFinite((req.body as Record<string, unknown>).officer_id)
-        ? Number((req.body as Record<string, unknown>).officer_id)
-        : null;
+      typeof body.officer_id === 'number' && Number.isFinite(body.officer_id) ? Number(body.officer_id) : null;
     const officerId = user.role === 'OFFICER' ? (user.officerId ?? null) : requestedOfficerId;
-    const rawType = typeof (req.body as Record<string, unknown>).expense_type === 'string'
-      ? String((req.body as Record<string, unknown>).expense_type).trim().toLowerCase()
-      : 'personal';
+    const rawType = typeof body.expense_type === 'string' ? body.expense_type.trim().toLowerCase() : 'personal';
     const expenseType = rawType === 'company' ? 'company' : 'personal';
+    const proof = decodeProofFiles(body.proof_files);
+    const isOfficer = user.role === 'OFFICER';
+    if (isOfficer && proof.length === 0) {
+      return res.status(400).json({ message: 'A receipt photo is required for expense claims' });
+    }
+
+    const client = await pool.connect();
     try {
-      const result = await pool.query(
-        `INSERT INTO job_expenses (job_id, officer_id, expense_date, category, description, amount, expense_type, created_by)
-         VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [jobId, officerId, isoDate((req.body as Record<string, unknown>).expense_date), category, description, amount, expenseType, user.userId],
+      await client.query('BEGIN');
+      const ins = await client.query<{ id: number }>(
+        `INSERT INTO job_expenses (job_id, officer_id, expense_date, category, description, amount, expense_type, proof_files, created_by)
+         VALUES ($1, $2, $3::date, $4, $5, $6, $7, '[]'::jsonb, $8)
+         RETURNING id`,
+        [jobId, officerId, isoDate(body.expense_date), category, description, amount, expenseType, user.userId],
       );
-      return res.status(201).json({ expense: expenseRow(result.rows[0] as Record<string, unknown>) });
+      const expenseId = ins.rows[0].id;
+      const proofJson = [];
+      for (const file of proof) {
+        const ext = path.extname(file.original).slice(0, 24) || '.jpg';
+        const stored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+        const uploaded = await writeWorkpilotFile('job-expense-proofs', [jobId, expenseId], stored, file.buf, file.contentType);
+        proofJson.push({
+          stored_filename: stored,
+          original_filename: file.original,
+          content_type: file.contentType,
+          byte_size: file.buf.length,
+          spaces_key: uploaded.spacesKey,
+          file_url: uploaded.fileUrl,
+        });
+      }
+      if (proofJson.length > 0) {
+        await client.query('UPDATE job_expenses SET proof_files = $1::jsonb WHERE id = $2', [
+          JSON.stringify(proofJson),
+          expenseId,
+        ]);
+      }
+      await client.query('COMMIT');
+
+      const userId = getTenantScopeUserId(user);
+      const isSuperAdmin = user.role === 'SUPER_ADMIN';
+      const row = await loadExpenseRow(pool, expenseId, userId, isSuperAdmin);
+      if (!row) return res.status(201).json({ expense: { id: expenseId, job_id: jobId } });
+      return res.status(201).json({ expense: expenseRow(row) });
     } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
       console.error('Create job expense error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get('/api/jobs/:jobId/expenses/:expenseId/proof/:filename', authenticate, async (req: AuthReq, res: Response) => {
+    const jobId = parseId(req.params.jobId);
+    const expenseId = parseId(req.params.expenseId);
+    const filename = cleanFilename(String(req.params.filename || ''));
+    if (!jobId || !expenseId || !filename) return res.status(400).json({ message: 'Invalid id' });
+    const user = req.user!;
+    try {
+      if (!(await jobVisibleToUser(pool, jobId, user))) {
+        return res.status(404).json({ message: 'Expense not found' });
+      }
+      if (user.role !== 'OFFICER' && !assertStaffPermissionAny(user, ['field_users', 'jobs'])) {
+        return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+      }
+      const r = await pool.query('SELECT proof_files FROM job_expenses WHERE id = $1 AND job_id = $2', [
+        expenseId,
+        jobId,
+      ]);
+      if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Proof not found' });
+      const proof = Array.isArray(r.rows[0].proof_files) ? r.rows[0].proof_files : [];
+      const meta = proof.find((p: Record<string, unknown>) => String(p.stored_filename) === filename) as
+        | Record<string, unknown>
+        | undefined;
+      if (!meta) return res.status(404).json({ message: 'Proof not found' });
+      const file = await loadWorkpilotFile('job-expense-proofs', [jobId, expenseId], filename);
+      if (!file) return res.status(404).json({ message: 'Proof not found' });
+      return sendWorkpilotFile(res, file, String(meta.content_type || 'image/jpeg'), {
+        disposition: `inline; filename="${cleanFilename(String(meta.original_filename || 'receipt'))}"`,
+      });
+    } catch (error) {
+      console.error('Get job expense proof error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });
@@ -322,67 +478,77 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
       return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
     }
     const body = req.body as Record<string, unknown>;
-
-    // Build update query dynamically
-    const updates: string[] = [];
-    const params: unknown[] = [];
-
-    if (typeof body.status === 'string' && body.status.trim()) {
-      const status = body.status.trim();
-      if (status === 'approved' || status === 'rejected' || status === 'submitted') {
-        updates.push(`status = $${params.length + 1}`);
-        params.push(status);
-
-        updates.push(`approved_by = CASE WHEN $${params.length - 1 + 1} = 'approved' THEN $${params.length + 1}::integer ELSE NULL END`);
-        params.push(user.userId);
-
-        updates.push(`approved_at = CASE WHEN $${params.length - 2 + 1} = 'approved' THEN NOW() ELSE NULL END`);
-      } else {
-        return res.status(400).json({ message: 'Status must be submitted, approved, or rejected' });
-      }
-    }
-
-    if (typeof body.expense_type === 'string' && body.expense_type.trim()) {
-      const et = body.expense_type.trim().toLowerCase();
-      if (et === 'personal' || et === 'company') {
-        updates.push(`expense_type = $${params.length + 1}`);
-        params.push(et);
-      } else {
-        return res.status(400).json({ message: 'expense_type must be personal or company' });
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ message: 'No fields to update' });
-    }
-
-    updates.push(`updated_at = NOW()`);
-
     const userId = getTenantScopeUserId(user);
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
 
-    try {
-      let query = `
-        UPDATE job_expenses je
-        SET ${updates.join(', ')}
-        FROM jobs j
-        WHERE je.id = $${params.length + 1}
-          AND j.id = je.job_id
-      `;
-      params.push(expenseId);
+    const rawStatus = typeof body.status === 'string' ? body.status.trim() : '';
+    const rawExpenseType = typeof body.expense_type === 'string' ? body.expense_type.trim().toLowerCase() : '';
 
-      if (!isSuperAdmin) {
-        query += ` AND j.created_by = $${params.length + 1}`;
-        params.push(userId);
+    const hasStatus = rawStatus.length > 0;
+    const hasExpenseType = rawExpenseType.length > 0;
+
+    if (!hasStatus && !hasExpenseType) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+    if (hasStatus && rawStatus !== 'approved' && rawStatus !== 'rejected' && rawStatus !== 'submitted') {
+      return res.status(400).json({ message: 'Status must be submitted, approved, or rejected' });
+    }
+    if (hasExpenseType && rawExpenseType !== 'personal' && rawExpenseType !== 'company') {
+      return res.status(400).json({ message: 'expense_type must be personal or company' });
+    }
+
+    const setParts: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (hasStatus) {
+      setParts.push(`status = $${paramIndex++}`);
+      params.push(rawStatus);
+      setParts.push(`approved_by = $${paramIndex++}`);
+      params.push(rawStatus === 'approved' ? user.userId : null);
+      setParts.push(`approved_at = ${rawStatus === 'approved' ? 'NOW()' : 'NULL'}`);
+    }
+
+    if (hasExpenseType) {
+      setParts.push(`expense_type = $${paramIndex++}`);
+      params.push(rawExpenseType);
+    }
+
+    setParts.push('updated_at = NOW()');
+
+    const expenseIdParam = paramIndex++;
+    params.push(expenseId);
+
+    let whereClause = `je.id = $${expenseIdParam} AND j.id = je.job_id`;
+    if (!isSuperAdmin) {
+      const tenantParam = paramIndex++;
+      params.push(userId);
+      whereClause += ` AND j.created_by = $${tenantParam}`;
+    }
+
+    try {
+      const updateResult = await pool.query(
+        `UPDATE job_expenses je
+         SET ${setParts.join(', ')}
+         FROM jobs j
+         WHERE ${whereClause}`,
+        params,
+      );
+      if ((updateResult.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Expense not found' });
       }
 
-      query += ` RETURNING je.*, j.title AS job_title, j.job_number, NULL::text AS officer_name, NULL::text AS customer_name`;
-
-      const result = await pool.query(query, params);
-      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Expense not found' });
-      return res.json({ expense: expenseRow(result.rows[0] as Record<string, unknown>) });
+      const row = await loadExpenseRow(pool, expenseId, userId, isSuperAdmin);
+      if (!row) return res.status(404).json({ message: 'Expense not found' });
+      return res.json({ expense: expenseRow(row) });
     } catch (error) {
-      console.error('Patch job expense error:', error);
+      const pgError = error as { code?: string; detail?: string; message?: string };
+      console.error(
+        'Patch job expense error:',
+        pgError.message ?? error,
+        pgError.code ? `code=${pgError.code}` : '',
+        pgError.detail ? `detail=${pgError.detail}` : '',
+      );
       return res.status(500).json({ message: 'Internal server error' });
     }
   });
