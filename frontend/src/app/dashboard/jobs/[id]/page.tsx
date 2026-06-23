@@ -12,13 +12,16 @@ import JobFilesTab from './JobFilesTab';
 import JobNotesTab from './JobNotesTab';
 import JobCostsTab from './JobCostsTab';
 import JobExpensesTab from './JobExpensesTab';
+import JobPartsTab from './JobPartsTab';
 import JobDynamicReportsTab from './JobDynamicReportsTab';
 import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJobStages';
-import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key, ChevronDown, Download } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key, ChevronDown, Download, CalendarClock, AlertTriangle, Wrench, X } from 'lucide-react';
+import Link from 'next/link';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 import { pickJobScheduledDateIso } from '../jobScheduledDate';
 import { VisitJobSheetTimeline } from './VisitJobSheetTimeline';
+import PpmSlaCountdown from './PpmSlaCountdown';
 import type { VisitStatusLog } from './visitStatusLabels';
 
 interface JobContact {
@@ -75,6 +78,16 @@ interface JobDetails {
   officers?: { id: number; full_name: string; is_primary?: boolean }[];
   is_quotation_visit?: boolean;
   charge_type?: string;
+  ppm?: {
+    contract_id: number;
+    contract_title: string;
+    contract_reference?: string | null;
+    task_id?: number | null;
+    task_name?: string | null;
+    task_next_due?: string | null;
+    sla_due_at?: string | null;
+    sla_breached?: boolean;
+  } | null;
 }
 
 interface DiaryEvent {
@@ -391,6 +404,14 @@ export default function JobDetailsPage() {
   const [downloadingStatement, setDownloadingStatement] = useState(false);
   const quickLinksRef = useRef<HTMLDivElement>(null);
 
+  // --- Job Tools States ---
+  const [jobTools, setJobTools] = useState<any[]>([]);
+  const [allTools, setAllTools] = useState<any[]>([]);
+  const [showAssignToolModal, setShowAssignToolModal] = useState(false);
+  const [selectedToolId, setSelectedToolId] = useState('');
+  const [assignToolNotes, setAssignToolNotes] = useState('');
+  const [assigningTool, setAssigningTool] = useState(false);
+
   const serviceTypeScheduledIso = useMemo(
     () => (job ? pickJobScheduledDateIso(job.expected_completion, diaryEvents) : null),
     [job, diaryEvents],
@@ -412,6 +433,12 @@ export default function JobDetailsPage() {
   );
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+  const [activeToken, setActiveToken] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setActiveToken(window.localStorage.getItem('wp_token'));
+    }
+  }, []);
 
   const fetchJobDetails = useCallback(async () => {
     if (!token || !id) return;
@@ -431,12 +458,57 @@ export default function JobDetailsPage() {
       setOfficeTasks(taskRes.tasks || []);
       const officersRes = await getJson<{ officers: OfficerOption[] }>(`/officers?limit=100`, token);
       setOfficers(officersRes.officers || []);
+      const toolsRes = await getJson<any[]>(`/jobs/${id}/tools`, token).catch(() => []);
+      setJobTools(toolsRes || []);
+      const allToolsRes = await getJson<any[]>('/tools', token).catch(() => []);
+      setAllTools(allToolsRes || []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to fetch job details');
     } finally {
       setLoading(false);
     }
   }, [id, token, router]);
+
+  const fetchJobTools = useCallback(async () => {
+    if (!token || !id) return;
+    try {
+      const res = await getJson<any[]>(`/jobs/${id}/tools`, token);
+      setJobTools(res || []);
+    } catch (err) {
+      console.error('Error fetching job tools:', err);
+    }
+  }, [token, id]);
+
+  const handleAssignTool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !id || !selectedToolId) return;
+    setAssigningTool(true);
+    try {
+      await postJson(`/jobs/${id}/tools`, {
+        tool_id: parseInt(selectedToolId, 10),
+        notes: assignToolNotes.trim(),
+      }, token);
+      setShowAssignToolModal(false);
+      setSelectedToolId('');
+      setAssignToolNotes('');
+      await fetchJobTools();
+    } catch (err: any) {
+      alert(err.message || 'Error assigning tool');
+    } finally {
+      setAssigningTool(false);
+    }
+  };
+
+  const handleRemoveTool = async (toolId: number) => {
+    if (!token || !id) return;
+    if (!confirm('Are you sure you want to remove this tool from the job?')) return;
+    try {
+      await deleteRequest(`/jobs/${id}/tools/${toolId}`, token);
+      await fetchJobTools();
+    } catch (err: any) {
+      alert(err.message || 'Error removing tool');
+    }
+  };
 
   useEffect(() => {
     fetchJobDetails();
@@ -731,6 +803,7 @@ export default function JobDetailsPage() {
 
   const tabs = [
     'Details',
+    'Parts',
     'Job report',
     'Reports',
     'Client panel',
@@ -918,6 +991,38 @@ export default function JobDetailsPage() {
         )}
       </div>
 
+      {job.ppm && (
+        <div className={`border-b px-6 py-3 flex flex-wrap items-center gap-4 text-sm ${
+          job.ppm.sla_breached ? 'bg-rose-50 border-rose-200' : 'bg-teal-50 border-teal-200'
+        }`}>
+          <CalendarClock className={`size-5 shrink-0 ${job.ppm.sla_breached ? 'text-rose-600' : 'text-[#14B8A6]'}`} />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-900">
+              PPM contract:{' '}
+              <Link href={`/dashboard/ppm-contracts/${job.ppm.contract_id}`} className="text-[#14B8A6] hover:underline">
+                {job.ppm.contract_title}
+              </Link>
+              {job.ppm.task_name ? ` — ${job.ppm.task_name}` : ''}
+            </p>
+            {job.ppm.task_next_due && (
+              <p className="text-slate-600">Task due: {dayjs(job.ppm.task_next_due).format('D MMM YYYY')}</p>
+            )}
+          </div>
+          {job.ppm.sla_due_at && (
+            <div className={`flex flex-col gap-0.5 rounded-lg px-3 py-1.5 font-medium ${
+              job.ppm.sla_breached ? 'bg-rose-100 text-rose-800' : 'bg-white text-slate-700 border border-teal-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                {job.ppm.sla_breached && <AlertTriangle className="size-4" />}
+                <Clock className="size-4" />
+                <span>SLA due {dayjs(job.ppm.sla_due_at).format('D MMM YYYY HH:mm')}</span>
+              </div>
+              <PpmSlaCountdown slaDueAt={job.ppm.sla_due_at} breached={job.ppm.sla_breached} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
@@ -1096,6 +1201,8 @@ export default function JobDetailsPage() {
                    </div>
                 </div>
              </div>
+           ) : activeTab === 'Parts' ? (
+             <JobPartsTab jobId={id} />
           ) : activeTab === 'Job report' ? (
             token ? (
               <JobReportTab jobId={id} token={token} />
@@ -1446,6 +1553,68 @@ export default function JobDetailsPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Required Tools Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h2 className="text-[17px] font-black tracking-tight text-slate-800 uppercase flex items-center gap-2">
+                <Wrench className="size-5 text-[#14B8A6]" />
+                Required Tools
+              </h2>
+              <button
+                onClick={() => setShowAssignToolModal(true)}
+                className="rounded bg-[#14B8A6] px-4 py-2 text-[13px] font-bold uppercase text-white shadow-sm transition-colors hover:bg-[#13a89a]"
+              >
+                Assign Tool
+              </button>
+            </div>
+            <div className="p-6">
+              {jobTools.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Wrench className="size-8 mx-auto mb-2 text-slate-300 stroke-1" />
+                  <p className="text-sm font-semibold">No tools assigned to this job.</p>
+                  <p className="text-xs mt-1">Assign tools required by engineers to complete this job.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {jobTools.map((t) => (
+                    <div key={t.id} className="flex gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50 relative group">
+                      <div className="size-16 rounded-lg overflow-hidden border border-slate-200 bg-white shrink-0 flex items-center justify-center text-slate-300">
+                        {t.image_url && activeToken ? (
+                           // eslint-disable-next-line @next/next/no-img-element
+                           <img
+                             src={t.image_url.startsWith('/api/') ? `${t.image_url}?token=${activeToken}` : `/api/stock-tools/files/tool-photos/${t.image_url}?token=${activeToken}`}
+                             alt={t.name}
+                             className="size-full object-cover"
+                           />
+                        ) : (
+                          <Wrench className="size-6 text-slate-300" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1 flex flex-col justify-between">
+                        <div>
+                          <span className="inline-block rounded-full bg-slate-200/60 px-2 py-0.5 text-[10px] font-bold text-slate-500 mb-0.5">
+                            {t.category}
+                          </span>
+                          <h4 className="font-bold text-slate-800 text-sm truncate leading-snug">{t.name}</h4>
+                          <p className="text-[11px] text-slate-500 truncate">Loc: {t.location} • Status: <strong className="text-slate-650">{t.status}</strong></p>
+                          {t.notes && <p className="text-[11px] text-slate-400 italic truncate mt-1">"{t.notes}"</p>}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTool(t.id)}
+                        className="absolute top-2 right-2 text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition"
+                        title="Remove tool assignment"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -2234,6 +2403,82 @@ export default function JobDetailsPage() {
              <div className="flex justify-end p-4 border-t border-slate-200 bg-white">
                 <button onClick={() => setViewingEvent(null)} className="text-slate-500 hover:text-slate-700 font-bold text-sm">Close</button>
              </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Tool Modal */}
+      {showAssignToolModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-100 flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Wrench className="size-5 text-[#14B8A6]" />
+                Assign Tool to Job
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAssignToolModal(false);
+                  setSelectedToolId('');
+                  setAssignToolNotes('');
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignTool} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Select Tool *</label>
+                <select
+                  required
+                  value={selectedToolId}
+                  onChange={(e) => setSelectedToolId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#14B8A6]"
+                >
+                  <option value="">-- Choose Tool --</option>
+                  {allTools
+                    .filter(t => !jobTools.some(jt => jt.id === t.id))
+                    .map(t => (
+                      <option key={t.id} value={String(t.id)}>
+                        {t.name} ({t.category} - {t.status})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Notes / Instructions</label>
+                <textarea
+                  value={assignToolNotes}
+                  onChange={(e) => setAssignToolNotes(e.target.value)}
+                  placeholder="e.g. Return after site visit, check calibration first..."
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] h-20 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAssignToolModal(false);
+                    setSelectedToolId('');
+                    setAssignToolNotes('');
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assigningTool || !selectedToolId}
+                  className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] shadow-sm transition disabled:opacity-50"
+                >
+                  {assigningTool ? 'Assigning…' : 'Assign Tool'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

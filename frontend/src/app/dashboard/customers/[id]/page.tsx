@@ -15,6 +15,7 @@ import CustomerInvoicesTab from './CustomerInvoicesTab';
 import CustomerFilesTab from './CustomerFilesTab';
 import CustomerSiteImagesTab from './CustomerSiteImagesTab';
 import CustomerSiteReportTab from './CustomerSiteReportTab';
+import CustomerPpmContractsTab from './CustomerPpmContractsTab';
 import CustomerOverviewMapTab from './CustomerOverviewMapTab';
 import CustomerTechnicalNoteMedia, { type TechnicalNoteMediaItem } from './CustomerTechnicalNoteMedia';
 import { IMAGE_MAX_BYTES, prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
@@ -344,7 +345,7 @@ export default function CustomerDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
+    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports', 'PPM Contracts'];
     let initial = tab && allowed.includes(tab) ? tab : 'Overview';
     if (workAddressId && initial === 'Work address') initial = 'Overview';
     return initial;
@@ -378,7 +379,7 @@ export default function CustomerDetailsPage() {
   // any in-app tab click to be overwritten whenever `?tab=` was present in the URL.
   useEffect(() => {
     const tab = searchParams.get('tab');
-    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports'];
+    const allowed = ['Overview', 'Communications', 'Contacts', 'Invoices', 'Branches', 'Work address', 'Assets', 'Site images', 'Files', 'Site Reports', 'PPM Contracts'];
     if (tab && allowed.includes(tab)) {
       if (workAddressId && tab === 'Work address') {
         setActiveTab('Overview');
@@ -673,6 +674,7 @@ export default function CustomerDetailsPage() {
     { key: 'Site images', label: 'Site images' },
     { key: 'Files', label: 'Files' },
     { key: 'Site Reports', label: 'Site Reports' },
+    { key: 'PPM Contracts', label: 'PPM Contracts' },
   ];
 
   return (
@@ -1672,7 +1674,11 @@ export default function CustomerDetailsPage() {
                 />
               )}
 
-              {activeTab !== 'Overview' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Site images' && activeTab !== 'Files' && activeTab !== 'Site Reports' && (
+              {activeTab === 'PPM Contracts' && !workAddressId && (
+                <CustomerPpmContractsTab customerId={parseInt(id, 10)} />
+              )}
+
+              {activeTab !== 'Overview' && activeTab !== 'Communications' && activeTab !== 'Contacts' && activeTab !== 'Invoices' && activeTab !== 'Branches' && activeTab !== 'Work address' && activeTab !== 'Assets' && activeTab !== 'Site images' && activeTab !== 'Files' && activeTab !== 'Site Reports' && activeTab !== 'PPM Contracts' && (
                  <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500 bg-white rounded-xl border border-slate-200">
                    <Filter className="size-12 stroke-1 mb-4 text-slate-300" />
                    <h3 className="text-lg font-bold text-slate-700 mb-1">No data available in this tab</h3>

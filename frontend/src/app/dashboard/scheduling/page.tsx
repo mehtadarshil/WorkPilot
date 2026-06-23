@@ -37,9 +37,16 @@ import { CalendarDays, Map as MapIcon, Users, UserCircle2 } from 'lucide-react';
 import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { getJson, patchJson, postJson } from '../../apiClient';
+import {
+  CalendarVisitBlock,
+  CalendarVisitHoverCard,
+  type CalendarVisit,
+  type HoverAnchor,
+} from '../diary/calendarVisit';
 
 interface ScheduledJob {
   id: number;
+  job_id: number;
   title: string;
   description: string | null;
   priority: string;
@@ -51,6 +58,7 @@ interface ScheduledJob {
   deadline: string | null;
   customer_id: number | null;
   customer_full_name: string | null;
+  customer_address?: string | null;
   location: string | null;
   required_certifications: string | null;
   state: string;
@@ -58,6 +66,7 @@ interface ScheduledJob {
   duration_minutes: number | null;
   scheduling_notes: string | null;
   dispatched_at: string | null;
+  job_number?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -174,8 +183,40 @@ export default function SchedulingPage() {
   const diaryTimelineScrollRef = useRef<HTMLDivElement>(null);
   const [diaryTimelineScrollHints, setDiaryTimelineScrollHints] = useState({ left: false, right: false });
   const [diaryTimelineHasOverflow, setDiaryTimelineHasOverflow] = useState(false);
+  const [hoveredVisit, setHoveredVisit] = useState<CalendarVisit | null>(null);
+  const [hoveredAnchor, setHoveredAnchor] = useState<HoverAnchor | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const scheduledJobToVisit = (job: ScheduledJob): CalendarVisit => ({
+    id: job.id,
+    jobId: job.job_id,
+    startTime: job.schedule_start!,
+    durationMinutes: job.duration_minutes || 60,
+    title: job.title,
+    customerName: job.customer_full_name || 'Customer',
+    address: job.customer_address || job.location,
+    eventStatus: job.state,
+    notes: job.scheduling_notes,
+    jobNumber: job.job_number,
+    officerNames:
+      job.officers && job.officers.length > 0
+        ? job.officers.map((o) => o.full_name).join(', ')
+        : job.officer_full_name,
+  });
+
+  const bindSchedulingHover = (job: ScheduledJob) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!job.schedule_start) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      setHoveredVisit(scheduledJobToVisit(job));
+      setHoveredAnchor({ x: rect.left + rect.width / 2, y: rect.top });
+    },
+    onMouseLeave: () => {
+      setHoveredVisit(null);
+      setHoveredAnchor(null);
+    },
+  });
 
   const updateDiaryTimelineScrollHints = useCallback(() => {
     const el = diaryTimelineScrollRef.current;
@@ -266,11 +307,13 @@ export default function SchedulingPage() {
         officers: e.officers,
         customer_id: e.customer_id,
         customer_full_name: e.customer_full_name,
-        location: e.location,
+        customer_address: e.customer_address,
+        location: e.location || e.customer_address,
         state: e.event_status,
         schedule_start: e.start_time,
         duration_minutes: e.duration_minutes,
-        scheduling_notes: e.notes
+        scheduling_notes: e.notes,
+        job_number: e.job_number,
       })) as unknown as ScheduledJob[];
       setJobs(mappedEvents);
     } catch {
@@ -706,8 +749,7 @@ export default function SchedulingPage() {
                                              ))}
                                           </div>
                                           {officerEvents.map((evt) => {
-                                             const s = new Date(evt.schedule_start!);
-                                             const startTotalMinutes = s.getHours() * 60 + s.getMinutes();
+                                             const startTotalMinutes = new Date(evt.schedule_start!).getHours() * 60 + new Date(evt.schedule_start!).getMinutes();
                                              const offsetMinutes =
                                                 startTotalMinutes - DAILY_TIMELINE_START_HOUR * 60;
                                              const durMinutes = evt.duration_minutes || 60;
@@ -722,21 +764,18 @@ export default function SchedulingPage() {
                                              if (leftPct >= 100) return null;
 
                                              return (
-                                                <div
+                                                <CalendarVisitBlock
                                                    key={evt.id}
-                                                   className="absolute top-1 bottom-1 z-20 flex cursor-pointer flex-col justify-center overflow-hidden rounded border border-slate-300 bg-white p-1.5 text-[11px] leading-tight shadow-sm transition-colors hover:border-[#14B8A6] hover:shadow"
+                                                   visit={scheduledJobToVisit(evt)}
+                                                   variant="timeline"
+                                                   className="absolute top-1 bottom-1 z-20"
                                                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                                                    onClick={(ce) => {
                                                       ce.stopPropagation();
                                                       openScheduleModal(evt);
                                                    }}
-                                                >
-                                                   <div className="truncate font-bold text-slate-800">
-                                                      {format(s, 'HH:mm')} -{' '}
-                                                      {format(new Date(s.getTime() + durMinutes * 60000), 'HH:mm')}
-                                                   </div>
-                                                   <div className="truncate text-slate-600">{evt.title}</div>
-                                                </div>
+                                                   {...bindSchedulingHover(evt)}
+                                                />
                                              );
                                           })}
                                        </div>
@@ -1267,6 +1306,10 @@ export default function SchedulingPage() {
             </form>
           </motion.div>
         </div>
+      )}
+
+      {hoveredVisit && hoveredAnchor && (
+        <CalendarVisitHoverCard visit={hoveredVisit} anchor={hoveredAnchor} />
       )}
     </>
   );

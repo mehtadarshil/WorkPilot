@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2, Clock3, CalendarDays } from 'lucide-react';
+import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2, Clock3, CalendarDays, CalendarClock } from 'lucide-react';
 import { getJson } from '../apiClient';
 import { normalizePermissions, type TenantPermissionKey } from '../../lib/tenantPermissions';
 
@@ -290,6 +290,19 @@ export default function DashboardLayout({
                 Jobs
               </Link>
             )}
+            {hasNavPermission(user, 'jobs') && (
+              <Link
+                href="/dashboard/ppm-contracts"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/ppm-contracts')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <CalendarClock className="size-4" />
+                PPM Contracts
+              </Link>
+            )}
             {hasNavPermission(user, 'field_users') && (
               <Link
                 href="/dashboard/staff-work"
@@ -301,6 +314,20 @@ export default function DashboardLayout({
               >
                 <Clock3 className="size-4" />
                 Staff Work
+              </Link>
+            )}
+
+            {hasNavPermission(user, 'parts_catalog') && (
+              <Link
+                href="/dashboard/stock-tools"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/stock-tools')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Package className="size-4" />
+                Stock & Tools
               </Link>
             )}
 

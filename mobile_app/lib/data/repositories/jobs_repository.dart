@@ -377,5 +377,11 @@ class JobsRepository extends BaseRepository {
     final res = await api.getBytes('/customers/$customerId/site-report/$reportId/images/$imageId/content');
     return res.data ?? [];
   }
+
+  Future<List<Map<String, dynamic>>> getJobTools(int jobId) async {
+    final res = await api.get<List<dynamic>>('/jobs/$jobId/tools');
+    final raw = res.data;
+    return raw is List ? _listOfMap(raw) : [];
+  }
 }
 

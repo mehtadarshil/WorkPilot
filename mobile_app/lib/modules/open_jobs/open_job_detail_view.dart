@@ -71,6 +71,8 @@ class OpenJobDetailView extends StatelessWidget {
                       label: formatJobState(job.priority!),
                       emphasized: false,
                     ),
+                  if (job.isPpmJob)
+                    _Chip(label: 'PPM', emphasized: false),
                 ],
               ),
               const SizedBox(height: 20),
@@ -122,6 +124,31 @@ class OpenJobDetailView extends StatelessWidget {
                   child: _DetailRow(
                     icon: Icons.place_outlined,
                     text: job.location!,
+                  ),
+                ),
+              ],
+              if (job.isPpmJob) ...[
+                const SizedBox(height: 12),
+                _Section(
+                  title: 'PPM contract',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (job.ppmContractTitle != null &&
+                          job.ppmContractTitle!.trim().isNotEmpty)
+                        _DetailRow(
+                          icon: Icons.assignment_outlined,
+                          text: job.ppmContractTitle!,
+                        ),
+                      if (job.ppmTaskName != null &&
+                          job.ppmTaskName!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _DetailRow(
+                          icon: Icons.build_circle_outlined,
+                          text: job.ppmTaskName!,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],

@@ -284,6 +284,32 @@ class _OpenJobListTile extends StatelessWidget {
                               ),
                             ),
                           ],
+                          if (job.isPpmJob) ...[
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.primary.withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                'PPM${job.ppmTaskName != null && job.ppmTaskName!.trim().isNotEmpty ? ' · ${job.ppmTaskName!.trim()}' : ''}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
                           if (job.description != null &&
                               job.description!.trim().isNotEmpty) ...[
                             const SizedBox(height: 6),

@@ -24,6 +24,7 @@ class JobDetailController extends GetxController {
   final RxList<Map<String, dynamic>> officeTasks = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> officers = <Map<String, dynamic>>[].obs;
   final RxList<Map<String, dynamic>> expenses = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> jobTools = <Map<String, dynamic>>[].obs;
 
   final RxBool loading = true.obs;
   final RxString error = ''.obs;
@@ -63,6 +64,7 @@ class JobDetailController extends GetxController {
       List<Map<String, dynamic>> tasks = [];
       List<Map<String, dynamic>> offs = [];
       List<Map<String, dynamic>> exp = [];
+      List<Map<String, dynamic>> tls = [];
       try {
         ev = await _jobs.getJobDiaryEvents(jobId);
       } catch (_) {}
@@ -75,10 +77,14 @@ class JobDetailController extends GetxController {
       try {
         exp = await _jobs.getJobExpenses(jobId);
       } catch (_) {}
+      try {
+        tls = await _jobs.getJobTools(jobId);
+      } catch (_) {}
       diaryEvents.assignAll(ev);
       officeTasks.assignAll(tasks);
       officers.assignAll(offs);
       expenses.assignAll(exp);
+      jobTools.assignAll(tls);
     } on ApiException catch (e) {
       error.value = e.message;
       job.value = null;

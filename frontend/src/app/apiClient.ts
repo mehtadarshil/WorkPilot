@@ -32,8 +32,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     ...(options.headers || {}),
   };
 
-  if (options.authToken) {
-    (headers as Record<string, string>)['Authorization'] = `Bearer ${options.authToken}`;
+  let authToken = options.authToken;
+  if (authToken === undefined && typeof window !== 'undefined') {
+    authToken = window.localStorage.getItem('wp_token');
+  }
+  if (authToken) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
 
   const response = await fetch(url, {
@@ -149,7 +153,11 @@ export function deleteRequest(path: string, authToken?: string | null) {
 export async function getBlob(path: string, authToken?: string | null): Promise<Blob> {
   const url = `${API_BASE_URL}${path}`;
   const headers: HeadersInit = {};
-  if (authToken) (headers as Record<string, string>).Authorization = `Bearer ${authToken}`;
+  let token = authToken;
+  if (token === undefined && typeof window !== 'undefined') {
+    token = window.localStorage.getItem('wp_token');
+  }
+  if (token) (headers as Record<string, string>).Authorization = `Bearer ${token}`;
   
   let response = await fetch(url, { method: 'GET', headers });
 

@@ -231,11 +231,14 @@ class _JobTabPartsState extends State<JobTabParts> {
               final id = (p['id'] as num?)?.toInt();
               final name = (p['part_name'] as String?) ?? '';
               final st = (p['status'] as String?) ?? '';
+              final stockLoc = p['stock_item_location'] as String?;
+              final stockQty = p['stock_item_quantity'] as num?;
+              final stockInfo = stockLoc != null ? ' · Stock: $stockLoc (${stockQty ?? 0} avail)' : '';
               return ListTile(
                 tileColor: AppColors.whiteOverlay(0.06),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 title: Text(name, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text('Status: $st · Qty ${p['quantity']}', style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)),
+                subtitle: Text('Status: $st · Qty ${p['quantity']}$stockInfo', style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)),
                 trailing: id != null
                     ? IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.redAccent),

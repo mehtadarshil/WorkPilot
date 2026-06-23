@@ -1,0 +1,39 @@
+export type { CalendarVisit, HoverAnchor } from './calendarVisitTypes';
+export { CalendarVisitBlock } from './CalendarVisitBlock';
+export { CalendarVisitHoverCard } from './CalendarVisitHoverCard';
+export { paletteForJob, resolveVisitStatus } from './calendarVisitTheme';
+
+export function diaryEventToVisit(evt: {
+  diary_id: number;
+  job_id: number;
+  start_time: string;
+  duration_minutes: number;
+  title: string;
+  customer_full_name: string;
+  customer_address?: string;
+  site_contact_name?: string | null;
+  event_status: string;
+  job_number?: string | null;
+  customer_email?: string | null;
+  notes?: string | null;
+  officer_full_name?: string | null;
+  officers?: { full_name: string }[];
+}): import('./calendarVisitTypes').CalendarVisit {
+  return {
+    id: evt.diary_id,
+    jobId: evt.job_id,
+    startTime: evt.start_time,
+    durationMinutes: evt.duration_minutes,
+    title: evt.title,
+    customerName: evt.site_contact_name?.trim() || evt.customer_full_name,
+    address: evt.customer_address,
+    eventStatus: evt.event_status,
+    jobNumber: evt.job_number,
+    customerEmail: evt.customer_email,
+    notes: evt.notes,
+    officerNames:
+      evt.officers && evt.officers.length > 0
+        ? evt.officers.map((o) => o.full_name).join(', ')
+        : evt.officer_full_name || null,
+  };
+}

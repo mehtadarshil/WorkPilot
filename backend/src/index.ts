@@ -48,6 +48,9 @@ import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
 import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
+import { ensurePpmContractSchema } from './ppmContracts/schema';
+import { mountPpmContractRoutes, handlePpmJobCompletion } from './ppmContracts/routes';
+import { computeSlaDueAt } from './ppmContracts/service';
 import {
   getTenantScopeUserId,
   requirePermission,
@@ -88,7 +91,7 @@ import { getFraTemplateDefinition } from './siteReportTemplates/fraTemplateDefin
 import { normalizeCustomerImageUpload } from './imageUploadNormalize';
 import { ensureCustomerSiteReportCertificateNumber, generateCustomerSiteReportPdfBuffer } from './siteReportPrintHtml';
 import { PdfRenderUnavailableError } from './jobClientReportPdf';
-import { authLimiter } from './middleware/rateLimiters';
+import { authLimiter, refreshLimiter } from './middleware/rateLimiters';
 import {
   loadCustomerSiteReportImageBuffer,
   removeCustomerSiteReportImageDirs,
@@ -113,6 +116,11 @@ import {
   canonicalBrandingLogoPath,
   resolveBrandingLogoPublicUrl,
 } from './brandingLogoUrl';
+import {
+  ensureStockToolsSchema,
+  mountStockToolsRoutes,
+  syncStockTransaction,
+} from './stockToolsRoutes';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -647,6 +655,8 @@ pool.query(`ALTER TABLE customer_specific_notes ADD COLUMN IF NOT EXISTS created
   .then(() => console.log('Checked customer_specific_notes created_by column'))
   .catch(err => console.error('Migration error (customer_specific_notes created_by):', err));
 
+ensureStockToolsSchema(pool);
+
 type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
 
@@ -729,6 +739,8 @@ interface DbJob {
   expected_completion?: Date | null;
   completed_service_items?: string[] | null;
   charge_type?: string;
+  ppm_contract_id?: number | null;
+  ppm_contract_task_id?: number | null;
 }
 
 interface DbOfficer {
@@ -2274,6 +2286,8 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
   await ensureStaffWorkSchema(pool);
   await ensureHolidaySchema(pool);
+  await ensurePpmContractSchema(pool);
+  await ensureStockToolsSchema(pool);
 
   // Migrate existing single-officer assignments into junction tables
   await pool.query(`
@@ -3013,7 +3027,7 @@ app.post('/api/auth/login', authLimiter, async (req: Request, res: Response) => 
   }
 });
 
-app.post('/api/auth/refresh', authLimiter, async (req: Request, res: Response) => {
+app.post('/api/auth/refresh', refreshLimiter, async (req: Request, res: Response) => {
   const { refreshToken } = req.body as { refreshToken?: string };
   if (!refreshToken) {
     return res.status(400).json({ message: 'Refresh token is required' });
@@ -3806,10 +3820,15 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
               j.schedule_start, j.duration_minutes, j.scheduling_notes,
               j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
               j.start_date, j.deadline, j.charge_type,
+              j.ppm_contract_id, j.ppm_contract_task_id,
+              pt.name AS ppm_task_name,
+              pc.title AS ppm_contract_title,
               c.full_name AS customer_full_name
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
+       LEFT JOIN ppm_contract_tasks pt ON pt.id = j.ppm_contract_task_id
+       LEFT JOIN ppm_contracts pc ON pc.id = j.ppm_contract_id
        WHERE (j.officer_id = $1 OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $1))
          AND j.state NOT IN ('completed', 'closed')
        ORDER BY j.schedule_start ASC NULLS LAST, j.updated_at DESC
@@ -3835,6 +3854,9 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
       charge_type: r.charge_type,
+      ppm_contract_id: r.ppm_contract_id ?? null,
+      ppm_task_name: (r as { ppm_task_name?: string | null }).ppm_task_name ?? null,
+      ppm_contract_title: (r as { ppm_contract_title?: string | null }).ppm_contract_title ?? null,
     }));
     return res.json({ jobs });
   } catch (error) {
@@ -6473,6 +6495,36 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
       [id]
     );
 
+    let ppm: Record<string, unknown> | null = null;
+    const ppmContractId = jobRest.ppm_contract_id as number | null | undefined;
+    const ppmTaskId = jobRest.ppm_contract_task_id as number | null | undefined;
+    if (ppmContractId != null) {
+      const ppmRow = await pool.query(
+        `SELECT c.id, c.title, c.reference, c.sla_response_minutes, c.sla_completion_minutes,
+                t.id AS task_id, t.name AS task_name, t.next_due_date::text AS task_next_due
+         FROM ppm_contracts c
+         LEFT JOIN ppm_contract_tasks t ON t.id = $2
+         WHERE c.id = $1`,
+        [ppmContractId, ppmTaskId ?? null],
+      );
+      if ((ppmRow.rowCount ?? 0) > 0) {
+        const pr = ppmRow.rows[0] as Record<string, unknown>;
+        const taskDue = pr.task_next_due ? String(pr.task_next_due).slice(0, 10) : null;
+        const slaDue = computeSlaDueAt(taskDue, pr.sla_completion_minutes != null ? Number(pr.sla_completion_minutes) : null);
+        const now = Date.now();
+        ppm = {
+          contract_id: pr.id,
+          contract_title: pr.title,
+          contract_reference: pr.reference,
+          task_id: pr.task_id,
+          task_name: pr.task_name,
+          task_next_due: taskDue,
+          sla_due_at: slaDue,
+          sla_breached: slaDue ? new Date(slaDue).getTime() < now : false,
+        };
+      }
+    }
+
     return res.json({
       job: {
         ...jobRest,
@@ -6489,6 +6541,7 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
         work_address: workAddress,
         pricing_items: pItems.rows,
         officers: officersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
+        ppm,
       },
     });
   } catch (error) {
@@ -6789,6 +6842,10 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
           console.error('Merge job description report questions:', mergeErr);
         }
       }
+    }
+
+    if (body.state === 'completed' || body.state === 'closed') {
+      await handlePpmJobCompletion(pool, id, userId, createInvoiceFromJob);
     }
 
     // Final fetch to return full object
@@ -7802,9 +7859,11 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_ca
     params.push(limit, offset);
     const result = await pool.query(
       `SELECT jp.*, COALESCE(u.full_name, u.email, 'User') AS created_by_name,
+              s.name AS stock_item_name, s.location AS stock_item_location, s.quantity AS stock_item_quantity,
               COUNT(*) OVER() AS full_count
        FROM job_parts jp
        LEFT JOIN users u ON u.id = jp.created_by
+       LEFT JOIN stock_items s ON s.id = jp.stock_item_id
        ${where}
        ORDER BY jp.created_at DESC
        LIMIT $${p++} OFFSET $${p}`,
@@ -7833,6 +7892,10 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_ca
         created_at: (r.created_at as Date).toISOString(),
         created_by: r.created_by != null ? Number(r.created_by) : null,
         created_by_name: (r.created_by_name as string) ?? 'User',
+        stock_item_id: r.stock_item_id != null ? Number(r.stock_item_id) : null,
+        stock_item_name: r.stock_item_name != null ? String(r.stock_item_name) : null,
+        stock_item_location: r.stock_item_location != null ? String(r.stock_item_location) : null,
+        stock_item_quantity: r.stock_item_quantity != null ? Number(r.stock_item_quantity) : null,
       })),
       total,
       status_counts,
@@ -7895,13 +7958,24 @@ app.post('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_c
 
     const unitSell = computeJobPartUnitSell(unitCost, markupPct);
 
+    const stockItemIdRaw = body.stock_item_id;
+    const stockItemId = stockItemIdRaw !== undefined && stockItemIdRaw !== null && stockItemIdRaw !== ''
+      ? parseInt(String(stockItemIdRaw), 10)
+      : null;
+
     const ins = await pool.query(
       `INSERT INTO job_parts (job_id, part_catalog_id, part_name, mpn, quantity, fulfillment_type, status,
-         unit_cost_price, markup_pct, vat_rate, unit_sell_price, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [jobId, partCatalogId, partName, mpn, qty, fulfillmentType, status, unitCost, markupPct, vatRate, unitSell, userId],
+         unit_cost_price, markup_pct, vat_rate, unit_sell_price, created_by, stock_item_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [jobId, partCatalogId, partName, mpn, qty, fulfillmentType, status, unitCost, markupPct, vatRate, unitSell, userId, stockItemId],
     );
-    return res.status(201).json({ part: { id: Number(ins.rows[0].id) } });
+    const newPartId = Number(ins.rows[0].id);
+
+    if (stockItemId !== null) {
+      await syncStockTransaction(pool, newPartId, jobId, stockItemId, qty, status, userId);
+    }
+
+    return res.status(201).json({ part: { id: newPartId } });
   } catch (error) {
     console.error('Create job part error:', error);
     return res.status(500).json({ message: 'Internal server error' });
@@ -8018,6 +8092,10 @@ app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess
         values.push(vr);
       }
     }
+    if (body.stock_item_id !== undefined) {
+      updates.push(`stock_item_id = $${idx++}`);
+      values.push(body.stock_item_id ? parseInt(String(body.stock_item_id), 10) || null : null);
+    }
 
     if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
 
@@ -8032,6 +8110,20 @@ app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess
        WHERE job_id = $1 AND id = $2`,
       [jobId, partId],
     );
+
+    const newPartRes = await pool.query<{
+      quantity: number;
+      status: string;
+      stock_item_id: number | null;
+    }>(
+      'SELECT quantity, status, stock_item_id FROM job_parts WHERE job_id = $1 AND id = $2',
+      [jobId, partId]
+    );
+    if ((newPartRes.rowCount ?? 0) > 0) {
+      const newPart = newPartRes.rows[0];
+      await syncStockTransaction(pool, partId, jobId, newPart.stock_item_id, newPart.quantity, newPart.status, userId);
+    }
+
     return res.json({ success: true });
   } catch (error) {
     console.error('Update job part error:', error);
@@ -8050,6 +8142,8 @@ app.delete('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAcces
     const jobCheck = await pool.query<DbJob>('SELECT id, created_by FROM jobs WHERE id = $1', [jobId]);
     if ((jobCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
     if (!isSuperAdmin && jobCheck.rows[0].created_by !== userId) return res.status(404).json({ message: 'Job not found' });
+
+    await syncStockTransaction(pool, partId, jobId, null, 0, 'cancelled', userId);
 
     const result = await pool.query('DELETE FROM job_parts WHERE job_id = $1 AND id = $2', [jobId, partId]);
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Part line not found' });
@@ -8198,14 +8292,22 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
                 NULLIF(TRIM(j.contact_name), ''),
                 c.full_name
               ) AS site_contact_name,
-              NULLIF(TRIM(CONCAT_WS(', ',
-                NULLIF(TRIM(c.address_line_1), ''),
-                NULLIF(TRIM(c.town), ''),
-                NULLIF(TRIM(c.postcode), '')
-              )), '') AS customer_address
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ',
+                  NULLIF(TRIM(wa.address_line_1), ''),
+                  NULLIF(TRIM(wa.town), ''),
+                  NULLIF(TRIM(wa.postcode), '')
+                )), ''),
+                NULLIF(TRIM(CONCAT_WS(', ',
+                  NULLIF(TRIM(c.address_line_1), ''),
+                  NULLIF(TRIM(c.town), ''),
+                  NULLIF(TRIM(c.postcode), '')
+                )), '')
+              ) AS customer_address
        FROM diary_events d
        JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE ${timeWhere}
@@ -8966,6 +9068,12 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
       throw txError;
     } finally {
       client.release();
+    }
+
+    try {
+      await handlePpmJobCompletion(pool, ev.job_id, userId, createInvoiceFromJob);
+    } catch (ppmErr) {
+      console.error('Advance PPM task from quotation diary completion:', ppmErr);
     }
 
     return res.status(201).json({
@@ -11925,13 +12033,23 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       );
       const isQuotationVisitJob = !!jobVisitCheck.rows[0]?.is_quotation_visit;
       if (nextState === 'completed' && !isQuotationVisitJob) {
-        try {
-          await createInvoiceFromJob(row.job_id, userId);
-        } catch (invErr) {
-          console.error('Auto invoice after diary visit completed:', invErr);
+        const ppmCheck = await pool.query<{ ppm_contract_id: number | null }>(
+          'SELECT ppm_contract_id FROM jobs WHERE id = $1',
+          [row.job_id],
+        );
+        const isPpmJob = ppmCheck.rows[0]?.ppm_contract_id != null;
+        if (!isPpmJob) {
+          try {
+            await createInvoiceFromJob(row.job_id, userId);
+          } catch (invErr) {
+            console.error('Auto invoice after diary visit completed:', invErr);
+          }
         }
       }
       await pool.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [nextState, row.job_id]);
+      if (nextState === 'completed' || nextState === 'closed') {
+        await handlePpmJobCompletion(pool, row.job_id, userId, createInvoiceFromJob);
+      }
     }
 
     return res.json({ message: 'Diary event updated successfully', status: storedStatus });
@@ -13348,7 +13466,11 @@ async function resolveInvoiceBillingFromWorkAddress(
   };
 }
 
-async function createInvoiceFromJob(jobId: number, actingUserId: number): Promise<number | null> {
+async function createInvoiceFromJob(
+  jobId: number,
+  actingUserId: number,
+  opts?: { description?: string | null },
+): Promise<number | null> {
   const jobResult = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
   if (jobResult.rowCount === 0) return null;
   const job = jobResult.rows[0] as Record<string, unknown>;
@@ -13410,9 +13532,11 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
   const totalAmount = subtotal + taxAmount;
 
   const publicToken = crypto.randomBytes(32).toString('hex');
+  const invoiceDescription =
+    typeof opts?.description === 'string' && opts.description.trim() ? opts.description.trim() : null;
   const invResult = await pool.query(
-    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token, billing_address, invoice_work_address_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13)
+    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token, billing_address, invoice_work_address_id, description)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13, $14)
      RETURNING id`,
     [
       invoiceNumber,
@@ -13428,6 +13552,7 @@ async function createInvoiceFromJob(jobId: number, actingUserId: number): Promis
       publicToken,
       billingAddress,
       invoiceWorkAddressId,
+      invoiceDescription,
     ],
   );
 
@@ -21525,6 +21650,8 @@ mountJobCostsRoutes(app, { pool, authenticate });
 mountStaffWorkRoutes(app, { pool, authenticate });
 mountHolidayRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
+mountStockToolsRoutes(app, { pool, authenticate });
+mountPpmContractRoutes(app, { pool, authenticate });
 
 mountJobClientPanelRoutes(app, {
   pool,

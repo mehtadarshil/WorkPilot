@@ -44,6 +44,7 @@ export type JobPartRow = {
   unit_sell_price: number;
   created_at: string;
   created_by_name: string;
+  stock_item_id: number | null;
 };
 
 interface Props {
@@ -67,7 +68,10 @@ export default function JobPartsTab({ jobId }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [catalogOptions, setCatalogOptions] = useState<SearchableSelectOption[]>([]);
+  const [catalogParts, setCatalogParts] = useState<any[]>([]);
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
+  const [stockItems, setStockItems] = useState<any[]>([]);
+  const [selectedStockId, setSelectedStockId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitCost, setUnitCost] = useState('');
   const [markup, setMarkup] = useState('0');
@@ -127,6 +131,7 @@ export default function JobPartsTab({ jobId }: Props) {
         '/part-catalog?limit=200',
         token,
       );
+      setCatalogParts(res.parts || []);
       setCatalogOptions(
         (res.parts || []).map((p) => ({
           value: String(p.id),
@@ -135,13 +140,25 @@ export default function JobPartsTab({ jobId }: Props) {
         })),
       );
     } catch {
+      setCatalogParts([]);
       setCatalogOptions([]);
+    }
+  }, [token]);
+
+  const loadStockItems = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await getJson<any[]>('/stock', token);
+      setStockItems(res || []);
+    } catch {
+      setStockItems([]);
     }
   }, [token]);
 
   useEffect(() => {
     void loadCatalog();
-  }, [loadCatalog]);
+    void loadStockItems();
+  }, [loadCatalog, loadStockItems]);
 
   const loadKits = useCallback(async () => {
     if (!token) return;
@@ -180,6 +197,7 @@ export default function JobPartsTab({ jobId }: Props) {
 
   const resetAddForm = () => {
     setSelectedCatalogId('');
+    setSelectedStockId('');
     setQuantity('1');
     setUnitCost('');
     setMarkup('0');
@@ -201,6 +219,7 @@ export default function JobPartsTab({ jobId }: Props) {
             markup_pct: parseFloat(markup) || 0,
             vat_rate: parseFloat(vatRate) || 20,
             fulfillment_type: fulfillment.trim() || null,
+            stock_item_id: selectedStockId ? parseInt(selectedStockId, 10) : null,
           },
           token,
         );
@@ -215,6 +234,7 @@ export default function JobPartsTab({ jobId }: Props) {
           part_catalog_id: parseInt(selectedCatalogId, 10),
           quantity: parseFloat(quantity) || 1,
           fulfillment_type: fulfillment.trim() || null,
+          stock_item_id: selectedStockId ? parseInt(selectedStockId, 10) : null,
         };
         if (unitCost.trim() !== '') body.unit_cost_price = parseFloat(unitCost);
         if (markup.trim() !== '') body.markup_pct = parseFloat(markup);
@@ -332,6 +352,7 @@ export default function JobPartsTab({ jobId }: Props) {
   const startEdit = (p: JobPartRow) => {
     setEditing(p);
     setSelectedCatalogId('');
+    setSelectedStockId(p.stock_item_id ? String(p.stock_item_id) : '');
     setQuantity(String(p.quantity));
     setUnitCost(String(p.unit_cost_price));
     setMarkup(String(p.markup_pct));
@@ -478,6 +499,14 @@ export default function JobPartsTab({ jobId }: Props) {
                   value={selectedCatalogId}
                   onChange={(v) => {
                     setSelectedCatalogId(v);
+                    if (v) {
+                      const cp = catalogParts.find(p => String(p.id) === v);
+                      if (cp) {
+                        setUnitCost(String(cp.default_unit_cost ?? ''));
+                        setMarkup(String(cp.default_markup_pct ?? '0'));
+                        setVatRate(String(cp.default_vat_rate ?? '20'));
+                      }
+                    }
                   }}
                   searchPlaceholder="Search catalogue…"
                   emptyButtonLabel="Please select a part"
@@ -496,6 +525,34 @@ export default function JobPartsTab({ jobId }: Props) {
               </button>
             </div>
           )}
+
+          <div className="md:col-span-2">
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Link to Stock Item (Optional)</label>
+            <select
+              value={selectedStockId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedStockId(val);
+                if (val) {
+                  const st = stockItems.find(s => String(s.id) === val);
+                  if (st) {
+                    setFulfillment(`Van stock - ${st.location}`);
+                  }
+                }
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+            >
+              <option value="">-- Not Linked to Stock --</option>
+              {stockItems.map((s) => (
+                <option key={s.id} value={String(s.id)}>
+                  {s.name} ({s.location} - {s.quantity} available)
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] leading-snug text-slate-500">
+              Linking to stock will automatically deduct inventory when status is "Installed" or "Picked up".
+            </p>
+          </div>
 
           <div>
             <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Quantity *</label>
@@ -621,7 +678,21 @@ export default function JobPartsTab({ jobId }: Props) {
                         <Pencil className="size-4" />
                       </button>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{p.part_name}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">
+                      <div>{p.part_name}</div>
+                      {p.stock_item_id && (
+                        <div className="mt-0.5">
+                          {(() => {
+                            const st = stockItems.find((s) => s.id === p.stock_item_id);
+                            return (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#14B8A6]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#14B8A6]">
+                                <Package className="size-2.5" /> Stock: {st ? `${st.name} (${st.location})` : `Item #${p.stock_item_id}`}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{p.mpn || '—'}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{Number(p.quantity).toFixed(2)}</td>
                     <td className="px-4 py-3 text-slate-600">{p.fulfillment_type || '—'}</td>

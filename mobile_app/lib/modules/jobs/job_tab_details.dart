@@ -69,6 +69,51 @@ String _workSiteLine(Map<String, dynamic> wa) {
   return parts.isEmpty ? name : '$name · $parts';
 }
 
+Widget _ppmBanner(Map<String, dynamic> ppm) {
+  final title = _nonEmpty(_str(ppm, 'contract_title')) ?? 'PPM contract';
+  final task = _nonEmpty(_str(ppm, 'task_name'));
+  final due = _nonEmpty(_str(ppm, 'task_next_due'));
+  final breached = ppm['sla_breached'] == true;
+  final bg = breached ? const Color(0xFF451a1a) : const Color(0xFF134e4a);
+  final border = breached ? const Color(0xFFf87171) : AppColors.primary;
+  return DecoratedBox(
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(12),
+      color: bg.withValues(alpha: 0.35),
+      border: Border.all(color: border.withValues(alpha: 0.5)),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_repeat_rounded, size: 18, color: border),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'PPM: $title${task != null ? ' — $task' : ''}',
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          if (due != null) ...[
+            const SizedBox(height: 4),
+            Text('Task due: ${_formatIsoShort(due)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate300)),
+          ],
+          if (breached)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('SLA breached', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFfca5a5))),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
 class JobTabDetails extends StatelessWidget {
   const JobTabDetails({super.key});
 
@@ -107,6 +152,10 @@ class JobTabDetails extends StatelessWidget {
               if (_str(j, 'priority').isNotEmpty) _Chip(label: formatJobState(_str(j, 'priority')), emphasized: false),
             ],
           ),
+          if (j['ppm'] is Map) ...[
+            const SizedBox(height: 12),
+            _ppmBanner(Map<String, dynamic>.from(j['ppm'] as Map)),
+          ],
           const SizedBox(height: 8),
           Obx(() {
             return DropdownButtonFormField<String>(
@@ -218,6 +267,37 @@ class JobTabDetails extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          _section(
+            'Required tools',
+            Obx(() {
+              final tools = c.jobTools;
+              if (tools.isEmpty) {
+                return Text('No required tools assigned to this job.', style: _bodyStyle);
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final t in tools)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.build_rounded, size: 16, color: AppColors.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${t['name'] ?? ''} (${t['category'] ?? ''}) · Status: ${t['status'] ?? ''} · Loc: ${t['location'] ?? ''}',
+                              style: _bodyStyle,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ),
           const SizedBox(height: 12),
           _section(
             'Expenses',

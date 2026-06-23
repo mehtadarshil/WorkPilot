@@ -19,6 +19,9 @@ class OpenJobSummary {
     this.startDate,
     this.deadline,
     this.chargeType,
+    this.ppmContractId,
+    this.ppmTaskName,
+    this.ppmContractTitle,
   });
 
   factory OpenJobSummary.fromJson(Map<String, dynamic> json) {
@@ -41,6 +44,9 @@ class OpenJobSummary {
       startDate: json['start_date'] as String?,
       deadline: json['deadline'] as String?,
       chargeType: json['charge_type'] as String?,
+      ppmContractId: (json['ppm_contract_id'] as num?)?.toInt(),
+      ppmTaskName: json['ppm_task_name'] as String?,
+      ppmContractTitle: json['ppm_contract_title'] as String?,
     );
   }
 
@@ -62,4 +68,9 @@ class OpenJobSummary {
   final String? startDate;
   final String? deadline;
   final String? chargeType;
+  final int? ppmContractId;
+  final String? ppmTaskName;
+  final String? ppmContractTitle;
+
+  bool get isPpmJob => ppmContractId != null;
 }
