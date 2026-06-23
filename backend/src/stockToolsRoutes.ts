@@ -12,6 +12,24 @@ import {
   workpilotFileKey,
   workpilotFileUrl
 } from './workpilotFileStorage';
+import { decodeBase64ImageUpload } from './inlineBlobStorage';
+
+function storeStockToolImage(
+  category: 'stock-photos' | 'tool-photos',
+  image_base64: string,
+  original_filename?: string | null,
+  content_type?: string | null,
+): Promise<string> {
+  const decoded = decodeBase64ImageUpload(image_base64, content_type, original_filename);
+  if (!decoded) {
+    throw new Error('Invalid image data');
+  }
+  const ext = decoded.extension || path.extname(original_filename || '') || '.png';
+  const storedFilename = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+  return writeWorkpilotFile(category, [], storedFilename, decoded.buffer, decoded.contentType).then(
+    () => `/api/stock-tools/files/${category}/${storedFilename}`,
+  );
+}
 
 export async function ensureStockToolsSchema(pool: Pool) {
   try {
@@ -281,17 +299,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     try {
       let imageUrl: string | null = null;
       if (image_base64) {
-        const buf = Buffer.from(image_base64, 'base64');
-        const ext = path.extname(original_filename || 'image.png') || '.png';
-        const storedFilename = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
-        const uploaded = await writeWorkpilotFile(
-          'stock-photos',
-          [],
-          storedFilename,
-          buf,
-          content_type || 'image/png'
-        );
-        imageUrl = `/api/stock-tools/files/stock-photos/${storedFilename}`;
+        imageUrl = await storeStockToolImage('stock-photos', image_base64, original_filename, content_type);
       }
 
       const ins = await pool.query(
@@ -340,17 +348,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       let imageUrl = existing.image_url;
       if (image_base64) {
-        const buf = Buffer.from(image_base64, 'base64');
-        const ext = path.extname(original_filename || 'image.png') || '.png';
-        const storedFilename = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
-        await writeWorkpilotFile(
-          'stock-photos',
-          [],
-          storedFilename,
-          buf,
-          content_type || 'image/png'
-        );
-        imageUrl = `/api/stock-tools/files/stock-photos/${storedFilename}`;
+        imageUrl = await storeStockToolImage('stock-photos', image_base64, original_filename, content_type);
       }
 
       const updates: string[] = [];
@@ -659,17 +657,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     try {
       let imageUrl: string | null = null;
       if (image_base64) {
-        const buf = Buffer.from(image_base64, 'base64');
-        const ext = path.extname(original_filename || 'image.png') || '.png';
-        const storedFilename = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
-        const uploaded = await writeWorkpilotFile(
-          'tool-photos',
-          [],
-          storedFilename,
-          buf,
-          content_type || 'image/png'
-        );
-        imageUrl = `/api/stock-tools/files/tool-photos/${storedFilename}`;
+        imageUrl = await storeStockToolImage('tool-photos', image_base64, original_filename, content_type);
       }
 
       const assignedId = assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null;
@@ -710,17 +698,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       let imageUrl = existing.image_url;
       if (image_base64) {
-        const buf = Buffer.from(image_base64, 'base64');
-        const ext = path.extname(original_filename || 'image.png') || '.png';
-        const storedFilename = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
-        await writeWorkpilotFile(
-          'tool-photos',
-          [],
-          storedFilename,
-          buf,
-          content_type || 'image/png'
-        );
-        imageUrl = `/api/stock-tools/files/tool-photos/${storedFilename}`;
+        imageUrl = await storeStockToolImage('tool-photos', image_base64, original_filename, content_type);
       }
 
       const updates: string[] = [];

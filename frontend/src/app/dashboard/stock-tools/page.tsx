@@ -22,7 +22,23 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
-import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
+import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
+
+function imageUploadFields(dataUrl: string, originalFilename: string, contentType: string) {
+  const m = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl.trim());
+  if (m) {
+    return {
+      image_base64: m[2],
+      original_filename: originalFilename,
+      content_type: m[1],
+    };
+  }
+  return {
+    image_base64: dataUrl,
+    original_filename: originalFilename,
+    content_type: contentType,
+  };
+}
 
 // --- Types ---
 interface StockItem {
@@ -301,9 +317,13 @@ export default function StockToolsPage() {
       category: stockForm.category,
       quality: stockForm.quality,
       location: stockForm.location,
-      image_base64: stockForm.image_base64 || undefined,
-      original_filename: stockForm.original_filename || undefined,
-      content_type: stockForm.content_type || undefined,
+      ...(stockForm.image_base64
+        ? imageUploadFields(
+            stockForm.image_base64,
+            stockForm.original_filename,
+            stockForm.content_type,
+          )
+        : {}),
     };
 
     if (!payload.name) {
@@ -399,9 +419,9 @@ export default function StockToolsPage() {
       status: toolForm.status,
       location: toolForm.location,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
-      image_base64: toolForm.image_base64 || undefined,
-      original_filename: toolForm.original_filename || undefined,
-      content_type: toolForm.content_type || undefined,
+      ...(toolForm.image_base64
+        ? imageUploadFields(toolForm.image_base64, toolForm.original_filename, toolForm.content_type)
+        : {}),
     };
 
     if (!payload.name) {
@@ -581,11 +601,17 @@ export default function StockToolsPage() {
                           <div className="flex gap-4 mb-3">
                             <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
                               {item.image_url && activeToken ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={resolveStockToolImageUrl(item.image_url, 'stock-photos', activeToken) ?? ''}
+                                <AuthenticatedStockImage
+                                  imageUrl={item.image_url}
+                                  category="stock-photos"
+                                  token={activeToken}
                                   alt={item.name}
                                   className="size-full object-cover"
+                                  fallback={
+                                    <div className="flex size-full items-center justify-center text-slate-300">
+                                      <Package className="size-6" />
+                                    </div>
+                                  }
                                 />
                               ) : (
                                 <div className="flex size-full items-center justify-center text-slate-300">
@@ -820,11 +846,17 @@ export default function StockToolsPage() {
                     {/* Tool Image Preview Header */}
                     <div className="relative aspect-video w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center">
                       {tool.image_url && activeToken ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={resolveStockToolImageUrl(tool.image_url, 'tool-photos', activeToken) ?? ''}
+                        <AuthenticatedStockImage
+                          imageUrl={tool.image_url}
+                          category="tool-photos"
+                          token={activeToken}
                           alt={tool.name}
                           className="size-full object-cover"
+                          fallback={
+                            <div className="flex size-full items-center justify-center text-slate-300">
+                              <Wrench className="size-8" />
+                            </div>
+                          }
                         />
                       ) : (
                         <div className="flex size-full items-center justify-center text-slate-300">
@@ -1147,9 +1179,10 @@ export default function StockToolsPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={stockForm.image_base64} alt="Preview" className="size-full object-cover" />
                     ) : (editingStockItem?.image_url && activeToken) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={resolveStockToolImageUrl(editingStockItem.image_url, 'stock-photos', activeToken) ?? ''}
+                      <AuthenticatedStockImage
+                        imageUrl={editingStockItem.image_url}
+                        category="stock-photos"
+                        token={activeToken}
                         alt="Preview"
                         className="size-full object-cover"
                       />
@@ -1297,9 +1330,10 @@ export default function StockToolsPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={toolForm.image_base64} alt="Preview" className="size-full object-cover" />
                     ) : (editingTool?.image_url && activeToken) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={resolveStockToolImageUrl(editingTool.image_url, 'tool-photos', activeToken) ?? ''}
+                      <AuthenticatedStockImage
+                        imageUrl={editingTool.image_url}
+                        category="tool-photos"
+                        token={activeToken}
                         alt="Preview"
                         className="size-full object-cover"
                       />

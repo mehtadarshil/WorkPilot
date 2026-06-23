@@ -36,6 +36,29 @@ export function parseInlineDataUrl(value: string): InlineDataUrl | null {
   return { buffer, contentType, extension };
 }
 
+/** Accept raw base64 or `data:*;base64,...` from browser FileReader. */
+export function decodeBase64ImageUpload(
+  imageBase64: string,
+  fallbackContentType?: string | null,
+  originalFilename?: string | null,
+): InlineDataUrl | null {
+  const trimmed = String(imageBase64 || '').trim();
+  if (!trimmed) return null;
+  const asDataUrl = parseInlineDataUrl(trimmed);
+  if (asDataUrl) return asDataUrl;
+  try {
+    const buffer = Buffer.from(trimmed, 'base64');
+    if (buffer.length === 0) return null;
+    const ext = path.extname(originalFilename || '').toLowerCase() || '.png';
+    const contentType =
+      (fallbackContentType && fallbackContentType.trim()) ||
+      contentTypeFromFilename(`file${ext}`);
+    return { buffer, contentType, extension: ext };
+  } catch {
+    return null;
+  }
+}
+
 export function contentTypeFromFilename(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';

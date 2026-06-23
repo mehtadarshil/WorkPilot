@@ -20,7 +20,7 @@ import Link from 'next/link';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 import { pickJobScheduledDateIso } from '../jobScheduledDate';
-import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
+import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
 import { VisitJobSheetTimeline } from './VisitJobSheetTimeline';
 import PpmSlaCountdown from './PpmSlaCountdown';
 import type { VisitStatusLog } from './visitStatusLabels';
@@ -1584,9 +1584,10 @@ export default function JobDetailsPage() {
                     <div key={t.id} className="flex gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50 relative group">
                       <div className="size-16 rounded-lg overflow-hidden border border-slate-200 bg-white shrink-0 flex items-center justify-center text-slate-300">
                         {t.image_url && activeToken ? (
-                           // eslint-disable-next-line @next/next/no-img-element
-                           <img
-                             src={resolveStockToolImageUrl(t.image_url, 'tool-photos', activeToken) ?? ''}
+                           <AuthenticatedStockImage
+                             imageUrl={t.image_url}
+                             category="tool-photos"
+                             token={activeToken}
                              alt={t.name}
                              className="size-full object-cover"
                            />
