@@ -20,6 +20,7 @@ import Link from 'next/link';
 import dayjs from 'dayjs';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 import { pickJobScheduledDateIso } from '../jobScheduledDate';
+import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
 import { VisitJobSheetTimeline } from './VisitJobSheetTimeline';
 import PpmSlaCountdown from './PpmSlaCountdown';
 import type { VisitStatusLog } from './visitStatusLabels';
@@ -1585,7 +1586,7 @@ export default function JobDetailsPage() {
                         {t.image_url && activeToken ? (
                            // eslint-disable-next-line @next/next/no-img-element
                            <img
-                             src={t.image_url.startsWith('/api/') ? `${t.image_url}?token=${activeToken}` : `/api/stock-tools/files/tool-photos/${t.image_url}?token=${activeToken}`}
+                             src={resolveStockToolImageUrl(t.image_url, 'tool-photos', activeToken) ?? ''}
                              alt={t.name}
                              className="size-full object-cover"
                            />

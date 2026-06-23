@@ -22,6 +22,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
 
 // --- Types ---
 interface StockItem {
@@ -582,7 +583,7 @@ export default function StockToolsPage() {
                               {item.image_url && activeToken ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
-                                  src={item.image_url.startsWith('/api/') ? `${item.image_url}?token=${activeToken}` : `/api/stock-tools/files/stock-photos/${item.image_url}?token=${activeToken}`}
+                                  src={resolveStockToolImageUrl(item.image_url, 'stock-photos', activeToken) ?? ''}
                                   alt={item.name}
                                   className="size-full object-cover"
                                 />
@@ -821,7 +822,7 @@ export default function StockToolsPage() {
                       {tool.image_url && activeToken ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={tool.image_url.startsWith('/api/') ? `${tool.image_url}?token=${activeToken}` : `/api/stock-tools/files/tool-photos/${tool.image_url}?token=${activeToken}`}
+                          src={resolveStockToolImageUrl(tool.image_url, 'tool-photos', activeToken) ?? ''}
                           alt={tool.name}
                           className="size-full object-cover"
                         />
@@ -1148,7 +1149,7 @@ export default function StockToolsPage() {
                     ) : (editingStockItem?.image_url && activeToken) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={editingStockItem.image_url.startsWith('/api/') ? `${editingStockItem.image_url}?token=${activeToken}` : `/api/stock-tools/files/stock-photos/${editingStockItem.image_url}?token=${activeToken}`}
+                        src={resolveStockToolImageUrl(editingStockItem.image_url, 'stock-photos', activeToken) ?? ''}
                         alt="Preview"
                         className="size-full object-cover"
                       />
@@ -1298,7 +1299,7 @@ export default function StockToolsPage() {
                     ) : (editingTool?.image_url && activeToken) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={editingTool.image_url.startsWith('/api/') ? `${editingTool.image_url}?token=${activeToken}` : `/api/stock-tools/files/tool-photos/${editingTool.image_url}?token=${activeToken}`}
+                        src={resolveStockToolImageUrl(editingTool.image_url, 'tool-photos', activeToken) ?? ''}
                         alt="Preview"
                         className="size-full object-cover"
                       />

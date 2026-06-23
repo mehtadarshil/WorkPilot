@@ -130,7 +130,8 @@ export async function writeWorkpilotFile(
   const key = workpilotFileKey(category, pathParts, storedFilename);
   const uploaded = await putSpacesBuffer(key, buffer, contentType);
   if (!uploaded) {
-    throw new Error(`Spaces storage is not configured for ${category}`);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(fullPath, buffer);
   }
   return { fullPath, spacesKey: key, fileUrl: spacesObjectUrl(key) };
 }
