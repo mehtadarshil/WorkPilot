@@ -949,7 +949,30 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     const hasStatus = rawStatus.length > 0;
     const hasExpenseType = rawExpenseType.length > 0;
 
-    if (!hasStatus && !hasExpenseType) {
+    let hasOfficerId = false;
+    let officerIdToSet: number | null = null;
+    if (body.officer_id !== undefined) {
+      hasOfficerId = true;
+      if (body.officer_id !== null) {
+        const parsed = parseId(body.officer_id);
+        if (!parsed) {
+          return res.status(400).json({ message: 'Invalid officer id' });
+        }
+        // Verify officer belongs to tenant
+        let officerCheck;
+        if (isSuperAdmin) {
+          officerCheck = await pool.query('SELECT id FROM officers WHERE id = $1', [parsed]);
+        } else {
+          officerCheck = await pool.query('SELECT id FROM officers WHERE id = $1 AND created_by = $2', [parsed, userId]);
+        }
+        if ((officerCheck.rowCount ?? 0) === 0) {
+          return res.status(400).json({ message: 'Officer not found or does not belong to tenant' });
+        }
+        officerIdToSet = parsed;
+      }
+    }
+
+    if (!hasStatus && !hasExpenseType && !hasOfficerId) {
       return res.status(400).json({ message: 'No fields to update' });
     }
     if (hasStatus && rawStatus !== 'approved' && rawStatus !== 'rejected' && rawStatus !== 'submitted') {
@@ -974,6 +997,11 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     if (hasExpenseType) {
       setParts.push(`expense_type = $${paramIndex++}`);
       params.push(rawExpenseType);
+    }
+
+    if (hasOfficerId) {
+      setParts.push(`officer_id = $${paramIndex++}`);
+      params.push(officerIdToSet);
     }
 
     setParts.push('updated_at = NOW()');

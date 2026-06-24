@@ -26,6 +26,7 @@ import { enUS } from 'date-fns/locale';
 import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { getBlob, getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import SearchableSelect from '../SearchableSelect';
 
 // --- Type Definitions ---
 type OfficerWorkRow = {
@@ -567,6 +568,20 @@ export default function StaffWorkPage() {
     }
   };
 
+  const updateExpenseOfficer = async (expenseId: number, officerId: number | null) => {
+    if (!token) return;
+    setUpdatingExpenseId(expenseId);
+    setSummaryError(null);
+    try {
+      await patchJson(`/job-expenses/${expenseId}`, { officer_id: officerId }, token);
+      await fetchSummaryData();
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Could not update expense officer');
+    } finally {
+      setUpdatingExpenseId(null);
+    }
+  };
+
   const resetOverheadForm = () => {
     setOverheadForm({ expense_date: today(), category: 'Insurance', description: '', amount: '' });
     setEditingOverheadId(null);
@@ -788,6 +803,13 @@ export default function StaffWorkPage() {
     () => [...(summary?.officers ?? [])].sort((a, b) => b.total_seconds - a.total_seconds),
     [summary],
   );
+
+  const officerOptions = useMemo(() => {
+    return officers.map((o) => ({
+      value: String(o.id),
+      label: o.full_name,
+    }));
+  }, [officers]);
 
   const totals = summary?.totals;
   const pendingExpenses = expenses.filter((e) => e.status === 'submitted');
@@ -1067,11 +1089,24 @@ export default function StaffWorkPage() {
                     pendingExpenses.map((e) => (
                       <tr key={e.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
-                        <td className="px-5 py-4">
-                          <p className="font-semibold text-slate-900">{expenseClaimerLabel(e)}</p>
-                          {e.officer_name && e.claimed_by_name && e.officer_name !== e.claimed_by_name && (
-                            <p className="text-xs text-slate-500">Officer: {e.officer_name}</p>
-                          )}
+                        <td className="px-5 py-4 w-64 min-w-[200px]">
+                          <SearchableSelect
+                            options={officerOptions}
+                            value={e.officer_id ? String(e.officer_id) : ''}
+                            onChange={(val) => {
+                              const nextId = val ? parseInt(val, 10) : null;
+                              if (nextId !== e.officer_id) {
+                                void updateExpenseOfficer(e.id, nextId);
+                              }
+                            }}
+                            disabled={updatingExpenseId === e.id}
+                            allowEmpty={true}
+                            emptyButtonLabel={expenseClaimerLabel(e)}
+                            emptyMenuLabel="No officer (unclaimed)"
+                            buttonClassName={`flex w-full min-w-0 items-center justify-between gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1 text-left text-xs font-semibold text-slate-700 outline-none transition focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 ${
+                              updatingExpenseId === e.id ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                          />
                         </td>
                         <td className="px-5 py-4">
                           <Link href={`/dashboard/jobs/${e.job_id}`} className="inline-flex items-center gap-1 font-semibold text-[#14B8A6] hover:underline">
@@ -1164,11 +1199,24 @@ export default function StaffWorkPage() {
                     approvedExpenses.map((e) => (
                       <tr key={e.id} className="hover:bg-slate-50">
                         <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
-                        <td className="px-5 py-4">
-                          <p className="font-semibold text-slate-900">{expenseClaimerLabel(e)}</p>
-                          {e.officer_name && e.claimed_by_name && e.officer_name !== e.claimed_by_name && (
-                            <p className="text-xs text-slate-500">Officer: {e.officer_name}</p>
-                          )}
+                        <td className="px-5 py-4 w-64 min-w-[200px]">
+                          <SearchableSelect
+                            options={officerOptions}
+                            value={e.officer_id ? String(e.officer_id) : ''}
+                            onChange={(val) => {
+                              const nextId = val ? parseInt(val, 10) : null;
+                              if (nextId !== e.officer_id) {
+                                void updateExpenseOfficer(e.id, nextId);
+                              }
+                            }}
+                            disabled={updatingExpenseId === e.id}
+                            allowEmpty={true}
+                            emptyButtonLabel={expenseClaimerLabel(e)}
+                            emptyMenuLabel="No officer (unclaimed)"
+                            buttonClassName={`flex w-full min-w-0 items-center justify-between gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1 text-left text-xs font-semibold text-slate-700 outline-none transition focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 ${
+                              updatingExpenseId === e.id ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                          />
                         </td>
                         <td className="px-5 py-4">
                           <Link href={`/dashboard/jobs/${e.job_id}`} className="inline-flex items-center gap-1 font-semibold text-[#14B8A6] hover:underline">

@@ -19,6 +19,7 @@ type Props = {
   /** First row when allowEmpty — clears selection */
   emptyMenuLabel?: string;
   allowEmpty?: boolean;
+  buttonClassName?: string;
 };
 
 export default function SearchableSelect({
@@ -31,6 +32,7 @@ export default function SearchableSelect({
   emptyButtonLabel = 'Select…',
   emptyMenuLabel = 'Clear selection',
   allowEmpty = true,
+  buttonClassName,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -114,7 +116,7 @@ export default function SearchableSelect({
           }
           setOpen((o) => !o);
         }}
-        className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900 outline-none transition focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 ${
+        className={buttonClassName ?? `flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900 outline-none transition focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30 ${
           open ? 'border-[#14B8A6] ring-2 ring-[#14B8A6]/30' : ''
         } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
       >
