@@ -92,8 +92,9 @@ function certificateFooterHtml(branding: CompanyBranding, certificateNumber: str
   </footer>`;
 }
 
-function pdfBlock(title: string, body: string, esc: (value: string) => string): string {
-  return `<div class="block"><h2>${esc(title)}</h2>${body}</div>`;
+function pdfBlock(title: string, body: string, esc: (value: string) => string, keepTogether = false, extraClass = ''): string {
+  const cls = ['block', keepTogether ? 'cp-keep-together' : '', extraClass].filter(Boolean).join(' ');
+  return `<div class="${cls}"><h2>${esc(title)}</h2>${body}</div>`;
 }
 
 export { pdfBlock };
@@ -112,7 +113,11 @@ function certificatePdfStyles(accent: string, _accentEnd: string, fontSize = '8.
   .cert-meta { padding: 7px 8px; border: 1px solid #111; border-top: 5px solid ${accent || '#111'}; text-align: right; }
   .cert-meta strong { display: block; margin-bottom: 5px; font-size: 10.2pt; line-height: 1.15; text-transform: uppercase; }
   .cert-meta span { display: block; margin-top: 3px; font-size: 7.5pt; color: #222; }
-  .block, .info-block, .board { margin-bottom: 8px; padding: 7px; border: 1px solid #9ca3af; background: #fff; page-break-inside: avoid; }
+  .block, .info-block, .board { margin-bottom: 8px; padding: 7px; border: 1px solid #9ca3af; background: #fff; page-break-inside: auto; break-inside: auto; }
+  .block > h2 { break-after: avoid; page-break-after: avoid; }
+  .block.cp-supply-block { page-break-inside: auto; break-inside: auto; }
+  .cp-supply-subsection { break-inside: avoid; page-break-inside: avoid; }
+  .block.cp-keep-together, .info-block.cp-keep-together { page-break-inside: avoid; break-inside: avoid; }
   .block > h2 { margin: -7px -7px 7px; padding: 4px 7px; background: #111; color: #fff; font-size: 8.8pt; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
   h2 { margin: 0 0 7px; padding: 4px 7px; background: #111; color: #fff; font-size: 8.8pt; font-weight: 800; letter-spacing: .035em; text-transform: uppercase; }
   h3 { margin: 8px 0 5px; padding-bottom: 2px; border-bottom: 1px solid #9ca3af; color: #111; font-size: 8.4pt; text-transform: uppercase; }
@@ -121,6 +126,12 @@ function certificatePdfStyles(accent: string, _accentEnd: string, fontSize = '8.
   table.kv, table.sched, table { width: 100%; border-collapse: collapse; border-spacing: 0; }
   table.kv td { padding: 3px 5px; vertical-align: top; border: 1px solid #d1d5db; }
   table.kv td.lbl, table.kv .lbl { width: 34%; background: #f3f4f6; color: #111; font-weight: 800; }
+  table.kv.kv-grid { table-layout: fixed; }
+  table.kv.kv-grid tr.kv-pair td.lbl { width: 18%; }
+  table.kv.kv-grid tr.kv-pair td:not(.lbl) { width: 32%; }
+  table.kv.kv-grid tr.kv-full td.lbl { width: 22%; }
+  table.kv.kv-grid tr.kv-full td:not(.lbl) { width: 78%; }
+  table.kv tr { page-break-inside: avoid; break-inside: avoid; }
   table.sched, table:not(.kv) { font-size: 7.4pt; border: 1px solid #9ca3af; }
   table.sched th, table.sched td, table:not(.kv) th, table:not(.kv) td { border: 1px solid #d1d5db; padding: 3px 4px; text-align: left; vertical-align: top; }
   table.sched th, table:not(.kv) th { background: #e5e7eb; color: #111; font-weight: 800; text-transform: uppercase; font-size: 7pt; }

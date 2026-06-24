@@ -7,7 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type Props = {
   imageUrl: string | null | undefined;
-  category: 'stock-photos' | 'tool-photos';
+  category: 'stock-photos' | 'tool-photos' | 'uniform-photos';
   token?: string | null;
   alt: string;
   className?: string;
@@ -16,7 +16,7 @@ type Props = {
 
 function buildFetchUrl(
   imageUrl: string,
-  category: 'stock-photos' | 'tool-photos',
+  category: 'stock-photos' | 'tool-photos' | 'uniform-photos',
 ): string | null {
   const withAuth = resolveStockToolImageUrl(imageUrl, category, null);
   if (withAuth) return withAuth;

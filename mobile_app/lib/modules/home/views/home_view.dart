@@ -1494,43 +1494,90 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
   }
 }
 
-class _DiaryScopeChip extends StatelessWidget {
-  const _DiaryScopeChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
+class _DiaryScopeToggle extends StatelessWidget {
+  const _DiaryScopeToggle({
+    required this.scope,
+    required this.onChanged,
   });
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  final DiaryListScope scope;
+  final ValueChanged<DiaryListScope> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AppColors.primary.withValues(alpha: 0.22) : AppColors.whiteOverlay(0.06),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? AppColors.primary.withValues(alpha: 0.55) : AppColors.whiteOverlay(0.12),
+    return Container(
+      height: 38,
+      decoration: BoxDecoration(
+        color: AppColors.whiteOverlay(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(DiaryListScope.mine),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: scope == DiaryListScope.mine
+                      ? const Color(0xFF1E293B)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      'Mine',
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: scope == DiaryListScope.mine
+                            ? Colors.white
+                            : AppColors.slate400,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: selected ? AppColors.primary : AppColors.slate400,
+          Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(DiaryListScope.team),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: scope == DiaryListScope.team
+                      ? const Color(0xFF1E293B)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      'All team',
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: scope == DiaryListScope.team
+                            ? Colors.white
+                            : AppColors.slate400,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1553,16 +1600,17 @@ class _DiaryTab extends GetView<HomeController> {
     return (s ?? '').trim();
   }
 
-  static String _line(DiaryEventRow e) {
-    final d = e.startTime;
-    final t = d == null
-        ? ''
-        : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')} '
-              '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-    return t;
+
+
+
+  static String _monthName(int month) {
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    if (month < 1 || month > 12) return '';
+    return names[month - 1];
   }
-
-
 
   static String _monthNameAbbr(int month) {
     const names = [
@@ -1584,7 +1632,6 @@ class _DiaryTab extends GetView<HomeController> {
         return team ? 'No team diary entries this month' : 'No diary entries this month';
     }
   }
-
   Widget _buildDiaryEventCard(
     BuildContext context,
     DiaryEventRow e,
@@ -1592,6 +1639,10 @@ class _DiaryTab extends GetView<HomeController> {
     bool allowFieldActions,
     bool showTeamFields,
   ) {
+    final hasStatus = e.eventStatus != null && e.eventStatus!.trim().isNotEmpty;
+    final statusCol = _statusColor(e.eventStatus);
+    final statusIcon = _statusIcon(e.eventStatus);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1619,253 +1670,223 @@ class _DiaryTab extends GetView<HomeController> {
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
-                                Text(
-                                  e.jobNumber!.trim(),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.primary,
-                                  ),
+                Container(
+                  width: 5,
+                  decoration: BoxDecoration(
+                    color: statusCol,
+                    borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(18),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                e.title ?? 'Job',
+                                style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  height: 1.25,
                                 ),
-                                const SizedBox(width: 8),
-                              ],
-                              if (e.isQuotationVisit) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Quotation visit',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF92400E),
-                                    ),
-                                  ),
+                              ),
+                            ),
+                            if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                '#${e.jobNumber!.trim()}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.slate400,
                                 ),
-                              ],
+                              ),
                             ],
-                          ),
-                          if ((e.jobNumber ?? '').trim().isNotEmpty || e.isQuotationVisit)
-                            const SizedBox(height: 4),
-                          Text(
-                            e.title ?? 'Job',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              height: 1.25,
+                          ],
+                        ),
+                        if (e.isQuotationVisit) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Quotation visit',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF92400E),
+                              ),
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      child: Text(
-                        _displayVisitStatus(e.eventStatus),
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (e.description != null && e.description!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    e.description!.trim(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.slate400,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.schedule_rounded,
-                      size: 16,
-                      color: AppColors.slate400,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        _line(e),
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: AppColors.slate300,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (showTeamFields &&
-                    (e.officerFullName ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.badge_outlined,
-                        size: 16,
-                        color: AppColors.slate400,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Officer: ${e.officerFullName!.trim()}',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
+                        if (e.displayContactName.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            e.displayContactName,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.slate300,
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (e.displayContactName.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.person_outline_rounded,
-                        size: 16,
-                        color: AppColors.slate400,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          e.displayContactName,
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            color: AppColors.slate300,
+                        ],
+                        if (e.location != null && e.location!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            e.location!.trim(),
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.slate400,
+                              height: 1.35,
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (e.location != null &&
-                    e.location!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.place_outlined,
-                        size: 16,
-                        color: AppColors.slate500,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          e.location!,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: AppColors.slate400,
+                        ],
+                        if (e.description != null && e.description!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            e.description!.trim(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.slate500,
+                              height: 1.35,
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (_visitCancelled(e.eventStatus) &&
-                    e.abortReason != null &&
-                    e.abortReason!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.error_outline_rounded,
-                        size: 16,
-                        color: Colors.red.shade300,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Reason: ${e.abortReason!.trim()}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: Colors.red.shade300,
+                        ],
+                        if (_visitCancelled(e.eventStatus) &&
+                            e.abortReason != null &&
+                            e.abortReason!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.error_outline_rounded,
+                                size: 14,
+                                color: Colors.red.shade300,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Reason: ${e.abortReason!.trim()}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: Colors.red.shade300,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        ownVisit
-                            ? 'Tap card for visit details, site contact, and to mark arrived.'
-                            : 'Tap card to view visit details (read-only).',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          height: 1.35,
-                          color: AppColors.slate500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Row(
-                      children: [
-                        Text(
-                          'Details',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
+                        ],
+                        if (showTeamFields &&
+                            (e.officerFullName ?? '').trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.badge_outlined,
+                                size: 14,
+                                color: AppColors.slate400,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Officer: ${e.officerFullName!.trim()}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: AppColors.primary,
-                          size: 22,
+                        ],
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.schedule_rounded,
+                                    size: 16,
+                                    color: AppColors.slate400,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _formatTimeRange(e.startTime, e.durationMinutes),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: AppColors.slate300,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (hasStatus) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusCol.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: statusCol.withValues(alpha: 0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (statusIcon != null) ...[
+                                      Icon(
+                                        statusIcon,
+                                        size: 12,
+                                        color: statusCol,
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      _displayVisitStatus(e.eventStatus),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: statusCol,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -1875,86 +1896,141 @@ class _DiaryTab extends GetView<HomeController> {
     );
   }
 
+  static Color _statusColor(String? status) {
+    final t = _normVisitStatus(status);
+    if (t == 'cancelled' || t == 'aborted') return Colors.red.shade400;
+    if (t == 'travelling' ||
+        t == 'travelling_to_site' ||
+        t == 'traveling' ||
+        t == 'traveling_to_site') {
+      return Colors.indigo.shade400;
+    }
+    if (t == 'on_site' ||
+        t == 'arrived' ||
+        t == 'arrived_at_site' ||
+        t == 'in_progress' ||
+        t == 'onsite' ||
+        t == 'working_on_site') {
+      return Colors.green.shade400;
+    }
+    if (t == 'completed') return Colors.teal.shade400;
+    return AppColors.primary;
+  }
+
+  static IconData? _statusIcon(String? status) {
+    final t = _normVisitStatus(status);
+    if (t == 'cancelled' || t == 'aborted') return Icons.cancel_rounded;
+    if (t == 'travelling' ||
+        t == 'travelling_to_site' ||
+        t == 'traveling' ||
+        t == 'traveling_to_site') {
+      return Icons.directions_car_rounded;
+    }
+    if (t == 'on_site' ||
+        t == 'arrived' ||
+        t == 'arrived_at_site' ||
+        t == 'in_progress' ||
+        t == 'onsite' ||
+        t == 'working_on_site') {
+      return Icons.play_arrow_rounded;
+    }
+    if (t == 'completed') return Icons.check_circle_rounded;
+    return null;
+  }
+
+  static String _formatTimeRange(DateTime? start, int? durationMinutes) {
+    if (start == null) return '';
+    final dayStr = '${start.day} ${_monthNameAbbr(start.month)}';
+    final end = durationMinutes != null ? start.add(Duration(minutes: durationMinutes)) : null;
+    String formatTime(DateTime dt) {
+      final hour = dt.hour;
+      final minute = dt.minute.toString().padLeft(2, '0');
+      final amPm = hour >= 12 ? 'pm' : 'am';
+      final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+      return '$displayHour:$minute $amPm';
+    }
+    final timeStr = end != null ? '${formatTime(start)} - ${formatTime(end)}' : formatTime(start);
+    return '$dayStr · $timeStr';
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Diary',
                 style: GoogleFonts.inter(
-                  fontSize: 28,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
-                  letterSpacing: -0.6,
+                  letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
               Obx(() {
                 final team = controller.diaryListScope.value == DiaryListScope.team;
                 return Text(
-                  team ? 'All team visits · ongoing and upcoming' : 'Ongoing and upcoming',
+                  team ? 'All team visits' : 'My visits',
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: 12,
                     color: AppColors.slate400,
                   ),
                 );
               }),
-              const SizedBox(height: 10),
-              Obx(() {
-                if (!controller.showDiaryScopeTabs) return const SizedBox.shrink();
-                final selected = controller.diaryListScope.value;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: _DiaryScopeChip(
-                        label: 'Mine',
-                        selected: selected == DiaryListScope.mine,
-                        onTap: () => controller.setDiaryListScope(DiaryListScope.mine),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _DiaryScopeChip(
-                        label: 'All team',
-                        selected: selected == DiaryListScope.team,
-                        onTap: () => controller.setDiaryListScope(DiaryListScope.team),
-                      ),
-                    ),
-                  ],
-                );
-              }),
-              Obx(() {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: _DiaryViewModeToggle(
-                    mode: controller.diaryViewMode.value,
-                    onChanged: (mode) => controller.setDiaryViewMode(mode),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: Obx(() {
+                      if (!controller.showDiaryScopeTabs) return const SizedBox.shrink();
+                      return _DiaryScopeToggle(
+                        scope: controller.diaryListScope.value,
+                        onChanged: (scope) => controller.setDiaryListScope(scope),
+                      );
+                    }),
                   ),
-                );
-              }),
+                  Obx(() {
+                    if (controller.showDiaryScopeTabs) {
+                      return const SizedBox(width: 8);
+                    }
+                    return const SizedBox.shrink();
+                  }),
+                  Expanded(
+                    flex: 4,
+                    child: Obx(() {
+                      return _DiaryViewModeToggle(
+                        mode: controller.diaryViewMode.value,
+                        onChanged: (mode) => controller.setDiaryViewMode(mode),
+                      );
+                    }),
+                  ),
+                ],
+              ),
               Obx(() {
                 final isList = controller.diaryViewMode.value == DiaryViewMode.list;
                 if (!isList) return const SizedBox.shrink();
                 return Padding(
-                  padding: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.only(top: 8),
                   child: _DiaryFilterBar(
                     selectedFilter: controller.diaryFilter.value,
                     onChanged: (filter) => controller.setDiaryFilter(filter),
                   ),
                 );
               }),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               const _OfflineSyncBanner(),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Expanded(
           child: Obx(() {
             if (!controller.canUseDiaryTab) {
@@ -1998,12 +2074,63 @@ class _DiaryTab extends GetView<HomeController> {
                 return tA.compareTo(tB);
               });
 
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              final showMonthly = controller.showMonthlyCalendar.value;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          showMonthly
+                              ? '${_monthName(controller.calendarFocusedMonth.value.month)} ${controller.calendarFocusedMonth.value.year}'
+                              : '${_monthName(selectedDate.month)} ${selectedDate.year}',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                final now = DateTime.now();
+                                controller.selectCalendarDate(now);
+                              },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                minimumSize: Size.zero,
+                              ),
+                              child: Text(
+                                'Today',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: Icon(
+                                showMonthly ? Icons.calendar_view_week_rounded : Icons.calendar_month_rounded,
+                                color: Colors.white70,
+                              ),
+                              onPressed: () {
+                                controller.showMonthlyCalendar.value = !showMonthly;
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (showMonthly)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: _DiaryCalendarView(
@@ -2016,61 +2143,67 @@ class _DiaryTab extends GetView<HomeController> {
                           controller.selectCalendarDate(DateTime.now());
                         },
                       ),
+                    )
+                  else
+                    _HorizontalDateSelector(
+                      selectedDate: selectedDate,
+                      onDateSelected: (date) => controller.selectCalendarDate(date),
                     ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Text(
-                        '${selectedDate.day} ${_monthNameAbbr(selectedDate.month)} ${selectedDate.year} · ${dayEvents.length} visit${dayEvents.length == 1 ? '' : 's'}',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.slate300,
-                        ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      '${selectedDate.day} ${_monthNameAbbr(selectedDate.month)} ${selectedDate.year} · ${dayEvents.length} visit${dayEvents.length == 1 ? '' : 's'}',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.slate300,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    if (dayEvents.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 32),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.calendar_month_rounded,
-                                size: 48,
-                                color: AppColors.whiteOverlay(0.15),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: dayEvents.isEmpty
+                        ? Center(
+                            child: SingleChildScrollView(
+                              physics: const NeverScrollableScrollPhysics(),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.calendar_month_rounded,
+                                    size: 48,
+                                    color: AppColors.whiteOverlay(0.15),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No visits scheduled',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      color: AppColors.slate500,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No visits scheduled',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  color: AppColors.slate500,
-                                ),
-                              ),
-                            ],
+                            ),
+                          )
+                        : ListView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                            itemCount: dayEvents.length,
+                            itemBuilder: (context, i) {
+                              final e = dayEvents[i];
+                              final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
+                              final allowFieldActions = !showTeamFields;
+                              final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _buildDiaryEventCard(context, e, ownVisit, allowFieldActions, showTeamFields),
+                              );
+                            },
                           ),
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          children: dayEvents.map((e) {
-                            final showTeamFields = controller.diaryListScope.value == DiaryListScope.team;
-                            final allowFieldActions = !showTeamFields;
-                            final ownVisit = allowFieldActions || controller.isOwnDiaryVisit(e);
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _buildDiaryEventCard(context, e, ownVisit, allowFieldActions, showTeamFields),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               );
             } else {
               if (controller.diaryLoading.value) {
@@ -2135,10 +2268,10 @@ class _DiaryViewModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 42,
+      height: 38,
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.04),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.whiteOverlay(0.08)),
       ),
       padding: const EdgeInsets.all(3),
@@ -2153,31 +2286,37 @@ class _DiaryViewModeToggle extends StatelessWidget {
                   color: mode == DiaryViewMode.calendar
                       ? const Color(0xFF1E293B)
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.calendar_month_rounded,
-                      size: 16,
-                      color: mode == DiaryViewMode.calendar
-                          ? Colors.white
-                          : AppColors.slate400,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.calendar_month_rounded,
+                          size: 14,
+                          color: mode == DiaryViewMode.calendar
+                              ? Colors.white
+                              : AppColors.slate400,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Calendar',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: mode == DiaryViewMode.calendar
+                                ? Colors.white
+                                : AppColors.slate400,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Calendar',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: mode == DiaryViewMode.calendar
-                            ? Colors.white
-                            : AppColors.slate400,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -2191,31 +2330,37 @@ class _DiaryViewModeToggle extends StatelessWidget {
                   color: mode == DiaryViewMode.list
                       ? const Color(0xFF1E293B)
                       : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.list_rounded,
-                      size: 16,
-                      color: mode == DiaryViewMode.list
-                          ? Colors.white
-                          : AppColors.slate400,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.list_rounded,
+                          size: 14,
+                          color: mode == DiaryViewMode.list
+                              ? Colors.white
+                              : AppColors.slate400,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'List',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: mode == DiaryViewMode.list
+                                ? Colors.white
+                                : AppColors.slate400,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'List',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: mode == DiaryViewMode.list
-                            ? Colors.white
-                            : AppColors.slate400,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -2277,6 +2422,147 @@ class _DiaryFilterBar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HorizontalDateSelector extends StatefulWidget {
+  const _HorizontalDateSelector({
+    required this.selectedDate,
+    required this.onDateSelected,
+  });
+
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onDateSelected;
+
+  @override
+  State<_HorizontalDateSelector> createState() => _HorizontalDateSelectorState();
+}
+
+class _HorizontalDateSelectorState extends State<_HorizontalDateSelector> {
+  late final ScrollController _scrollController;
+  late final List<DateTime> _dates;
+  static const double _cellWidth = 52.0;
+  static const double _cellSpacing = 8.0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Generate 120 days: 30 days before selectedDate, 90 days after
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day).subtract(const Duration(days: 30));
+    _dates = List.generate(120, (i) => start.add(Duration(days: i)));
+
+    _scrollController = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected(animate: false));
+  }
+
+  @override
+  void didUpdateWidget(covariant _HorizontalDateSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedDate != oldWidget.selectedDate) {
+      _scrollToSelected(animate: true);
+    }
+  }
+
+  void _scrollToSelected({required bool animate}) {
+    if (!_scrollController.hasClients) return;
+    final index = _dates.indexWhere((d) =>
+        d.year == widget.selectedDate.year &&
+        d.month == widget.selectedDate.month &&
+        d.day == widget.selectedDate.day);
+    if (index < 0) return;
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final offset = (index * (_cellWidth + _cellSpacing)) - (screenWidth / 2) + (_cellWidth / 2);
+    if (animate) {
+      _scrollController.animateTo(
+        offset.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    } else {
+      _scrollController.jumpTo(
+        offset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  String _dayName(DateTime d) {
+    if (_isToday(d)) return 'Today';
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return weekdays[d.weekday - 1];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 70,
+      child: ListView.separated(
+        controller: _scrollController,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _dates.length,
+        separatorBuilder: (_, __) => const SizedBox(width: _cellSpacing),
+        itemBuilder: (context, i) {
+          final date = _dates[i];
+          final isSelected = date.year == widget.selectedDate.year &&
+              date.month == widget.selectedDate.month &&
+              date.day == widget.selectedDate.day;
+          final isToday = _isToday(date);
+
+          return GestureDetector(
+            onTap: () => widget.onDateSelected(date),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: _cellWidth,
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : AppColors.whiteOverlay(0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? AppColors.primary : AppColors.whiteOverlay(0.1),
+                  width: isSelected ? 2.0 : 1.0,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    date.day.toString().padLeft(2, '0'),
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: isSelected ? Colors.white : (isToday ? AppColors.primary : AppColors.slate300),
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    _dayName(date),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: isSelected || isToday ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? AppColors.primary : AppColors.slate400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2351,7 +2637,7 @@ class _DiaryCalendarView extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: weekdays.map((day) {
@@ -2369,16 +2655,16 @@ class _DiaryCalendarView extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: 42,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 7,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 1,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 4,
+            childAspectRatio: 1.2,
           ),
           itemBuilder: (context, index) {
             final date = gridDates[index];

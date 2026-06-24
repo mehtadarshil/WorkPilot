@@ -2,26 +2,93 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../app/routes/app_routes.dart';
+import '../../../core/network/api_exception.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../data/repositories/customers_repository.dart';
+import '../../../data/repositories/mobile_repository.dart';
 import '../../../widgets/searchable_select_field.dart';
 import '../certificate_catalog.dart';
 import '../certificate_editor_controller.dart';
 
-Future<void> showCopyConvertCertificateSheet(CertificateEditorController controller) async {
+typedef CertificateDuplicateHandler = Future<void> Function({
+  String? targetTypeSlug,
+  required int customerId,
+  int? workAddressId,
+});
+
+/// Copy / convert from the certificate editor (saves first, replaces current route).
+Future<void> showCopyConvertCertificateSheet(CertificateEditorController controller) {
+  final currentCert = controller.certificate.value;
+  return showCopyConvertCertificateOptionsSheet(
+    initialTypeSlug: currentCert?.typeSlug ?? controller.document['typeSlug']?.toString() ?? 'eicr_18e_a3',
+    initialCustomerId: currentCert?.customerId ?? (controller.document['customerId'] as num?)?.toInt(),
+    initialWorkAddressId: currentCert?.workAddressId ?? (controller.document['workAddressId'] as num?)?.toInt(),
+    onConfirm: ({targetTypeSlug, required customerId, workAddressId}) => controller.duplicateCertificate(
+      targetTypeSlug: targetTypeSlug,
+      customerId: customerId,
+      workAddressId: workAddressId,
+    ),
+    isBusy: () => controller.duplicating.value,
+  );
+}
+
+/// Copy / convert from the certificates list (same flow as web row menu).
+Future<void> showCopyConvertCertificateFromList({
+  required int certificateId,
+  required String typeSlug,
+  int? customerId,
+  int? workAddressId,
+  VoidCallback? onCopied,
+}) {
+  return showCopyConvertCertificateOptionsSheet(
+    initialTypeSlug: typeSlug,
+    initialCustomerId: customerId,
+    initialWorkAddressId: workAddressId,
+    onConfirm: ({targetTypeSlug, required customerId, workAddressId}) async {
+      final mobile = Get.find<MobileRepository>();
+      try {
+        final cert = await mobile.duplicateElectricalCertificate(
+          certificateId,
+          typeSlug: targetTypeSlug,
+          customerId: customerId,
+          workAddressId: workAddressId,
+        );
+        await Get.toNamed(
+          AppRoutes.certificateEditor,
+          arguments: {'id': cert.id},
+        );
+        Get.snackbar('Created', 'Certificate copy opened.');
+        onCopied?.call();
+      } on ApiException catch (e) {
+        Get.snackbar('Copy failed', e.message);
+      } catch (e) {
+        Get.snackbar('Copy failed', e.toString());
+      }
+    },
+  );
+}
+
+Future<void> showCopyConvertCertificateOptionsSheet({
+  required String initialTypeSlug,
+  int? initialCustomerId,
+  int? initialWorkAddressId,
+  required CertificateDuplicateHandler onConfirm,
+  bool Function()? isBusy,
+}) async {
   var mode = 'copy';
-  var selectedSlug = controller.certificate.value?.typeSlug ?? controller.document['typeSlug']?.toString() ?? 'eicr_18e_a3';
+  var selectedSlug = initialTypeSlug;
+  var submitting = false;
 
   final customersRepo = Get.find<CustomersRepository>();
-  final currentCert = controller.certificate.value;
 
   var firstLoad = true;
   List<Map<String, dynamic>> customers = [];
   List<Map<String, dynamic>> workAddresses = [];
   var loadingOptions = true;
 
-  int? selectedCustomerId = currentCert?.customerId ?? (controller.document['customerId'] as num?)?.toInt();
-  int? selectedWorkAddressId = currentCert?.workAddressId ?? (controller.document['workAddressId'] as num?)?.toInt();
+  int? selectedCustomerId = initialCustomerId;
+  int? selectedWorkAddressId = initialWorkAddressId;
 
   await Get.bottomSheet<void>(
     StatefulBuilder(
@@ -55,6 +122,8 @@ Future<void> showCopyConvertCertificateSheet(CertificateEditorController control
           firstLoad = false;
           loadOptions();
         }
+
+        final busy = submitting || (isBusy?.call() ?? false);
 
         InputDecoration inputDeco(String hint) {
           return InputDecoration(
@@ -192,30 +261,29 @@ Future<void> showCopyConvertCertificateSheet(CertificateEditorController control
                 ],
               ],
               const SizedBox(height: 20),
-              Obx(
-                () => ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
-                  onPressed: controller.duplicating.value || selectedCustomerId == null
-                      ? null
-                      : () async {
-                          Get.back();
-                          final slug = mode == 'copy'
-                              ? controller.certificate.value?.typeSlug
-                              : selectedSlug;
-                          await controller.duplicateCertificate(
-                            targetTypeSlug: slug,
-                            customerId: selectedCustomerId,
-                            workAddressId: selectedWorkAddressId,
-                          );
-                        },
-                  child: controller.duplicating.value
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Text(mode == 'copy' ? 'Create copy' : 'Convert & create'),
-                ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                onPressed: busy || selectedCustomerId == null
+                    ? null
+                    : () async {
+                        final customerId = selectedCustomerId!;
+                        final slug = mode == 'copy' ? initialTypeSlug : selectedSlug;
+                        Get.back();
+                        setModalState(() => submitting = true);
+                        await onConfirm(
+                          targetTypeSlug: slug,
+                          customerId: customerId,
+                          workAddressId: selectedWorkAddressId,
+                        );
+                        setModalState(() => submitting = false);
+                      },
+                child: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(mode == 'copy' ? 'Create copy' : 'Convert & create'),
               ),
             ],
           ),

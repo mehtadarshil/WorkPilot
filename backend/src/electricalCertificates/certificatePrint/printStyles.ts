@@ -66,13 +66,14 @@ export const CERTIFICATE_PRINT_CSS = `
   .cp-board-testing {
     margin-top: 4px; padding: 3px 6px; border: 1px solid #9ca3af; font-size: 6.5pt; background: #f9fafb;
   }
-  .cert-print-page { break-after: page; page-break-after: always; padding-bottom: 12mm; }
-  .cert-print-page:last-child { break-after: auto; page-break-after: auto; }
+  .cert-print-page { padding-bottom: 4mm; }
+  .cert-print-break-before { break-before: page; page-break-before: always; }
+  .cert-flow { /* natural pagination — no forced page breaks between sections */ }
   .cp-print-footer-bar {
     position: fixed; bottom: 0; left: 0; right: 0; padding: 3mm 10mm; font-size: 6.5pt; color: #444;
     border-top: 1px solid #d1d5db; display: flex; justify-content: space-between; align-items: center; background: #fff; z-index: 9999;
   }
-  .cp-print-footer-bar .cp-page-number::after { content: 'Page ' counter(page) ' of ' counter(pages); }
+  .cp-print-footer-screen { display: none; }
   .cp-obs-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
   .cp-obs-summary-box { border: 1px solid #d1d5db; padding: 5px 6px; background: #f9fafb; min-height: 52px; }
   .cp-obs-summary-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 3px; font-weight: 900; font-size: 8pt; margin-bottom: 3px; }
@@ -97,5 +98,9 @@ export const CERTIFICATE_PRINT_CSS = `
   .cp-signature-img { max-width: 100%; max-height: 48px; object-fit: contain; display: block; }
   .cp-signature-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 14pt; color: #111; }
   .cp-signature-empty { color: #9ca3af; font-size: 7pt; }
-  .cp-supply-section-title { grid-column: 1 / -1; margin: 4px 0 0; padding: 2px 4px; background: #374151; color: #fff; font-size: 6.5pt; font-weight: 800; text-transform: uppercase; }
+  .cp-supply-section-title { grid-column: 1 / -1; margin: 4px 0 0; padding: 2px 4px; background: #374151; color: #fff; font-size: 6.5pt; font-weight: 800; text-transform: uppercase; break-after: avoid; page-break-after: avoid; }
+  .cp-form-field { break-inside: avoid; page-break-inside: avoid; }
+  .cp-supply-sections { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .cp-supply-subsection { break-inside: avoid; page-break-inside: avoid; }
+  .block.cp-guidance-block > h2 { break-after: avoid; page-break-after: avoid; }
 `;

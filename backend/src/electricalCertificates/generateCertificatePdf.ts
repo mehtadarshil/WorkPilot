@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { renderHtmlReportToPdf } from '../jobClientReportPdf';
 import { loadCompanyBranding } from './companyBranding';
+import { puppeteerCertificateFooterTemplate } from './certificatePrint/pageFooter';
 import { buildCertificatePdfHtml } from './certificatePdfHtml';
 import { coerceDocument } from './documentDefaults';
 import { resolveCertificateDocumentFileRefs } from './certificateFileStorage';
@@ -27,7 +28,18 @@ export async function generateElectricalCertificatePdfBuffer(
     document,
     branding,
   });
-  const pdf = await renderHtmlReportToPdf(html);
+  const pdf = await renderHtmlReportToPdf(html, {
+    displayHeaderFooter: true,
+    footerTemplate: puppeteerCertificateFooterTemplate(
+      params.certificateNumber,
+      document.typeSlug === 'fi_insp_2025'
+        ? 'BS 5839-1:2025'
+        : document.typeSlug === 'dfi_insp_2019_a1' || document.typeSlug === 'dfi_inst_2019_a1'
+          ? 'BS 5839-6:2019+A1:2020'
+          : 'BS 7671:2018+A3:2024',
+    ),
+    margin: { top: '10mm', right: '10mm', bottom: '14mm', left: '10mm' },
+  });
   const fallbackPrefix =
     document.typeSlug === 'portable_appliance_test'
       ? 'PAT'

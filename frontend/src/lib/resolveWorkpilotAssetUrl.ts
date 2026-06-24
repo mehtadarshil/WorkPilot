@@ -42,7 +42,7 @@ export function resolveWorkpilotAssetUrlWithAuth(
 /** Stock inventory or tool registry photo from DB `image_url`. */
 export function resolveStockToolImageUrl(
   imageUrl: string | null | undefined,
-  category: 'stock-photos' | 'tool-photos',
+  category: 'stock-photos' | 'tool-photos' | 'uniform-photos',
   token?: string | null,
 ): string | null {
   if (!imageUrl?.trim()) return null;

@@ -424,134 +424,184 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
               ],
             ),
           ),
-          child: Obx(() {
-            if (controller.loading.value && controller.items.isEmpty) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              );
-            }
-            if (controller.error.value.isNotEmpty && controller.items.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        controller.error.value,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(color: AppColors.slate400),
-                      ),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: controller.reloadFromStart,
-                        child: const Text('Retry'),
-                      ),
-                    ],
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: TextField(
+                  onChanged: (v) => controller.searchQuery.value = v,
+                  style: GoogleFonts.inter(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Search by cert, address, customer...',
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.slate400),
+                    filled: true,
+                    fillColor: AppColors.whiteOverlay(0.06),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
-              );
-            }
-            return NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n.metrics.pixels > n.metrics.maxScrollExtent - 200) {
-                  controller.loadMore();
-                }
-                return false;
-              },
-              child: RefreshIndicator(
-                color: AppColors.primary,
-                onRefresh: controller.reloadFromStart,
-                child: ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: controller.items.length +
-                      (controller.loading.value && controller.hasMore ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= controller.items.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(
-                          child: CircularProgressIndicator(color: AppColors.primary),
-                        ),
-                      );
-                    }
-                    final row = controller.items[i];
-                    final sub = _subtitle(row);
-                    final updated = _updatedAt(row);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Material(
-                        color: AppColors.whiteOverlay(0.08),
-                        borderRadius: BorderRadius.circular(16),
-                        child: ListTile(
-                          onTap: () {
-                            final rawCid = row['customer_id'];
-                            final customerId = rawCid is int
-                                ? rawCid
-                                : (rawCid is num ? rawCid.toInt() : null);
-                            final rawRid = row['id'];
-                            final reportId = rawRid is int
-                                ? rawRid
-                                : (rawRid is num ? rawRid.toInt() : null);
-                            final rawWid = row['work_address_id'];
-                            final workAddressId = rawWid is int
-                                ? rawWid
-                                : (rawWid is num ? rawWid.toInt() : null);
-                            if (customerId != null && reportId != null) {
-                              Get.toNamed(
-                                AppRoutes.siteReportEditor,
-                                arguments: <String, dynamic>{
-                                  'customer_id': customerId,
-                                  'report_id': reportId,
-                                  if (workAddressId != null) 'work_address_id': workAddressId,
-                                },
-                              );
-                            }
-                          },
-                          title: Text(
-                            _titleLine(row),
-                            style: GoogleFonts.inter(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
+              ),
+              Expanded(
+                child: Obx(() {
+                  final list = controller.filteredItems;
+                  if (controller.loading.value && list.isEmpty) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppColors.primary),
+                    );
+                  }
+                  if (controller.error.value.isNotEmpty && list.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              controller.error.value,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.inter(color: AppColors.slate400),
                             ),
-                          ),
-                          subtitle: sub == null || sub.isEmpty
-                              ? null
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      sub,
-                                      style: GoogleFonts.inter(
-                                        color: AppColors.slate400,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                    if (updated.isNotEmpty)
-                                      Text(
-                                        updated,
-                                        style: GoogleFonts.inter(
-                                          color: AppColors.slate500,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                          trailing: const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Colors.white54,
-                          ),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              onPressed: controller.reloadFromStart,
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
                       ),
                     );
-                  },
-                ),
+                  }
+                  return NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      if (n.metrics.pixels > n.metrics.maxScrollExtent - 200) {
+                        controller.loadMore();
+                      }
+                      return false;
+                    },
+                    child: RefreshIndicator(
+                      color: AppColors.primary,
+                      onRefresh: controller.reloadFromStart,
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        itemCount: list.length +
+                            (controller.loading.value && controller.hasMore ? 1 : 0),
+                        itemBuilder: (context, i) {
+                          if (i >= list.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: CircularProgressIndicator(color: AppColors.primary),
+                              ),
+                            );
+                          }
+                          final row = list[i];
+                          final sub = _subtitle(row);
+                          final updated = _updatedAt(row);
+                          final address = (row['installation_label'] as String?)?.trim();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Material(
+                              color: AppColors.whiteOverlay(0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              child: ListTile(
+                                onTap: () {
+                                  final rawCid = row['customer_id'];
+                                  final customerId = rawCid is int
+                                      ? rawCid
+                                      : (rawCid is num ? rawCid.toInt() : null);
+                                  final rawRid = row['id'];
+                                  final reportId = rawRid is int
+                                      ? rawRid
+                                      : (rawRid is num ? rawRid.toInt() : null);
+                                  final rawWid = row['work_address_id'];
+                                  final workAddressId = rawWid is int
+                                      ? rawWid
+                                      : (rawWid is num ? rawWid.toInt() : null);
+                                  if (customerId != null && reportId != null) {
+                                    Get.toNamed(
+                                      AppRoutes.siteReportEditor,
+                                      arguments: <String, dynamic>{
+                                        'customer_id': customerId,
+                                        'report_id': reportId,
+                                        if (workAddressId != null) 'work_address_id': workAddressId,
+                                      },
+                                    );
+                                  }
+                                },
+                                title: Text(
+                                  _titleLine(row),
+                                  style: GoogleFonts.inter(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: (sub == null || sub.isEmpty) && (address == null || address.isEmpty)
+                                    ? null
+                                    : Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          if (sub != null && sub.isNotEmpty)
+                                            Text(
+                                              sub,
+                                              style: GoogleFonts.inter(
+                                                color: AppColors.slate400,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          if (address != null && address.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                const Icon(Icons.place_rounded, size: 14, color: AppColors.slate400),
+                                                const SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    address,
+                                                    style: GoogleFonts.inter(
+                                                      color: AppColors.slate300,
+                                                      fontSize: 12.5,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                          if (updated.isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              updated,
+                                              style: GoogleFonts.inter(
+                                                color: AppColors.slate500,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.white54,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                }),
               ),
-            );
-          }),
+            ],
+          ),
         ),
       ),
     );

@@ -10,6 +10,12 @@ export type SiteReportFieldType =
   | 'signature'
   | 'select';
 
+export type SiteReportFieldHideFollowingRule = {
+  /** When this field's answer matches, hide the next N fields in the same section/instance. */
+  when_values: string[];
+  hide_next_count: number;
+};
+
 export type SiteReportTemplateField = {
   id: string;
   label: string;
@@ -18,6 +24,7 @@ export type SiteReportTemplateField = {
   content?: string;
   rows?: number;
   choices?: string[];
+  hide_following_when?: SiteReportFieldHideFollowingRule;
 };
 
 export type SiteReportTemplateSection = {

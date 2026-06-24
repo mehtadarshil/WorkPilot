@@ -36,6 +36,8 @@ interface ExpenseStats {
   personal_count: number;
   approved_total: number;
   approved_count: number;
+  general_overhead_total?: number;
+  general_overhead_count?: number;
 }
 
 interface InvoicesResponse {
@@ -47,6 +49,7 @@ interface InvoicesResponse {
   stateStats: Record<string, { count: number; total_amount: number }>;
   overallOutstanding: number;
   overallProfit?: number;
+  overallNetProfit?: number;
   expenseStats?: ExpenseStats;
 }
 
@@ -80,6 +83,7 @@ type ReportMetricKey =
   | 'outstanding'
   | 'net_profit'
   | 'company_expenses'
+  | 'general_overheads'
   | 'personal_expenses'
   | 'approved_expenses'
   | `state:${string}`;
@@ -88,6 +92,7 @@ const DEFAULT_REPORT_METRICS: Record<ReportMetricKey, boolean> = {
   outstanding: true,
   net_profit: true,
   company_expenses: true,
+  general_overheads: true,
   personal_expenses: true,
   approved_expenses: false,
   'state:draft': true,
@@ -103,6 +108,7 @@ const REPORT_METRIC_LABELS: Record<Exclude<ReportMetricKey, `state:${string}`>, 
   outstanding: 'Outstanding',
   net_profit: 'Net profit',
   company_expenses: 'Company expenses',
+  general_overheads: 'General overheads',
   personal_expenses: 'Personal expenses due',
   approved_expenses: 'All approved expenses',
 };
@@ -157,7 +163,7 @@ export default function InvoicesPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [stateStats, setStateStats] = useState<Record<string, { count: number; total_amount: number }>>({});
   const [overallOutstanding, setOverallOutstanding] = useState(0);
-  const [overallProfit, setOverallProfit] = useState(0);
+  const [overallNetProfit, setOverallNetProfit] = useState(0);
   const [expenseStats, setExpenseStats] = useState<ExpenseStats | null>(null);
   const [reportMetrics, setReportMetrics] = useState<Record<ReportMetricKey, boolean>>(DEFAULT_REPORT_METRICS);
   const [metricsMenuOpen, setMetricsMenuOpen] = useState(false);
@@ -234,7 +240,7 @@ export default function InvoicesPage() {
       setTotalPages(data.totalPages ?? 1);
       setStateStats(data.stateStats ?? {});
       setOverallOutstanding(data.overallOutstanding ?? 0);
-      setOverallProfit(data.overallProfit ?? 0);
+      setOverallNetProfit(data.overallNetProfit ?? data.overallProfit ?? 0);
       setExpenseStats(data.expenseStats ?? null);
     } catch {
       setInvoices([]);
@@ -242,7 +248,7 @@ export default function InvoicesPage() {
       setTotalPages(1);
       setStateStats({});
       setOverallOutstanding(0);
-      setOverallProfit(0);
+      setOverallNetProfit(0);
       setExpenseStats(null);
     }
   }, [token, page, searchDebounced, stateFilter]);
@@ -555,8 +561,8 @@ export default function InvoicesPage() {
               className="rounded-xl border-l-[6px] border-emerald-500 bg-white p-4 shadow-sm"
             >
               <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600">Net Profit</p>
-              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallProfit, 'GBP')}</h3>
-              <p className="text-[10px] text-slate-400">subtotal minus job costs</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(overallNetProfit, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">after job costs &amp; general overheads</p>
             </motion.div>
             )}
 
@@ -569,6 +575,18 @@ export default function InvoicesPage() {
               <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-600">Company Expenses</p>
               <h3 className="text-2xl font-black text-slate-900">{formatCurrency(expenseStats?.company_total ?? 0, 'GBP')}</h3>
               <p className="text-[10px] text-slate-400">{expenseStats?.company_count ?? 0} approved job expenses</p>
+            </motion.div>
+            )}
+
+            {reportMetrics.general_overheads && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border-l-[6px] border-orange-500 bg-white p-4 shadow-sm"
+            >
+              <p className="mb-0.5 text-[11px] font-bold uppercase tracking-wider text-orange-600">General Overheads</p>
+              <h3 className="text-2xl font-black text-slate-900">{formatCurrency(expenseStats?.general_overhead_total ?? 0, 'GBP')}</h3>
+              <p className="text-[10px] text-slate-400">{expenseStats?.general_overhead_count ?? 0} insurance, rent, etc.</p>
             </motion.div>
             )}
 

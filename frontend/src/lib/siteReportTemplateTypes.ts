@@ -1,3 +1,5 @@
+import { parseHideFollowingRule } from './siteReportFieldVisibility';
+
 export type SiteReportFieldType =
   | 'text'
   | 'textarea'
@@ -9,6 +11,12 @@ export type SiteReportFieldType =
   | 'signature'
   | 'select';
 
+export type SiteReportFieldHideFollowingRule = {
+  /** When this field's answer matches, hide the next N fields in the same section/instance. */
+  when_values: string[];
+  hide_next_count: number;
+};
+
 export type SiteReportTemplateField = {
   id: string;
   label: string;
@@ -16,6 +24,7 @@ export type SiteReportTemplateField = {
   content?: string;
   rows?: number;
   choices?: string[];
+  hide_following_when?: SiteReportFieldHideFollowingRule;
 };
 
 export type SiteReportTemplateSection = {
@@ -183,11 +192,23 @@ export function coerceSiteReportDefinition(raw: unknown): SiteReportTemplateDefi
     const id = typeof f.id === 'string' && f.id.trim() ? f.id.trim() : `field_${idx}`;
     const label = typeof f.label === 'string' ? f.label : '';
     const t = typeof f.type === 'string' ? f.type : 'text';
-    const allowed: SiteReportFieldType[] = ['text', 'textarea', 'date', 'yes_no_na', 'pass_fail', 'static_text', 'image', 'signature'];
+    const allowed: SiteReportFieldType[] = ['text', 'textarea', 'date', 'yes_no_na', 'pass_fail', 'static_text', 'image', 'signature', 'select'];
     const type = (allowed.includes(t as SiteReportFieldType) ? t : 'text') as SiteReportFieldType;
     const content = typeof f.content === 'string' ? f.content : undefined;
     const rows = typeof f.rows === 'number' && Number.isFinite(f.rows) ? Math.min(40, Math.max(1, Math.round(f.rows))) : undefined;
-    return { id, label, type, ...(content !== undefined ? { content } : {}), ...(rows !== undefined ? { rows } : {}) };
+    const choices = Array.isArray(f.choices)
+      ? f.choices.filter((c): c is string => typeof c === 'string').map((c) => c.trim()).filter(Boolean)
+      : undefined;
+    const hide_following_when = parseHideFollowingRule(f.hide_following_when);
+    return {
+      id,
+      label,
+      type,
+      ...(content !== undefined ? { content } : {}),
+      ...(rows !== undefined ? { rows } : {}),
+      ...(choices?.length ? { choices } : {}),
+      ...(hide_following_when ? { hide_following_when } : {}),
+    };
   };
 
   const parseSection = (x: unknown, idx: number): SiteReportTemplateSection | null => {

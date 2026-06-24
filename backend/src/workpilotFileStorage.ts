@@ -27,7 +27,8 @@ export type WorkpilotFileCategory =
   | 'job-expense-proofs'
   | 'mobile-profile-photos'
   | 'stock-photos'
-  | 'tool-photos';
+  | 'tool-photos'
+  | 'uniform-photos';
 
 export type StoredFileRef = {
   category: WorkpilotFileCategory;
@@ -62,6 +63,7 @@ const CATEGORY_ENV: Record<WorkpilotFileCategory, string> = {
   'mobile-profile-photos': 'WORKPILOT_MOBILE_PROFILE_PHOTOS_DIR',
   'stock-photos': 'WORKPILOT_INLINE_FILES_DIR',
   'tool-photos': 'WORKPILOT_INLINE_FILES_DIR',
+  'uniform-photos': 'WORKPILOT_INLINE_FILES_DIR',
 };
 
 export function getWorkpilotFileRootDir(category: WorkpilotFileCategory): string {

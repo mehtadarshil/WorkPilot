@@ -327,7 +327,7 @@ export default function DashboardLayout({
                 }`}
               >
                 <Package className="size-4" />
-                Stock & Tools
+                Stock, Tools &amp; Uniform
               </Link>
             )}
 

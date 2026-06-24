@@ -58,9 +58,11 @@ function formatClockDuration(sec: number): string {
 export function VisitJobSheetTimeline({
   statusLogs,
   timesheetEntries,
+  onEditClick,
 }: {
   statusLogs: VisitStatusLog[];
   timesheetEntries: VisitTimesheetSegment[];
+  onEditClick?: () => void;
 }) {
   if (statusLogs.length === 0 && timesheetEntries.length === 0) return null;
 
@@ -68,9 +70,20 @@ export function VisitJobSheetTimeline({
     <div className="mt-4 space-y-5">
       {statusLogs.length > 0 && (
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-3">
-            Travel &amp; status timeline
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              Travel &amp; status timeline
+            </p>
+            {onEditClick && (
+              <button
+                type="button"
+                onClick={onEditClick}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#14B8A6] hover:underline"
+              >
+                Edit Timeline
+              </button>
+            )}
+          </div>
           <ol className="space-y-0">
             {statusLogs.map((log, index) => {
               const tone = visitStatusTone(log.status);

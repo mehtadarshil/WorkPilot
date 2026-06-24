@@ -15,6 +15,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/jobs_repository.dart';
+import '../site_reports/site_report_field_visibility.dart';
 import '../site_reports/site_report_page_nav.dart';
 import 'job_detail_controller.dart';
 
@@ -60,7 +61,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     super.dispose();
   }
 
-  void _disposeFieldControllers() {
+  void _disposeFieldControllers({bool keepCollapsedState = false}) {
     for (final c in _textCtr.values) {
       c.dispose();
     }
@@ -83,7 +84,9 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     _titleCtr?.dispose();
     _titleCtr = null;
     _repeatableInstances.clear();
-    _repeatableCollapsed.clear();
+    if (!keepCollapsedState) {
+      _repeatableCollapsed.clear();
+    }
   }
 
   String _scopedRepeatableFieldKey(String sectionId, String instanceId, String fieldId) =>
@@ -146,7 +149,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       _loading = true;
       _err = null;
       _pageIndex = 0;
-      _disposeFieldControllers();
+      _disposeFieldControllers(keepCollapsedState: true);
     });
 
     try {
@@ -1062,7 +1065,10 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                     child: Column(
                       children: [
-                        for (final f in sectionFields)
+                        for (final f in visibleSiteReportFields(
+                          sectionFields,
+                          _repeatableInstanceValues(sectionId, instanceId, sectionFields),
+                        ))
                           ..._fieldWidgets(
                             f,
                             storageKey: _scopedRepeatableFieldKey(sectionId, instanceId, (f['id'] as String?) ?? ''),
@@ -1078,10 +1084,43 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     ];
   }
 
+  Map<String, String> _flatFieldValues() {
+    final values = <String, String>{};
+    for (final e in _textCtr.entries) {
+      if (e.key.contains('|')) continue;
+      values[e.key] = e.value.text;
+    }
+    for (final e in _yesNo.entries) {
+      if (e.key.contains('|')) continue;
+      values[e.key] = e.value ?? '';
+    }
+    return values;
+  }
+
+  Map<String, String> _repeatableInstanceValues(String sectionId, String instanceId, List<Map<String, dynamic>> sectionFields) {
+    final values = <String, String>{};
+    for (final f in sectionFields) {
+      final fieldId = (f['id'] as String?) ?? '';
+      if (fieldId.isEmpty) continue;
+      final type = (f['type'] as String?) ?? 'text';
+      if (type == 'static_text' || type == 'image' || type == 'signature') continue;
+      final ctrlKey = _repeatableCtrlKey(sectionId, instanceId, fieldId);
+      if (type == 'yes_no_na' || type == 'pass_fail') {
+        values[fieldId] = _yesNo[ctrlKey] ?? '';
+      } else {
+        values[fieldId] = _textCtr[ctrlKey]?.text ?? '';
+      }
+    }
+    return values;
+  }
+
   List<Widget> _sectionWidgets(Map<String, dynamic> sec, {bool hideTitle = false}) {
     final title = (sec['title'] as String?) ?? (sec['id'] == 'footer' ? 'Footer' : '');
     final fields = sec['fields'];
     if (fields is! List || fields.isEmpty) return [];
+
+    final sectionFields = fields.whereType<Map>().map((f) => Map<String, dynamic>.from(f)).toList();
+    final visibleFields = visibleSiteReportFields(sectionFields, _flatFieldValues());
 
     return [
       if (title.isNotEmpty && !hideTitle)
@@ -1103,8 +1142,8 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             ],
           ),
         ),
-      for (final f in fields)
-        if (f is Map) ..._fieldWidgets(Map<String, dynamic>.from(f)),
+      for (final f in visibleFields)
+        ..._fieldWidgets(f),
     ];
   }
 
@@ -1121,7 +1160,18 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     if (id.isEmpty) return [];
 
     if (type == 'static_text') {
-      final content = (f['content'] as String?) ?? '';
+      var content = (f['content'] as String?) ?? '';
+      if (id == 'client_name_display') {
+        final custName = _report?['customer_name']?.toString() ?? '';
+        if (custName.isNotEmpty) {
+          content = custName;
+        }
+      } else if (id == 'property_address_display') {
+        final resAddr = _report?['resolved_address']?.toString() ?? '';
+        if (resAddr.isNotEmpty) {
+          content = resAddr;
+        }
+      }
       return [
         Padding(
           padding: const EdgeInsets.only(bottom: 12, top: 4),

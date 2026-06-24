@@ -17,6 +17,7 @@ import {
   Type,
 } from 'lucide-react';
 import type {
+  SiteReportFieldHideFollowingRule,
   SiteReportFieldType,
   SiteReportTemplateDefinition,
   SiteReportTemplateField,
@@ -24,10 +25,116 @@ import type {
 } from '@/lib/siteReportTemplateTypes';
 import {
   SITE_REPORT_FIELD_TYPE_OPTIONS,
+  YES_NO_NA_OPTIONS,
   emptyFooter,
   newTemplateField,
   newTemplateSection,
 } from '@/lib/siteReportTemplateTypes';
+
+function HideFollowingEditor({
+  field,
+  onPatch,
+}: {
+  field: SiteReportTemplateField;
+  onPatch: (patch: Partial<SiteReportTemplateField>) => void;
+}) {
+  const rule = field.hide_following_when;
+  const enabled = !!rule;
+
+  const setRule = (next: SiteReportFieldHideFollowingRule | undefined) => {
+    onPatch({ hide_following_when: next });
+  };
+
+  const defaultWhenValues =
+    field.type === 'yes_no_na'
+      ? ['no', 'na']
+      : field.type === 'pass_fail'
+        ? ['fail']
+        : [];
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setRule({ when_values: defaultWhenValues.length ? defaultWhenValues : ['no'], hide_next_count: 2 });
+            } else {
+              setRule(undefined);
+            }
+          }}
+          className="rounded border-slate-300"
+        />
+        Hide follow-up questions when answer matches
+      </label>
+      {enabled && rule ? (
+        <div className="grid gap-3 sm:grid-cols-2 pl-6">
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500">When answer is</label>
+            {field.type === 'yes_no_na' ? (
+              <div className="mt-1 flex flex-wrap gap-2">
+                {YES_NO_NA_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="inline-flex items-center gap-1 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={rule.when_values.includes(opt.value)}
+                      onChange={(e) => {
+                        const set = new Set(rule.when_values);
+                        if (e.target.checked) set.add(opt.value);
+                        else set.delete(opt.value);
+                        const when_values = [...set];
+                        if (when_values.length === 0) return;
+                        setRule({ ...rule, when_values });
+                      }}
+                      className="rounded border-slate-300"
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={rule.when_values.join(', ')}
+                onChange={(e) => {
+                  const when_values = e.target.value
+                    .split(',')
+                    .map((v) => v.trim().toLowerCase())
+                    .filter(Boolean);
+                  if (when_values.length === 0) return;
+                  setRule({ ...rule, when_values });
+                }}
+                placeholder="no, na"
+                className="mt-0.5 w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+              />
+            )}
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase text-slate-500">Hide next questions</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={rule.hide_next_count}
+              onChange={(e) => {
+                const hide_next_count = Math.min(20, Math.max(1, parseInt(e.target.value, 10) || 1));
+                setRule({ ...rule, hide_next_count });
+              }}
+              className="mt-0.5 w-full max-w-[120px] rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      ) : null}
+      {enabled ? (
+        <p className="pl-6 text-[11px] text-slate-500">
+          Example: if this question is No or N/A, the next {rule?.hide_next_count ?? 2} question(s) are hidden on the form and PDF.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function moveItem<T>(list: T[], index: number, delta: -1 | 1): T[] {
   const j = index + delta;
@@ -291,6 +398,9 @@ export default function SiteReportTemplateVisualEditor({ value, onChange }: Prop
                   onChange={(choices) => onPatch({ choices })}
                 />
               </div>
+            )}
+            {field.type !== 'static_text' && field.type !== 'image' && field.type !== 'signature' && (
+              <HideFollowingEditor field={field} onPatch={onPatch} />
             )}
           </div>
         )}

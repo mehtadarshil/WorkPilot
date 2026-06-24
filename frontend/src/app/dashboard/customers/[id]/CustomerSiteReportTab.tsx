@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getJson, postJson, putJson, deleteRequest, getBlob } from '../../../apiClient';
-import { ArrowLeft, Save, Printer, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Printer, Download, Loader2, Edit2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import type {
   SiteReportTemplateDefinition,
@@ -23,6 +23,7 @@ import {
 import CustomerSiteReportRenewalCard, { type SiteReportRenewalState } from './CustomerSiteReportRenewalCard';
 import CustomerSiteReportFormNavigator from './CustomerSiteReportFormNavigator';
 import CustomerSiteReportsList from './CustomerSiteReportsList';
+import EditSiteReportDetailsModal from '../../certificates/components/EditSiteReportDetailsModal';
 
 interface ReportPayload {
   id: number;
@@ -73,15 +74,43 @@ interface Props {
 }
 
 export default function CustomerSiteReportTab({
-  customerId,
-  workAddressId,
-  clientDisplayName,
-  siteAddressLabel,
-  jobId,
+  customerId: initialCustomerIdProp,
+  workAddressId: initialWorkAddressIdProp,
+  clientDisplayName: initialClientDisplayNameProp,
+  siteAddressLabel: initialSiteAddressLabelProp,
+  jobId: initialJobIdProp,
   initialReportId,
   onBack,
 }: Props) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+
+  const [customerId, setCustomerId] = useState<string>(initialCustomerIdProp);
+  const [workAddressId, setWorkAddressId] = useState<string | undefined>(initialWorkAddressIdProp);
+  const [clientDisplayName, setClientDisplayName] = useState<string>(initialClientDisplayNameProp);
+  const [siteAddressLabel, setSiteAddressLabel] = useState<string>(initialSiteAddressLabelProp);
+  const [jobId, setJobId] = useState<string | null>(initialJobIdProp ?? null);
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    setCustomerId(initialCustomerIdProp);
+  }, [initialCustomerIdProp]);
+
+  useEffect(() => {
+    setWorkAddressId(initialWorkAddressIdProp);
+  }, [initialWorkAddressIdProp]);
+
+  useEffect(() => {
+    setClientDisplayName(initialClientDisplayNameProp);
+  }, [initialClientDisplayNameProp]);
+
+  useEffect(() => {
+    setSiteAddressLabel(initialSiteAddressLabelProp);
+  }, [initialSiteAddressLabelProp]);
+
+  useEffect(() => {
+    setJobId(initialJobIdProp ?? null);
+  }, [initialJobIdProp]);
+
   const [report, setReport] = useState<ReportPayload | null>(null);
   const [reports, setReports] = useState<ReportListRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -320,6 +349,35 @@ export default function CustomerSiteReportTab({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDetailsSaved = (
+    nextCustomerName: string,
+    nextWorkAddressLabel: string,
+    nextJobNumber: string | null,
+    nextJobId: number | null,
+    nextCustomerId: number,
+    nextWorkAddressId: number | null,
+    nextReportTitle: string | null,
+  ) => {
+    setClientDisplayName(nextCustomerName);
+    setSiteAddressLabel(nextWorkAddressLabel);
+    setJobId(nextJobId ? String(nextJobId) : null);
+    setCustomerId(String(nextCustomerId));
+    setWorkAddressId(nextWorkAddressId ? String(nextWorkAddressId) : undefined);
+    if (nextReportTitle !== null) {
+      setReportTitle(nextReportTitle);
+    }
+    setReport((prev) =>
+      prev
+        ? {
+            ...prev,
+            customer_id: nextCustomerId,
+            work_address_id: nextWorkAddressId,
+            report_title: nextReportTitle,
+          }
+        : null,
+    );
   };
 
   const setFieldValue = (id: string, v: string) => {
@@ -767,6 +825,16 @@ export default function CustomerSiteReportTab({
       ) : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm print:shadow-none print:border-slate-300">
+        <div className="flex justify-between items-start mb-4 print:hidden">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Report details</span>
+          <button
+            type="button"
+            onClick={() => setEditDetailsOpen(true)}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#14B8A6] hover:underline"
+          >
+            <Edit2 className="size-3.5" /> Edit details
+          </button>
+        </div>
         <div className="grid gap-3 text-sm">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Client</span>
@@ -831,6 +899,20 @@ export default function CustomerSiteReportTab({
             setRepeatableInstanceValue(sec.id, instanceId, fieldId, value),
         })}
       />
+
+      {token && (
+        <EditSiteReportDetailsModal
+          open={editDetailsOpen}
+          token={token}
+          reportId={report.id}
+          initialCustomerId={Number(customerId)}
+          initialWorkAddressId={workAddressId ? Number(workAddressId) : null}
+          initialJobId={jobId ? Number(jobId) : null}
+          initialReportTitle={reportTitle}
+          onClose={() => setEditDetailsOpen(false)}
+          onSaved={handleDetailsSaved}
+        />
+      )}
     </div>
   );
 }

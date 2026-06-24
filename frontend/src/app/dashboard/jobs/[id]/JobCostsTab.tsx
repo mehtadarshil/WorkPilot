@@ -41,6 +41,8 @@ interface CostPayload {
     on_site_override: number | null;
     first_hour_override: number | null;
     additional_hour_override: number | null;
+    price_book_name: string | null;
+    price_book_source: 'customer' | 'company_default' | null;
     updated_at: string | null;
     updated_by_name: string | null;
   };
@@ -387,9 +389,18 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   <div>
                     <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Timesheet labour rates</h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      Travel is charged separately. On-site labour uses the first hour rate, then any minutes over 60 minutes at the additional-hour rate.
-                      Leave blank to use the customer price book default
-                      {rateConfig.default_rate_name ? ` (${rateConfig.default_rate_name})` : ''}: {money(rateConfig.default_hourly_rate)}/hr.
+                      {rateConfig.price_book_name ? (
+                        <>
+                          Using price book <strong className="text-slate-700">{rateConfig.price_book_name}</strong>
+                          {rateConfig.price_book_source === 'customer' ? ' (customer-specific)' : rateConfig.price_book_source === 'company_default' ? ' (company default)' : ''}.
+                          {' '}Leave fields blank to keep these defaults. Enter a value to override for this job only.
+                        </>
+                      ) : (
+                        <>
+                          No price book assigned — set company defaults in Settings → Price books.
+                          Enter rates below for this job.
+                        </>
+                      )}
                     </p>
                   </div>
                   {rateConfig.updated_at ? (

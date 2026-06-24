@@ -164,12 +164,18 @@ export const CERTIFICATE_PRINT_CSS = `
   }
   .cp-board-testing strong { margin-right: 4px; }
 
+  table.kv td.lbl, table.kv .lbl { width: 34%; background: #f3f4f6; color: #111; font-weight: 800; }
+  table.kv.kv-grid { table-layout: fixed; width: 100%; border-collapse: collapse; }
+  table.kv.kv-grid td { border: 1px solid #d1d5db; padding: 3px 5px; vertical-align: top; }
+  table.kv.kv-grid tr.kv-pair td.lbl { width: 18%; background: #f3f4f6; font-weight: 800; }
+  table.kv.kv-grid tr.kv-pair td:not(.lbl) { width: 32%; }
+  table.kv.kv-grid tr.kv-full td.lbl { width: 22%; background: #f3f4f6; font-weight: 800; }
+  table.kv.kv-grid tr { break-inside: avoid; page-break-inside: avoid; }
+
   .cert-print-page {
-    break-after: page;
-    page-break-after: always;
-    padding-bottom: 12mm;
+    padding-bottom: 4mm;
   }
-  .cert-print-page:last-child { break-after: auto; page-break-after: auto; }
+  .cert-flow { /* natural pagination */ }
 
   .cp-print-footer-bar {
     position: fixed;
@@ -249,6 +255,9 @@ export const CERTIFICATE_PRINT_CSS = `
     white-space: pre-wrap;
     color: #111;
   }
+  .cp-guidance-block > h2 { break-after: avoid; page-break-after: avoid; }
+  .cp-supply-sections { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .cp-supply-subsection { break-inside: avoid; page-break-inside: avoid; }
   .cp-recommendations {
     margin-top: 8px;
     padding: 6px 8px;
@@ -278,5 +287,7 @@ export const CERTIFICATE_PRINT_CSS = `
   .cp-supply-section-title {
     grid-column: 1 / -1; margin: 4px 0 0; padding: 2px 4px;
     background: #374151; color: #fff; font-size: 6.5pt; font-weight: 800; text-transform: uppercase;
+    break-after: avoid; page-break-after: avoid;
   }
+  .cp-form-field { break-inside: avoid; page-break-inside: avoid; }
 `;

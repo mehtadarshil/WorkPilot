@@ -2,6 +2,7 @@ import type { CertificatePdfInput } from './certificatePdfHtml';
 import { pdfBlock } from './certificatePdfHtml';
 import { boardCircuitPageHtml } from './certificatePrint/circuitScheduleHtml';
 import { EICR_RECIPIENT_GUIDANCE, EICR_RECOMMENDATIONS_INTRO } from './certificatePrint/eicrGuidance';
+import { kvTableHtml } from './certificatePrint/kvTableHtml';
 import { observationSummaryGridHtml } from './certificatePrint/observationSummary';
 import {
   assessmentBannerHtml,
@@ -74,63 +75,107 @@ export function buildEicrCertificatePdfHtml(input: CertificatePdfInput, h: PdfHe
   const conditionBanner = assessmentBannerHtml(inst.generalCondition, h.esc, 'General condition of the installation');
   const clientValue = inst.hideClientOnReport ? 'Client withheld on report' : (input.customerName ?? '-');
   const footerBar = printPageFooterHtml(input.certificateNumber, h.esc);
+  const observationsCompact = doc.observations.items.length === 0;
 
-  const page1 = `<section class="cert-print-page">
-    ${pdfBlock('Details of client or person ordering report', `<table class="kv">
-      ${h.row('Client', clientValue)}
-      ${h.row('Installation', input.installationLabel ?? '-')}
-      ${h.row('Job number', input.jobNumber ?? '')}
-    </table>`, h.esc)}
-    ${pdfBlock('Reason for producing this report', `<table class="kv">
-      ${h.row('Reason', inst.reason)}
-      ${h.row('Date inspection carried out', inst.inspectionDate)}
-    </table>`, h.esc)}
-    ${pdfBlock('Details of the installation', `<table class="kv">
-      ${h.row('Occupier name', inst.occupierName)}
-      ${h.row('Description of premises', inst.premisesType)}
-      ${h.row('Installation records available', inst.recordsAvailable)}
-      ${h.row('Date of previous inspection', inst.previousInspectionDate)}
-      ${h.row('Previous certificate number', inst.previousCertNumber)}
-      ${h.row('Evidence of additions/alterations', inst.alterationsEvidence)}
-      ${h.row('Estimated age of installation', inst.estimatedAge)}
-    </table>`, h.esc)}
-    ${pdfBlock('Extent and limitations of inspection and testing', `<table class="kv">
-      ${h.row('Extent covered', inst.extent)}
-      ${h.row('Agreed limitations', inst.agreedLimitations)}
-      ${h.row('Agreed with', inst.agreedWith)}
-      ${h.row('Operational limitations', inst.operationalLimitations)}
-    </table>`, h.esc)}
-    ${pdfBlock('Summary of the condition of the installation', `${overallBanner}
+  const mainFlow = `<div class="cert-flow">
+    ${pdfBlock(
+      'Details of client or person ordering report',
+      kvTableHtml(
+        [
+          { label: 'Client', value: clientValue },
+          { label: 'Installation', value: input.installationLabel ?? '-' },
+          { label: 'Job number', value: input.jobNumber ?? '' },
+        ],
+        h.esc,
+        true,
+      ),
+      h.esc,
+      true,
+    )}
+    ${pdfBlock(
+      'Reason for producing this report',
+      kvTableHtml(
+        [
+          { label: 'Reason', value: inst.reason },
+          { label: 'Date inspection carried out', value: inst.inspectionDate },
+        ],
+        h.esc,
+        true,
+      ),
+      h.esc,
+      true,
+    )}
+    ${pdfBlock(
+      'Details of the installation',
+      kvTableHtml(
+        [
+          { label: 'Occupier name', value: inst.occupierName },
+          { label: 'Description of premises', value: inst.premisesType },
+          { label: 'Installation records available', value: inst.recordsAvailable },
+          { label: 'Date of previous inspection', value: inst.previousInspectionDate },
+          { label: 'Previous certificate number', value: inst.previousCertNumber },
+          { label: 'Evidence of additions/alterations', value: inst.alterationsEvidence },
+          { label: 'Estimated age of installation', value: inst.estimatedAge },
+        ],
+        h.esc,
+        true,
+      ),
+      h.esc,
+      false,
+    )}
+    ${pdfBlock(
+      'Extent and limitations of inspection and testing',
+      kvTableHtml(
+        [
+          { label: 'Extent covered', value: inst.extent },
+          { label: 'Agreed limitations', value: inst.agreedLimitations },
+          { label: 'Agreed with', value: inst.agreedWith },
+          { label: 'Operational limitations', value: inst.operationalLimitations },
+        ],
+        h.esc,
+        true,
+      ),
+      h.esc,
+      false,
+    )}
+    ${pdfBlock(
+      'Summary of the condition of the installation',
+      `${overallBanner}
     <div class="cp-recommendations">
       <strong>Recommendations</strong>
       ${h.esc(EICR_RECOMMENDATIONS_INTRO)}
       ${inst.reinspectionPeriod.trim() ? `<p style="margin:6px 0 0"><strong>Recommended re-inspection:</strong> ${h.esc(inst.reinspectionPeriod)}</p>` : ''}
-    </div>`, h.esc)}
-  </section>`;
-
-  const page2 = `<section class="cert-print-page">
-    ${pdfBlock('Observations and recommendations', `<p class="muted" style="font-size:7pt;margin-bottom:6px">One of the following codes has been allocated to each observation to indicate the degree of urgency for remedial action.</p>
+    </div>`,
+      h.esc,
+      true,
+    )}
+    ${pdfBlock(
+      'Observations and recommendations',
+      `<p class="muted" style="font-size:7pt;margin-bottom:6px">One of the following codes has been allocated to each observation to indicate the degree of urgency for remedial action.</p>
     ${observationSummaryGridHtml(doc.observations.items, h.esc)}
-    ${observationsTable}`, h.esc)}
-  </section>`;
-
-  const page3 = `<section class="cert-print-page">
-    ${conditionBanner ? `<div style="margin-bottom:8px">${conditionBanner}</div>` : ''}
-    ${pdfBlock('Declaration', `<div class="cp-signatory-grid">
+    ${observationsTable}`,
+      h.esc,
+      observationsCompact,
+    )}
+    ${conditionBanner ? `<div class="cp-keep-together" style="margin-bottom:8px">${conditionBanner}</div>` : ''}
+    ${pdfBlock(
+      'Declaration',
+      `<div class="cp-signatory-grid">
       ${declarationSignatoryHtml('Inspected and tested by', inst.inspectedBy, inst.inspectedPosition, inst.inspectedDate, inst.inspectedBySignatureDataUrl ?? '', h.esc)}
       ${declarationSignatoryHtml('Report authorised by', inst.authorisedBy, inst.authorisedPosition, inst.authorisedDate, inst.authorisedBySignatureDataUrl ?? '', h.esc)}
-    </div>`, h.esc)}
-    ${pdfBlock('Supply characteristics and earthing arrangements', supplyParticularsHtml(sup, h.esc), h.esc)}
-  </section>`;
+    </div>`,
+      h.esc,
+      true,
+    )}
+    ${pdfBlock('Supply characteristics and earthing arrangements', supplyParticularsHtml(sup, h.esc), h.esc, false, 'cp-supply-block')}
+  </div>`;
 
-  const pageInspection = `<section class="cert-print-page inspection-schedule">
+  const pageInspection = `<section class="inspection-schedule">
     ${pdfBlock('Inspection schedule', `${inspectionScheduleLegendHtml(h.esc)}
     ${inspectionRows}`, h.esc)}
   </section>`;
 
-  const pageGuidance = `<section class="cert-print-page">
-    ${pdfBlock('Guidance for recipients', `<div class="cp-guidance">${h.esc(EICR_RECIPIENT_GUIDANCE)}</div>`, h.esc)}
-  </section>`;
+  const pageGuidance = `${pdfBlock('Guidance for recipients', `<div class="cp-guidance">${h.esc(EICR_RECIPIENT_GUIDANCE)}</div>`, h.esc, false, 'cp-guidance-block')}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -142,8 +187,8 @@ ${h.certificatePdfStyles(b.accent_color, b.accent_end_color, '8.4pt')}
 ${CERTIFICATE_PRINT_CSS}
   @page { margin: 10mm 10mm 16mm 10mm; }
   @page circuitSchedule { size: A4 landscape; margin: 6mm 6mm 12mm 6mm; }
-  body { padding-bottom: 10mm; }
-  .inspection-schedule { page-break-inside: auto; }
+  body { padding-bottom: 2mm; }
+  .inspection-schedule { page-break-inside: auto; break-inside: auto; }
   .schedule-section { page-break-inside: avoid; break-inside: avoid; margin-bottom: 7px; }
   .schedule-section .sched { font-size: 6.8pt; }
   .schedule-section .sched th, .schedule-section .sched td { padding: 2.2px 3px; line-height: 1.15; }
@@ -152,7 +197,6 @@ ${CERTIFICATE_PRINT_CSS}
   .circuit-page {
     page: circuitSchedule;
     break-before: page;
-    break-after: page;
     page-break-inside: auto;
     margin: 0; padding: 0; border: 0; background: #fff;
   }
@@ -160,15 +204,13 @@ ${CERTIFICATE_PRINT_CSS}
 </head>
 <body>
   ${h.certificateHeaderHtml(input, 'Electrical Installation Condition Report', 'BS 7671:2018+A3:2024 (18th Edition)')}
-  ${page1}
-  ${page2}
-  ${page3}
+  ${mainFlow}
   ${pageInspection}
+  ${pageGuidance}
   ${boardsHtml || '<section class="block"><h2>Distribution boards</h2><p class="muted">No boards</p></section>'}
   ${doc.appendix.content.trim() ? `<section class="block"><h2>Appendix notes</h2><p style="white-space:pre-wrap">${h.esc(doc.appendix.content)}</p></section>` : ''}
   ${boardPhotos.length ? h.photosHtml(boardPhotos, 'Board photographs') : ''}
   ${doc.appendix.photos.length ? h.photosHtml(doc.appendix.photos, 'Appendix photographs') : ''}
-  ${pageGuidance}
   ${footerBar}
 </body>
 </html>`;

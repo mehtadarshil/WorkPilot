@@ -20,6 +20,8 @@ import {
   INSPECTION_SECTION_LABELS,
 } from '@/lib/electricalCertificates/inspectionScheduleItems';
 import type { ElectricalCertificate } from '@/lib/electricalCertificates/types';
+import type { KvEntry } from '@/lib/electricalCertificates/certificatePrint/kvTable';
+import { buildKvTableRows } from '@/lib/electricalCertificates/certificatePrint/kvTable';
 import { CertificateBrandedHeader } from './CertificateBrandedHeader';
 
 export function EicrPrintTemplate({
@@ -49,7 +51,6 @@ export function EicrPrintTemplate({
         .eicr-circuit-page {
           page: eicrCircuitSchedule;
           break-before: page;
-          break-after: page;
         }
         .eicr-inspection-schedule th {
           background: #111;
@@ -62,39 +63,46 @@ export function EicrPrintTemplate({
           <CertificateBrandedHeader branding={branding} certificateNumber={certificate.certificate_number} />
         </div>
 
-        {/* Page 1 — Cover details */}
-        <section className="cert-print-page px-8 print:px-6">
+        <section className="cert-flow px-8 print:px-6">
           <SectionTitle>Details of client or person ordering report</SectionTitle>
-          <KvTable>
-            <PrintRow label="Client" value={clientLabel} />
-            <PrintRow label="Installation" value={certificate.installation_label ?? '—'} />
-            {certificate.job_number && <PrintRow label="Job" value={certificate.job_number} />}
-          </KvTable>
+          <CompactKvTable
+            entries={[
+              { label: 'Client', value: clientLabel },
+              { label: 'Installation', value: certificate.installation_label ?? '—' },
+              { label: 'Job', value: certificate.job_number ?? '' },
+            ]}
+          />
 
           <SectionTitle>Reason for producing this report</SectionTitle>
-          <KvTable>
-            <PrintRow label="Reason" value={inst.reason} />
-            <PrintRow label="Date inspection carried out" value={inst.inspectionDate} />
-          </KvTable>
+          <CompactKvTable
+            entries={[
+              { label: 'Reason', value: inst.reason },
+              { label: 'Date inspection carried out', value: inst.inspectionDate },
+            ]}
+          />
 
           <SectionTitle>Details of the installation</SectionTitle>
-          <KvTable>
-            <PrintRow label="Occupier name" value={inst.occupierName} />
-            <PrintRow label="Description of premises" value={inst.premisesType} />
-            <PrintRow label="Installation records available" value={inst.recordsAvailable} />
-            <PrintRow label="Date of previous inspection" value={inst.previousInspectionDate} />
-            <PrintRow label="Previous certificate number" value={inst.previousCertNumber} />
-            <PrintRow label="Evidence of additions/alterations" value={inst.alterationsEvidence} />
-            <PrintRow label="Estimated age of installation" value={inst.estimatedAge} />
-          </KvTable>
+          <CompactKvTable
+            entries={[
+              { label: 'Occupier name', value: inst.occupierName },
+              { label: 'Description of premises', value: inst.premisesType },
+              { label: 'Installation records available', value: inst.recordsAvailable },
+              { label: 'Date of previous inspection', value: inst.previousInspectionDate },
+              { label: 'Previous certificate number', value: inst.previousCertNumber },
+              { label: 'Evidence of additions/alterations', value: inst.alterationsEvidence },
+              { label: 'Estimated age of installation', value: inst.estimatedAge },
+            ]}
+          />
 
           <SectionTitle>Extent and limitations of inspection and testing</SectionTitle>
-          <KvTable>
-            <PrintRow label="Extent covered" value={inst.extent} />
-            <PrintRow label="Agreed limitations" value={inst.agreedLimitations} />
-            <PrintRow label="Agreed with" value={inst.agreedWith} />
-            <PrintRow label="Operational limitations" value={inst.operationalLimitations} />
-          </KvTable>
+          <CompactKvTable
+            entries={[
+              { label: 'Extent covered', value: inst.extent },
+              { label: 'Agreed limitations', value: inst.agreedLimitations },
+              { label: 'Agreed with', value: inst.agreedWith },
+              { label: 'Operational limitations', value: inst.operationalLimitations },
+            ]}
+          />
 
           <SectionTitle>Summary of the condition of the installation</SectionTitle>
           <AssessmentBanner
@@ -110,10 +118,7 @@ export function EicrPrintTemplate({
               </p>
             )}
           </div>
-        </section>
 
-        {/* Page 2 — Observations */}
-        <section className="cert-print-page px-8 print:px-6">
           <SectionTitle>Observations and recommendations</SectionTitle>
           <p className="mb-2 text-xs text-slate-600">
             One of the following codes has been allocated to each observation to indicate the degree of urgency for remedial action.
@@ -145,10 +150,7 @@ export function EicrPrintTemplate({
           ) : (
             <p className="text-sm text-slate-600">No remedial action is required</p>
           )}
-        </section>
 
-        {/* Page 3 — Declaration + supply */}
-        <section className="cert-print-page px-8 print:px-6">
           <AssessmentBanner label="General condition of the installation" value={inst.generalCondition} />
           <SectionTitle>Declaration</SectionTitle>
           <div className="cp-signatory-grid">
@@ -167,12 +169,14 @@ export function EicrPrintTemplate({
               signatureDataUrl={inst.authorisedBySignatureDataUrl ?? ''}
             />
           </div>
-          <SectionTitle>Supply characteristics and earthing arrangements</SectionTitle>
-          <SupplyParticularsGrid supply={sup} />
+          <div className="cp-supply-block break-inside-auto">
+            <SectionTitle className="cp-supply-section-heading">Supply characteristics and earthing arrangements</SectionTitle>
+            <SupplyParticularsGrid supply={sup} />
+          </div>
         </section>
 
         {/* Inspection schedule */}
-        <section className="cert-print-page px-8 print:px-6">
+        <section className="px-8 print:px-6">
           <SectionTitle>Inspection schedule</SectionTitle>
           <InspectionScheduleLegend />
           {sections.map((section) => {
@@ -214,7 +218,7 @@ export function EicrPrintTemplate({
           </section>
         )}
 
-        <section className="cert-print-page px-8 print:px-6">
+        <section className="cp-guidance-block px-8 print:px-6">
           <SectionTitle>Guidance for recipients</SectionTitle>
           <div className="cp-guidance">{EICR_RECIPIENT_GUIDANCE}</div>
           <CertificateFooter branding={branding} certificateNumber={certificate.certificate_number} />
@@ -240,21 +244,33 @@ export function EicrPrintTemplate({
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="mb-2 mt-4 border-b border-slate-300 font-bold first:mt-0">{children}</h2>;
+function SectionTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <h2 className={`mb-2 mt-4 border-b border-slate-300 font-bold first:mt-0 break-after-avoid ${className}`}>{children}</h2>;
 }
 
-function KvTable({ children }: { children: React.ReactNode }) {
-  return <table className="mb-2 w-full text-sm"><tbody>{children}</tbody></table>;
-}
-
-function PrintRow({ label, value }: { label: string; value: string }) {
-  if (!value?.trim()) return null;
+function CompactKvTable({ entries, pairCompact = true }: { entries: KvEntry[]; pairCompact?: boolean }) {
+  const rows = buildKvTableRows(entries, pairCompact);
+  if (!rows.length) return null;
   return (
-    <tr>
-      <td className="w-44 py-0.5 font-semibold text-slate-600">{label}</td>
-      <td className="py-0.5">{value}</td>
-    </tr>
+    <table className="kv kv-grid mb-2 w-full text-sm">
+      <tbody>
+        {rows.map((row, i) =>
+          row.length === 2 ? (
+            <tr key={i} className="kv-pair">
+              <td className="lbl py-0.5 font-semibold text-slate-600">{row[0]!.label}</td>
+              <td className="py-0.5">{row[0]!.value}</td>
+              <td className="lbl py-0.5 font-semibold text-slate-600">{row[1]!.label}</td>
+              <td className="py-0.5">{row[1]!.value}</td>
+            </tr>
+          ) : (
+            <tr key={i} className="kv-full">
+              <td className="lbl py-0.5 font-semibold text-slate-600">{row[0]!.label}</td>
+              <td colSpan={3} className="py-0.5">{row[0]!.value}</td>
+            </tr>
+          ),
+        )}
+      </tbody>
+    </table>
   );
 }
 

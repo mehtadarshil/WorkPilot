@@ -205,6 +205,61 @@ export async function ensureStaffWorkSchema(pool: Pool): Promise<void> {
     )
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_officer_payments_officer ON officer_payments(officer_id, payment_date DESC)');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS company_overhead_expenses (
+      id SERIAL PRIMARY KEY,
+      expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      category VARCHAR(80) NOT NULL DEFAULT 'General',
+      description TEXT,
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_company_overhead_expenses_tenant_date ON company_overhead_expenses(created_by, expense_date DESC)',
+  );
+}
+
+function overheadExpenseRow(row: Record<string, unknown>) {
+  return {
+    id: Number(row.id),
+    expense_date:
+      row.expense_date instanceof Date
+        ? row.expense_date.toISOString().slice(0, 10)
+        : String(row.expense_date ?? '').slice(0, 10),
+    category: (row.category as string | null) ?? 'General',
+    description: (row.description as string | null) ?? null,
+    amount: Number(row.amount ?? 0),
+    created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
+  };
+}
+
+async function sumOverheadExpenses(
+  pool: Pool,
+  userId: number,
+  isSuperAdmin: boolean,
+  from?: string,
+  to?: string,
+): Promise<{ total: number; count: number }> {
+  const params: unknown[] = [];
+  let where = 'WHERE 1=1';
+  if (!isSuperAdmin) {
+    params.push(userId);
+    where += ` AND created_by = $${params.length}`;
+  }
+  if (from && to) {
+    params.push(from, to);
+    where += ` AND expense_date >= $${params.length - 1}::date AND expense_date < ($${params.length}::date + INTERVAL '1 day')`;
+  }
+  const result = await pool.query<{ total: string; count: number }>(
+    `SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count
+     FROM company_overhead_expenses ${where}`,
+    params,
+  );
+  const row = result.rows[0];
+  return { total: Number(row?.total ?? 0), count: Number(row?.count ?? 0) };
 }
 
 const OFFICER_PAYMENT_METHODS = ['bank_transfer', 'credit_card', 'cash', 'digital_payment', 'check', 'other'] as const;
@@ -560,7 +615,19 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
       totals.expenses_count = Number(periodTotals?.personal_approved_count ?? totals.expenses_count);
       totals.company_expenses_total = Number(periodTotals?.company_approved_total ?? 0);
       totals.company_expenses_count = Number(periodTotals?.company_approved_count ?? 0);
-      return res.json({ from, to, officers, totals });
+      const overheadPeriod = await sumOverheadExpenses(pool, userId, isSuperAdmin, from, to);
+      const overheadAllTime = await sumOverheadExpenses(pool, userId, isSuperAdmin);
+      return res.json({
+        from,
+        to,
+        officers,
+        totals: {
+          ...totals,
+          general_overhead_total: overheadPeriod.total,
+          general_overhead_count: overheadPeriod.count,
+          general_overhead_all_time: overheadAllTime.total,
+        },
+      });
     } catch (error) {
       console.error('Staff work summary error:', error);
       return res.status(500).json({ message: 'Internal server error' });
@@ -593,6 +660,145 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
       return res.json({ expenses: result.rows.map(expenseRow) });
     } catch (error) {
       console.error('Staff work expenses error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/company-overhead-expenses', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const from = parseDateParam(req.query.from) ?? defaultFromDate();
+    const to = parseDateParam(req.query.to) ?? defaultToDate();
+    const userId = getTenantScopeUserId(user);
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    try {
+      const params: unknown[] = [from, to];
+      let sql = `
+        SELECT id, expense_date, category, description, amount, created_at
+        FROM company_overhead_expenses
+        WHERE expense_date >= $1::date
+          AND expense_date < ($2::date + INTERVAL '1 day')
+      `;
+      if (!isSuperAdmin) {
+        params.push(userId);
+        sql += ` AND created_by = $${params.length}`;
+      }
+      sql += ' ORDER BY expense_date DESC, id DESC';
+      const result = await pool.query(sql, params);
+      const summary = await sumOverheadExpenses(pool, userId, isSuperAdmin, from, to);
+      return res.json({ expenses: result.rows.map(overheadExpenseRow), summary });
+    } catch (error) {
+      console.error('List company overhead expenses error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/company-overhead-expenses', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const userId = getTenantScopeUserId(user);
+    const body = req.body as Record<string, unknown>;
+    const amount = money(body.amount);
+    if (amount == null || amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be greater than zero' });
+    }
+    const category =
+      typeof body.category === 'string' ? body.category.trim().slice(0, 80) || 'General' : 'General';
+    const description = typeof body.description === 'string' ? body.description.trim().slice(0, 2000) || null : null;
+    const expenseDate = isoDate(body.expense_date);
+    try {
+      const insert = await pool.query(
+        `INSERT INTO company_overhead_expenses (expense_date, category, description, amount, created_by, updated_at)
+         VALUES ($1::date, $2, $3, $4, $5, NOW())
+         RETURNING id, expense_date, category, description, amount, created_at`,
+        [expenseDate, category, description, amount, userId],
+      );
+      return res.status(201).json({ expense: overheadExpenseRow(insert.rows[0] as Record<string, unknown>) });
+    } catch (error) {
+      console.error('Create company overhead expense error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/company-overhead-expenses/:id', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const expenseId = parseId(req.params.id);
+    if (!expenseId) return res.status(400).json({ message: 'Invalid expense id' });
+    const userId = getTenantScopeUserId(user);
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    const body = req.body as Record<string, unknown>;
+    try {
+      const existing = await pool.query(
+        `SELECT id FROM company_overhead_expenses WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+        isSuperAdmin ? [expenseId] : [expenseId, userId],
+      );
+      if ((existing.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Expense not found' });
+
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      let idx = 1;
+      if (body.expense_date !== undefined) {
+        updates.push(`expense_date = $${idx++}::date`);
+        values.push(isoDate(body.expense_date));
+      }
+      if (body.category !== undefined) {
+        updates.push(`category = $${idx++}`);
+        values.push(typeof body.category === 'string' ? body.category.trim().slice(0, 80) || 'General' : 'General');
+      }
+      if (body.description !== undefined) {
+        updates.push(`description = $${idx++}`);
+        values.push(typeof body.description === 'string' ? body.description.trim().slice(0, 2000) || null : null);
+      }
+      if (body.amount !== undefined) {
+        const amount = money(body.amount);
+        if (amount == null || amount <= 0) {
+          return res.status(400).json({ message: 'Amount must be greater than zero' });
+        }
+        updates.push(`amount = $${idx++}`);
+        values.push(amount);
+      }
+      if (updates.length === 0) {
+        return res.status(400).json({ message: 'No fields to update' });
+      }
+      updates.push('updated_at = NOW()');
+      values.push(expenseId);
+      const updated = await pool.query(
+        `UPDATE company_overhead_expenses SET ${updates.join(', ')} WHERE id = $${idx}
+         RETURNING id, expense_date, category, description, amount, created_at`,
+        values,
+      );
+      return res.json({ expense: overheadExpenseRow(updated.rows[0] as Record<string, unknown>) });
+    } catch (error) {
+      console.error('Update company overhead expense error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/company-overhead-expenses/:id', authenticate, async (req: AuthReq, res: Response) => {
+    const user = req.user!;
+    if (!assertStaffPermissionAny(user, ['field_users'])) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
+    const expenseId = parseId(req.params.id);
+    if (!expenseId) return res.status(400).json({ message: 'Invalid expense id' });
+    const userId = getTenantScopeUserId(user);
+    const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    try {
+      const result = await pool.query(
+        `DELETE FROM company_overhead_expenses WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'} RETURNING id`,
+        isSuperAdmin ? [expenseId] : [expenseId, userId],
+      );
+      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Expense not found' });
+      return res.status(204).send();
+    } catch (error) {
+      console.error('Delete company overhead expense error:', error);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });

@@ -58,6 +58,7 @@ import {
   permissionsFromDb,
   assertStaffPermissionAny,
   parsePermissionsBody,
+  assertStaffPermission,
 } from './tenantAccess';
 import { mountTenantStaffRoutes } from './tenantStaffRoutes';
 import { mountTenantTeamRoutes } from './tenantTeamRoutes';
@@ -121,6 +122,11 @@ import {
   mountStockToolsRoutes,
   syncStockTransaction,
 } from './stockToolsRoutes';
+import {
+  ensurePricingSettingsSchema,
+  getTenantPricingSettings,
+  seedJobPricingDefaults,
+} from './priceBookResolution';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -656,6 +662,7 @@ pool.query(`ALTER TABLE customer_specific_notes ADD COLUMN IF NOT EXISTS created
   .catch(err => console.error('Migration error (customer_specific_notes created_by):', err));
 
 ensureStockToolsSchema(pool);
+ensurePricingSettingsSchema(pool);
 
 type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
@@ -2303,6 +2310,7 @@ async function initDb() {
   await ensureHolidaySchema(pool);
   await ensurePpmContractSchema(pool);
   await ensureStockToolsSchema(pool);
+  await ensurePricingSettingsSchema(pool);
 
   // Migrate existing single-officer assignments into junction tables
   await pool.query(`
@@ -2504,6 +2512,10 @@ function persistedDiaryStatus(status: unknown): string {
   if (!raw) return 'No status';
   return raw;
 }
+
+/** Diary list / home — exclude finished visits and jobs closed on the board. */
+const SQL_DIARY_ONGOING_ONLY = ` AND COALESCE(LOWER(TRIM(REPLACE(d.status, ' ', '_'))), '') NOT IN ('completed', 'cancelled', 'aborted')
+         AND j.state NOT IN ('completed', 'closed')`;
 
 /** Field officers may save job report drafts while travelling or on site (before final submit). */
 function diaryStatusAllowsJobReportDraft(status: unknown): boolean {
@@ -3682,6 +3694,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
        WHERE (d.officer_id = $1 OR j.officer_id = $1)
          AND d.start_time < NOW() + INTERVAL '7 days'
          AND (d.start_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute')) > NOW()
+         ${SQL_DIARY_ONGOING_ONLY}
        ORDER BY d.start_time ASC
        LIMIT 50`,
           [oid],
@@ -6663,6 +6676,11 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     } catch (e) {
       console.error('Seed job report questions for new job:', e);
     }
+    try {
+      await seedJobPricingDefaults(pool, r.id, customerId ?? null, null, createdBy);
+    } catch (e) {
+      console.error('Seed job pricing defaults for new job:', e);
+    }
     return res.status(201).json({
       job: {
         id: r.id,
@@ -7958,6 +7976,9 @@ app.post('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_c
     let markupPct = typeof body.markup_pct === 'number' && Number.isFinite(body.markup_pct) ? body.markup_pct : 0;
     let vatRate = typeof body.vat_rate === 'number' && Number.isFinite(body.vat_rate) ? body.vat_rate : 20;
     let partCatalogId: number | null = null;
+    const pricingDefaults = body.markup_pct === undefined
+      ? await getTenantPricingSettings(pool, userId)
+      : null;
 
     const catalogIdRaw = body.part_catalog_id;
     if (catalogIdRaw !== undefined && catalogIdRaw !== null && catalogIdRaw !== '') {
@@ -7980,6 +8001,10 @@ app.post('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_c
     }
 
     if (!partName) return res.status(400).json({ message: 'Part name or catalog selection is required' });
+
+    if (body.markup_pct === undefined && partCatalogId === null && pricingDefaults) {
+      markupPct = pricingDefaults.default_parts_markup_pct;
+    }
 
     const qty =
       typeof body.quantity === 'number' && Number.isFinite(body.quantity)
@@ -8346,6 +8371,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE ${timeWhere}
        ${officerClause}
+       ${SQL_DIARY_ONGOING_ONLY}
        ORDER BY d.start_time ASC`,
       params,
     );
@@ -11814,12 +11840,50 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
 app.patch(
   '/api/diary-events/:id/reschedule',
   authenticate,
-  requireAdmin,
-  requirePermission('scheduling'),
   async (req: AuthenticatedRequest, res: Response) => {
     const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const id = parseInt(String(idParam), 10);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid event id' });
+
+    // Authorization check: ADMIN, SUPER_ADMIN, STAFF with scheduling permission, or assigned officer/staff
+    const tokenOfficerId = req.user!.officerId ?? null;
+    const role = req.user!.role.toUpperCase();
+
+    let hasSchedulingAccess = false;
+    if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+      hasSchedulingAccess = true;
+    } else if (role === 'STAFF') {
+      if (assertStaffPermission(req.user, 'scheduling')) {
+        hasSchedulingAccess = true;
+      }
+    }
+
+    if (!hasSchedulingAccess) {
+      if (tokenOfficerId == null) {
+        return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+      }
+      try {
+        const assignmentCheck = await pool.query<{ is_assigned: boolean }>(
+          `SELECT EXISTS (
+            SELECT 1 FROM diary_events d
+            LEFT JOIN jobs j ON j.id = d.job_id
+            WHERE d.id = $1 AND (
+              d.officer_id = $2 OR
+              j.officer_id = $2 OR
+              EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) OR
+              EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2)
+            )
+          ) AS is_assigned`,
+          [id, tokenOfficerId]
+        );
+        if (!assignmentCheck.rows[0]?.is_assigned) {
+          return res.status(403).json({ message: 'Forbidden: You can only edit visits assigned to you' });
+        }
+      } catch (err) {
+        console.error('reschedule permission check error:', err);
+        return res.status(500).json({ message: 'Internal server error' });
+      }
+    }
 
     const body = req.body as {
       start_time?: string | null;
@@ -11930,6 +11994,125 @@ app.patch(
       return res.status(500).json({ message: 'Internal server error' });
     }
   },
+);
+
+app.put(
+  '/api/diary-events/:id/timeline',
+  authenticate,
+  requireAdmin,
+  requirePermission('scheduling'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const diaryEventId = parseInt(String(idParam), 10);
+    if (!Number.isFinite(diaryEventId)) {
+      return res.status(400).json({ message: 'Invalid event id' });
+    }
+
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+    const client = await pool.connect();
+    try {
+      const access = await client.query<{ id: number; created_by: number | null; officer_id: number | null }>(
+        `SELECT d.id, j.created_by, d.officer_id
+         FROM diary_events d
+         INNER JOIN jobs j ON j.id = d.job_id
+         WHERE d.id = $1`,
+        [diaryEventId],
+      );
+      if ((access.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+      const acc = access.rows[0];
+      if (!isSuperAdmin && acc.created_by !== userId) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+
+      const officerId = acc.officer_id;
+      if (officerId == null) {
+        return res.status(400).json({ message: 'Cannot edit timeline for unassigned diary event' });
+      }
+
+      const { status_logs, timesheet_entries } = req.body as {
+        status_logs: Array<{ status: string; timestamp: string; latitude: number | null; longitude: number | null }>;
+        timesheet_entries: Array<{ segment_type: string | null; clock_in: string; clock_out: string | null; notes: string | null }>;
+      };
+
+      if (!Array.isArray(status_logs)) {
+        return res.status(400).json({ message: 'status_logs must be an array' });
+      }
+      if (!Array.isArray(timesheet_entries)) {
+        return res.status(400).json({ message: 'timesheet_entries must be an array' });
+      }
+
+      await client.query('BEGIN');
+
+      // 1. Delete existing status logs
+      await client.query(
+        `DELETE FROM diary_event_status_logs WHERE diary_event_id = $1`,
+        [diaryEventId]
+      );
+
+      // 2. Insert new status logs
+      for (const log of status_logs) {
+        await client.query(
+          `INSERT INTO diary_event_status_logs (diary_event_id, status, latitude, longitude, timestamp, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            diaryEventId,
+            log.status,
+            log.latitude ?? null,
+            log.longitude ?? null,
+            new Date(log.timestamp),
+            userId
+          ]
+        );
+      }
+
+      // 3. Delete existing timesheet entries
+      await client.query(
+        `DELETE FROM timesheet_entries WHERE diary_event_id = $1`,
+        [diaryEventId]
+      );
+
+      // 4. Insert new timesheet entries
+      for (const entry of timesheet_entries) {
+        await client.query(
+          `INSERT INTO timesheet_entries (officer_id, clock_in, clock_out, notes, segment_type, diary_event_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+          [
+            officerId,
+            new Date(entry.clock_in),
+            entry.clock_out ? new Date(entry.clock_out) : null,
+            entry.notes ?? null,
+            entry.segment_type ?? null,
+            diaryEventId
+          ]
+        );
+      }
+
+      // 5. Update main diary event status to match chronologically latest status log
+      let latestStatus = 'scheduled';
+      if (status_logs.length > 0) {
+        const sorted = [...status_logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        latestStatus = sorted[sorted.length - 1].status;
+      }
+
+      await client.query(
+        `UPDATE diary_events SET status = $1, updated_at = NOW() WHERE id = $2`,
+        [latestStatus, diaryEventId]
+      );
+
+      await client.query('COMMIT');
+      return res.json({ message: 'Timeline updated successfully' });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Update timeline error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  }
 );
 
 app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
@@ -13665,10 +13848,11 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
               o.additional_hour_labour_rate
        FROM jobs j
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN pricing_settings ps ON ps.created_by = j.created_by
        LEFT JOIN LATERAL (
          SELECT basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
          FROM price_book_labour_rates
-         WHERE price_book_id = c.price_book_id
+         WHERE price_book_id = COALESCE(c.price_book_id, ps.default_price_book_id)
          ORDER BY id ASC
          LIMIT 1
        ) lr ON true
@@ -13864,6 +14048,17 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     }
     overallProfit = Math.round(overallProfit * 100) / 100;
 
+    const overheadOwnerClause = isSuperAdmin ? '' : 'WHERE created_by = $1';
+    const overheadParams = isSuperAdmin ? [] : [userId];
+    const overheadRes = await pool.query<{ total: string; count: number }>(
+      `SELECT COALESCE(SUM(amount), 0)::numeric AS total, COUNT(*)::int AS count
+       FROM company_overhead_expenses ${overheadOwnerClause}`,
+      overheadParams,
+    );
+    const generalOverheadTotal = parseFloat(overheadRes.rows[0]?.total ?? '0');
+    const generalOverheadCount = Number(overheadRes.rows[0]?.count ?? 0);
+    const overallNetProfit = Math.round((overallProfit - generalOverheadTotal) * 100) / 100;
+
     const expenseStatsRes = await pool.query<{
       company_total: string;
       company_count: number;
@@ -13881,7 +14076,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
          COUNT(*)::int AS approved_count
        FROM job_expenses je
        JOIN jobs j ON j.id = je.job_id
-       ${ownerClause ? `${ownerClause} AND` : 'WHERE'} je.status = 'approved'`,
+       ${isSuperAdmin ? 'WHERE je.status = \'approved\'' : 'WHERE j.created_by = $1 AND je.status = \'approved\''}`,
       countParams2,
     );
     const expenseRow = expenseStatsRes.rows[0];
@@ -13892,6 +14087,8 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       personal_count: Number(expenseRow?.personal_count ?? 0),
       approved_total: parseFloat(expenseRow?.approved_total ?? '0'),
       approved_count: Number(expenseRow?.approved_count ?? 0),
+      general_overhead_total: generalOverheadTotal,
+      general_overhead_count: generalOverheadCount,
     };
 
     // 2. Calculate page job costs for row level details
@@ -13935,6 +14132,7 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
       stateStats,
       overallOutstanding,
       overallProfit,
+      overallNetProfit,
       expenseStats,
     });
   } catch (error) {
@@ -17693,6 +17891,68 @@ app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, req
   }
 });
 
+// ---------- Pricing defaults (company-wide price book) ----------
+app.get('/api/settings/pricing-defaults', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    const settings = await getTenantPricingSettings(pool, userId);
+    return res.json(settings);
+  } catch (error) {
+    console.error('Get pricing defaults error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/pricing-defaults', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const body = req.body as { default_price_book_id?: unknown; default_parts_markup_pct?: unknown };
+  try {
+    await ensurePricingSettingsSchema(pool);
+    const current = await getTenantPricingSettings(pool, userId);
+
+    let defaultPriceBookId = current.default_price_book_id;
+    if (body.default_price_book_id !== undefined) {
+      if (body.default_price_book_id === null || body.default_price_book_id === '') {
+        defaultPriceBookId = null;
+      } else {
+        const pbId = parseInt(String(body.default_price_book_id), 10);
+        if (!Number.isFinite(pbId)) {
+          return res.status(400).json({ message: 'Invalid default price book id' });
+        }
+        const pbCheck = await pool.query('SELECT id FROM price_books WHERE id = $1', [pbId]);
+        if ((pbCheck.rowCount ?? 0) === 0) {
+          return res.status(400).json({ message: 'Price book not found' });
+        }
+        defaultPriceBookId = pbId;
+      }
+    }
+
+    let defaultPartsMarkup = current.default_parts_markup_pct;
+    if (body.default_parts_markup_pct !== undefined) {
+      const raw = typeof body.default_parts_markup_pct === 'number'
+        ? body.default_parts_markup_pct
+        : parseFloat(String(body.default_parts_markup_pct));
+      defaultPartsMarkup = Number.isFinite(raw) ? Math.max(0, Math.min(1000, raw)) : 0;
+    }
+
+    await pool.query(
+      `INSERT INTO pricing_settings (created_by, default_price_book_id, default_parts_markup_pct, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (created_by) DO UPDATE
+       SET default_price_book_id = EXCLUDED.default_price_book_id,
+           default_parts_markup_pct = EXCLUDED.default_parts_markup_pct,
+           updated_at = NOW()`,
+      [userId, defaultPriceBookId, defaultPartsMarkup],
+    );
+
+    const settings = await getTenantPricingSettings(pool, userId);
+    return res.json(settings);
+  } catch (error) {
+    console.error('Patch pricing defaults error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // ---------- Price Books ----------
 app.get('/api/settings/price-books', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -18739,6 +18999,14 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
           [job.id, pi.item_name, pi.time_included || 0, pi.unit_price || 0, pi.vat_rate ?? 20.00, pi.quantity || 1, total, i]
         );
       }
+    } else {
+      await seedJobPricingDefaults(
+        pool,
+        job.id,
+        customerId,
+        job_description_id ? parseInt(String(job_description_id), 10) || null : null,
+        createdBy,
+      );
     }
 
     // Fetch the inserted pricing items
@@ -20441,10 +20709,63 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, Number(r.id));
     const anchorYmd = formatInvoiceDateFromDb(r.renewal_anchor_date);
 
+    const custRes = await pool.query<{
+      name: string;
+      first_name: string | null;
+      surname: string | null;
+      company_name: string | null;
+      address_line_1: string | null;
+      address_line_2: string | null;
+      address_line_3: string | null;
+      town: string | null;
+      county: string | null;
+      postcode: string | null;
+    }>(
+      'SELECT name, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode FROM customers WHERE id = $1',
+      [customerId],
+    );
+    let customerName = '';
+    let customerAddress = '';
+    if ((custRes.rowCount ?? 0) > 0) {
+      const c = custRes.rows[0];
+      customerName = c.company_name?.trim() || c.name?.trim() || [c.first_name, c.surname].filter(Boolean).join(' ') || '';
+      customerAddress = [c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode]
+        .map((x) => (typeof x === 'string' ? x.trim() : ''))
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    let workAddressText = '';
+    if (resolvedWa != null) {
+      const wa = await pool.query<{
+        name: string;
+        address_line_1: string | null;
+        address_line_2: string | null;
+        address_line_3: string | null;
+        town: string | null;
+        county: string | null;
+        postcode: string | null;
+      }>(
+        `SELECT name, address_line_1, address_line_2, address_line_3, town, county, postcode FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
+        [resolvedWa, customerId],
+      );
+      if ((wa.rowCount ?? 0) > 0) {
+        const w = wa.rows[0];
+        const addr = [w.address_line_1, w.address_line_2, w.address_line_3, w.town, w.county, w.postcode]
+          .map((x) => (typeof x === 'string' ? x.trim() : ''))
+          .filter(Boolean)
+          .join(', ');
+        workAddressText = [w.name?.trim(), addr].filter(Boolean).join(' · ');
+      }
+    }
+    const resolvedAddress = workAddressText || customerAddress;
+
     return res.json({
       report: {
         id: Number(r.id),
         customer_id: customerId,
+        customer_name: customerName,
+        resolved_address: resolvedAddress,
         work_address_id: resolvedWa,
         template_id: tid,
         report_title: r.report_title,
@@ -20801,6 +21122,222 @@ app.patch(
     }
   },
 );
+
+app.post('/api/customers/:customerId/site-report/:reportId/duplicate', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = parseInt(String(req.params.customerId), 10);
+  const reportId = parseInt(String(req.params.reportId), 10);
+  if (!Number.isFinite(customerId) || !Number.isFinite(reportId)) {
+    return res.status(400).json({ message: 'Invalid customer ID or report ID' });
+  }
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  try {
+    const customer = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [customerId]);
+    if ((customer.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
+    if (!isSuperAdmin && customer.rows[0].created_by !== userId) return res.status(404).json({ message: 'Customer not found' });
+
+    const source = await pool.query<{
+      template_id: number;
+      report_title: string | null;
+      document: unknown;
+      work_address_id: number | null;
+      job_id: number | null;
+    }>(
+      `SELECT template_id, report_title, document, work_address_id, job_id
+       FROM customer_site_reports
+       WHERE id = $1 AND customer_id = $2`,
+      [reportId, customerId],
+    );
+    if ((source.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Source report not found' });
+    const s = source.rows[0];
+
+    const body = req.body as {
+      customer_id?: unknown;
+      work_address_id?: unknown;
+      job_id?: unknown;
+    };
+
+    let targetCustomerId = customerId;
+    let targetWorkAddressId = s.work_address_id;
+    let targetJobId = s.job_id;
+
+    if (body.customer_id != null && Number.isFinite(Number(body.customer_id))) {
+      targetCustomerId = Number(body.customer_id);
+      if (body.hasOwnProperty('work_address_id')) {
+        targetWorkAddressId = body.work_address_id != null && Number.isFinite(Number(body.work_address_id)) ? Number(body.work_address_id) : null;
+      } else {
+        targetWorkAddressId = null;
+      }
+    } else if (body.hasOwnProperty('work_address_id')) {
+      targetWorkAddressId = body.work_address_id != null && Number.isFinite(Number(body.work_address_id)) ? Number(body.work_address_id) : null;
+    }
+
+    if (body.hasOwnProperty('job_id')) {
+      targetJobId = body.job_id != null && Number.isFinite(Number(body.job_id)) ? Number(body.job_id) : null;
+    } else if (targetCustomerId !== customerId) {
+      targetJobId = null;
+    }
+
+    // Verify target customer
+    const targetCust = await pool.query<DbCustomer>('SELECT id, created_by FROM customers WHERE id = $1', [targetCustomerId]);
+    if ((targetCust.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Target customer not found' });
+    if (!isSuperAdmin && targetCust.rows[0].created_by !== userId) return res.status(400).json({ message: 'Target customer not found' });
+
+    if (targetWorkAddressId != null) {
+      const resolvedWa = await resolveWorkAddressIdForCustomer(pool, targetCustomerId, targetWorkAddressId);
+      if (resolvedWa == null) {
+        return res.status(400).json({ message: 'Work address not found for target customer' });
+      }
+    }
+
+    if (targetJobId != null) {
+      const jk = await pool.query<{ id: number }>(
+        `SELECT id FROM jobs WHERE id = $1 AND customer_id = $2${isSuperAdmin ? '' : ' AND created_by = $3'}`,
+        isSuperAdmin ? [targetJobId, targetCustomerId] : [targetJobId, targetCustomerId, userId],
+      );
+      if ((jk.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Job not found for target customer' });
+    }
+
+    const titleSuffix = targetCustomerId === customerId ? ' - Copy' : '';
+    const newTitle = s.report_title ? `${s.report_title.slice(0, 490)}${titleSuffix}` : null;
+
+    const ins = await pool.query<{ id: number; report_title: string | null; document: unknown; updated_at: Date }>(
+      `INSERT INTO customer_site_reports (customer_id, work_address_id, job_id, report_title, document, template_id, created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $7)
+       RETURNING id, report_title, document, updated_at`,
+      [targetCustomerId, targetWorkAddressId, targetJobId, newTitle, JSON.stringify(s.document), s.template_id, userId],
+    );
+    const row = ins.rows[0];
+    const certificateNumber = await ensureCustomerSiteReportCertificateNumber(pool, Number(row.id));
+
+    return res.status(201).json({
+      report: {
+        id: Number(row.id),
+        customer_id: targetCustomerId,
+        work_address_id: targetWorkAddressId,
+        template_id: s.template_id,
+        report_title: row.report_title,
+        document: normalizeTemplateSiteReportDocument(row.document, s.template_id),
+        updated_at: (row.updated_at as Date).toISOString(),
+        certificate_number: certificateNumber,
+        renewal_reminder_enabled: false,
+        renewal_anchor_date: null,
+        renewal_interval_years: 1,
+        renewal_early_days: 30,
+        renewal_job_id: null,
+      }
+    });
+  } catch (error) {
+    console.error('Duplicate site report error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/site-reports/:id', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const body = req.body as {
+    customer_id?: number;
+    work_address_id?: number | null;
+    job_id?: number | null;
+    report_title?: string | null;
+  };
+
+  try {
+    const existingRes = await pool.query<{
+      id: number;
+      customer_id: number;
+      work_address_id: number | null;
+      job_id: number | null;
+      report_title: string | null;
+      created_by: number;
+    }>(
+      `SELECT id, customer_id, work_address_id, job_id, report_title, created_by
+       FROM customer_site_reports WHERE id = $1`,
+      [id]
+    );
+    if ((existingRes.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Report not found' });
+    const existing = existingRes.rows[0];
+    if (!isSuperAdmin && existing.created_by !== userId) return res.status(404).json({ message: 'Report not found' });
+
+    const updates: string[] = ['updated_at = NOW()', 'updated_by = $1'];
+    const values: unknown[] = [userId];
+    let idx = 2;
+
+    const hasCustomerUpdate = typeof body.customer_id === 'number';
+    const hasWorkAddressUpdate = body.work_address_id !== undefined;
+    const hasJobUpdate = body.job_id !== undefined;
+    const hasTitleUpdate = body.report_title !== undefined;
+
+    let nextCustomerId = hasCustomerUpdate ? Number(body.customer_id) : existing.customer_id;
+    if (!Number.isFinite(nextCustomerId)) return res.status(400).json({ message: 'Invalid client' });
+
+    if (hasCustomerUpdate) {
+      const customerCheck = await pool.query(
+        `SELECT id FROM customers WHERE id = $1 ${isSuperAdmin ? '' : 'AND created_by = $2'}`,
+        isSuperAdmin ? [nextCustomerId] : [nextCustomerId, userId],
+      );
+      if ((customerCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid client' });
+      updates.push(`customer_id = $${idx++}`);
+      values.push(nextCustomerId);
+    }
+
+    let nextWorkAddressId = existing.work_address_id;
+    if (hasWorkAddressUpdate) {
+      nextWorkAddressId = body.work_address_id != null && Number.isFinite(body.work_address_id) ? Number(body.work_address_id) : null;
+      if (nextWorkAddressId != null) {
+        const waCheck = await pool.query(
+          `SELECT id FROM customer_work_addresses WHERE id = $1 AND customer_id = $2`,
+          [nextWorkAddressId, nextCustomerId]
+        );
+        if ((waCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid work address for this customer' });
+      }
+      updates.push(`work_address_id = $${idx++}`);
+      values.push(nextWorkAddressId);
+    } else if (hasCustomerUpdate && existing.work_address_id != null) {
+      nextWorkAddressId = null;
+      updates.push(`work_address_id = $${idx++}`);
+      values.push(null);
+    }
+
+    if (hasJobUpdate) {
+      const nextJobId = body.job_id != null && Number.isFinite(body.job_id) ? Number(body.job_id) : null;
+      if (nextJobId != null) {
+        const jobCheck = await pool.query(
+          `SELECT id FROM jobs WHERE id = $1 AND customer_id = $2${isSuperAdmin ? '' : ' AND created_by = $3'}`,
+          isSuperAdmin ? [nextJobId, nextCustomerId] : [nextJobId, nextCustomerId, userId]
+        );
+        if ((jobCheck.rowCount ?? 0) === 0) return res.status(400).json({ message: 'Invalid job for this customer' });
+      }
+      updates.push(`job_id = $${idx++}`);
+      values.push(nextJobId);
+    } else if (hasCustomerUpdate && existing.job_id != null) {
+      updates.push(`job_id = $${idx++}`);
+      values.push(null);
+    }
+
+    if (hasTitleUpdate) {
+      const titleVal = typeof body.report_title === 'string' ? body.report_title.trim().slice(0, 500) || null : null;
+      updates.push(`report_title = $${idx++}`);
+      values.push(titleVal);
+    }
+
+    values.push(id);
+    await pool.query(
+      `UPDATE customer_site_reports SET ${updates.join(', ')} WHERE id = $${idx}`,
+      values
+    );
+
+    return res.json({ message: 'Site report details updated successfully' });
+  } catch (error) {
+    console.error('Update site report details error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 app.post('/api/customers/:customerId/site-report/:reportId/images', authenticate, requireTenantCrmOrMobileJobDocs('customers'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);

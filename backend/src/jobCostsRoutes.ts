@@ -6,6 +6,7 @@ import { getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
 import { getWorkpilotFileRootDir, loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 import { calculateTimesheetLabourTotals, formatDurationLabel } from './jobLabourCost';
+import { getPrimaryLabourRate, resolvePriceBookForJob } from './priceBookResolution';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -40,6 +41,8 @@ type RateConfig = {
   on_site_override: number | null;
   first_hour_override: number | null;
   additional_hour_override: number | null;
+  price_book_name: string | null;
+  price_book_source: 'customer' | 'company_default' | null;
   updated_at: string | null;
   updated_by_name: string | null;
 };
@@ -152,44 +155,29 @@ async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, wri
 }
 
 async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> {
-  const rateResult = await pool.query(
-    `SELECT COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
-            lr.name AS default_rate_name,
-            lr.travel_rate_per_hr,
-            lr.first_hour_rate_per_hr,
-            lr.additional_hour_rate_per_hr,
-            o.travel_hourly_rate,
-            o.on_site_hourly_rate,
-            o.first_hour_labour_rate,
-            o.additional_hour_labour_rate,
-            o.updated_at,
-            COALESCE(u.full_name, u.email) AS updated_by_name
-     FROM jobs j
-     LEFT JOIN customers c ON c.id = j.customer_id
-     LEFT JOIN LATERAL (
-       SELECT name, basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
-       FROM price_book_labour_rates
-       WHERE price_book_id = c.price_book_id
-       ORDER BY id ASC
-       LIMIT 1
-     ) lr ON true
-     LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
+  const resolved = await resolvePriceBookForJob(pool, jobId);
+  const labour = await getPrimaryLabourRate(pool, resolved.price_book_id);
+
+  const overrideRes = await pool.query(
+    `SELECT o.travel_hourly_rate, o.on_site_hourly_rate, o.first_hour_labour_rate, o.additional_hour_labour_rate,
+            o.updated_at, COALESCE(u.full_name, u.email) AS updated_by_name
+     FROM job_cost_rate_overrides o
      LEFT JOIN users u ON u.id = o.updated_by
-     WHERE j.id = $1`,
+     WHERE o.job_id = $1`,
     [jobId],
   );
-  const row = rateResult.rows[0] ?? {};
-  const defaultRate = n(row.default_hourly_rate);
-  const pbTravel = row.travel_rate_per_hr == null ? null : n(row.travel_rate_per_hr);
-  const pbFirstHour = row.first_hour_rate_per_hr == null ? null : n(row.first_hour_rate_per_hr);
-  const pbAdditionalHour = row.additional_hour_rate_per_hr == null ? null : n(row.additional_hour_rate_per_hr);
+  const row = overrideRes.rows[0] ?? {};
+  const defaultRate = labour?.basic_rate_per_hr ?? 0;
+  const pbTravel = labour?.travel_rate_per_hr ?? null;
+  const pbFirstHour = labour?.first_hour_rate_per_hr ?? null;
+  const pbAdditionalHour = labour?.additional_hour_rate_per_hr ?? null;
   const travelOverride = row.travel_hourly_rate == null ? null : n(row.travel_hourly_rate);
   const onSiteOverride = row.on_site_hourly_rate == null ? null : n(row.on_site_hourly_rate);
   const firstHourOverride = row.first_hour_labour_rate == null ? null : n(row.first_hour_labour_rate);
   const additionalHourOverride = row.additional_hour_labour_rate == null ? null : n(row.additional_hour_labour_rate);
   return {
     default_hourly_rate: defaultRate,
-    default_rate_name: row.default_rate_name ? String(row.default_rate_name) : null,
+    default_rate_name: labour?.name ?? null,
     travel_hourly_rate: travelOverride ?? pbTravel ?? defaultRate,
     on_site_hourly_rate: onSiteOverride ?? defaultRate,
     first_hour_labour_rate: firstHourOverride ?? pbFirstHour ?? onSiteOverride ?? defaultRate,
@@ -198,6 +186,8 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
     on_site_override: onSiteOverride,
     first_hour_override: firstHourOverride,
     additional_hour_override: additionalHourOverride,
+    price_book_name: resolved.price_book_name,
+    price_book_source: resolved.source,
     updated_at: iso(row.updated_at),
     updated_by_name: row.updated_by_name ? String(row.updated_by_name) : null,
   };

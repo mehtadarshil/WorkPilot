@@ -48,6 +48,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
   final Rx<DiaryFilter> diaryFilter = DiaryFilter.sevenDays.obs;
   final Rx<DateTime> calendarFocusedMonth = DateTime.now().obs;
   final Rx<DateTime> calendarSelectedDate = DateTime.now().obs;
+  final RxBool showMonthlyCalendar = false.obs;
 
   /// Bump after profile edit so Profile tab reloads photo/summary.
   final RxInt profileRevision = 0.obs;
@@ -338,7 +339,9 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         rangeEnd: rangeEnd,
         scope: apiScope,
       );
-      diaryEvents.assignAll(list);
+      diaryEvents.assignAll(
+        list.where((e) => !diaryStatusClosesTimesheet(e.eventStatus)),
+      );
     } on ApiException catch (e) {
       if (apiExceptionLooksLikeNoConnection(e)) {
         final cached = _storage.readCachedDiaryEventsIfRangeMatches(
@@ -348,7 +351,8 @@ class HomeController extends GetxController with WidgetsBindingObserver {
         );
         if (cached != null && cached.isNotEmpty) {
           diaryEvents.assignAll(
-            _safeParseDiaryRows(cached),
+            _safeParseDiaryRows(cached)
+                .where((e) => !diaryStatusClosesTimesheet(e.eventStatus)),
           );
         } else if (diaryEvents.isEmpty) {
           diaryEvents.clear();

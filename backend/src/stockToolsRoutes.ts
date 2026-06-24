@@ -15,7 +15,7 @@ import {
 import { decodeBase64ImageUpload } from './inlineBlobStorage';
 
 function storeStockToolImage(
-  category: 'stock-photos' | 'tool-photos',
+  category: 'stock-photos' | 'tool-photos' | 'uniform-photos',
   image_base64: string,
   original_filename?: string | null,
   content_type?: string | null,
@@ -95,10 +95,48 @@ export async function ensureStockToolsSchema(pool: Pool) {
       CREATE TABLE IF NOT EXISTS stock_tools_settings (
         created_by INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         location_options JSONB NOT NULL DEFAULT '["Van","House","Store","Other"]'::jsonb,
+        stock_category_options JSONB NOT NULL DEFAULT '["Electrical","Locksmith","Plumbing","HVAC","General"]'::jsonb,
+        tool_category_options JSONB NOT NULL DEFAULT '["Power Tools","Hand Tools","Measurement","Safety","Other"]'::jsonb,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
-    console.log('Stock and Tools schema verified successfully.');
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS stock_category_options JSONB NOT NULL DEFAULT '["Electrical","Locksmith","Plumbing","HVAC","General"]'::jsonb;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS tool_category_options JSONB NOT NULL DEFAULT '["Power Tools","Hand Tools","Measurement","Safety","Other"]'::jsonb;
+    `);
+    await pool.query(`
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS uniforms (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(500) NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        size VARCHAR(50) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'available',
+        location VARCHAR(100) NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        assigned_officer_id INTEGER REFERENCES officers(id) ON DELETE SET NULL,
+        image_url VARCHAR(1024),
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+    `);
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS uniform_category_options JSONB NOT NULL DEFAULT '["Jacket","Hi-Vis","PPE","Fire Safety","Footwear","Branded","Other"]'::jsonb;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS uniform_size_options JSONB NOT NULL DEFAULT '["XS","S","M","L","XL","XXL","XXXL","28","30","32","34","36","38","40","42","8","9","10","11","12"]'::jsonb;
+    `);
+    console.log('Stock, Tools and Uniform schema verified successfully.');
   } catch (error) {
     console.error('Error ensuring Stock and Tools schema:', error);
   }
@@ -196,20 +234,60 @@ export async function syncStockTransaction(
 }
 
 const DEFAULT_STOCK_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
+const DEFAULT_STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC', 'General'];
+const DEFAULT_TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
+const DEFAULT_UNIFORM_CATEGORIES = ['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'Footwear', 'Branded', 'Other'];
+const DEFAULT_UNIFORM_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'];
 
-async function loadStockLocationOptions(pool: Pool, userId: number, isSuperAdmin: boolean): Promise<string[]> {
-  const row = await pool.query<{ location_options: unknown }>(
-    `SELECT location_options FROM stock_tools_settings WHERE created_by = $1`,
-    [userId],
-  );
-  if ((row.rowCount ?? 0) === 0) return [...DEFAULT_STOCK_LOCATIONS];
-  const raw = row.rows[0].location_options;
-  if (!Array.isArray(raw)) return [...DEFAULT_STOCK_LOCATIONS];
+function parseStringOptions(raw: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(raw)) return [...fallback];
   const cleaned = raw
     .map((v) => (typeof v === 'string' ? v.trim() : ''))
     .filter((v) => v.length > 0);
-  return cleaned.length > 0 ? cleaned : [...DEFAULT_STOCK_LOCATIONS];
+  return cleaned.length > 0 ? cleaned : [...fallback];
 }
+
+async function loadStockToolsSettingsRow(
+  pool: Pool,
+  userId: number,
+): Promise<{
+  location_options: string[];
+  stock_category_options: string[];
+  tool_category_options: string[];
+  uniform_category_options: string[];
+  uniform_size_options: string[];
+}> {
+  const row = await pool.query<{
+    location_options: unknown;
+    stock_category_options: unknown;
+    tool_category_options: unknown;
+    uniform_category_options: unknown;
+    uniform_size_options: unknown;
+  }>(
+    `SELECT location_options, stock_category_options, tool_category_options,
+            uniform_category_options, uniform_size_options
+     FROM stock_tools_settings WHERE created_by = $1`,
+    [userId],
+  );
+  if ((row.rowCount ?? 0) === 0) {
+    return {
+      location_options: [...DEFAULT_STOCK_LOCATIONS],
+      stock_category_options: [...DEFAULT_STOCK_CATEGORIES],
+      tool_category_options: [...DEFAULT_TOOL_CATEGORIES],
+      uniform_category_options: [...DEFAULT_UNIFORM_CATEGORIES],
+      uniform_size_options: [...DEFAULT_UNIFORM_SIZES],
+    };
+  }
+  const r = row.rows[0];
+  return {
+    location_options: parseStringOptions(r.location_options, DEFAULT_STOCK_LOCATIONS),
+    stock_category_options: parseStringOptions(r.stock_category_options, DEFAULT_STOCK_CATEGORIES),
+    tool_category_options: parseStringOptions(r.tool_category_options, DEFAULT_TOOL_CATEGORIES),
+    uniform_category_options: parseStringOptions(r.uniform_category_options, DEFAULT_UNIFORM_CATEGORIES),
+    uniform_size_options: parseStringOptions(r.uniform_size_options, DEFAULT_UNIFORM_SIZES),
+  };
+}
+
 
 export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; authenticate: any }) {
   const { pool, authenticate } = deps;
@@ -217,8 +295,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
   app.get('/api/settings/stock-tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
     try {
-      const location_options = await loadStockLocationOptions(pool, userId, req.user!.role === 'SUPER_ADMIN');
-      return res.json({ location_options });
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      return res.json(settings);
     } catch (error) {
       console.error('Get stock tools settings error:', error);
       return res.status(500).json({ message: 'Internal server error' });
@@ -227,26 +305,71 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
   app.patch('/api/settings/stock-tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
-    const body = req.body as { location_options?: unknown };
-    if (!Array.isArray(body.location_options)) {
-      return res.status(400).json({ message: 'location_options must be an array of strings' });
+    const body = req.body as {
+      location_options?: unknown;
+      stock_category_options?: unknown;
+      tool_category_options?: unknown;
+      uniform_category_options?: unknown;
+      uniform_size_options?: unknown;
+    };
+
+    const current = await loadStockToolsSettingsRow(pool, userId);
+    const location_options = body.location_options !== undefined
+      ? parseStringOptions(body.location_options, DEFAULT_STOCK_LOCATIONS).slice(0, 30)
+      : current.location_options;
+    const stock_category_options = body.stock_category_options !== undefined
+      ? parseStringOptions(body.stock_category_options, DEFAULT_STOCK_CATEGORIES).slice(0, 30)
+      : current.stock_category_options;
+    const tool_category_options = body.tool_category_options !== undefined
+      ? parseStringOptions(body.tool_category_options, DEFAULT_TOOL_CATEGORIES).slice(0, 30)
+      : current.tool_category_options;
+    const uniform_category_options = body.uniform_category_options !== undefined
+      ? parseStringOptions(body.uniform_category_options, DEFAULT_UNIFORM_CATEGORIES).slice(0, 30)
+      : current.uniform_category_options;
+    const uniform_size_options = body.uniform_size_options !== undefined
+      ? parseStringOptions(body.uniform_size_options, DEFAULT_UNIFORM_SIZES).slice(0, 40)
+      : current.uniform_size_options;
+
+    if (
+      location_options.length === 0
+      || stock_category_options.length === 0
+      || tool_category_options.length === 0
+      || uniform_category_options.length === 0
+      || uniform_size_options.length === 0
+    ) {
+      return res.status(400).json({ message: 'Each options list must have at least one entry' });
     }
-    const location_options = body.location_options
-      .map((v) => (typeof v === 'string' ? v.trim() : ''))
-      .filter((v) => v.length > 0)
-      .slice(0, 30);
-    if (location_options.length === 0) {
-      return res.status(400).json({ message: 'Add at least one location option' });
-    }
+
     try {
       await pool.query(
-        `INSERT INTO stock_tools_settings (created_by, location_options, updated_at)
-         VALUES ($1, $2::jsonb, NOW())
+        `INSERT INTO stock_tools_settings (
+           created_by, location_options, stock_category_options, tool_category_options,
+           uniform_category_options, uniform_size_options, updated_at
+         )
+         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, NOW())
          ON CONFLICT (created_by) DO UPDATE
-         SET location_options = EXCLUDED.location_options, updated_at = NOW()`,
-        [userId, JSON.stringify(location_options)],
+         SET location_options = EXCLUDED.location_options,
+             stock_category_options = EXCLUDED.stock_category_options,
+             tool_category_options = EXCLUDED.tool_category_options,
+             uniform_category_options = EXCLUDED.uniform_category_options,
+             uniform_size_options = EXCLUDED.uniform_size_options,
+             updated_at = NOW()`,
+        [
+          userId,
+          JSON.stringify(location_options),
+          JSON.stringify(stock_category_options),
+          JSON.stringify(tool_category_options),
+          JSON.stringify(uniform_category_options),
+          JSON.stringify(uniform_size_options),
+        ],
       );
-      return res.json({ location_options });
+      return res.json({
+        location_options,
+        stock_category_options,
+        tool_category_options,
+        uniform_category_options,
+        uniform_size_options,
+      });
     } catch (error) {
       console.error('Patch stock tools settings error:', error);
       return res.status(500).json({ message: 'Internal server error' });
@@ -278,7 +401,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       const category = String(req.params.category);
       const filename = String(req.params.filename);
-      if (category !== 'stock-photos' && category !== 'tool-photos') {
+      if (category !== 'stock-photos' && category !== 'tool-photos' && category !== 'uniform-photos') {
         return res.status(400).json({ message: 'Invalid file category' });
       }
 
@@ -500,6 +623,71 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     }
   });
 
+  app.post('/api/stock/:id/convert-to-tool', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const itemId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(itemId)) {
+      return res.status(400).json({ message: 'Invalid ID' });
+    }
+
+    const rawQty = req.body?.quantity;
+    const convertQty = typeof rawQty === 'number'
+      ? Math.trunc(rawQty)
+      : parseInt(String(rawQty ?? '1'), 10) || 1;
+    if (convertQty <= 0) {
+      return res.status(400).json({ message: 'Quantity must be at least 1' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const itemRes = await client.query('SELECT * FROM stock_items WHERE id = $1 FOR UPDATE', [itemId]);
+      if ((itemRes.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Stock item not found' });
+      }
+      const item = itemRes.rows[0];
+      if (!isSuperAdmin && item.created_by !== userId) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+      if (item.quantity < convertQty) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Only ${item.quantity} unit(s) available in stock` });
+      }
+
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const toolCategory = settings.tool_category_options.includes('Other')
+        ? 'Other'
+        : settings.tool_category_options[0];
+
+      const toolIns = await client.query(
+        `INSERT INTO tools (name, category, status, location, quantity, image_url, created_by)
+         VALUES ($1, $2, 'available', $3, $4, $5, $6)
+         RETURNING *`,
+        [item.name, toolCategory, item.location, convertQty, item.image_url, userId],
+      );
+
+      const newQty = item.quantity - convertQty;
+      await client.query('UPDATE stock_items SET quantity = $1 WHERE id = $2', [newQty, itemId]);
+      await client.query(
+        `INSERT INTO stock_transactions (stock_item_id, quantity, transaction_type, created_by)
+         VALUES ($1, $2, 'convert_to_tool', $3)`,
+        [itemId, -convertQty, userId],
+      );
+
+      await client.query('COMMIT');
+      return res.status(201).json({ tool: toolIns.rows[0], stock_item_id: itemId, remaining_stock: newQty });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Error converting stock to tool:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
+    }
+  });
+
   app.get('/api/stock/transactions', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -650,12 +838,46 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       }
       const categoryStats = Array.from(categoriesMap.values());
 
+      // 7. uniformsCount
+      let uniformsQuery = `SELECT COALESCE(COUNT(*), 0)::int AS count FROM uniforms WHERE 1=1`;
+      const uniformsParams: any[] = [];
+      if (!isSuperAdmin) {
+        uniformsParams.push(userId);
+        uniformsQuery += ` AND created_by = $1`;
+      }
+      const uniformsRes = await pool.query(uniformsQuery, uniformsParams);
+      const uniformsCount = uniformsRes.rows[0]?.count || 0;
+
+      // 8. uniformsByStatus
+      let uniformsStatusQuery = `SELECT status, COUNT(*)::int AS count FROM uniforms WHERE 1=1`;
+      const uniformsStatusParams: any[] = [];
+      if (!isSuperAdmin) {
+        uniformsStatusParams.push(userId);
+        uniformsStatusQuery += ` AND created_by = $1`;
+      }
+      uniformsStatusQuery += ` GROUP BY status`;
+      const uniformsStatusRes = await pool.query(uniformsStatusQuery, uniformsStatusParams);
+      const uniformsByStatus = {
+        available: 0,
+        issued: 0,
+        retired: 0,
+        lost: 0,
+        damaged: 0,
+      };
+      for (const row of uniformsStatusRes.rows) {
+        if (row.status in uniformsByStatus) {
+          (uniformsByStatus as any)[row.status] = row.count;
+        }
+      }
+
       return res.json({
         stockCount,
         lowStockCount,
         outOfStockCount,
         toolsCount,
         toolsByStatus,
+        uniformsCount,
+        uniformsByStatus,
         categoryStats,
       });
     } catch (err) {
@@ -711,11 +933,13 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
   app.post('/api/tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
-    const { name, category, status, location, assigned_officer_id, image_base64, original_filename, content_type } = req.body;
+    const { name, category, status, location, assigned_officer_id, quantity, image_base64, original_filename, content_type } = req.body;
 
     if (!name || !category || !location) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
+
+    const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity || '1'), 10) || 1;
 
     try {
       let imageUrl: string | null = null;
@@ -726,10 +950,10 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const assignedId = assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null;
 
       const ins = await pool.query(
-        `INSERT INTO tools (name, category, status, location, assigned_officer_id, image_url, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO tools (name, category, status, location, quantity, assigned_officer_id, image_url, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
-        [name, category, status || 'available', location, assignedId, imageUrl, userId]
+        [name, category, status || 'available', location, qty, assignedId, imageUrl, userId]
       );
 
       return res.status(201).json(ins.rows[0]);
@@ -747,7 +971,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(400).json({ message: 'Invalid ID' });
     }
 
-    const { name, category, status, location, assigned_officer_id, image_base64, original_filename, content_type } = req.body;
+    const { name, category, status, location, assigned_officer_id, quantity, image_base64, original_filename, content_type } = req.body;
 
     try {
       const toolCheck = await pool.query('SELECT * FROM tools WHERE id = $1', [toolId]);
@@ -783,6 +1007,11 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       if (location !== undefined) {
         updates.push(`location = $${idx++}`);
         values.push(location);
+      }
+      if (quantity !== undefined) {
+        const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
+        updates.push(`quantity = $${idx++}`);
+        values.push(qty);
       }
       if (assigned_officer_id !== undefined) {
         updates.push(`assigned_officer_id = $${idx++}`);
@@ -837,6 +1066,106 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     } catch (err) {
       console.error('Error deleting tool:', err);
       return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/tools/:id/convert-to-stock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const toolId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(toolId)) {
+      return res.status(400).json({ message: 'Invalid ID' });
+    }
+
+    const body = req.body as { quantity?: unknown; category?: string; quality?: string };
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const toolRes = await client.query('SELECT * FROM tools WHERE id = $1 FOR UPDATE', [toolId]);
+      if ((toolRes.rowCount ?? 0) === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Tool not found' });
+      }
+      const tool = toolRes.rows[0];
+      if (!isSuperAdmin && tool.created_by !== userId) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+
+      const toolQty = typeof tool.quantity === 'number' ? tool.quantity : parseInt(String(tool.quantity || '1'), 10) || 1;
+      const rawQty = body.quantity;
+      const convertQty = rawQty === undefined
+        ? toolQty
+        : typeof rawQty === 'number'
+          ? Math.trunc(rawQty)
+          : parseInt(String(rawQty), 10) || 0;
+      if (convertQty <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Quantity must be at least 1' });
+      }
+      if (convertQty > toolQty) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Only ${toolQty} unit(s) available for this tool` });
+      }
+
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const stockCategory = typeof body.category === 'string' && body.category.trim()
+        ? body.category.trim()
+        : settings.stock_category_options.includes('General')
+          ? 'General'
+          : settings.stock_category_options[0];
+      const quality = typeof body.quality === 'string' && body.quality.trim() ? body.quality.trim() : 'Used - Good';
+
+      const existingStock = await client.query<{ id: number; quantity: number }>(
+        `SELECT id, quantity FROM stock_items
+         WHERE created_by = $1 AND name = $2 AND location = $3 AND category = $4
+         ORDER BY id ASC LIMIT 1`,
+        [userId, tool.name, tool.location, stockCategory],
+      );
+
+      let stockItemId: number;
+      let newStockQty: number;
+      if ((existingStock.rowCount ?? 0) > 0) {
+        stockItemId = existingStock.rows[0].id;
+        newStockQty = existingStock.rows[0].quantity + convertQty;
+        await client.query('UPDATE stock_items SET quantity = $1 WHERE id = $2', [newStockQty, stockItemId]);
+      } else {
+        const stockIns = await client.query(
+          `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+           RETURNING id, quantity`,
+          [tool.name, convertQty, stockCategory, quality, tool.location, tool.image_url, userId],
+        );
+        stockItemId = stockIns.rows[0].id;
+        newStockQty = stockIns.rows[0].quantity;
+      }
+
+      await client.query(
+        `INSERT INTO stock_transactions (stock_item_id, quantity, transaction_type, created_by)
+         VALUES ($1, $2, 'convert_from_tool', $3)`,
+        [stockItemId, convertQty, userId],
+      );
+
+      const remainingToolQty = toolQty - convertQty;
+      if (remainingToolQty <= 0) {
+        await client.query('DELETE FROM tools WHERE id = $1', [toolId]);
+      } else {
+        await client.query('UPDATE tools SET quantity = $1 WHERE id = $2', [remainingToolQty, toolId]);
+      }
+
+      await client.query('COMMIT');
+      return res.status(201).json({
+        stock_item_id: stockItemId,
+        stock_quantity: newStockQty,
+        tool_removed: remainingToolQty <= 0,
+        remaining_tool_quantity: Math.max(0, remainingToolQty),
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Error converting tool to stock:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    } finally {
+      client.release();
     }
   });
 
@@ -972,6 +1301,216 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(204).send();
     } catch (err) {
       console.error('Error deleting diary event tool assignment:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  // ─── Uniform Endpoints ───
+
+  app.get('/api/uniforms', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+    const size = typeof req.query.size === 'string' ? req.query.size.trim() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+
+    try {
+      let query = `
+        SELECT u.*, o.full_name AS assigned_officer_name
+        FROM uniforms u
+        LEFT JOIN officers o ON u.assigned_officer_id = o.id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (!isSuperAdmin) {
+        params.push(userId);
+        query += ` AND u.created_by = $${params.length}`;
+      }
+
+      if (search) {
+        params.push(`%${search}%`);
+        query += ` AND (u.name ILIKE $${params.length} OR u.notes ILIKE $${params.length})`;
+      }
+
+      if (category) {
+        params.push(category);
+        query += ` AND u.category = $${params.length}`;
+      }
+
+      if (size) {
+        params.push(size);
+        query += ` AND u.size = $${params.length}`;
+      }
+
+      if (status) {
+        params.push(status);
+        query += ` AND u.status = $${params.length}`;
+      }
+
+      query += ` ORDER BY u.category ASC, u.name ASC, u.size ASC`;
+
+      const result = await pool.query(query, params);
+      return res.json(result.rows);
+    } catch (err) {
+      console.error('Error fetching uniforms:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/uniforms', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const {
+      name, category, size, status, location, quantity, assigned_officer_id, notes,
+      image_base64, original_filename, content_type,
+    } = req.body;
+
+    if (!name || !category || !size || !location) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity || '1'), 10) || 1;
+
+    try {
+      let imageUrl: string | null = null;
+      if (image_base64) {
+        imageUrl = await storeStockToolImage('uniform-photos', image_base64, original_filename, content_type);
+      }
+
+      const assignedId = assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null;
+      const uniformStatus = status || (assignedId ? 'issued' : 'available');
+
+      const ins = await pool.query(
+        `INSERT INTO uniforms (name, category, size, status, location, quantity, assigned_officer_id, notes, image_url, created_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         RETURNING *`,
+        [name, category, size, uniformStatus, location, qty, assignedId, notes || null, imageUrl, userId],
+      );
+
+      const row = ins.rows[0];
+      if (assignedId) {
+        const officerRes = await pool.query('SELECT full_name FROM officers WHERE id = $1', [assignedId]);
+        return res.status(201).json({ ...row, assigned_officer_name: officerRes.rows[0]?.full_name ?? null });
+      }
+      return res.status(201).json({ ...row, assigned_officer_name: null });
+    } catch (err) {
+      console.error('Error creating uniform:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.patch('/api/uniforms/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const uniformId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(uniformId)) {
+      return res.status(400).json({ message: 'Invalid ID' });
+    }
+
+    const {
+      name, category, size, status, location, quantity, assigned_officer_id, notes,
+      image_base64, original_filename, content_type,
+    } = req.body;
+
+    try {
+      const check = await pool.query('SELECT * FROM uniforms WHERE id = $1', [uniformId]);
+      if ((check.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Uniform not found' });
+      }
+      const existing = check.rows[0];
+      if (!isSuperAdmin && existing.created_by !== userId) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+
+      let imageUrl = existing.image_url;
+      if (image_base64) {
+        imageUrl = await storeStockToolImage('uniform-photos', image_base64, original_filename, content_type);
+      }
+
+      const updates: string[] = ['updated_at = NOW()'];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${idx++}`);
+        values.push(name);
+      }
+      if (category !== undefined) {
+        updates.push(`category = $${idx++}`);
+        values.push(category);
+      }
+      if (size !== undefined) {
+        updates.push(`size = $${idx++}`);
+        values.push(size);
+      }
+      if (status !== undefined) {
+        updates.push(`status = $${idx++}`);
+        values.push(status);
+      }
+      if (location !== undefined) {
+        updates.push(`location = $${idx++}`);
+        values.push(location);
+      }
+      if (quantity !== undefined) {
+        const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
+        updates.push(`quantity = $${idx++}`);
+        values.push(qty);
+      }
+      if (assigned_officer_id !== undefined) {
+        updates.push(`assigned_officer_id = $${idx++}`);
+        values.push(assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null);
+      }
+      if (notes !== undefined) {
+        updates.push(`notes = $${idx++}`);
+        values.push(notes || null);
+      }
+      if (imageUrl !== existing.image_url) {
+        updates.push(`image_url = $${idx++}`);
+        values.push(imageUrl);
+      }
+
+      values.push(uniformId);
+      await pool.query(
+        `UPDATE uniforms SET ${updates.join(', ')} WHERE id = $${idx}`,
+        values,
+      );
+
+      const updatedRes = await pool.query(
+        `SELECT u.*, o.full_name AS assigned_officer_name
+         FROM uniforms u
+         LEFT JOIN officers o ON u.assigned_officer_id = o.id
+         WHERE u.id = $1`,
+        [uniformId],
+      );
+      return res.json(updatedRes.rows[0]);
+    } catch (err) {
+      console.error('Error updating uniform:', err);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.delete('/api/uniforms/:id', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const uniformId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(uniformId)) {
+      return res.status(400).json({ message: 'Invalid ID' });
+    }
+
+    try {
+      const check = await pool.query('SELECT created_by FROM uniforms WHERE id = $1', [uniformId]);
+      if ((check.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Uniform not found' });
+      }
+      if (!isSuperAdmin && check.rows[0].created_by !== userId) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+
+      await pool.query('DELETE FROM uniforms WHERE id = $1', [uniformId]);
+      return res.status(204).send();
+    } catch (err) {
+      console.error('Error deleting uniform:', err);
       return res.status(500).json({ message: 'Internal server error' });
     }
   });

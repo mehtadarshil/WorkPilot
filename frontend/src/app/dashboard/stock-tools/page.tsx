@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Package,
   Wrench,
@@ -20,9 +20,12 @@ import {
   CheckCircle,
   Clock,
   ExternalLink,
+  ArrowRightLeft,
+  Shirt,
 } from 'lucide-react';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
+import { UniformTab } from './UniformTab';
 
 function imageUploadFields(dataUrl: string, originalFilename: string, contentType: string) {
   const m = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl.trim());
@@ -75,6 +78,7 @@ interface Tool {
   id: number;
   name: string;
   category: string;
+  quantity: number;
   status: 'available' | 'in_use' | 'missing' | 'damaged';
   location: string;
   assigned_officer_id: number | null;
@@ -103,6 +107,14 @@ interface Analytics {
     missing: number;
     damaged: number;
   };
+  uniformsCount?: number;
+  uniformsByStatus?: {
+    available: number;
+    issued: number;
+    retired: number;
+    lost: number;
+    damaged: number;
+  };
   categoryStats: {
     category: string;
     total_used: number;
@@ -110,8 +122,10 @@ interface Analytics {
   }[];
 }
 
-const STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC', 'General'];
-const TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
+const DEFAULT_STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC', 'General'];
+const DEFAULT_TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
+const DEFAULT_UNIFORM_CATEGORIES = ['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'Footwear', 'Branded', 'Other'];
+const DEFAULT_UNIFORM_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'];
 const DEFAULT_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
 const QUALITIES = ['New', 'Used - Good', 'Used - Fair', 'Damaged'];
 
@@ -134,7 +148,7 @@ export default function StockToolsPage() {
   }, []);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState<'stock' | 'tools' | 'analytics'>('stock');
+  const [activeTab, setActiveTab] = useState<'stock' | 'tools' | 'uniforms' | 'analytics'>('stock');
 
   // --- Common States ---
   const [officers, setOfficers] = useState<Officer[]>([]);
@@ -178,6 +192,7 @@ export default function StockToolsPage() {
   const [toolForm, setToolForm] = useState({
     name: '',
     category: 'Power Tools',
+    quantity: '1',
     status: 'available' as 'available' | 'in_use' | 'missing' | 'damaged',
     location: 'Store',
     assigned_officer_id: '',
@@ -188,46 +203,112 @@ export default function StockToolsPage() {
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [locations, setLocations] = useState<string[]>(DEFAULT_LOCATIONS);
-  const [showLocationSettings, setShowLocationSettings] = useState(false);
+  const [stockCategories, setStockCategories] = useState<string[]>(DEFAULT_STOCK_CATEGORIES);
+  const [toolCategories, setToolCategories] = useState<string[]>(DEFAULT_TOOL_CATEGORIES);
+  const [uniformCategories, setUniformCategories] = useState<string[]>(DEFAULT_UNIFORM_CATEGORIES);
+  const [uniformSizes, setUniformSizes] = useState<string[]>(DEFAULT_UNIFORM_SIZES);
+  const [showListSettings, setShowListSettings] = useState(false);
   const [locationDraft, setLocationDraft] = useState('');
-  const [savingLocations, setSavingLocations] = useState(false);
+  const [stockCategoryDraft, setStockCategoryDraft] = useState('');
+  const [toolCategoryDraft, setToolCategoryDraft] = useState('');
+  const [uniformCategoryDraft, setUniformCategoryDraft] = useState('');
+  const [uniformSizeDraft, setUniformSizeDraft] = useState('');
+  const [savingListSettings, setSavingListSettings] = useState(false);
 
-  const fetchLocationOptions = useCallback(async () => {
+  const [showConvertToToolModal, setShowConvertToToolModal] = useState(false);
+  const [convertStockItem, setConvertStockItem] = useState<StockItem | null>(null);
+  const [convertToToolQty, setConvertToToolQty] = useState('1');
+  const [convertingToTool, setConvertingToTool] = useState(false);
+
+  const [showConvertToStockModal, setShowConvertToStockModal] = useState(false);
+  const [convertToolItem, setConvertToolItem] = useState<Tool | null>(null);
+  const [convertToStockQty, setConvertToStockQty] = useState('1');
+  const [convertToStockCategory, setConvertToStockCategory] = useState('General');
+  const [convertToStockQuality, setConvertToStockQuality] = useState('Used - Good');
+  const [convertingToStock, setConvertingToStock] = useState(false);
+
+  const fetchListOptions = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await getJson<{ location_options: string[] }>('/settings/stock-tools', token);
-      const opts = data.location_options?.filter((v) => v.trim().length > 0) ?? [];
-      if (opts.length > 0) setLocations(opts);
+      const data = await getJson<{
+        location_options: string[];
+        stock_category_options: string[];
+        tool_category_options: string[];
+        uniform_category_options?: string[];
+        uniform_size_options?: string[];
+      }>('/settings/stock-tools', token);
+      const locs = data.location_options?.filter((v) => v.trim().length > 0) ?? [];
+      const stockCats = data.stock_category_options?.filter((v) => v.trim().length > 0) ?? [];
+      const toolCats = data.tool_category_options?.filter((v) => v.trim().length > 0) ?? [];
+      const uniformCats = data.uniform_category_options?.filter((v) => v.trim().length > 0) ?? [];
+      const uniformSz = data.uniform_size_options?.filter((v) => v.trim().length > 0) ?? [];
+      if (locs.length > 0) setLocations(locs);
+      if (stockCats.length > 0) setStockCategories(stockCats);
+      if (toolCats.length > 0) setToolCategories(toolCats);
+      if (uniformCats.length > 0) setUniformCategories(uniformCats);
+      if (uniformSz.length > 0) setUniformSizes(uniformSz);
     } catch {
       setLocations(DEFAULT_LOCATIONS);
+      setStockCategories(DEFAULT_STOCK_CATEGORIES);
+      setToolCategories(DEFAULT_TOOL_CATEGORIES);
+      setUniformCategories(DEFAULT_UNIFORM_CATEGORIES);
+      setUniformSizes(DEFAULT_UNIFORM_SIZES);
     }
   }, [token]);
 
-  const saveLocationOptions = async () => {
+  const saveListOptions = async () => {
     if (!token) return;
-    setSavingLocations(true);
+    setSavingListSettings(true);
     setErrorMsg(null);
     try {
-      const location_options = locationDraft
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-      if (location_options.length === 0) {
-        setErrorMsg('Add at least one location.');
+      const location_options = locationDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const stock_category_options = stockCategoryDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const tool_category_options = toolCategoryDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const uniform_category_options = uniformCategoryDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const uniform_size_options = uniformSizeDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      if (
+        location_options.length === 0
+        || stock_category_options.length === 0
+        || tool_category_options.length === 0
+        || uniform_category_options.length === 0
+        || uniform_size_options.length === 0
+      ) {
+        setErrorMsg('Each list needs at least one entry.');
         return;
       }
-      const res = await patchJson<{ location_options: string[] }>(
-        '/settings/stock-tools',
-        { location_options },
-        token,
-      );
+      const res = await patchJson<{
+        location_options: string[];
+        stock_category_options: string[];
+        tool_category_options: string[];
+        uniform_category_options: string[];
+        uniform_size_options: string[];
+      }>('/settings/stock-tools', {
+        location_options,
+        stock_category_options,
+        tool_category_options,
+        uniform_category_options,
+        uniform_size_options,
+      }, token);
       setLocations(res.location_options);
-      setShowLocationSettings(false);
+      setStockCategories(res.stock_category_options);
+      setToolCategories(res.tool_category_options);
+      setUniformCategories(res.uniform_category_options);
+      setUniformSizes(res.uniform_size_options);
+      setShowListSettings(false);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Could not save locations');
+      setErrorMsg(err instanceof Error ? err.message : 'Could not save list options');
     } finally {
-      setSavingLocations(false);
+      setSavingListSettings(false);
     }
+  };
+
+  const openListSettings = () => {
+    setLocationDraft(locations.join('\n'));
+    setStockCategoryDraft(stockCategories.join('\n'));
+    setToolCategoryDraft(toolCategories.join('\n'));
+    setUniformCategoryDraft(uniformCategories.join('\n'));
+    setUniformSizeDraft(uniformSizes.join('\n'));
+    setShowListSettings(true);
   };
 
   const fetchOfficers = useCallback(async () => {
@@ -283,8 +364,8 @@ export default function StockToolsPage() {
 
   useEffect(() => {
     fetchOfficers();
-    void fetchLocationOptions();
-  }, [fetchOfficers, fetchLocationOptions]);
+    void fetchListOptions();
+  }, [fetchOfficers, fetchListOptions]);
 
   useEffect(() => {
     if (activeTab === 'stock') {
@@ -303,7 +384,7 @@ export default function StockToolsPage() {
       name: '',
       mpn: '',
       quantity: '0',
-      category: 'Electrical',
+      category: stockCategories[0] ?? 'General',
       quality: 'New',
       location: 'Store',
       image_base64: '',
@@ -406,7 +487,8 @@ export default function StockToolsPage() {
     setEditingTool(null);
     setToolForm({
       name: '',
-      category: 'Power Tools',
+      category: toolCategories[0] ?? 'Other',
+      quantity: '1',
       status: 'available',
       location: 'Store',
       assigned_officer_id: '',
@@ -423,6 +505,7 @@ export default function StockToolsPage() {
     setToolForm({
       name: tool.name,
       category: tool.category,
+      quantity: String(tool.quantity ?? 1),
       status: tool.status,
       location: tool.location,
       assigned_officer_id: tool.assigned_officer_id ? String(tool.assigned_officer_id) : '',
@@ -455,9 +538,11 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
+    const qty = parseInt(toolForm.quantity, 10);
     const payload = {
       name: toolForm.name.trim(),
       category: toolForm.category,
+      quantity: qty,
       status: toolForm.status,
       location: toolForm.location,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
@@ -468,6 +553,10 @@ export default function StockToolsPage() {
 
     if (!payload.name) {
       setErrorMsg('Name is required');
+      return;
+    }
+    if (isNaN(qty) || qty < 1) {
+      setErrorMsg('Quantity must be at least 1');
       return;
     }
 
@@ -495,6 +584,90 @@ export default function StockToolsPage() {
     }
   };
 
+  const openConvertToTool = (item: StockItem) => {
+    setConvertStockItem(item);
+    setConvertToToolQty('1');
+    setErrorMsg(null);
+    setShowConvertToToolModal(true);
+  };
+
+  const handleConvertToTool = async () => {
+    if (!token || !convertStockItem) return;
+    const qty = parseInt(convertToToolQty, 10);
+    if (isNaN(qty) || qty < 1) {
+      setErrorMsg('Enter a valid quantity');
+      return;
+    }
+    if (qty > convertStockItem.quantity) {
+      setErrorMsg(`Only ${convertStockItem.quantity} unit(s) in stock`);
+      return;
+    }
+    setConvertingToTool(true);
+    setErrorMsg(null);
+    try {
+      await postJson(`/stock/${convertStockItem.id}/convert-to-tool`, { quantity: qty }, token);
+      setShowConvertToToolModal(false);
+      setConvertStockItem(null);
+      await fetchStock();
+      await fetchTools();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Could not convert to tool');
+    } finally {
+      setConvertingToTool(false);
+    }
+  };
+
+  const openConvertToStock = (tool: Tool) => {
+    setConvertToolItem(tool);
+    setConvertToStockQty(String(tool.quantity ?? 1));
+    setConvertToStockCategory(stockCategories[0] ?? 'General');
+    setConvertToStockQuality('Used - Good');
+    setErrorMsg(null);
+    setShowConvertToStockModal(true);
+  };
+
+  const handleConvertToStock = async () => {
+    if (!token || !convertToolItem) return;
+    const qty = parseInt(convertToStockQty, 10);
+    if (isNaN(qty) || qty < 1) {
+      setErrorMsg('Enter a valid quantity');
+      return;
+    }
+    if (qty > (convertToolItem.quantity ?? 1)) {
+      setErrorMsg(`Only ${convertToolItem.quantity ?? 1} unit(s) for this tool`);
+      return;
+    }
+    setConvertingToStock(true);
+    setErrorMsg(null);
+    try {
+      await postJson(
+        `/tools/${convertToolItem.id}/convert-to-stock`,
+        { quantity: qty, category: convertToStockCategory, quality: convertToStockQuality },
+        token,
+      );
+      setShowConvertToStockModal(false);
+      setConvertToolItem(null);
+      await fetchTools();
+      await fetchStock();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Could not convert to stock');
+    } finally {
+      setConvertingToStock(false);
+    }
+  };
+
+  const stockCategoryOptions = useMemo(() => {
+    const set = new Set(stockCategories);
+    stockItems.forEach((i) => { if (i.category) set.add(i.category); });
+    return [...set].sort();
+  }, [stockCategories, stockItems]);
+
+  const toolCategoryOptions = useMemo(() => {
+    const set = new Set(toolCategories);
+    tools.forEach((t) => { if (t.category) set.add(t.category); });
+    return [...set].sort();
+  }, [toolCategories, tools]);
+
   // --- Filtering Logic ---
   const filteredStock = stockItems.filter((item) => {
     const matchesSearch =
@@ -521,8 +694,8 @@ export default function StockToolsPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stock & Tools Manager</h1>
-          <p className="text-sm text-slate-500">Track parts inventory, manage company tools, link to jobs, and track usage analytics.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stock, Tools &amp; Uniform</h1>
+          <p className="text-sm text-slate-500">Track parts inventory, company tools, staff uniforms, and usage analytics.</p>
         </div>
 
         {/* Tab Selection */}
@@ -548,6 +721,17 @@ export default function StockToolsPage() {
           >
             <Wrench className="size-4" />
             Tools Registry
+          </button>
+          <button
+            onClick={() => setActiveTab('uniforms')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+              activeTab === 'uniforms'
+                ? 'bg-[#14B8A6] text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Shirt className="size-4" />
+            Uniform Registry
           </button>
           <button
             onClick={() => setActiveTab('analytics')}
@@ -586,7 +770,7 @@ export default function StockToolsPage() {
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
               >
                 <option value="All">All Categories</option>
-                {STOCK_CATEGORIES.map((cat) => (
+                {stockCategoryOptions.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -610,13 +794,10 @@ export default function StockToolsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setLocationDraft(locations.join('\n'));
-                  setShowLocationSettings(true);
-                }}
+                onClick={openListSettings}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                Manage locations
+                Manage lists
               </button>
               <button
                 onClick={handleOpenAddStock}
@@ -716,6 +897,15 @@ export default function StockToolsPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition">
+                            {item.quantity > 0 && (
+                              <button
+                                onClick={() => openConvertToTool(item)}
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                                title="Convert to tool"
+                              >
+                                <ArrowRightLeft className="size-4" />
+                              </button>
+                            )}
                             <button
                               onClick={() => handleOpenEditStock(item)}
                               className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
@@ -835,7 +1025,7 @@ export default function StockToolsPage() {
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
               >
                 <option value="All">All Categories</option>
-                {TOOL_CATEGORIES.map((cat) => (
+                {toolCategoryOptions.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -855,6 +1045,13 @@ export default function StockToolsPage() {
               </select>
             </div>
 
+            <button
+              type="button"
+              onClick={openListSettings}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Manage lists
+            </button>
             <button
               onClick={handleOpenAddTool}
               className="flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] shadow-sm transition animate-press"
@@ -932,6 +1129,10 @@ export default function StockToolsPage() {
 
                         <div className="flex flex-col gap-1.5 text-xs text-slate-600 mt-2">
                           <div className="flex items-center gap-1.5">
+                            <Package className="size-3.5 text-slate-400" />
+                            <span>Quantity: <strong>{tool.quantity ?? 1}</strong></span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
                             <MapPin className="size-3.5 text-slate-400" />
                             <span>Location: <strong>{tool.location}</strong></span>
                           </div>
@@ -944,6 +1145,13 @@ export default function StockToolsPage() {
 
                       {/* Actions */}
                       <div className="flex items-center justify-end border-t border-slate-100 mt-4 pt-3 opacity-80 group-hover:opacity-100 transition gap-1">
+                        <button
+                          onClick={() => openConvertToStock(tool)}
+                          className="rounded-lg p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                          title="Convert to stock"
+                        >
+                          <ArrowRightLeft className="size-4" />
+                        </button>
                         <button
                           onClick={() => handleOpenEditTool(tool)}
                           className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
@@ -968,6 +1176,18 @@ export default function StockToolsPage() {
         </div>
       )}
 
+      {activeTab === 'uniforms' && (
+        <UniformTab
+          token={token}
+          activeToken={activeToken}
+          officers={officers}
+          locations={locations}
+          uniformCategories={uniformCategories}
+          uniformSizes={uniformSizes}
+          onManageLists={openListSettings}
+        />
+      )}
+
       {/* ─── TAB CONTENT: ANALYTICS ─── */}
       {activeTab === 'analytics' && (
         <div className="flex flex-col gap-6">
@@ -978,7 +1198,7 @@ export default function StockToolsPage() {
           ) : (
             <>
               {/* Stat Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex items-center gap-4">
                   <div className="rounded-xl bg-[#14B8A6]/10 p-3 text-[#14B8A6]">
                     <Package className="size-6" />
@@ -1016,6 +1236,21 @@ export default function StockToolsPage() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Registered Tools</p>
                     <p className="text-2xl font-black text-slate-900">{analytics.toolsCount}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex items-center gap-4">
+                  <div className="rounded-xl bg-violet-50 p-3 text-violet-600 border border-violet-100">
+                    <Shirt className="size-6" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Uniform Items</p>
+                    <p className="text-2xl font-black text-slate-900">{analytics.uniformsCount ?? 0}</p>
+                    {analytics.uniformsByStatus && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {analytics.uniformsByStatus.issued} issued · {analytics.uniformsByStatus.available} available
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1193,7 +1428,7 @@ export default function StockToolsPage() {
                     onChange={(e) => setStockForm((prev) => ({ ...prev, category: e.target.value }))}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                   >
-                    {STOCK_CATEGORIES.map(cat => (
+                    {stockCategoryOptions.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -1327,11 +1562,24 @@ export default function StockToolsPage() {
                     onChange={(e) => setToolForm((prev) => ({ ...prev, category: e.target.value }))}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                   >
-                    {TOOL_CATEGORIES.map(cat => (
+                    {toolCategoryOptions.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={toolForm.quantity}
+                    onChange={(e) => setToolForm((prev) => ({ ...prev, quantity: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location</label>
                   <select
@@ -1344,9 +1592,6 @@ export default function StockToolsPage() {
                     ))}
                   </select>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
                   <select
@@ -1360,19 +1605,20 @@ export default function StockToolsPage() {
                     <option value="missing">Missing</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian (Officer)</label>
-                  <select
-                    value={toolForm.assigned_officer_id}
-                    onChange={(e) => setToolForm((prev) => ({ ...prev, assigned_officer_id: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  >
-                    <option value="">None Assigned</option>
-                    {officers.map(off => (
-                      <option key={off.id} value={off.id}>{off.full_name}</option>
-                    ))}
-                  </select>
-                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian (Officer)</label>
+                <select
+                  value={toolForm.assigned_officer_id}
+                  onChange={(e) => setToolForm((prev) => ({ ...prev, assigned_officer_id: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                >
+                  <option value="">None Assigned</option>
+                  {officers.map(off => (
+                    <option key={off.id} value={off.id}>{off.full_name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Photo Upload */}
@@ -1433,33 +1679,88 @@ export default function StockToolsPage() {
           </div>
         </div>
       )}
-      {showLocationSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLocationSettings(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900">Stock location options</h3>
-            <p className="mt-1 text-sm text-slate-500">One location per line. These appear in the Location dropdown when adding stock or tools.</p>
-            <textarea
-              value={locationDraft}
-              onChange={(e) => setLocationDraft(e.target.value)}
-              rows={6}
-              className="mt-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-            />
+      {showListSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowListSettings(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900">Inventory list options</h3>
+            <p className="mt-1 text-sm text-slate-500">One entry per line. These power dropdown lists across stock, tools, and uniforms.</p>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Locations</label>
+                <textarea value={locationDraft} onChange={(e) => setLocationDraft(e.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Stock categories</label>
+                <textarea value={stockCategoryDraft} onChange={(e) => setStockCategoryDraft(e.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Tool categories</label>
+                <textarea value={toolCategoryDraft} onChange={(e) => setToolCategoryDraft(e.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Uniform types</label>
+                <textarea value={uniformCategoryDraft} onChange={(e) => setUniformCategoryDraft(e.target.value)} rows={4} placeholder="Jacket&#10;Hi-Vis&#10;Fire Safety" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Uniform sizes</label>
+                <textarea value={uniformSizeDraft} onChange={(e) => setUniformSizeDraft(e.target.value)} rows={4} placeholder="XS&#10;S&#10;M&#10;L&#10;XL" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+            </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowLocationSettings(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
+              <button type="button" onClick={() => setShowListSettings(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+              <button type="button" disabled={savingListSettings} onClick={() => void saveListOptions()} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50">
+                {savingListSettings ? 'Saving…' : 'Save lists'}
               </button>
-              <button
-                type="button"
-                disabled={savingLocations}
-                onClick={() => void saveLocationOptions()}
-                className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
-              >
-                {savingLocations ? 'Saving…' : 'Save locations'}
-              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConvertToToolModal && convertStockItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">Convert stock to tool</h3>
+            <p className="mt-1 text-sm text-slate-500">Move units from <strong>{convertStockItem.name}</strong> into tools ({convertStockItem.quantity} in stock).</p>
+            {errorMsg && <div className="mt-3 rounded-lg bg-rose-50 p-2 text-xs font-semibold text-rose-700">{errorMsg}</div>}
+            <div className="mt-4">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Quantity to convert</label>
+              <input type="number" min={1} max={convertStockItem.quantity} value={convertToToolQty} onChange={(e) => setConvertToToolQty(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowConvertToToolModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+              <button type="button" onClick={() => void handleConvertToTool()} disabled={convertingToTool} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-60">{convertingToTool ? 'Converting…' : 'Convert to tool'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConvertToStockModal && convertToolItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">Convert tool to stock</h3>
+            <p className="mt-1 text-sm text-slate-500">Move units from <strong>{convertToolItem.name}</strong> into stock ({convertToolItem.quantity ?? 1} on hand).</p>
+            {errorMsg && <div className="mt-3 rounded-lg bg-rose-50 p-2 text-xs font-semibold text-rose-700">{errorMsg}</div>}
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Quantity to convert</label>
+                <input type="number" min={1} max={convertToolItem.quantity ?? 1} value={convertToStockQty} onChange={(e) => setConvertToStockQty(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Stock category</label>
+                <select value={convertToStockCategory} onChange={(e) => setConvertToStockCategory(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
+                  {stockCategoryOptions.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Quality</label>
+                <select value={convertToStockQuality} onChange={(e) => setConvertToStockQuality(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
+                  {QUALITIES.map((q) => <option key={q} value={q}>{q}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowConvertToStockModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+              <button type="button" onClick={() => void handleConvertToStock()} disabled={convertingToStock} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-60">{convertingToStock ? 'Converting…' : 'Convert to stock'}</button>
             </div>
           </div>
         </div>

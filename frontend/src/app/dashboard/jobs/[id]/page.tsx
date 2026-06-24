@@ -24,6 +24,7 @@ import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
 import { VisitJobSheetTimeline } from './VisitJobSheetTimeline';
 import PpmSlaCountdown from './PpmSlaCountdown';
 import type { VisitStatusLog } from './visitStatusLabels';
+import EditTimelineModal from './components/EditTimelineModal';
 
 interface JobContact {
   id: number;
@@ -405,6 +406,23 @@ export default function JobDetailsPage() {
   const [downloadingStatement, setDownloadingStatement] = useState(false);
   const quickLinksRef = useRef<HTMLDivElement>(null);
 
+  const [currentUser, setCurrentUser] = useState<{ role: string; permissions?: string[] | null } | null>(null);
+  const [editTimelineOpen, setEditTimelineOpen] = useState(false);
+  const [timelineRefreshTick, setTimelineRefreshTick] = useState(0);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('wp_user');
+      if (raw) {
+        try {
+          setCurrentUser(JSON.parse(raw));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, []);
+
   // --- Job Tools States ---
   const [jobTools, setJobTools] = useState<any[]>([]);
   const [allTools, setAllTools] = useState<any[]>([]);
@@ -600,7 +618,7 @@ export default function JobDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [viewingEvent?.id, token]);
+  }, [viewingEvent?.id, token, timelineRefreshTick]);
 
   useEffect(() => {
     if (!viewingEvent || !token) {
@@ -643,7 +661,7 @@ export default function JobDetailsPage() {
     return () => {
       cancelled = true;
     };
-  }, [viewingEvent?.id, token]);
+  }, [viewingEvent?.id, token, timelineRefreshTick]);
 
   useEffect(() => {
     if (!viewingEvent || !token || modalTab !== 'Feedback') return;
@@ -1897,6 +1915,13 @@ export default function JobDetailsPage() {
                           <VisitJobSheetTimeline
                             statusLogs={visitStatusLogs}
                             timesheetEntries={visitTimesheetEntries}
+                            onEditClick={
+                              currentUser?.role === 'SUPER_ADMIN' ||
+                              currentUser?.role === 'ADMIN' ||
+                              currentUser?.permissions?.includes('scheduling')
+                                ? () => setEditTimelineOpen(true)
+                                : undefined
+                            }
                           />
                         </div>
                         {showDiaryEngineerJobSheetEmail && (
@@ -2485,6 +2510,20 @@ export default function JobDetailsPage() {
         </div>
       )}
 
+      {viewingEvent && token && (
+        <EditTimelineModal
+          open={editTimelineOpen}
+          token={token}
+          diaryEventId={viewingEvent.id}
+          initialStatusLogs={visitStatusLogs}
+          initialTimesheetEntries={visitTimesheetEntries}
+          onClose={() => setEditTimelineOpen(false)}
+          onSaved={() => {
+            setTimelineRefreshTick((t) => t + 1);
+            void fetchJobDetails();
+          }}
+        />
+      )}
     </div>
   );
 }

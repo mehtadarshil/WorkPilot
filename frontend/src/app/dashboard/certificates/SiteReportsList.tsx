@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { deleteRequest, getJson, postJson } from '../../apiClient';
-import { Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, X, MoreVertical, Copy, Edit2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import Link from 'next/link';
 import CustomerSiteReportTab from '../customers/[id]/CustomerSiteReportTab';
 import { formatSiteReportJobRef, SITE_REPORT_TABLE_HEAD } from './siteReportTableUtils';
+import EditSiteReportDetailsModal from './components/EditSiteReportDetailsModal';
 
 interface SiteReportRow {
   id: number;
@@ -45,6 +46,12 @@ export default function SiteReportsList({ token }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SiteReportRow | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const [rowMenuId, setRowMenuId] = useState<number | null>(null);
+  const [rowMenuPosition, setRowMenuPosition] = useState({ top: 0, left: 0 });
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [editReport, setEditReport] = useState<SiteReportRow | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
@@ -176,6 +183,24 @@ export default function SiteReportsList({ token }: Props) {
       setError(e instanceof Error ? e.message : 'Failed to delete site report');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDuplicate = async (report: SiteReportRow) => {
+    if (!token) return;
+    setDuplicatingId(report.id);
+    try {
+      await postJson(
+        `/customers/${report.customer_id}/site-report/${report.id}/duplicate`,
+        {},
+        token,
+      );
+      setRowMenuId(null);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to duplicate site report');
+    } finally {
+      setDuplicatingId(null);
     }
   };
 
@@ -373,28 +398,71 @@ export default function SiteReportsList({ token }: Props) {
                   <td className="px-4 py-3 text-slate-600">
                     {dayjs(r.updated_at).format('D MMM YYYY HH:mm')}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center justify-end gap-3">
+                  <td className="px-4 py-3 text-right text-slate-600">
+                    <div className="relative inline-flex items-center justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => setSelectedReport(r)}
-                        className="font-bold text-[#14B8A6] hover:text-[#119f8e]"
+                        className="font-bold text-[#14B8A6] hover:text-[#119f8e] hover:underline"
                       >
                         Open
                       </button>
                       <button
                         type="button"
-                        disabled={deletingId === r.id}
-                        onClick={() => void handleDelete(r)}
-                        className="inline-flex items-center gap-1 font-bold text-rose-600 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setRowMenuPosition({
+                            top: rect.bottom + 6,
+                            left: Math.max(8, rect.right - 180),
+                          });
+                          setRowMenuId((id) => (id === r.id ? null : r.id));
+                        }}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                        aria-label="More actions"
                       >
-                        {deletingId === r.id ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                        Delete
+                        <MoreVertical className="size-4" />
                       </button>
+                      {rowMenuId === r.id && (
+                        <ul
+                          className="fixed z-[100] min-w-[180px] rounded-lg border border-slate-200 bg-white py-1 text-left shadow-lg"
+                          style={{ top: rowMenuPosition.top, left: rowMenuPosition.left }}
+                        >
+                          <li>
+                            <button
+                              type="button"
+                              disabled={duplicatingId === r.id}
+                              onClick={() => void handleDuplicate(r)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 font-sans text-slate-700"
+                            >
+                              <Copy className="size-4 text-slate-500" /> Copy
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditReport(r);
+                                setEditDetailsOpen(true);
+                                setRowMenuId(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 font-sans text-slate-700"
+                            >
+                              <Edit2 className="size-4 text-slate-500" /> Edit client & site
+                            </button>
+                          </li>
+                          <li className="my-1 border-t border-slate-100" />
+                          <li>
+                            <button
+                              type="button"
+                              disabled={deletingId === r.id}
+                              onClick={() => void handleDelete(r)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 font-sans"
+                            >
+                              <Trash2 className="size-4" /> Delete
+                            </button>
+                          </li>
+                        </ul>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -403,6 +471,25 @@ export default function SiteReportsList({ token }: Props) {
           </tbody>
         </table>
       </div>
+
+      {editReport && (
+        <EditSiteReportDetailsModal
+          open={editDetailsOpen}
+          token={token}
+          reportId={editReport.id}
+          initialCustomerId={editReport.customer_id}
+          initialWorkAddressId={editReport.work_address_id}
+          initialJobId={editReport.job_id}
+          initialReportTitle={editReport.report_title}
+          onClose={() => {
+            setEditDetailsOpen(false);
+            setEditReport(null);
+          }}
+          onSaved={() => {
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }

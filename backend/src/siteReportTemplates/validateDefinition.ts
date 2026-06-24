@@ -1,5 +1,6 @@
-import type { SiteReportTemplateDefinition, SiteReportTemplateField, SiteReportTemplateSection } from './types';
+import type { SiteReportFieldHideFollowingRule, SiteReportTemplateDefinition, SiteReportTemplateField, SiteReportTemplateSection } from './types';
 import { SITE_REPORT_FIELD_TYPES } from './types';
+import { parseHideFollowingRule } from './fieldVisibility';
 
 function normalizeField(raw: unknown, sectionId: string, index: number): SiteReportTemplateField | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -11,7 +12,19 @@ function normalizeField(raw: unknown, sectionId: string, index: number): SiteRep
   const t = type as SiteReportTemplateField['type'];
   const content = typeof o.content === 'string' ? o.content : undefined;
   const rows = typeof o.rows === 'number' && Number.isFinite(o.rows) ? Math.min(40, Math.max(1, Math.round(o.rows))) : undefined;
-  return { id, label, type: t, ...(content !== undefined ? { content } : {}), ...(rows !== undefined ? { rows } : {}) };
+  const choices = Array.isArray(o.choices)
+    ? o.choices.filter((c): c is string => typeof c === 'string').map((c) => c.trim()).filter(Boolean)
+    : undefined;
+  const hide_following_when = parseHideFollowingRule(o.hide_following_when);
+  return {
+    id,
+    label,
+    type: t,
+    ...(content !== undefined ? { content } : {}),
+    ...(rows !== undefined ? { rows } : {}),
+    ...(choices?.length ? { choices } : {}),
+    ...(hide_following_when ? { hide_following_when } : {}),
+  };
 }
 
 function normalizeSection(raw: unknown, index: number): SiteReportTemplateSection | null {

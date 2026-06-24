@@ -12,6 +12,7 @@ import type { SiteReportRepeatableInstance, TemplateSiteReportDocument } from '.
 import { scopedRepeatableFieldKey } from './siteReportTemplates/types';
 import { normalizeTemplateSiteReportDocument } from './siteReportTemplates/documentNormalize';
 import { repeatableFieldHasEntry, repeatableInstanceHasContent } from './siteReportTemplates/repeatableHelpers';
+import { computeHiddenSiteReportFieldIds } from './siteReportTemplates/fieldVisibility';
 
 type SectionImages = NonNullable<TemplateSiteReportDocument['section_images']>;
 type FieldImages = NonNullable<TemplateSiteReportDocument['field_images']>;
@@ -268,8 +269,10 @@ export function buildSiteReportPrintHtml(input: {
       const repeatLabel = sec.repeat_label?.trim() || 'Item';
       instances.forEach((instance: SiteReportRepeatableInstance, index: number) => {
         if (!repeatableInstanceHasContent(sec, instance, fieldImages)) return;
+        const hiddenIds = computeHiddenSiteReportFieldIds(sec.fields, instance.values);
         const fieldsHtml: string[] = [];
         for (const f of sec.fields) {
+          if (hiddenIds.has(f.id)) continue;
           if (!repeatableFieldHasEntry(f, instance, sec.id, fieldImages)) continue;
           const scopedKey = scopedRepeatableFieldKey(sec.id, instance.id, f.id);
           fieldsHtml.push(renderFieldBlock(f, instance.values, {}, fieldImages, imageMap, scopedKey));
@@ -291,10 +294,14 @@ export function buildSiteReportPrintHtml(input: {
     }
 
     if (!sectionHasAnyUserContent(sec, values, headerOverrides, fieldImages, sectionImages)) continue;
+    const hiddenIds = computeHiddenSiteReportFieldIds(sec.fields, values, headerOverrides);
     const fieldsHtml: string[] = [];
     for (const f of sec.fields) {
+      if (hiddenIds.has(f.id)) continue;
+      if (f.type !== 'static_text' && !fieldHasUserEntry(f, values, headerOverrides, fieldImages)) continue;
       fieldsHtml.push(renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap));
     }
+    if (fieldsHtml.length === 0) continue;
     const imgs =
       sec.allow_section_images ? renderSectionImagesHtml(sec.id, sectionImages, imageMap) : '';
     sectionsHtml.push(
@@ -306,7 +313,12 @@ export function buildSiteReportPrintHtml(input: {
   if (definition.footer && definition.footer.fields.length > 0) {
     const ft = definition.footer;
     if (footerHasRenderableContent(ft, values, headerOverrides, fieldImages, sectionImages)) {
-      const ff = ft.fields.map((f) => renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap)).join('');
+      const hiddenIds = computeHiddenSiteReportFieldIds(ft.fields, values, headerOverrides);
+      const ff = ft.fields
+        .filter((f) => !hiddenIds.has(f.id))
+        .filter((f) => f.type === 'static_text' || fieldHasUserEntry(f, values, headerOverrides, fieldImages))
+        .map((f) => renderFieldBlock(f, values, headerOverrides, fieldImages, imageMap))
+        .join('');
       const fImgs = ft.allow_section_images ? renderSectionImagesHtml('footer', sectionImages, imageMap) : '';
       footerHtml = `<section class="sec footer"><h2 class="sec-title">${escapeHtml(ft.title || 'Footer')}</h2><div class="fields">${ff}</div>${fImgs}</section>`;
     }
@@ -320,36 +332,37 @@ export function buildSiteReportPrintHtml(input: {
   <title>${escapeHtml(reportTitle)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; font-size: 10.5pt; line-height: 1.45; margin: 0; padding: 14mm 16mm; background: #fff; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; font-size: 9.5pt; line-height: 1.35; margin: 0; padding: 10mm 12mm; background: #fff; }
     .accent { color: ${escapeHtml(accent)}; }
-    .top { display: flex; align-items: flex-start; justify-content: flex-start; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 3px solid ${escapeHtml(accent)}; }
-    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    .logo { max-height: 52px; max-width: 220px; object-fit: contain; }
-    .logo-fallback { width: 52px; height: 52px; border-radius: 8px; background: ${escapeHtml(accent)}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14pt; flex-shrink: 0; }
-    .company { font-size: 16pt; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
-    h1.doc-title { font-size: 18pt; font-weight: 800; margin: 0 0 8px; color: #0f172a; letter-spacing: -0.02em; }
-    p.cert-ref { font-size: 10pt; color: #475569; margin: 0 0 14px; }
-    .keyline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 20px; padding: 12px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 10pt; }
-    .keyline .k { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 4px; }
+    .top { display: flex; align-items: flex-start; justify-content: flex-start; gap: 12px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 3px solid ${escapeHtml(accent)}; }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .logo { max-height: 48px; max-width: 200px; object-fit: contain; }
+    .logo-fallback { width: 48px; height: 48px; border-radius: 8px; background: ${escapeHtml(accent)}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13pt; flex-shrink: 0; }
+    .company { font-size: 14pt; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+    h1.doc-title { font-size: 16pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; letter-spacing: -0.02em; }
+    p.cert-ref { font-size: 9pt; color: #475569; margin: 0 0 10px; }
+    .keyline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 12px; padding: 8px 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 9pt; }
+    .keyline .k { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 2px; }
     .keyline .v { font-weight: 600; color: #0f172a; white-space: pre-wrap; }
-    section.sec { margin-bottom: 22px; page-break-inside: avoid; }
-    .repeat-card { margin-bottom: 16px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fafbfc; page-break-inside: avoid; }
-    h3.repeat-title { font-size: 10.5pt; font-weight: 800; margin: 0 0 10px; color: #0f172a; }
-    h2.sec-title { font-size: 11.5pt; font-weight: 800; margin: 0 0 10px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; }
-    p.helper { margin: 0 0 12px; font-size: 9.5pt; color: #475569; }
-    .fields { display: flex; flex-direction: column; gap: 12px; }
-    .field .label { font-size: 9pt; font-weight: 700; color: #334155; margin-bottom: 4px; }
-    .field .value { font-size: 10pt; color: #0f172a; }
-    .static { font-size: 9.5pt; color: #334155; padding: 10px 12px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; }
-    .images { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
-    .images--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
-    .images--row .imgwrap { flex: 1 1 45%; min-width: 0; max-width: calc(50% - 5px); }
+    section.sec { margin-bottom: 12px; page-break-inside: auto; break-inside: auto; }
+    .repeat-card { margin-bottom: 10px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafbfc; page-break-inside: avoid; break-inside: avoid; }
+    h3.repeat-title { font-size: 9.5pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; break-after: avoid; page-break-after: avoid; }
+    h2.sec-title { font-size: 10.5pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; break-after: avoid; page-break-after: avoid; }
+    p.helper { margin: 0 0 6px; font-size: 8.5pt; color: #475569; }
+    .fields { display: flex; flex-direction: column; gap: 5px; }
+    .field { break-inside: avoid; page-break-inside: avoid; }
+    .field .label { font-size: 8pt; font-weight: 700; color: #334155; margin-bottom: 2px; }
+    .field .value { font-size: 9pt; color: #0f172a; }
+    .static { font-size: 8.5pt; color: #334155; padding: 6px 8px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0; }
+    .images { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .images--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+    .images--row .imgwrap { flex: 1 1 45%; min-width: 0; max-width: calc(50% - 4px); }
     .images--row .imgwrap img { width: 100%; }
     .imgwrap { break-inside: avoid; }
-    .imgwrap img { max-width: 100%; max-height: 220px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 6px; }
-    .imgcap { font-size: 9pt; font-weight: 600; margin-top: 6px; color: #334155; }
-    .imgnote { font-size: 8.5pt; color: #64748b; margin-top: 2px; }
-    @page { margin: 12mm; size: A4; }
+    .imgwrap img { max-width: 100%; max-height: 180px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; }
+    .imgcap { font-size: 8pt; font-weight: 600; margin-top: 4px; color: #334155; }
+    .imgnote { font-size: 7.5pt; color: #64748b; margin-top: 2px; }
+    @page { margin: 10mm; size: A4; }
   </style>
 </head>
 <body>

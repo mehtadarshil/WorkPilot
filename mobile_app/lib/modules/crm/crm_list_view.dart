@@ -7,6 +7,7 @@ import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import '../open_jobs/open_job_formatters.dart';
 import '../certificates/certificate_catalog.dart';
+import '../certificates/widgets/copy_convert_certificate_sheet.dart';
 import 'crm_list_controller.dart';
 
 class CrmListView extends GetView<CrmListController> {
@@ -614,6 +615,50 @@ class CrmListView extends GetView<CrmListController> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                trailing: controller.module == 'certifications'
+                                    ? PopupMenuButton<String>(
+                                        icon: const Icon(Icons.more_vert_rounded, color: AppColors.slate400),
+                                        color: const Color(0xFF1E293B),
+                                        onSelected: (value) async {
+                                          final raw = row['id'];
+                                          final id = raw is int ? raw : (raw is num ? raw.toInt() : null);
+                                          if (id == null) return;
+                                          if (value == 'open') {
+                                            await Get.toNamed(
+                                              AppRoutes.certificateEditor,
+                                              arguments: {'id': id},
+                                            );
+                                          } else if (value == 'copy') {
+                                            final typeSlug = (row['type_slug'] as String?)?.trim() ?? 'eicr_18e_a3';
+                                            final customerId = (row['customer_id'] as num?)?.toInt();
+                                            final workAddressId = (row['work_address_id'] as num?)?.toInt();
+                                            await showCopyConvertCertificateFromList(
+                                              certificateId: id,
+                                              typeSlug: typeSlug,
+                                              customerId: customerId,
+                                              workAddressId: workAddressId,
+                                              onCopied: controller.reloadFromStart,
+                                            );
+                                          }
+                                        },
+                                        itemBuilder: (context) => [
+                                          PopupMenuItem(
+                                            value: 'open',
+                                            child: Text(
+                                              'Open',
+                                              style: GoogleFonts.inter(color: Colors.white),
+                                            ),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'copy',
+                                            child: Text(
+                                              'Copy / convert…',
+                                              style: GoogleFonts.inter(color: Colors.white),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : null,
                                 subtitle: () {
                                   final desc = controller.module == 'jobs' ? (row['description'] as String?)?.trim() : null;
                                   final hasSub = sub != null && sub.isNotEmpty;

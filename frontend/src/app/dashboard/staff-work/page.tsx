@@ -19,6 +19,7 @@ import {
   X,
   ImageIcon,
   Wallet,
+  Edit2,
 } from 'lucide-react';
 import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, addDays, getDay, addMonths, addHours, startOfDay, isSameDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -75,6 +76,15 @@ type ExpenseRow = {
   created_at: string | null;
 };
 
+type GeneralOverheadExpense = {
+  id: number;
+  expense_date: string;
+  category: string;
+  description: string | null;
+  amount: number;
+  created_at: string | null;
+};
+
 type StaffWorkSummary = {
   from: string;
   to: string;
@@ -92,8 +102,22 @@ type StaffWorkSummary = {
     pending_expenses_count: number;
     personal_paid_total: number;
     personal_outstanding: number;
+    general_overhead_total?: number;
+    general_overhead_count?: number;
+    general_overhead_all_time?: number;
   };
 };
+
+const GENERAL_OVERHEAD_CATEGORIES = [
+  'Insurance',
+  'Rent',
+  'Utilities',
+  'Vehicle costs',
+  'Software & subscriptions',
+  'Office',
+  'Professional fees',
+  'General',
+];
 
 type OfficerPaymentRow = {
   id: number;
@@ -287,6 +311,16 @@ export default function StaffWorkPage() {
   const [to, setTo] = useState(today());
   const [summary, setSummary] = useState<StaffWorkSummary | null>(null);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  const [overheadExpenses, setOverheadExpenses] = useState<GeneralOverheadExpense[]>([]);
+  const [overheadForm, setOverheadForm] = useState({
+    expense_date: today(),
+    category: 'Insurance',
+    description: '',
+    amount: '',
+  });
+  const [savingOverhead, setSavingOverhead] = useState(false);
+  const [overheadError, setOverheadError] = useState<string | null>(null);
+  const [editingOverheadId, setEditingOverheadId] = useState<number | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [updatingExpenseId, setUpdatingExpenseId] = useState<number | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -357,16 +391,19 @@ export default function StaffWorkPage() {
     setSummaryError(null);
     try {
       const q = new URLSearchParams({ from, to }).toString();
-      const [summaryRes, expensesRes] = await Promise.all([
+      const [summaryRes, expensesRes, overheadRes] = await Promise.all([
         getJson<StaffWorkSummary>(`/staff-work/summary?${q}`, token),
         getJson<{ expenses: ExpenseRow[] }>(`/staff-work/expenses?${q}`, token),
+        getJson<{ expenses: GeneralOverheadExpense[] }>(`/company-overhead-expenses?${q}`, token),
       ]);
       setSummary(summaryRes);
       setExpenses(expensesRes.expenses ?? []);
+      setOverheadExpenses(overheadRes.expenses ?? []);
     } catch (err) {
       setSummaryError(err instanceof Error ? err.message : 'Could not load staff work summary');
       setSummary(null);
       setExpenses([]);
+      setOverheadExpenses([]);
     } finally {
       setLoadingSummary(false);
     }
@@ -527,6 +564,66 @@ export default function StaffWorkPage() {
       setSummaryError(err instanceof Error ? err.message : 'Could not update expense type');
     } finally {
       setUpdatingExpenseId(null);
+    }
+  };
+
+  const resetOverheadForm = () => {
+    setOverheadForm({ expense_date: today(), category: 'Insurance', description: '', amount: '' });
+    setEditingOverheadId(null);
+    setOverheadError(null);
+  };
+
+  const startEditOverhead = (expense: GeneralOverheadExpense) => {
+    setEditingOverheadId(expense.id);
+    setOverheadForm({
+      expense_date: expense.expense_date,
+      category: expense.category,
+      description: expense.description ?? '',
+      amount: String(expense.amount),
+    });
+    setOverheadError(null);
+  };
+
+  const saveOverheadExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const amount = parseFloat(overheadForm.amount.replace(/,/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setOverheadError('Enter a valid amount greater than zero');
+      return;
+    }
+    setSavingOverhead(true);
+    setOverheadError(null);
+    try {
+      const payload = {
+        expense_date: overheadForm.expense_date,
+        category: overheadForm.category.trim() || 'General',
+        description: overheadForm.description.trim() || null,
+        amount,
+      };
+      if (editingOverheadId) {
+        await patchJson(`/company-overhead-expenses/${editingOverheadId}`, payload, token);
+      } else {
+        await postJson('/company-overhead-expenses', payload, token);
+      }
+      resetOverheadForm();
+      await fetchSummaryData();
+    } catch (err) {
+      setOverheadError(err instanceof Error ? err.message : 'Could not save expense');
+    } finally {
+      setSavingOverhead(false);
+    }
+  };
+
+  const deleteOverheadExpense = async (id: number) => {
+    if (!token) return;
+    if (!confirm('Delete this general company expense?')) return;
+    try {
+      await deleteRequest(`/company-overhead-expenses/${id}`, token);
+      if (editingOverheadId === id) resetOverheadForm();
+      await fetchSummaryData();
+    } catch (err) {
+      setOverheadError(err instanceof Error ? err.message : 'Could not delete expense');
     }
   };
 
@@ -857,6 +954,7 @@ export default function StaffWorkPage() {
             <SummaryCard icon={<CalendarDays className="size-5" />} label="Days worked" value={`${totals?.days_worked ?? 0}`} />
             <SummaryCard icon={<ReceiptText className="size-5" />} label="Personal expenses (period)" value={formatMoney(totals?.expenses_total ?? 0)} sub={`${totals?.expenses_count ?? 0} approved`} />
             <SummaryCard icon={<ReceiptText className="size-5" />} label="Company expenses (period)" value={formatMoney(totals?.company_expenses_total ?? 0)} sub={`${totals?.company_expenses_count ?? 0} approved`} />
+            <SummaryCard icon={<Wallet className="size-5" />} label="General overheads (period)" value={formatMoney(totals?.general_overhead_total ?? 0)} sub={`${totals?.general_overhead_count ?? 0} entries · insurance, rent, etc.`} />
             <SummaryCard icon={<Wallet className="size-5" />} label="Paid to officers" value={formatMoney(totals?.personal_paid_total ?? 0)} sub="All time" />
             <SummaryCard icon={<Wallet className="size-5" />} label="Outstanding to officers" value={formatMoney(totals?.personal_outstanding ?? 0)} sub="Approved personal minus paid" />
           </div>
@@ -1126,6 +1224,93 @@ export default function StaffWorkPage() {
                   </tfoot>
                 )}
               </table>
+            </div>
+          </section>
+
+          {/* General company overheads (not job-linked) */}
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-lg font-bold text-slate-900">General company expenses</h2>
+              <p className="text-sm text-slate-500">
+                Overheads such as insurance, rent, and subscriptions — not tied to a job. These reduce net profit on the Invoices report.
+              </p>
+            </div>
+            <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <form onSubmit={(e) => void saveOverheadExpense(e)} className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
+                <h3 className="text-sm font-bold text-slate-800">{editingOverheadId ? 'Edit expense' : 'Add expense'}</h3>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Date
+                  <input type="date" value={overheadForm.expense_date} onChange={(e) => setOverheadForm((f) => ({ ...f, expense_date: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" required />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Category
+                  <input list="overhead-categories" value={overheadForm.category} onChange={(e) => setOverheadForm((f) => ({ ...f, category: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" required />
+                  <datalist id="overhead-categories">
+                    {GENERAL_OVERHEAD_CATEGORIES.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Description
+                  <input type="text" value={overheadForm.description} onChange={(e) => setOverheadForm((f) => ({ ...f, description: e.target.value }))} placeholder="e.g. Annual public liability insurance" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Amount
+                  <input type="text" inputMode="decimal" value={overheadForm.amount} onChange={(e) => setOverheadForm((f) => ({ ...f, amount: e.target.value }))} placeholder="0.00" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" required />
+                </label>
+                {overheadError && <p className="text-sm font-medium text-rose-600">{overheadError}</p>}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button type="submit" disabled={savingOverhead} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-60">
+                    {savingOverhead ? 'Saving…' : editingOverheadId ? 'Update expense' : 'Add expense'}
+                  </button>
+                  {editingOverheadId && (
+                    <button type="button" onClick={resetOverheadForm} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white">
+                      Cancel edit
+                    </button>
+                  )}
+                </div>
+              </form>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-sm">
+                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3">Description</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {overheadExpenses.length === 0 ? (
+                      <tr><td colSpan={5} className="px-4 py-6 text-slate-500">No general expenses for this period yet.</td></tr>
+                    ) : (
+                      overheadExpenses.map((e) => (
+                        <tr key={e.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 text-slate-600">{e.expense_date}</td>
+                          <td className="px-4 py-3 font-medium text-slate-800">{e.category}</td>
+                          <td className="px-4 py-3 text-slate-600">{e.description || '—'}</td>
+                          <td className="px-4 py-3 text-right font-bold text-slate-900">{formatMoney(e.amount)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex gap-1">
+                              <button type="button" onClick={() => startEditOverhead(e)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" title="Edit"><Edit2 className="size-4" /></button>
+                              <button type="button" onClick={() => void deleteOverheadExpense(e.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Delete"><Trash2 className="size-4" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {overheadExpenses.length > 0 && (
+                    <tfoot className="border-t border-slate-200 bg-slate-50 font-semibold text-slate-800">
+                      <tr>
+                        <td className="px-4 py-3" colSpan={3}>Period total</td>
+                        <td className="px-4 py-3 text-right">{formatMoney(totals?.general_overhead_total ?? 0)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
             </div>
           </section>
 

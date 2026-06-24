@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { ImagePlus, Loader2, Plus } from 'lucide-react';
 import type { SiteReportTemplateSection, SiteReportSectionImageRow } from '@/lib/siteReportTemplateTypes';
+import { visibleSiteReportFields } from '@/lib/siteReportFieldVisibility';
 import {
   SiteReportFieldImageList,
   SiteReportSignatureBlock,
@@ -51,16 +52,18 @@ export function CustomerSiteReportSectionView({
   const imagesLabel = variant === 'footer' ? 'Images (e.g. signature)' : 'Section images';
   const AddIcon = variant === 'footer' ? Plus : ImagePlus;
 
+  const visibleFields = visibleSiteReportFields(sec.fields, values);
+
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none break-inside-avoid"
+      className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none"
     >
       <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
         <h3 className="text-base font-bold text-slate-900">{sec.title}</h3>
         {sec.helper_text ? <p className="mt-1 text-xs text-slate-600">{sec.helper_text}</p> : null}
       </div>
-      <div className="space-y-5 p-4">
-        {sec.fields.map((field) => (
+      <div className="space-y-4 p-4 print:space-y-2 print:p-3">
+        {visibleFields.map((field) => (
           <div key={field.id} className="space-y-1.5">
             {field.label ? <label className="block text-sm font-semibold text-slate-800">{field.label}</label> : null}
             {sec.id === 'client_header' && field.id === 'client_name_display' ? (

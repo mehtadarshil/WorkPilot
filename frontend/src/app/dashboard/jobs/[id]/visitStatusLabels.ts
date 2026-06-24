@@ -10,6 +10,7 @@ export type VisitTimesheetSegment = {
   clock_in: string;
   clock_out: string | null;
   duration_seconds: number;
+  notes?: string | null;
 };
 
 function normalizeStatus(status: string): string {

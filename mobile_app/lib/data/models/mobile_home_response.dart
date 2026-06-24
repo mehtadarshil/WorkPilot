@@ -1,3 +1,4 @@
+import '../../core/offline/diary_timesheet_sync.dart';
 import 'active_timesheet.dart';
 import 'diary_event_row.dart';
 import 'my_office_task_row.dart';
@@ -59,7 +60,10 @@ class MobileHomeResponse {
     if (upcoming is List) {
       for (final e in upcoming) {
         if (e is Map<String, dynamic>) {
-          list.add(DiaryEventRow.fromJson(e));
+          final row = DiaryEventRow.fromJson(e);
+          if (!diaryStatusClosesTimesheet(row.eventStatus)) {
+            list.add(row);
+          }
         }
       }
     }
@@ -67,7 +71,10 @@ class MobileHomeResponse {
     DiaryEventRow? next;
     final rawNext = json['next_diary_event'];
     if (rawNext is Map<String, dynamic>) {
-      next = DiaryEventRow.fromJson(rawNext);
+      final row = DiaryEventRow.fromJson(rawNext);
+      if (!diaryStatusClosesTimesheet(row.eventStatus)) {
+        next = row;
+      }
     }
 
     OfficerProfile? profile;

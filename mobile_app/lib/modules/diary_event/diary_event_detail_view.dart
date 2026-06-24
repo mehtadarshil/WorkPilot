@@ -2258,9 +2258,16 @@ class _BottomActions extends StatelessWidget {
       }
 
       if (phase == DiaryVisitUiPhase.scheduled) {
-        final canEdit = Get.isRegistered<HomeController>()
-            ? Get.find<HomeController>().canEditBookedJobs
-            : false;
+        final homeCtrl = Get.isRegistered<HomeController>()
+            ? Get.find<HomeController>()
+            : null;
+        final isAdminOrScheduler = homeCtrl?.canEditBookedJobs ?? false;
+        final myOid = homeCtrl?.myOfficerId;
+        final isAssigned = myOid != null && (
+          d.officerId == myOid ||
+          d.officers.any((o) => o['id'] == myOid || o['officer_id'] == myOid)
+        );
+        final canEdit = isAdminOrScheduler || isAssigned;
         return _BottomGlassDock(
           child: Column(
             mainAxisSize: MainAxisSize.min,

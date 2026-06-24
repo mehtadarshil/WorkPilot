@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react';
 import type { SiteReportRepeatableInstance, SiteReportSectionImageRow, SiteReportTemplateSection } from '@/lib/siteReportTemplateTypes';
 import { scopedRepeatableFieldKey } from '@/lib/siteReportTemplateTypes';
+import { visibleSiteReportFields } from '@/lib/siteReportFieldVisibility';
 import type { CustomerSiteReportSectionHandlers } from './CustomerSiteReportSectionView';
 import {
   SiteReportFieldImageList,
@@ -47,7 +48,7 @@ export function CustomerSiteReportRepeatableSectionView({
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none break-inside-avoid">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none">
       <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-bold text-slate-900">{sec.title}</h3>
@@ -75,6 +76,7 @@ export function CustomerSiteReportRepeatableSectionView({
               instance.values.fire_door_rating?.trim() ||
               `${repeatLabel} ${index + 1}`;
             const isCollapsed = collapsed[instance.id] === true;
+            const visibleFields = visibleSiteReportFields(sec.fields, instance.values);
             return (
               <div key={instance.id} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
@@ -108,8 +110,8 @@ export function CustomerSiteReportRepeatableSectionView({
                   </div>
                 </div>
                 {!isCollapsed ? (
-                  <div className="space-y-5 p-4">
-                    {sec.fields.map((field) => {
+                  <div className="space-y-4 p-4 print:space-y-2 print:p-3">
+                    {visibleFields.map((field) => {
                       const scopedKey = scopedRepeatableFieldKey(sec.id, instance.id, field.id);
                       const value = instance.values[field.id] ?? '';
                       return (

@@ -12,6 +12,24 @@ class SiteReportsListController extends GetxController {
   final RxList<Map<String, dynamic>> items = <Map<String, dynamic>>[].obs;
   final RxBool loading = false.obs;
   final RxString error = ''.obs;
+  final RxString searchQuery = ''.obs;
+
+  List<Map<String, dynamic>> get filteredItems {
+    final query = searchQuery.value.trim().toLowerCase();
+    if (query.isEmpty) return items;
+    return items.where((item) {
+      final cert = (item['certificate_number'] as String?)?.toLowerCase() ?? '';
+      final title = (item['report_title'] as String?)?.toLowerCase() ?? '';
+      final template = (item['template_name'] as String?)?.toLowerCase() ?? '';
+      final customer = (item['customer_full_name'] as String?)?.toLowerCase() ?? '';
+      final installation = (item['installation_label'] as String?)?.toLowerCase() ?? '';
+      return cert.contains(query) ||
+          title.contains(query) ||
+          template.contains(query) ||
+          customer.contains(query) ||
+          installation.contains(query);
+    }).toList();
+  }
 
   int _page = 1;
   int? _totalPages;

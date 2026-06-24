@@ -205,7 +205,7 @@ export default function PriceBookConfigPage() {
           </button>
           <div className="flex flex-col">
              <h2 className="text-lg font-bold text-slate-900">{data.name}</h2>
-             <p className="text-xs text-slate-500 font-medium">Price Book Configuration</p>
+             <p className="text-xs text-slate-500 font-medium">Labour rates &amp; service prices — inherited by all new jobs unless overridden per job</p>
           </div>
         </div>
       </header>

@@ -34,7 +34,15 @@ function resolveChromiumExecutablePath(): string | undefined {
 /**
  * Renders a full HTML document to PDF using headless Chromium (same engine as Print → Save as PDF).
  */
-export async function renderHtmlReportToPdf(html: string): Promise<Buffer> {
+export async function renderHtmlReportToPdf(
+  html: string,
+  options?: {
+    displayHeaderFooter?: boolean;
+    footerTemplate?: string;
+    headerTemplate?: string;
+    margin?: { top?: string; right?: string; bottom?: string; left?: string };
+  },
+): Promise<Buffer> {
   const { default: puppeteer } = await import('puppeteer');
   const executablePath = resolveChromiumExecutablePath();
 
@@ -82,6 +90,10 @@ export async function renderHtmlReportToPdf(html: string): Promise<Buffer> {
     const buf = await page.pdf({
       printBackground: true,
       preferCSSPageSize: true,
+      displayHeaderFooter: options?.displayHeaderFooter ?? false,
+      headerTemplate: options?.headerTemplate ?? '<div></div>',
+      footerTemplate: options?.footerTemplate ?? '<div></div>',
+      margin: options?.margin ?? undefined,
     });
     return Buffer.from(buf);
   } catch (err) {

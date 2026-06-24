@@ -536,7 +536,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'price-books' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <BookOpen className="size-4" />
-              Price Books
+              Price Book &amp; Defaults
             </button>
             <button
               type="button"
