@@ -1163,6 +1163,11 @@ async function initDb() {
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_work_addresses_customer_id ON customer_work_addresses(customer_id)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS address_line_2 VARCHAR(255)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS address_line_3 VARCHAR(255)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS town VARCHAR(100)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS county VARCHAR(100)`);
+  await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS postcode VARCHAR(50)`);
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7)`);
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7)`);
   await pool.query(`ALTER TABLE customer_work_addresses ADD COLUMN IF NOT EXISTS key_info TEXT`);
