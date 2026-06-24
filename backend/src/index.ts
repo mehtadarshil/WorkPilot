@@ -20715,10 +20715,8 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
     const anchorYmd = formatInvoiceDateFromDb(r.renewal_anchor_date);
 
     const custRes = await pool.query<{
-      name: string;
-      first_name: string | null;
-      surname: string | null;
-      company_name: string | null;
+      full_name: string;
+      company: string | null;
       address_line_1: string | null;
       address_line_2: string | null;
       address_line_3: string | null;
@@ -20726,14 +20724,15 @@ app.get('/api/customers/:customerId/site-report', authenticate, requireTenantCrm
       county: string | null;
       postcode: string | null;
     }>(
-      'SELECT name, first_name, surname, company_name, address_line_1, address_line_2, address_line_3, town, county, postcode FROM customers WHERE id = $1',
+      'SELECT full_name, company, address_line_1, address_line_2, address_line_3, town, county, postcode FROM customers WHERE id = $1',
       [customerId],
     );
     let customerName = '';
     let customerAddress = '';
     if ((custRes.rowCount ?? 0) > 0) {
       const c = custRes.rows[0];
-      customerName = c.company_name?.trim() || c.name?.trim() || [c.first_name, c.surname].filter(Boolean).join(' ') || '';
+      const co = c.company?.trim();
+      customerName = co ? `${c.full_name?.trim() || ''} (${co})` : (c.full_name?.trim() || '');
       customerAddress = [c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode]
         .map((x) => (typeof x === 'string' ? x.trim() : ''))
         .filter(Boolean)
