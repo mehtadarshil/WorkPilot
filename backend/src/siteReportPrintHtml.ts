@@ -270,25 +270,27 @@ export function buildSiteReportPrintHtml(input: {
       instances.forEach((instance: SiteReportRepeatableInstance, index: number) => {
         if (!repeatableInstanceHasContent(sec, instance, fieldImages)) return;
         const hiddenIds = computeHiddenSiteReportFieldIds(sec.fields, instance.values);
+        const doorLocation = instance.values.door_location?.trim() || '';
+        const title =
+          doorLocation ||
+          instance.values.fire_door_rating?.trim() ||
+          `${repeatLabel} ${index + 1}`;
         const fieldsHtml: string[] = [];
         for (const f of sec.fields) {
           if (hiddenIds.has(f.id)) continue;
+          if (f.id === 'door_location' && doorLocation && doorLocation === title) continue;
           if (!repeatableFieldHasEntry(f, instance, sec.id, fieldImages)) continue;
           const scopedKey = scopedRepeatableFieldKey(sec.id, instance.id, f.id);
           fieldsHtml.push(renderFieldBlock(f, instance.values, {}, fieldImages, imageMap, scopedKey));
         }
         if (fieldsHtml.length === 0) return;
-        const title =
-          instance.values.door_location?.trim() ||
-          instance.values.fire_door_rating?.trim() ||
-          `${repeatLabel} ${index + 1}`;
         instanceBlocks.push(
           `<div class="repeat-card"><h3 class="repeat-title">${escapeHtml(title)}</h3><div class="fields">${fieldsHtml.join('')}</div></div>`,
         );
       });
       if (instanceBlocks.length === 0) continue;
       sectionsHtml.push(
-        `<section class="sec"><h2 class="sec-title">${escapeHtml(sec.title)}</h2>${sec.helper_text ? `<p class="helper">${nl2br(sec.helper_text)}</p>` : ''}${instanceBlocks.join('')}</section>`,
+        `<section class="sec"><h2 class="sec-title">${escapeHtml(sec.title)}</h2>${instanceBlocks.join('')}</section>`,
       );
       continue;
     }
@@ -305,7 +307,7 @@ export function buildSiteReportPrintHtml(input: {
     const imgs =
       sec.allow_section_images ? renderSectionImagesHtml(sec.id, sectionImages, imageMap) : '';
     sectionsHtml.push(
-      `<section class="sec"><h2 class="sec-title">${escapeHtml(sec.title)}</h2>${sec.helper_text ? `<p class="helper">${nl2br(sec.helper_text)}</p>` : ''}<div class="fields">${fieldsHtml.join('')}</div>${imgs}</section>`,
+      `<section class="sec"><h2 class="sec-title">${escapeHtml(sec.title)}</h2><div class="fields">${fieldsHtml.join('')}</div>${imgs}</section>`,
     );
   }
 
@@ -332,37 +334,37 @@ export function buildSiteReportPrintHtml(input: {
   <title>${escapeHtml(reportTitle)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; font-size: 9.5pt; line-height: 1.35; margin: 0; padding: 10mm 12mm; background: #fff; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #0f172a; font-size: 9pt; line-height: 1.3; background: #fff; }
     .accent { color: ${escapeHtml(accent)}; }
-    .top { display: flex; align-items: flex-start; justify-content: flex-start; gap: 12px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 3px solid ${escapeHtml(accent)}; }
-    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    .logo { max-height: 48px; max-width: 200px; object-fit: contain; }
-    .logo-fallback { width: 48px; height: 48px; border-radius: 8px; background: ${escapeHtml(accent)}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13pt; flex-shrink: 0; }
-    .company { font-size: 14pt; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
-    h1.doc-title { font-size: 16pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; letter-spacing: -0.02em; }
-    p.cert-ref { font-size: 9pt; color: #475569; margin: 0 0 10px; }
-    .keyline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 12px; padding: 8px 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 9pt; }
-    .keyline .k { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 2px; }
+    .top { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; padding-bottom: 6px; margin-bottom: 8px; border-bottom: 2px solid ${escapeHtml(accent)}; }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .logo { max-height: 40px; max-width: 180px; object-fit: contain; }
+    .logo-fallback { width: 40px; height: 40px; border-radius: 6px; background: ${escapeHtml(accent)}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12pt; flex-shrink: 0; }
+    .company { font-size: 13pt; font-weight: 800; color: #0f172a; letter-spacing: -0.02em; }
+    h1.doc-title { font-size: 14pt; font-weight: 800; margin: 0 0 4px; color: #0f172a; letter-spacing: -0.02em; }
+    p.cert-ref { font-size: 8.5pt; color: #475569; margin: 0 0 6px; }
+    .keyline { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-bottom: 8px; padding: 6px 8px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 8.5pt; }
+    .keyline .k { font-size: 6.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 1px; }
     .keyline .v { font-weight: 600; color: #0f172a; white-space: pre-wrap; }
-    section.sec { margin-bottom: 12px; page-break-inside: auto; break-inside: auto; }
-    .repeat-card { margin-bottom: 10px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafbfc; page-break-inside: avoid; break-inside: avoid; }
-    h3.repeat-title { font-size: 9.5pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; break-after: avoid; page-break-after: avoid; }
-    h2.sec-title { font-size: 10.5pt; font-weight: 800; margin: 0 0 6px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; break-after: avoid; page-break-after: avoid; }
-    p.helper { margin: 0 0 6px; font-size: 8.5pt; color: #475569; }
-    .fields { display: flex; flex-direction: column; gap: 5px; }
-    .field { break-inside: avoid; page-break-inside: avoid; }
-    .field .label { font-size: 8pt; font-weight: 700; color: #334155; margin-bottom: 2px; }
-    .field .value { font-size: 9pt; color: #0f172a; }
-    .static { font-size: 8.5pt; color: #334155; padding: 6px 8px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0; }
-    .images { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-    .images--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
-    .images--row .imgwrap { flex: 1 1 45%; min-width: 0; max-width: calc(50% - 4px); }
+    section.sec { margin-bottom: 8px; page-break-inside: auto; break-inside: auto; }
+    .repeat-card { margin-bottom: 6px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 4px; background: #fafbfc; page-break-inside: auto; break-inside: auto; }
+    h3.repeat-title { font-size: 9pt; font-weight: 800; margin: 0 0 4px; color: #0f172a; break-after: avoid; page-break-after: avoid; }
+    h2.sec-title { font-size: 10pt; font-weight: 800; margin: 0 0 4px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 2px; break-after: avoid; page-break-after: avoid; }
+    .fields { display: flex; flex-direction: column; gap: 3px; }
+    .field { break-inside: auto; page-break-inside: auto; }
+    .field .label { font-size: 7.5pt; font-weight: 700; color: #334155; margin-bottom: 1px; }
+    .field .value { font-size: 8.5pt; color: #0f172a; }
+    .static { font-size: 8pt; color: #334155; padding: 4px 6px; background: #f8fafc; border-radius: 4px; border: 1px solid #e2e8f0; }
+    .images { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+    .images--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 4px; }
+    .images--row .imgwrap { flex: 1 1 45%; min-width: 0; max-width: calc(50% - 2px); }
     .images--row .imgwrap img { width: 100%; }
-    .imgwrap { break-inside: avoid; }
-    .imgwrap img { max-width: 100%; max-height: 180px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; }
-    .imgcap { font-size: 8pt; font-weight: 600; margin-top: 4px; color: #334155; }
-    .imgnote { font-size: 7.5pt; color: #64748b; margin-top: 2px; }
-    @page { margin: 10mm; size: A4; }
+    .imgwrap { break-inside: avoid; page-break-inside: avoid; }
+    .imgwrap img { max-width: 100%; max-height: 140px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 3px; }
+    .imgcap { font-size: 7.5pt; font-weight: 600; margin-top: 2px; color: #334155; }
+    .imgnote { font-size: 7pt; color: #64748b; margin-top: 1px; }
+    @page { margin: 8mm; size: A4; }
   </style>
 </head>
 <body>
@@ -489,7 +491,12 @@ export async function getCustomerSiteReportPrintHtml(
         .map((x) => (typeof x === 'string' ? x.trim() : ''))
         .filter(Boolean)
         .join(', ');
-      siteLine = [w.name?.trim(), addr].filter(Boolean).join('\n');
+      const name = w.name?.trim() || '';
+      if (name && addr.toLowerCase().startsWith(name.toLowerCase())) {
+        siteLine = addr;
+      } else {
+        siteLine = [name, addr].filter(Boolean).join('\n');
+      }
     }
   }
   if (!siteLine && c) {
