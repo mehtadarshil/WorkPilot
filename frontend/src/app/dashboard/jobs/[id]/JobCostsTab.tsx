@@ -221,7 +221,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
 
   const submitCost = async () => {
     const numericAmount = Number(amount);
-    if (!description.trim() || !(numericAmount > 0) || proofFiles.length === 0) return;
+    if (!description.trim() || !(numericAmount > 0)) return;
     setSaving(true);
     setError(null);
     try {
@@ -367,7 +367,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
     }
   };
 
-  const canSave = description.trim().length > 0 && Number(amount) > 0 && proofFiles.length > 0 && !saving;
+  const canSave = description.trim().length > 0 && Number(amount) > 0 && !saving;
   const canSaveEdit = editDescription.trim().length > 0 && Number(editAmount) > 0 && !editSaving;
   const summary = payload?.summary;
   const rateConfig = payload?.rate_config;
@@ -606,7 +606,7 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   />
                   <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-[#14B8A6]/40 bg-white px-3 py-2 text-sm font-bold text-[#14B8A6]">
                     <UploadCloud className="size-4" />
-                    Proof required
+                    Proof (optional)
                     <input
                       type="file"
                       multiple
@@ -628,12 +628,10 @@ export default function JobCostsTab({ jobId, token }: Props) {
                   placeholder="Notes"
                   className="mt-3 w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                 />
-                {proofFiles.length > 0 ? (
+                {proofFiles.length > 0 && (
                   <p className="mt-2 text-xs font-semibold text-slate-500">
                     {proofFiles.map((f) => `${f.name} (${bytesLabel(f.size)})`).join(', ')}
                   </p>
-                ) : (
-                  <p className="mt-2 text-xs font-semibold text-amber-700">At least one proof file is required.</p>
                 )}
                 <div className="mt-3 flex justify-end gap-2">
                   <button type="button" onClick={resetForm} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">

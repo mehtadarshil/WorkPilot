@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, Copy, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import type { SiteReportRepeatableInstance, SiteReportSectionImageRow, SiteReportTemplateSection } from '@/lib/siteReportTemplateTypes';
 import { scopedRepeatableFieldKey } from '@/lib/siteReportTemplateTypes';
 import { visibleSiteReportFields } from '@/lib/siteReportFieldVisibility';
@@ -24,6 +24,7 @@ type Props = {
   onRemoveInstance: (instanceId: string) => void;
   onCopyInstance: (instance: SiteReportRepeatableInstance) => void;
   onSetInstanceValue: (instanceId: string, fieldId: string, value: string) => void;
+  onMoveInstance?: (instanceId: string, direction: 'up' | 'down') => void;
   printMode?: boolean;
 };
 
@@ -39,6 +40,7 @@ export function CustomerSiteReportRepeatableSectionView({
   onRemoveInstance,
   onCopyInstance,
   onSetInstanceValue,
+  onMoveInstance,
   printMode = false,
 }: Props) {
   const repeatLabel = sec.repeat_label?.trim() || 'Item';
@@ -91,6 +93,28 @@ export function CustomerSiteReportRepeatableSectionView({
                     <span className="truncate text-sm font-bold text-slate-800">{title}</span>
                   </button>
                   <div className="flex items-center gap-1 print:hidden">
+                    {onMoveInstance && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => onMoveInstance(instance.id, 'up')}
+                          className="inline-flex items-center gap-1 rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:hover:bg-transparent"
+                          title={`Move ${repeatLabel.toLowerCase()} up`}
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === instances.length - 1}
+                          onClick={() => onMoveInstance(instance.id, 'down')}
+                          className="inline-flex items-center gap-1 rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:hover:bg-transparent"
+                          title={`Move ${repeatLabel.toLowerCase()} down`}
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => onCopyInstance(instance)}

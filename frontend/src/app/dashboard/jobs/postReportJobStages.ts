@@ -40,6 +40,16 @@ export const POST_REPORT_JOB_STAGES = [
     label: 'Need to be rescheduling',
     description: 'Office will pick a new appointment time.',
   },
+  {
+    state: 'parts_need_ordering',
+    label: 'Parts need ordering',
+    description: 'Job is paused as parts need to be ordered.',
+  },
+  {
+    state: 'awaiting_parts_delivery',
+    label: 'Awaiting parts delivery',
+    description: 'Job is waiting for the delivery of ordered parts.',
+  },
 ] as const;
 
 export type PostReportJobState = (typeof POST_REPORT_JOB_STAGES)[number]['state'];

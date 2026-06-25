@@ -190,7 +190,7 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-5xl">
+    <div className="p-4 sm:p-6 space-y-6 w-full max-w-none">
       <div>
         <h2 className="text-lg font-bold text-slate-900">Reports</h2>
         <p className="mt-1 text-sm text-slate-600 max-w-3xl">
@@ -204,7 +204,7 @@ export default function SiteReportTemplatesSettings({ token }: { token: string }
       {error ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</div> : null}
       {ok ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Saved.</div> : null}
 
-      <div className="flex flex-wrap gap-6">
+      <div className="flex flex-wrap lg:flex-nowrap gap-6 items-start">
         <div className="w-full sm:w-56 shrink-0 space-y-2">
           <p className="text-xs font-semibold uppercase text-slate-500">Templates</p>
           {loadingList ? (

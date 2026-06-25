@@ -70,6 +70,7 @@ function rowToProfilePayload(
     next_of_kin_phone: row.next_of_kin_phone ?? null,
     next_of_kin_relationship: row.next_of_kin_relationship ?? null,
     has_profile_photo: hasPhoto,
+    signature_data_url: row.signature_data_url ?? null,
   };
   if (subject.kind === 'officer') {
     base.department = row.department ?? null;
@@ -84,7 +85,7 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
     const r = await pool.query(
       `SELECT id, full_name, email, phone, mobile_phone, landline_phone, department, role_position, state,
               profile_address, profile_notes, next_of_kin_name, next_of_kin_phone, next_of_kin_relationship,
-              profile_photo_filename, profile_photo_url
+              profile_photo_filename, profile_photo_url, signature_data_url
        FROM officers WHERE id = $1`,
       [subject.id],
     );
@@ -92,7 +93,7 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
   }
   const r = await pool.query(
     `SELECT id, email, full_name, phone, mobile_phone, landline_phone, address AS profile_address, notes AS profile_notes,
-            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename, profile_photo_url
+            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename, profile_photo_url, signature_data_url
      FROM users WHERE id = $1`,
     [subject.id],
   );
@@ -188,6 +189,11 @@ export function mountMobileProfileRoutes(
       const kinRel = optionalTrim(body.next_of_kin_relationship, 100);
       if (kinRel !== undefined) add('next_of_kin_relationship', kinRel);
 
+      const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : undefined;
+      if (signatureDataUrl !== undefined) {
+        add('signature_data_url', signatureDataUrl || null);
+      }
+
       if (subject.kind === 'officer') {
         const email = optionalTrim(body.email, 255);
         if (email !== undefined) add('email', email?.toLowerCase() ?? null);
@@ -205,6 +211,18 @@ export function mountMobileProfileRoutes(
       values.push(subject.id);
       const table = subject.kind === 'officer' ? 'officers' : 'users';
       await pool.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+
+      // sync signature across tables if updated
+      if (signatureDataUrl !== undefined) {
+        if (subject.kind === 'officer') {
+          const officerInfo = await pool.query<{ linked_user_id: number | null }>('SELECT linked_user_id FROM officers WHERE id = $1', [subject.id]);
+          if (officerInfo.rows[0]?.linked_user_id) {
+            await pool.query('UPDATE users SET signature_data_url = $1 WHERE id = $2', [signatureDataUrl || null, officerInfo.rows[0].linked_user_id]);
+          }
+        } else {
+          await pool.query('UPDATE officers SET signature_data_url = $1 WHERE linked_user_id = $2', [signatureDataUrl || null, subject.id]);
+        }
+      }
 
       const row = await loadProfileRow(pool, subject);
       if (!row) return res.status(404).json({ message: 'Profile not found' });
@@ -293,6 +311,7 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'next_of_kin_relationship VARCHAR(100)',
     'profile_photo_filename VARCHAR(255)',
     'profile_photo_url TEXT',
+    'signature_data_url TEXT',
   ];
   for (const def of officerCols) {
     await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS ${def}`);
@@ -305,6 +324,7 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'next_of_kin_relationship VARCHAR(100)',
     'profile_photo_filename VARCHAR(255)',
     'profile_photo_url TEXT',
+    'signature_data_url TEXT',
   ];
   for (const def of userCols) {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${def}`);

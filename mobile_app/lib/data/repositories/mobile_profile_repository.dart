@@ -43,4 +43,23 @@ class MobileProfileRepository extends BaseRepository {
     final res = await api.getBytes('/mobile/profile/photo');
     return res.data ?? [];
   }
+
+  Future<List<Map<String, dynamic>>> getOfficersList() async {
+    final res = await api.get<Map<String, dynamic>>('/officers/list');
+    final list = res.data?['officers'];
+    if (list is! List) return [];
+    return list.map((item) => Map<String, dynamic>.from(item)).toList();
+  }
+
+  Future<String?> getOfficerSignature(int officerId) async {
+    final res = await api.get<Map<String, dynamic>>('/officers/$officerId/signature');
+    return res.data?['signature_data_url'] as String?;
+  }
+
+  Future<void> updateOfficerSignature(int officerId, String? signatureDataUrl) async {
+    await api.put<Map<String, dynamic>>(
+      '/officers/$officerId/signature',
+      data: <String, dynamic>{'signature_data_url': signatureDataUrl},
+    );
+  }
 }

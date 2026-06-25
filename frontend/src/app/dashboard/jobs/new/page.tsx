@@ -858,10 +858,10 @@ export default function JobsNewJobPage() {
                   <tr>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-12 text-center">#</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Pricing item</th>
-                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-24">Time incl.</th>
-                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Unit price</th>
-                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-24">VAT %</th>
-                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-20">Qty</th>
+                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Time incl.</th>
+                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-36">Unit price</th>
+                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">VAT %</th>
+                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28">Qty</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-28 text-right">Total</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-20 text-center">Action</th>
                   </tr>

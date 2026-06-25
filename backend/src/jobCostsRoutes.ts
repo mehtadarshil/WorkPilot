@@ -549,7 +549,6 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
 
     if (!description) return res.status(400).json({ message: 'Description is required' });
     if (!(amount > 0)) return res.status(400).json({ message: 'Amount must be greater than zero' });
-    if (proof.length === 0) return res.status(400).json({ message: 'Proof is required for job costs' });
     if (user.role !== 'OFFICER' && !tenantCrmAccessAllowed(user, 'jobs', 'POST')) {
       return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
     }

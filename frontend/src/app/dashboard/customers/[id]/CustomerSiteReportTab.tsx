@@ -426,6 +426,27 @@ export default function CustomerSiteReportTab({
     }));
   };
 
+  const moveRepeatableInstance = (sectionId: string, instanceId: string, direction: 'up' | 'down') => {
+    setRepeatableValues((prev) => {
+      const list = prev[sectionId] || [];
+      const index = list.findIndex((inst) => inst.id === instanceId);
+      if (index === -1) return prev;
+      if (direction === 'up' && index === 0) return prev;
+      if (direction === 'down' && index === list.length - 1) return prev;
+
+      const nextList = [...list];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      const temp = nextList[index];
+      nextList[index] = nextList[targetIndex];
+      nextList[targetIndex] = temp;
+
+      return {
+        ...prev,
+        [sectionId]: nextList,
+      };
+    });
+  };
+
   const uploadSectionImage = async (sectionKey: string, file: File) => {
     if (!token || !report) return;
     setUploadingKey(`${sectionKey}:${file.name}`);
@@ -897,6 +918,7 @@ export default function CustomerSiteReportTab({
           onCopyInstance: (instance) => copyRepeatableInstance(sec.id, instance),
           onSetInstanceValue: (instanceId, fieldId, value) =>
             setRepeatableInstanceValue(sec.id, instanceId, fieldId, value),
+          onMoveInstance: (instanceId: string, direction: 'up' | 'down') => moveRepeatableInstance(sec.id, instanceId, direction),
         })}
       />
 

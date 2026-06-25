@@ -471,6 +471,7 @@ async function loadCertificate(
 ) {
   const r = await pool.query(
     `SELECT ec.*, c.full_name AS customer_full_name,
+      COALESCE(j.job_number, ec.job_number) AS job_number,
       COALESCE(
         NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
         NULLIF(TRIM(wa.name), ''),
@@ -481,6 +482,7 @@ async function loadCertificate(
      FROM electrical_certificates ec
      JOIN customers c ON c.id = ec.customer_id
      LEFT JOIN customer_work_addresses wa ON wa.id = ec.work_address_id
+     LEFT JOIN jobs j ON j.id = ec.job_id
      WHERE ec.id = $1 ${isSuperAdmin ? '' : 'AND ec.created_by = $2'}`,
     isSuperAdmin ? [id] : [id, userId],
   );
@@ -537,6 +539,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
     params.push(limit, offset);
     const listR = await pool.query(
       `SELECT ec.*, c.full_name AS customer_full_name,
+        COALESCE(j.job_number, ec.job_number) AS job_number,
         COALESCE(
           NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), ''),
           NULLIF(TRIM(wa.name), ''),
@@ -547,6 +550,7 @@ export function mountElectricalCertificateRoutes(app: Application, deps: Electri
        FROM electrical_certificates ec
        JOIN customers c ON c.id = ec.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = ec.work_address_id
+       LEFT JOIN jobs j ON j.id = ec.job_id
        ${whereSql}
        ORDER BY ec.updated_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,

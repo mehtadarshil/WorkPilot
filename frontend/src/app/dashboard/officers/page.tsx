@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { Pagination } from '../Pagination';
 import { UserDetailModal } from '../settings/UserDetailModal';
+import CustomerSiteReportSignaturePad from '../customers/[id]/CustomerSiteReportSignaturePad';
 
 interface Officer {
   id: number;
@@ -22,6 +23,7 @@ interface Officer {
   state: string;
   created_at: string;
   updated_at: string;
+  signature_data_url?: string | null;
 }
 
 interface OfficersResponse {
@@ -76,6 +78,7 @@ export default function OfficersPage() {
   const [formCertifications, setFormCertifications] = useState('');
   const [formAssignedResponsibilities, setFormAssignedResponsibilities] = useState('');
   const [formState, setFormState] = useState('active');
+  const [formSignatureDataUrl, setFormSignatureDataUrl] = useState<string | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -138,6 +141,7 @@ export default function OfficersPage() {
     setFormCertifications('');
     setFormAssignedResponsibilities('');
     setFormState('active');
+    setFormSignatureDataUrl(null);
   };
 
   const openAdd = () => {
@@ -158,6 +162,7 @@ export default function OfficersPage() {
     setFormCertifications(o.certifications ?? '');
     setFormAssignedResponsibilities(o.assigned_responsibilities ?? '');
     setFormState(o.state);
+    setFormSignatureDataUrl(o.signature_data_url ?? null);
     setActionMenu(null);
     setEditModalOpen(true);
   };
@@ -183,6 +188,7 @@ export default function OfficersPage() {
           certifications: formCertifications.trim() || undefined,
           assigned_responsibilities: formAssignedResponsibilities.trim() || undefined,
           state: formState,
+          signature_data_url: formSignatureDataUrl || undefined,
         },
         token,
       );
@@ -211,6 +217,7 @@ export default function OfficersPage() {
           certifications: formCertifications.trim() || null,
           assigned_responsibilities: formAssignedResponsibilities.trim() || null,
           state: formState,
+          signature_data_url: formSignatureDataUrl,
         },
         token,
       );
@@ -368,7 +375,14 @@ export default function OfficersPage() {
                               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#14B8A6]/20 font-bold text-xs text-[#14B8A6]">
                                 {initials(o.full_name)}
                               </div>
-                              <span className="text-sm font-semibold text-slate-900">{o.full_name}</span>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-sm font-semibold text-slate-900">{o.full_name}</span>
+                                {o.signature_data_url && (
+                                  <span className="w-fit inline-flex items-center rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 ring-1 ring-inset ring-teal-600/10">
+                                    Signature saved
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{o.role_position || '—'}</td>
@@ -478,6 +492,8 @@ export default function OfficersPage() {
           setFormAssignedResponsibilities={setFormAssignedResponsibilities}
           formState={formState}
           setFormState={setFormState}
+          formSignatureDataUrl={formSignatureDataUrl}
+          setFormSignatureDataUrl={setFormSignatureDataUrl}
           submitLabel="Add"
         />
       )}
@@ -506,6 +522,8 @@ export default function OfficersPage() {
           setFormAssignedResponsibilities={setFormAssignedResponsibilities}
           formState={formState}
           setFormState={setFormState}
+          formSignatureDataUrl={formSignatureDataUrl}
+          setFormSignatureDataUrl={setFormSignatureDataUrl}
           submitLabel="Save Changes"
         />
       )}
@@ -754,6 +772,8 @@ function OfficerModal({
   formState,
   setFormState,
   submitLabel,
+  formSignatureDataUrl,
+  setFormSignatureDataUrl,
 }: {
   title: string;
   onSubmit: (e: React.FormEvent) => void;
@@ -778,6 +798,8 @@ function OfficerModal({
   formState: string;
   setFormState: (v: string) => void;
   submitLabel: string;
+  formSignatureDataUrl: string | null;
+  setFormSignatureDataUrl: (v: string | null) => void;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
   return (
@@ -840,6 +862,45 @@ function OfficerModal({
           <div>
             <label className="block text-sm font-medium text-slate-700">Assigned responsibilities</label>
             <textarea rows={2} value={formAssignedResponsibilities} onChange={(e) => setFormAssignedResponsibilities(e.target.value)} placeholder="Areas, teams, or job categories overseen" className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700">Signature</label>
+            <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+              {formSignatureDataUrl ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="rounded border border-slate-200 bg-white p-2">
+                    <img src={formSignatureDataUrl} alt="Officer signature" className="h-16 object-contain" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormSignatureDataUrl(null)}
+                    className="text-xs font-semibold text-rose-600 hover:underline"
+                  >
+                    Clear saved signature
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-2 text-xs text-slate-500">Draw signature below to request or save officer's signature:</p>
+                  <CustomerSiteReportSignaturePad
+                    busy={false}
+                    saveLabel="Confirm signature drawing"
+                    onSave={async (blob) => {
+                      const dataUrl = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === 'string') resolve(reader.result);
+                          else reject(new Error('Could not read signature'));
+                        };
+                        reader.onerror = () => reject(reader.error ?? new Error('Could not read signature'));
+                        reader.readAsDataURL(blob);
+                      });
+                      setFormSignatureDataUrl(dataUrl);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3 pt-2">

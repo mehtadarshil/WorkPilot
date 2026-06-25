@@ -114,6 +114,7 @@ interface DiaryEvent {
   charge_type?: string;
   is_free_job?: boolean;
   job_report_submitted?: boolean;
+  officers?: Array<{ id: number; full_name: string; is_primary: boolean }>;
 }
 
 interface Invoice {
@@ -1419,7 +1420,7 @@ export default function JobDetailsPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                        <span className="text-[13px] font-bold text-slate-500">Status</span>
-                       <div className="col-span-2"><select value={job.state} disabled={updatingState} onChange={(e) => updateStatus(e.target.value)} className={`text-[13px] font-black uppercase text-[#14B8A6] bg-emerald-50 border border-emerald-100 rounded px-3 py-1.5 outline-none cursor-pointer hover:bg-emerald-100 transition-colors ${updatingState ? "opacity-50 cursor-not-allowed" : ""}`}><option value="draft">Draft</option><option value="created">Created</option><option value="unscheduled">Unscheduled</option><option value="scheduled">Scheduled</option><option value="assigned">Assigned</option><option value="rescheduled">Rescheduled</option><option value="dispatched">Dispatched</option><option value="in_progress">In Progress</option><option value="paused">Paused</option><option value="completed">Completed</option><option value="need_to_be_rescheduled">Need to be rescheduling</option><option value="closed">Closed</option></select></div>
+                       <div className="col-span-2"><select value={job.state} disabled={updatingState} onChange={(e) => updateStatus(e.target.value)} className={`text-[13px] font-black uppercase text-[#14B8A6] bg-emerald-50 border border-emerald-100 rounded px-3 py-1.5 outline-none cursor-pointer hover:bg-emerald-100 transition-colors ${updatingState ? "opacity-50 cursor-not-allowed" : ""}`}><option value="draft">Draft</option><option value="created">Created</option><option value="unscheduled">Unscheduled</option><option value="scheduled">Scheduled</option><option value="assigned">Assigned</option><option value="rescheduled">Rescheduled</option><option value="dispatched">Dispatched</option><option value="in_progress">In Progress</option><option value="paused">Paused</option><option value="completed">Completed</option><option value="need_to_be_rescheduled">Need to be rescheduling</option><option value="parts_need_ordering">Parts need ordering</option><option value="awaiting_parts_delivery">Awaiting parts delivery</option><option value="closed">Closed</option></select></div>
                     </div>
                  </div>
               </div>
@@ -1519,7 +1520,11 @@ export default function JobDetailsPage() {
                                    </div>
                                    <div>
                                      <div className="flex flex-wrap items-center gap-2">
-                                       <p className="font-bold text-slate-800">{evt.officer_full_name || 'Unassigned'}</p>
+                                       <p className="font-bold text-slate-800">
+                                          {evt.officers && evt.officers.length > 0
+                                            ? evt.officers.map(o => o.full_name).join(', ')
+                                            : (evt.officer_full_name || 'Unassigned')}
+                                        </p>
                                        {(evt.is_free_job || evt.charge_type === 'free' || job.charge_type === 'free') && (
                                          <span className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
                                            Free job

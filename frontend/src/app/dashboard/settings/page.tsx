@@ -4,7 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { FileCheck2, FileText, Save, Quote, Building2, Users, Palette, ImageIcon, Mail, ListChecks, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { CompanyLogoPreview } from './CompanyLogoPreview';
-import { getJson, patchJson } from '../../apiClient';
+import { getJson, patchJson, putJson } from '../../apiClient';
+import CustomerSiteReportSignaturePad from '../customers/[id]/CustomerSiteReportSignaturePad';
 import type { TenantPermissionKey } from '../../../lib/tenantPermissions';
 import CustomerTypesSettings from './CustomerTypesSettings';
 import PriceBooksSettings from './PriceBooksSettings';
@@ -91,7 +92,8 @@ type SettingsTab =
   | 'business-units'
   | 'user-groups'
   | 'users'
-  | 'import';
+  | 'import'
+  | 'signature';
 
 const SETTINGS_TAB_VALUES: SettingsTab[] = [
   'company',
@@ -110,6 +112,7 @@ const SETTINGS_TAB_VALUES: SettingsTab[] = [
   'user-groups',
   'users',
   'import',
+  'signature',
 ];
 
 const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, TenantPermissionKey> = {
@@ -129,6 +132,7 @@ const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, TenantPermissionKey> = {
   'user-groups': 'settings_user_groups',
   users: 'settings_users',
   import: 'settings_import',
+  signature: 'settings_company',
 };
 
 const LEGACY_MASTER_DATA_TABS: readonly SettingsTab[] = [
@@ -161,6 +165,14 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [signatureSaving, setSignatureSaving] = useState(false);
+  const [signatureError, setSignatureError] = useState<string | null>(null);
+  const [signatureOfficers, setSignatureOfficers] = useState<{ id: number; full_name: string; role_position: string | null }[]>([]);
+  const [fetchingSignatureOfficers, setFetchingSignatureOfficers] = useState(false);
+  const [selectedOfficerId, setSelectedOfficerId] = useState<string>('');
 
   const [companyName, setCompanyName] = useState('WorkPilot');
   const [companyAddress, setCompanyAddress] = useState('');
@@ -250,6 +262,7 @@ export default function SettingsPage() {
 
   const canUseSettingsTab = useCallback((tab: SettingsTab): boolean => {
     if (!settingsUser) return false;
+    if (tab === 'signature') return true;
     if (settingsUser.role === 'SUPER_ADMIN' || settingsUser.role === 'OFFICER') return true;
     if (settingsUser.role === 'ADMIN' && settingsUser.permissions == null) return true;
     const key = SETTINGS_TAB_PERMISSIONS[tab];
@@ -273,6 +286,97 @@ export default function SettingsPage() {
       setSettingsUser(null);
     }
   }, []);
+
+  const fetchSignature = useCallback(async (officerIdStr?: string) => {
+    if (!token) return;
+    setSignatureLoading(true);
+    setSignatureError(null);
+    try {
+      const id = officerIdStr !== undefined ? officerIdStr : selectedOfficerId;
+      if (!id) {
+        const data = await getJson<{ signature_data_url: string | null }>('/settings/signature', token);
+        setSignatureDataUrl(data.signature_data_url);
+      } else {
+        const data = await getJson<{ signature_data_url: string | null }>(`/officers/${id}/signature`, token);
+        setSignatureDataUrl(data.signature_data_url);
+      }
+    } catch (err) {
+      console.error('Fetch signature error:', err);
+      setSignatureError(err instanceof Error ? err.message : 'Could not fetch signature');
+    } finally {
+      setSignatureLoading(false);
+    }
+  }, [token, selectedOfficerId]);
+
+  useEffect(() => {
+    if (activeTab === 'signature') {
+      fetchSignature(selectedOfficerId);
+    }
+  }, [activeTab, selectedOfficerId, fetchSignature]);
+
+  useEffect(() => {
+    const isAdmin = settingsUser?.role === 'SUPER_ADMIN' || settingsUser?.role === 'ADMIN';
+    if (activeTab === 'signature' && isAdmin && token && signatureOfficers.length === 0) {
+      setFetchingSignatureOfficers(true);
+      getJson<{ officers: any[] }>('/officers/list', token)
+        .then((data) => {
+          setSignatureOfficers(data.officers || []);
+        })
+        .catch((err) => {
+          console.error('Error fetching officers for signature management:', err);
+        })
+        .finally(() => {
+          setFetchingSignatureOfficers(false);
+        });
+    }
+  }, [activeTab, settingsUser, token, signatureOfficers.length]);
+
+  const handleSaveSignature = async (blob: Blob) => {
+    if (!token) return;
+    setSignatureSaving(true);
+    setSignatureError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') resolve(reader.result);
+          else reject(new Error('Could not read signature'));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error('Could not read signature'));
+        reader.readAsDataURL(blob);
+      });
+      if (!selectedOfficerId) {
+        await putJson('/settings/signature', { signature_data_url: dataUrl }, token);
+      } else {
+        await putJson(`/officers/${selectedOfficerId}/signature`, { signature_data_url: dataUrl }, token);
+      }
+      setSignatureDataUrl(dataUrl);
+    } catch (err) {
+      console.error('Save signature error:', err);
+      setSignatureError(err instanceof Error ? err.message : 'Could not save signature');
+    } finally {
+      setSignatureSaving(false);
+    }
+  };
+
+  const handleClearSignature = async () => {
+    if (!token) return;
+    setSignatureSaving(true);
+    setSignatureError(null);
+    try {
+      if (!selectedOfficerId) {
+        await putJson('/settings/signature', { signature_data_url: null }, token);
+      } else {
+        await putJson(`/officers/${selectedOfficerId}/signature`, { signature_data_url: null }, token);
+      }
+      setSignatureDataUrl(null);
+    } catch (err) {
+      console.error('Clear signature error:', err);
+      setSignatureError(err instanceof Error ? err.message : 'Could not clear signature');
+    } finally {
+      setSignatureSaving(false);
+    }
+  };
 
   const fetchInvoiceSettings = useCallback(async () => {
     if (!token) return;
@@ -467,7 +571,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-8">
-      <div className="mx-auto max-w-6xl">
+      <div className={`mx-auto ${['site-report-templates', 'job-report-template'].includes(activeTab) ? 'max-w-none px-2' : 'max-w-6xl'} w-full transition-all duration-300`}>
         <h1 className="text-3xl font-black tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-slate-500">Configure your application preferences.</p>
 
@@ -593,6 +697,14 @@ export default function SettingsPage() {
             >
               <UserCog className="size-4" />
               Users
+            </button>
+            <button
+              type="button"
+              onClick={() => goSettingsTab('signature')}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${activeTab === 'signature' ? 'bg-[#14B8A6]/10 text-[#14B8A6]' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Palette className="size-4" />
+              My Signature
             </button>
             <button
               type="button"
@@ -1564,6 +1676,93 @@ export default function SettingsPage() {
             className="rounded-b-xl border border-transparent mt-4"
           >
             <ImportSettings />
+          </motion.div>
+        )}
+
+        {activeTab === 'signature' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm mt-4"
+          >
+            <h2 className="text-lg font-bold text-slate-900">
+              {selectedOfficerId
+                ? `Signature - ${signatureOfficers.find((o) => String(o.id) === selectedOfficerId)?.full_name || ''}`
+                : 'My Signature'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {selectedOfficerId
+                ? 'Draw and save signature for this officer. This signature will be used when they sign certificates and reports.'
+                : 'Draw and save your signature here. This signature will be used when you sign certificates and reports.'}
+            </p>
+
+            {(settingsUser?.role === 'SUPER_ADMIN' || settingsUser?.role === 'ADMIN') && (
+              <div className="mt-4 max-w-md">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Select User / Officer
+                </label>
+                <select
+                  value={selectedOfficerId}
+                  onChange={(e) => setSelectedOfficerId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                  disabled={fetchingSignatureOfficers || signatureLoading || signatureSaving}
+                >
+                  <option value="">Myself (Logged-in user)</option>
+                  {signatureOfficers.map((o) => (
+                    <option key={o.id} value={String(o.id)}>
+                      {o.full_name} {o.role_position ? `(${o.role_position})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mt-6 max-w-md space-y-6">
+              {signatureLoading ? (
+                <div className="text-sm text-slate-500 animate-pulse">Loading your signature...</div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700">Current Saved Signature</label>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4 flex items-center justify-center min-h-24">
+                      {signatureDataUrl ? (
+                        <img
+                          src={signatureDataUrl}
+                          alt="My signature"
+                          className="max-h-20 max-w-full object-contain"
+                        />
+                      ) : (
+                        <span className="text-sm text-slate-400 italic">No signature saved yet</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700">Draw New Signature</label>
+                    <CustomerSiteReportSignaturePad
+                      busy={signatureSaving}
+                      saveLabel="Save Signature"
+                      onSave={handleSaveSignature}
+                    />
+                  </div>
+
+                  {signatureDataUrl && (
+                    <button
+                      type="button"
+                      disabled={signatureSaving}
+                      onClick={handleClearSignature}
+                      className="text-sm font-semibold text-rose-600 hover:underline disabled:opacity-50"
+                    >
+                      Delete Saved Signature
+                    </button>
+                  )}
+
+                  {signatureError && (
+                    <p className="text-sm text-rose-600">{signatureError}</p>
+                  )}
+                </>
+              )}
+            </div>
           </motion.div>
         )}
           </>

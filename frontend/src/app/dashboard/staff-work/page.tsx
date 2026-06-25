@@ -532,6 +532,18 @@ export default function StaffWorkPage() {
     void fetchSummaryData();
   }, [fetchSummaryData]);
 
+  // Load officers list on mount so it is populated for searchable selectors
+  useEffect(() => {
+    if (!token) return;
+    getJson<{ officers: Officer[] }>('/officers/list', token)
+      .then((res) => {
+        setOfficers(res.officers ?? []);
+      })
+      .catch((err) => {
+        console.error('Failed to load officers list on mount:', err);
+      });
+  }, [token]);
+
   useEffect(() => {
     if (activeTab === 'holidays') {
       void fetchHolidaysData();

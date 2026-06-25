@@ -1,10 +1,17 @@
 'use client';
 
 /* eslint-disable @next/next/no-img-element -- blob previews */
+import { useState, useEffect } from 'react';
 import { ImagePlus, Loader2 } from 'lucide-react';
 import type { SiteReportTemplateField, SiteReportSectionImageRow } from '@/lib/siteReportTemplateTypes';
 import { PASS_FAIL_OPTIONS, YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
 import CustomerSiteReportSignaturePad from './CustomerSiteReportSignaturePad';
+import { getJson } from '@/app/apiClient';
+
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return await res.blob();
+}
 
 export function SiteReportFieldImageList({
   rows,
@@ -95,15 +102,120 @@ export function SiteReportSignatureBlock({
 }) {
   const primary = rows[0];
   const src = primary ? imageUrlFor(primary.image_id) : '';
+
+  const [officers, setOfficers] = useState<{ id: number; full_name: string; role_position: string | null }[]>([]);
+  const [fetchingOfficers, setFetchingOfficers] = useState(false);
+  const [busySelect, setBusySelect] = useState(false);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+    if (!token) return;
+    setFetchingOfficers(true);
+    getJson<{ officers: any[] }>('/officers/list', token)
+      .then((data) => {
+        setOfficers(data.officers || []);
+      })
+      .catch((err) => {
+        console.error('Error fetching officers list for dropdown:', err);
+      })
+      .finally(() => {
+        setFetchingOfficers(false);
+      });
+  }, []);
+
+  const userJson = typeof window !== 'undefined' ? window.localStorage.getItem('wp_user') : null;
+  const currentUser = userJson ? JSON.parse(userJson) : null;
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN';
+
+  // Filter officers: if not admin, only show officer whose linked user ID matches
+  const allowedOfficers = officers.filter(o => {
+    if (isAdmin) return true;
+    return currentUser?.officerId === o.id;
+  });
+
+  const options = [...allowedOfficers];
+  if (!isAdmin && options.length === 0 && currentUser) {
+    options.push({
+      id: currentUser.officerId || -99,
+      full_name: currentUser.full_name || currentUser.email || 'Me',
+      role_position: currentUser.role
+    });
+  }
+
+  const handleSelectOfficer = async (officerIdStr: string) => {
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
+    if (!token) return;
+    
+    if (!officerIdStr) {
+      if (primary) {
+        await onClearSaved();
+      }
+      return;
+    }
+
+    const selectedId = parseInt(officerIdStr, 10);
+    const selected = options.find(o => o.id === selectedId);
+    if (!selected) return;
+
+    setBusySelect(true);
+    try {
+      let signatureUrl = '';
+      if (selected.id === -99 || selected.id === currentUser?.officerId) {
+        try {
+          const res = await getJson<{ signature_data_url: string | null }>('/settings/signature', token);
+          signatureUrl = res.signature_data_url || '';
+        } catch {
+          if (currentUser?.officerId) {
+            const res = await getJson<{ signature_data_url: string | null }>(`/officers/${currentUser.officerId}/signature`, token);
+            signatureUrl = res.signature_data_url || '';
+          }
+        }
+      } else {
+        const res = await getJson<{ signature_data_url: string | null }>(`/officers/${selected.id}/signature`, token);
+        signatureUrl = res.signature_data_url || '';
+      }
+      
+      if (signatureUrl) {
+        const blob = await dataUrlToBlob(signatureUrl);
+        await onSaveBlob(blob);
+      } else {
+        alert(`${selected.full_name} does not have a saved signature yet.`);
+      }
+    } catch (err) {
+      console.error('Failed to fetch/apply signature:', err);
+    } finally {
+      setBusySelect(false);
+    }
+  };
+
+  const isBusy = busy || busySelect;
+
   return (
     <div className="space-y-3">
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Select signatory profile</label>
+        <select
+          onChange={(e) => handleSelectOfficer(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+          disabled={fetchingOfficers || isBusy}
+          value=""
+        >
+          <option value="">-- Choose Profile --</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.full_name} {o.role_position ? `(${o.role_position})` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {primary && src ? (
         <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2">
           <p className="text-xs font-semibold text-slate-600">Saved signature</p>
           <img src={src} alt="" className="max-h-32 max-w-full rounded border border-slate-200 bg-white object-contain" />
           <button
             type="button"
-            disabled={busy}
+            disabled={isBusy}
             onClick={() => void onClearSaved()}
             className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50"
           >
@@ -113,7 +225,7 @@ export function SiteReportSignatureBlock({
       ) : null}
       <div>
         <p className="text-xs font-semibold text-slate-600 mb-1">{primary ? 'Replace signature' : 'Sign here'}</p>
-        <CustomerSiteReportSignaturePad disabled={busy} busy={busy} onSave={onSaveBlob} />
+        <CustomerSiteReportSignaturePad disabled={isBusy} busy={isBusy} onSave={onSaveBlob} />
       </div>
     </div>
   );

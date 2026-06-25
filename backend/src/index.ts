@@ -1885,7 +1885,7 @@ async function initDb() {
 
   try {
     await pool.query(`ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_state_check`);
-    await pool.query(`ALTER TABLE jobs ADD CONSTRAINT jobs_state_check CHECK (state IN ('draft', 'created', 'scheduled', 'assigned', 'in_progress', 'paused', 'completed', 'closed', 'unscheduled', 'rescheduled', 'dispatched', 'need_to_be_rescheduled'))`);
+    await pool.query(`ALTER TABLE jobs ADD CONSTRAINT jobs_state_check CHECK (state IN ('draft', 'created', 'scheduled', 'assigned', 'in_progress', 'paused', 'completed', 'closed', 'unscheduled', 'rescheduled', 'dispatched', 'need_to_be_rescheduled', 'parts_need_ordering', 'awaiting_parts_delivery'))`);
   } catch { /* constraint may already allow these */ }
 
   await pool.query(`
@@ -2311,6 +2311,8 @@ async function initDb() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_event ON diary_event_officers(diary_event_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
+  await pool.query(`ALTER TABLE diary_event_officers ADD COLUMN IF NOT EXISTS status VARCHAR(80)`);
+  await pool.query(`ALTER TABLE diary_event_status_logs ADD COLUMN IF NOT EXISTS officer_id INTEGER REFERENCES officers(id) ON DELETE SET NULL`);
   await ensureStaffWorkSchema(pool);
   await ensureHolidaySchema(pool);
   await ensurePpmContractSchema(pool);
@@ -2518,9 +2520,35 @@ function persistedDiaryStatus(status: unknown): string {
   return raw;
 }
 
+/** Per-engineer status when multiple officers share one legacy diary visit. */
+function sqlDiaryEventStatusForOfficer(officerParam: string): string {
+  return `COALESCE(
+    NULLIF(TRIM((SELECT deo.status FROM diary_event_officers deo
+      WHERE deo.diary_event_id = d.id AND deo.officer_id = ${officerParam} LIMIT 1)), ''),
+    d.status
+  )`;
+}
+
+function sqlDiaryOfficerAssigned(officerParam: string): string {
+  return `(
+    d.officer_id = ${officerParam}
+    OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = ${officerParam})
+    OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = ${officerParam})
+  )`;
+}
+
+function sqlDiaryTerminalStatusExpr(statusExpr: string): string {
+  return `COALESCE(LOWER(TRIM(REPLACE(${statusExpr}, ' ', '_'))), '')`;
+}
+
 /** Diary list / home — exclude finished visits and jobs closed on the board. */
-const SQL_DIARY_ONGOING_ONLY = ` AND COALESCE(LOWER(TRIM(REPLACE(d.status, ' ', '_'))), '') NOT IN ('completed', 'cancelled', 'aborted')
+const SQL_DIARY_ONGOING_ONLY = ` AND ${sqlDiaryTerminalStatusExpr('d.status')} NOT IN ('completed', 'cancelled', 'aborted')
          AND j.state NOT IN ('completed', 'closed')`;
+
+function sqlDiaryOngoingForOfficer(officerParam: string): string {
+  return ` AND ${sqlDiaryTerminalStatusExpr(sqlDiaryEventStatusForOfficer(officerParam))} NOT IN ('completed', 'cancelled', 'aborted')
+         AND j.state NOT IN ('completed', 'closed')`;
+}
 
 /** Field officers may save job report drafts while travelling or on site (before final submit). */
 function diaryStatusAllowsJobReportDraft(status: unknown): boolean {
@@ -2682,6 +2710,8 @@ const POST_REPORT_NEXT_JOB_STATES = new Set<string>([
   'in_progress',
   'completed',
   'need_to_be_rescheduled',
+  'parts_need_ordering',
+  'awaiting_parts_delivery',
 ]);
 
 function parsePostReportNextJobState(raw: unknown): string | null {
@@ -2863,13 +2893,64 @@ async function logDiaryEventStatusTransition(
   longitude: number | null,
   timestamp: string | Date | null,
   userId: number | null,
+  officerId: number | null = null,
 ): Promise<void> {
   const ts = timestamp ? new Date(timestamp) : new Date();
   await client.query(
-    `INSERT INTO diary_event_status_logs (diary_event_id, status, latitude, longitude, timestamp, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [diaryEventId, status, latitude, longitude, ts, userId],
+    `INSERT INTO diary_event_status_logs (diary_event_id, status, latitude, longitude, timestamp, created_by, officer_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [diaryEventId, status, latitude, longitude, ts, userId, officerId],
   );
+}
+
+async function diaryEventHasMultipleOfficers(client: PoolClient | Pool, diaryEventId: number): Promise<boolean> {
+  const r = await client.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM diary_event_officers WHERE diary_event_id = $1`,
+    [diaryEventId],
+  );
+  return (r.rows[0]?.c ?? 0) > 1;
+}
+
+async function allOfficersOnDiaryEventTerminal(client: PoolClient | Pool, diaryEventId: number): Promise<boolean> {
+  const r = await client.query<{ total: number; done: number }>(
+    `SELECT COUNT(*)::int AS total,
+            SUM(CASE WHEN COALESCE(LOWER(TRIM(REPLACE(COALESCE(NULLIF(TRIM(deo.status), ''), d.status), ' ', '_'))), '')
+              IN ('completed', 'cancelled', 'aborted') THEN 1 ELSE 0 END)::int AS done
+     FROM diary_event_officers deo
+     JOIN diary_events d ON d.id = deo.diary_event_id
+     WHERE deo.diary_event_id = $1`,
+    [diaryEventId],
+  );
+  const total = r.rows[0]?.total ?? 0;
+  const done = r.rows[0]?.done ?? 0;
+  return total > 0 && done === total;
+}
+
+async function jobHasOtherOpenDiaryVisits(
+  client: PoolClient | Pool,
+  jobId: number,
+  excludeDiaryEventId: number,
+): Promise<boolean> {
+  const r = await client.query<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM diary_events d
+     WHERE d.job_id = $1
+       AND d.id <> $2
+       AND ${sqlDiaryTerminalStatusExpr('d.status')} NOT IN ('completed', 'cancelled', 'aborted')`,
+    [jobId, excludeDiaryEventId],
+  );
+  return (r.rows[0]?.c ?? 0) > 0;
+}
+
+async function shouldFinalizeJobAfterVisitComplete(
+  client: PoolClient | Pool,
+  jobId: number,
+  diaryEventId: number,
+  multiOfficerVisit: boolean,
+): Promise<boolean> {
+  if (multiOfficerVisit && !(await allOfficersOnDiaryEventTerminal(client, diaryEventId))) {
+    return false;
+  }
+  return !(await jobHasOtherOpenDiaryVisits(client, jobId, diaryEventId));
 }
 
 app.get('/api/health', async (req: Request, res: Response) => {
@@ -3672,7 +3753,8 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
 
     const upcoming = hasSched
       ? await pool.query(
-          `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
+          `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
+              ${sqlDiaryEventStatusForOfficer('$1')} AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
               j.title, j.description,
               COALESCE(
@@ -3696,10 +3778,10 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
-       WHERE (d.officer_id = $1 OR j.officer_id = $1)
+       WHERE ${sqlDiaryOfficerAssigned('$1')}
          AND d.start_time < NOW() + INTERVAL '7 days'
          AND (d.start_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute')) > NOW()
-         ${SQL_DIARY_ONGOING_ONLY}
+         ${sqlDiaryOngoingForOfficer('$1')}
        ORDER BY d.start_time ASC
        LIMIT 50`,
           [oid],
@@ -5143,9 +5225,9 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean; permissions: unknown; linked_user_id: number | null }>(
+    const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean; permissions: unknown; linked_user_id: number | null; signature_data_url?: string | null }>(
       `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, calendar_color, created_at, updated_at, created_by,
-              permissions, linked_user_id,
+              permissions, linked_user_id, signature_data_url,
               (password_hash IS NOT NULL OR linked_user_id IS NOT NULL) AS has_mobile_login
        FROM officers ${whereClause}
        ORDER BY full_name ASC
@@ -5185,6 +5267,7 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
       has_mobile_login: !!r.has_mobile_login,
       permissions: permissionsFromDb(r.permissions),
       linked_user_id: r.linked_user_id ?? null,
+      signature_data_url: (r as { signature_data_url?: string | null }).signature_data_url ?? null,
     }));
 
     return res.json({
@@ -5404,6 +5487,10 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
     updates.push(`calendar_color = $${idx++}`);
     values.push(rawColor || null);
   }
+  if (body.signature_data_url !== undefined) {
+    updates.push(`signature_data_url = $${idx++}`);
+    values.push(body.signature_data_url || null);
+  }
   if (body.permissions != null) {
     const parsed = parsePermissionsBody(body.permissions);
     if (parsed == null || !Object.values(parsed).some(Boolean)) {
@@ -5439,7 +5526,15 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
       values,
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
-    const r = result.rows[0] as DbOfficer & { password_hash?: string | null };
+    const r = result.rows[0] as DbOfficer & { password_hash?: string | null; signature_data_url?: string | null; linked_user_id?: number | null };
+
+    if (body.signature_data_url !== undefined && r.linked_user_id) {
+      await pool.query(
+        'UPDATE users SET signature_data_url = $1 WHERE id = $2',
+        [body.signature_data_url || null, r.linked_user_id]
+      );
+    }
+
     return res.json({
       officer: {
         id: r.id,
@@ -5455,9 +5550,10 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
         created_at: (r.created_at as Date).toISOString(),
         updated_at: (r.updated_at as Date).toISOString(),
         created_by: r.created_by,
-        has_mobile_login: !!r.password_hash || !!(r as { linked_user_id?: number | null }).linked_user_id,
+        has_mobile_login: !!r.password_hash || !!r.linked_user_id,
         permissions: permissionsFromDb((r as { permissions?: unknown }).permissions),
-        linked_user_id: (r as { linked_user_id?: number | null }).linked_user_id ?? null,
+        linked_user_id: r.linked_user_id ?? null,
+        signature_data_url: r.signature_data_url ?? null,
       },
     });
   } catch (error) {
@@ -5995,6 +6091,119 @@ app.delete('/api/officers/:id/staff-reminders/:reminderId', authenticate, requir
   }
 });
 
+app.get('/api/settings/signature', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  try {
+    const row = await pool.query<{ signature_data_url: string | null }>(
+      'SELECT signature_data_url FROM users WHERE id = $1',
+      [u.userId]
+    );
+    if ((row.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    return res.json({ signature_data_url: row.rows[0].signature_data_url ?? null });
+  } catch (error) {
+    console.error('Get settings signature error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.put('/api/settings/signature', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  const { signature_data_url } = req.body as { signature_data_url?: string };
+  if (signature_data_url === undefined) {
+    return res.status(400).json({ message: 'signature_data_url is required' });
+  }
+  try {
+    await pool.query(
+      'UPDATE users SET signature_data_url = $1 WHERE id = $2',
+      [signature_data_url || null, u.userId]
+    );
+    
+    // sync to linked officer if any
+    await pool.query(
+      'UPDATE officers SET signature_data_url = $1 WHERE linked_user_id = $2',
+      [signature_data_url || null, u.userId]
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Update settings signature error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/officers/:id/signature', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const targetOfficerId = parseInt(String(idParam), 10);
+  if (isNaN(targetOfficerId)) {
+    return res.status(400).json({ message: 'Invalid officer ID' });
+  }
+
+  const isAdmin = u.role === 'SUPER_ADMIN' || u.role === 'ADMIN';
+  const isSelf = u.officerId === targetOfficerId;
+
+  if (!isAdmin && !isSelf) {
+    return res.status(403).json({ message: 'Forbidden: you can only access your own signature' });
+  }
+
+  try {
+    const row = await pool.query<{ signature_data_url: string | null }>(
+      'SELECT signature_data_url FROM officers WHERE id = $1',
+      [targetOfficerId]
+    );
+    if ((row.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Officer not found' });
+    }
+    return res.json({ signature_data_url: row.rows[0].signature_data_url ?? null });
+  } catch (error) {
+    console.error('Get officer signature error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.put('/api/officers/:id/signature', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const u = req.user!;
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const targetOfficerId = parseInt(String(idParam), 10);
+  if (isNaN(targetOfficerId)) {
+    return res.status(400).json({ message: 'Invalid officer ID' });
+  }
+
+  const isAdmin = u.role === 'SUPER_ADMIN' || u.role === 'ADMIN';
+  const isSelf = u.officerId === targetOfficerId;
+
+  if (!isAdmin && !isSelf) {
+    return res.status(403).json({ message: 'Forbidden: you can only update your own signature' });
+  }
+
+  const { signature_data_url } = req.body as { signature_data_url?: string | null };
+
+  try {
+    const result = await pool.query(
+      'UPDATE officers SET signature_data_url = $1 WHERE id = $2 RETURNING linked_user_id',
+      [signature_data_url || null, targetOfficerId]
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Officer not found' });
+    }
+
+    const linkedUserId = result.rows[0].linked_user_id;
+    if (linkedUserId) {
+      await pool.query(
+        'UPDATE users SET signature_data_url = $1 WHERE id = $2',
+        [signature_data_url || null, linkedUserId]
+      );
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Update officer signature error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 app.get('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
@@ -6218,7 +6427,7 @@ app.get('/api/certifications/compliance-hub', authenticate, requireTenantCrmAcce
 });
 
 // ---------- Jobs (Admin only) ----------
-const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed', 'need_to_be_rescheduled'] as const;
+const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed', 'need_to_be_rescheduled', 'parts_need_ordering', 'awaiting_parts_delivery'] as const;
 const JOB_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 
 app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: AuthenticatedRequest, res: Response) => {
@@ -8382,6 +8591,27 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     );
     const rows = result.rows as Array<Record<string, unknown>>;
     const diaryIds = rows.map((r: any) => r.diary_id);
+    if (
+      tokenOid != null &&
+      diaryActsAsFieldOfficer(req, fieldUser) &&
+      !scopeTeam &&
+      diaryIds.length > 0
+    ) {
+      const personalStatus = await pool.query<{ diary_event_id: number; status: string }>(
+        `SELECT deo.diary_event_id, deo.status
+         FROM diary_event_officers deo
+         WHERE deo.diary_event_id = ANY($1::int[])
+           AND deo.officer_id = $2
+           AND deo.status IS NOT NULL
+           AND TRIM(deo.status) <> ''`,
+        [diaryIds, tokenOid],
+      );
+      const statusByEvent = new Map(personalStatus.rows.map((r) => [r.diary_event_id, r.status]));
+      for (const r of rows) {
+        const personal = statusByEvent.get(r.diary_id as number);
+        if (personal) r.event_status = personal;
+      }
+    }
     const deOfficers = diaryIds.length > 0 ? await pool.query(
       `SELECT deo.diary_event_id, deo.officer_id AS id, o.full_name, deo.is_primary
        FROM diary_event_officers deo JOIN officers o ON o.id = deo.officer_id
@@ -8419,14 +8649,18 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
   }
 
   try {
+    const tokenOfficerId = req.user!.officerId ?? null;
     const result = await pool.query(
-      `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status AS event_status,
+      `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
+              ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
               d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at,
               j.title, j.description, j.location, j.state AS job_state, j.job_notes, j.customer_id,
               j.job_number,
               j.created_by AS job_created_by,
               j.work_address_id AS job_work_address_id,
               j.officer_id AS job_officer_id,
+              EXISTS (SELECT 1 FROM diary_event_officers deo_a WHERE deo_a.diary_event_id = d.id AND deo_a.officer_id = $2) AS is_diary_officer,
+              EXISTS (SELECT 1 FROM job_officers jo_a WHERE jo_a.job_id = j.id AND jo_a.officer_id = $2) AS is_job_officer,
               j.quoted_amount, j.customer_reference,
               j.is_quotation_visit, j.charge_type,
               c.full_name AS customer_full_name, c.email AS customer_email,
@@ -8471,19 +8705,24 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE d.id = $1`,
-      [id],
+      tokenOfficerId != null ? [id, tokenOfficerId] : [id],
     );
     if ((result.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
     }
     const row = result.rows[0] as Record<string, unknown>;
     const role = req.user!.role;
-    const tokenOfficerId = req.user!.officerId ?? null;
     const officerId = row.officer_id as number | null;
     const jobOfficerId = row.job_officer_id as number | null;
+    const isDiaryOfficer = row.is_diary_officer === true;
+    const isJobOfficer = row.is_job_officer === true;
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const assigned = officerId === tokenOfficerId || jobOfficerId === tokenOfficerId;
+      const assigned =
+        officerId === tokenOfficerId ||
+        jobOfficerId === tokenOfficerId ||
+        isDiaryOfficer ||
+        isJobOfficer;
       if (!assigned && !canUseTeamDiaryScope({ role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
       }
@@ -9110,17 +9349,10 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
       );
       await client.query(`UPDATE jobs SET state = 'completed', updated_at = NOW() WHERE id = $1`, [ev.job_id]);
 
-      await logDiaryEventStatusTransition(client, diaryEventId, 'completed', latVal, lngVal, tsVal, userId);
+      await logDiaryEventStatusTransition(client, diaryEventId, 'completed', latVal, lngVal, tsVal, userId, tokenOfficerId);
 
-      const deOfficersForTimesheet = await client.query<{ officer_id: number }>(
-        `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
-        [diaryEventId],
-      );
-      const tsOfficers = deOfficersForTimesheet.rows.length > 0
-        ? deOfficersForTimesheet.rows.map(r => r.officer_id)
-        : [ev.officer_id ?? ev.job_officer_id].filter(Boolean) as number[];
-      for (const tsOid of tsOfficers) {
-        await applyDiaryStatusToTimesheet(client, tsOid, diaryEventId, 'completed');
+      if (tokenOfficerId != null) {
+        await applyDiaryStatusToTimesheet(client, tokenOfficerId, diaryEventId, 'completed');
       }
 
       await client.query('COMMIT');
@@ -10173,7 +10405,8 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       customer_full_name: string | null;
       is_quotation_visit: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
+              ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer,
               j.customer_id, j.work_address_id, j.job_number, j.title AS job_title,
@@ -10183,7 +10416,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
        INNER JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
        WHERE d.id = $1`,
-      [diaryEventId, tokenOfficerId],
+      [diaryEventId, tokenOfficerId ?? -1],
     );
     if ((base.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
@@ -10316,13 +10549,14 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
       is_diary_officer: boolean;
       is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
+              ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [diaryEventId, tokenOfficerId],
+      [diaryEventId, tokenOfficerId ?? -1],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
@@ -10728,7 +10962,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
   if (!nextJobState) {
     return res.status(400).json({
       message:
-        'next_job_state is required. Allowed: unscheduled, scheduled, rescheduled, paused, created, in_progress, completed, need_to_be_rescheduled.',
+        'next_job_state is required. Allowed: unscheduled, scheduled, rescheduled, paused, created, in_progress, completed, need_to_be_rescheduled, parts_need_ordering, awaiting_parts_delivery.',
     });
   }
 
@@ -10748,14 +10982,15 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
       is_diary_officer: boolean;
       is_job_officer: boolean;
     }>(
-      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, d.status AS event_status,
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
+              ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1
        FOR UPDATE OF d`,
-      [diaryEventId, tokenOfficerId],
+      [diaryEventId, tokenOfficerId ?? -1],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
@@ -11468,6 +11703,12 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
     }
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
+              (
+                SELECT COALESCE(json_agg(json_build_object('id', o2.id, 'full_name', o2.full_name, 'is_primary', deo.is_primary) ORDER BY deo.is_primary DESC, o2.full_name), '[]'::json)
+                FROM diary_event_officers deo
+                JOIN officers o2 ON o2.id = deo.officer_id
+                WHERE deo.diary_event_id = d.id
+              ) AS officers,
               j.charge_type,
               EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
               (j.charge_type = 'free') AS is_free_job,
@@ -11805,36 +12046,38 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
     const deOfficerIds = Array.isArray((req.body as Record<string, unknown>).officer_ids)
       ? ((req.body as Record<string, unknown>).officer_ids as unknown[]).filter((id: unknown) => typeof id === 'number' && Number.isFinite(id))
       : (officer_id ? [officer_id] : []);
-    const primaryOfficerId = deOfficerIds.length > 0 ? (deOfficerIds[0] as number) : (officer_id || null);
+    const officerIdsToBook = deOfficerIds.length > 0 ? deOfficerIds : (officer_id ? [officer_id] : [null]);
 
-    const holidayConflict = await checkOfficerHolidayConflict(pool, deOfficerIds, start_time, duration_minutes || 60);
+    const holidayConflict = await checkOfficerHolidayConflict(pool, officerIdsToBook.filter((id): id is number => id != null), start_time, duration_minutes || 60);
     if (holidayConflict) {
       return res.status(400).json({
         message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
       });
     }
 
-    const result = await pool.query(
-      `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [jobId, primaryOfficerId, start_time, duration_minutes || 60, notes || null, creatorName]
-    );
-    const diaryEventId = result.rows[0].id;
-    if (deOfficerIds.length > 0) {
-      for (let i = 0; i < deOfficerIds.length; i++) {
+    const createdEvents: Record<string, unknown>[] = [];
+    for (const oid of officerIdsToBook) {
+      const result = await pool.query(
+        `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [jobId, oid, start_time, duration_minutes || 60, notes || null, creatorName],
+      );
+      const diaryEventId = result.rows[0].id;
+      if (oid != null) {
         await pool.query(
-          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
-          [diaryEventId, deOfficerIds[i], i === 0]
+          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
+          [diaryEventId, oid],
         );
       }
+      createdEvents.push(result.rows[0]);
     }
 
     // Update the job status to scheduled if it was created/draft
     await pool.query('UPDATE jobs SET state = \'scheduled\' WHERE id = $1 AND state IN (\'draft\', \'created\', \'unscheduled\')', [jobId]);
     await syncJobDatesFromDiaryEvents(pool, jobId);
 
-    res.status(201).json({ event: result.rows[0] });
+    res.status(201).json({ events: createdEvents, event: createdEvents[0] ?? null });
   } catch (error) {
     console.error('create diary event error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -12220,57 +12463,67 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       return res.status(400).json({ message: 'abort_reason is only allowed when cancelling a visit.' });
     }
 
-    await client.query(
-      `UPDATE diary_events SET status = $1, notes = COALESCE($2, notes),
-         abort_reason = $3, updated_at = NOW() WHERE id = $4`,
-      [storedStatus, notesVal, storedStatus === 'cancelled' ? abortReasonVal : null, id],
-    );
+    const actingOfficerId =
+      tokenOfficerId != null && Number.isFinite(tokenOfficerId)
+        ? tokenOfficerId
+        : row.officer_id ?? row.job_officer_id;
+    const multiOfficerVisit = await diaryEventHasMultipleOfficers(client, id);
 
-    await logDiaryEventStatusTransition(client, id, storedStatus, latVal, lngVal, tsVal, userId);
+    if (multiOfficerVisit && actingOfficerId != null) {
+      await client.query(
+        `UPDATE diary_event_officers SET status = $1
+         WHERE diary_event_id = $2 AND officer_id = $3`,
+        [storedStatus, id, actingOfficerId],
+      );
+    } else {
+      await client.query(
+        `UPDATE diary_events SET status = $1, notes = COALESCE($2, notes),
+           abort_reason = $3, updated_at = NOW() WHERE id = $4`,
+        [storedStatus, notesVal, storedStatus === 'cancelled' ? abortReasonVal : null, id],
+      );
+    }
+
+    await logDiaryEventStatusTransition(client, id, storedStatus, latVal, lngVal, tsVal, userId, actingOfficerId ?? null);
 
     const normalized = normalizeDiaryStatusForTimesheet(status);
-    const deOfficersForTimesheet = await pool.query<{ officer_id: number }>(
-      `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1 ORDER BY is_primary DESC`,
-      [id]
-    );
-    const tsOfficers = deOfficersForTimesheet.rows.length > 0
-      ? deOfficersForTimesheet.rows.map(r => r.officer_id)
-      : [row.officer_id ?? row.job_officer_id].filter(Boolean) as number[];
-    for (const tsOid of tsOfficers) {
-      await applyDiaryStatusToTimesheet(client, tsOid, id, normalized);
+    if (actingOfficerId != null && Number.isFinite(actingOfficerId)) {
+      await applyDiaryStatusToTimesheet(client, actingOfficerId, id, normalized);
     }
 
     await client.query('COMMIT');
 
     if (normalized === 'completed') {
-      const eventRowCheck = await pool.query<{ next_job_state: string | null }>(
-        'SELECT next_job_state FROM diary_events WHERE id = $1',
-        [id]
-      );
-      const nextState = eventRowCheck.rows[0]?.next_job_state || 'completed';
+      const shouldFinalize = await shouldFinalizeJobAfterVisitComplete(client, row.job_id, id, multiOfficerVisit);
+      if (shouldFinalize) {
+        const eventRowCheck = await pool.query<{ next_job_state: string | null }>(
+          'SELECT next_job_state FROM diary_events WHERE id = $1',
+          [id]
+        );
+        const nextState = eventRowCheck.rows[0]?.next_job_state || 'completed';
 
-      const jobVisitCheck = await pool.query<{ is_quotation_visit: boolean }>(
-        'SELECT is_quotation_visit FROM jobs WHERE id = $1',
-        [row.job_id],
-      );
-      const isQuotationVisitJob = !!jobVisitCheck.rows[0]?.is_quotation_visit;
-      if (nextState === 'completed' && !isQuotationVisitJob) {
-        const ppmCheck = await pool.query<{ ppm_contract_id: number | null }>(
-          'SELECT ppm_contract_id FROM jobs WHERE id = $1',
+        const jobVisitCheck = await pool.query<{ is_quotation_visit: boolean }>(
+          'SELECT is_quotation_visit FROM jobs WHERE id = $1',
           [row.job_id],
         );
-        const isPpmJob = ppmCheck.rows[0]?.ppm_contract_id != null;
-        if (!isPpmJob) {
-          try {
-            await createInvoiceFromJob(row.job_id, userId);
-          } catch (invErr) {
-            console.error('Auto invoice after diary visit completed:', invErr);
+        const isQuotationVisitJob = !!jobVisitCheck.rows[0]?.is_quotation_visit;
+        if (nextState === 'completed' && !isQuotationVisitJob) {
+          const ppmCheck = await pool.query<{ ppm_contract_id: number | null }>(
+            'SELECT ppm_contract_id FROM jobs WHERE id = $1',
+            [row.job_id],
+          );
+          const isPpmJob = ppmCheck.rows[0]?.ppm_contract_id != null;
+          if (!isPpmJob) {
+            try {
+              await createInvoiceFromJob(row.job_id, userId);
+            } catch (invErr) {
+              console.error('Auto invoice after diary visit completed:', invErr);
+            }
           }
         }
-      }
-      await pool.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [nextState, row.job_id]);
-      if (nextState === 'completed' || nextState === 'closed') {
-        await handlePpmJobCompletion(pool, row.job_id, userId, createInvoiceFromJob);
+        await pool.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [nextState, row.job_id]);
+        if (nextState === 'completed' || nextState === 'closed') {
+          await handlePpmJobCompletion(pool, row.job_id, userId, createInvoiceFromJob);
+        }
       }
     }
 

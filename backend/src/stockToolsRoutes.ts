@@ -112,6 +112,9 @@ export async function ensureStockToolsSchema(pool: Pool) {
       ALTER TABLE tools ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
     `);
     await pool.query(`
+      ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS locations JSONB;
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS uniforms (
         id SERIAL PRIMARY KEY,
         name VARCHAR(500) NOT NULL,
@@ -474,13 +477,19 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
   app.post('/api/stock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
-    const { name, mpn, quantity, category, quality, location, image_base64, original_filename, content_type } = req.body;
+    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type } = req.body;
 
-    if (!name || !category || !quality || !location) {
+    if (!name || !category || !quality) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const qty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0;
+    let resolvedLocations = locations;
+    if (!Array.isArray(resolvedLocations) || resolvedLocations.length === 0) {
+      resolvedLocations = [{ location: location || 'Store', quantity: typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0 }];
+    }
+
+    const qty = resolvedLocations.reduce((sum: number, loc: any) => sum + (Number(loc.quantity) || 0), 0);
+    const primaryLocation = resolvedLocations[0]?.location || 'Store';
 
     try {
       let imageUrl: string | null = null;
@@ -489,10 +498,10 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       }
 
       const ins = await pool.query(
-        `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
-        [name, mpn || null, qty, category, quality, location, imageUrl, userId]
+        [name, mpn || null, qty, category, quality, primaryLocation, imageUrl, userId, JSON.stringify(resolvedLocations)]
       );
 
       const newItem = ins.rows[0];
@@ -520,7 +529,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(400).json({ message: 'Invalid ID' });
     }
 
-    const { name, mpn, quantity, category, quality, location, image_base64, original_filename, content_type } = req.body;
+    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type } = req.body;
 
     try {
       const itemCheck = await pool.query('SELECT * FROM stock_items WHERE id = $1', [itemId]);
@@ -557,20 +566,46 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         updates.push(`quality = $${idx++}`);
         values.push(quality);
       }
-      if (location !== undefined) {
-        updates.push(`location = $${idx++}`);
-        values.push(location);
-      }
       if (imageUrl !== existing.image_url) {
         updates.push(`image_url = $${idx++}`);
         values.push(imageUrl);
       }
 
       let newQty = existing.quantity;
-      if (quantity !== undefined) {
-        newQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity), 10) || 0;
+      if (Array.isArray(locations)) {
+        newQty = locations.reduce((sum: number, loc: any) => sum + (Number(loc.quantity) || 0), 0);
+        const primaryLocation = locations[0]?.location || 'Store';
+
+        updates.push(`locations = $${idx++}`);
+        values.push(JSON.stringify(locations));
+
+        updates.push(`location = $${idx++}`);
+        values.push(primaryLocation);
+
         updates.push(`quantity = $${idx++}`);
         values.push(newQty);
+      } else {
+        if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+          const arr = Array.isArray(existing.locations) ? [...existing.locations] : [{ location: existing.location, quantity: existing.quantity }];
+          if (arr.length > 0) {
+            arr[0].location = location;
+          }
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(arr));
+        }
+        if (quantity !== undefined) {
+          newQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity), 10) || 0;
+          updates.push(`quantity = $${idx++}`);
+          values.push(newQty);
+          const arr = Array.isArray(existing.locations) ? [...existing.locations] : [{ location: existing.location, quantity: existing.quantity }];
+          if (arr.length > 0) {
+            arr[0].quantity = newQty;
+          }
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(arr));
+        }
       }
 
       if (updates.length > 0) {
@@ -581,7 +616,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         );
       }
 
-      if (quantity !== undefined && newQty !== existing.quantity) {
+      if (newQty !== existing.quantity) {
         const delta = newQty - existing.quantity;
         await pool.query(
           `INSERT INTO stock_transactions (stock_item_id, quantity, transaction_type, created_by)

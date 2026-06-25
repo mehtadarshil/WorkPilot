@@ -11,6 +11,8 @@ const kJobStatesOrdered = <String>[
   'paused',
   'completed',
   'need_to_be_rescheduled',
+  'parts_need_ordering',
+  'awaiting_parts_delivery',
   'closed',
 ];
 

@@ -14,6 +14,7 @@ type RepeatableHandlers = {
   onRemoveInstance: (instanceId: string) => void;
   onCopyInstance: (instance: SiteReportRepeatableInstance) => void;
   onSetInstanceValue: (instanceId: string, fieldId: string, value: string) => void;
+  onMoveInstance: (instanceId: string, direction: 'up' | 'down') => void;
 };
 
 type Props = {

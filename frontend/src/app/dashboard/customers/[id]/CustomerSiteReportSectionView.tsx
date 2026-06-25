@@ -55,14 +55,66 @@ export function CustomerSiteReportSectionView({
   const AddIcon = variant === 'footer' ? Plus : ImagePlus;
 
   const visibleFields = visibleSiteReportFields(sec.fields, values);
+  const hasYesNoNa = visibleFields.some(f => f.type === 'yes_no_na');
 
   return (
     <section
       className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden print:shadow-none"
     >
-      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-        <h3 className="text-base font-bold text-slate-900">{sec.title}</h3>
-        {sec.helper_text ? <p className="mt-1 text-xs text-slate-600">{sec.helper_text}</p> : null}
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">{sec.title}</h3>
+          {sec.helper_text ? <p className="mt-1 text-xs text-slate-600">{sec.helper_text}</p> : null}
+        </div>
+        {hasYesNoNa && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs shrink-0 print:hidden">
+            <span className="text-slate-400 font-semibold uppercase tracking-wider text-[10px] mr-1">Quick Fill:</span>
+            <button
+              type="button"
+              onClick={() => {
+                visibleFields.forEach(f => {
+                  if (f.type === 'yes_no_na') h.setFieldValue(f.id, 'yes');
+                });
+              }}
+              className="rounded bg-slate-200/60 hover:bg-slate-200 px-2 py-1.5 font-bold text-slate-700 transition"
+            >
+              All Yes
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                visibleFields.forEach(f => {
+                  if (f.type === 'yes_no_na') h.setFieldValue(f.id, 'no');
+                });
+              }}
+              className="rounded bg-slate-200/60 hover:bg-slate-200 px-2 py-1.5 font-bold text-slate-700 transition"
+            >
+              All No
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                visibleFields.forEach(f => {
+                  if (f.type === 'yes_no_na') h.setFieldValue(f.id, 'na');
+                });
+              }}
+              className="rounded bg-slate-200/60 hover:bg-slate-200 px-2 py-1.5 font-bold text-slate-700 transition"
+            >
+              All N/A
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                visibleFields.forEach(f => {
+                  if (f.type === 'yes_no_na') h.setFieldValue(f.id, '');
+                });
+              }}
+              className="rounded bg-slate-200/60 hover:bg-rose-100 hover:text-rose-700 px-2 py-1.5 font-bold text-slate-600 transition"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
       <div className="space-y-4 p-4 print:space-y-2 print:p-3">
         {visibleFields.map((field) => (

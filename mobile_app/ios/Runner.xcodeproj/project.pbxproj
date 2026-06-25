@@ -477,6 +477,7 @@
 				DEVELOPMENT_TEAM = B8APUB74BJ;
 				ENABLE_BITCODE = NO;
 				FLUTTER_BUILD_NAME = 1.1.0;
+				FLUTTER_BUILD_NUMBER = 2;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -662,6 +663,7 @@
 				DEVELOPMENT_TEAM = B8APUB74BJ;
 				ENABLE_BITCODE = NO;
 				FLUTTER_BUILD_NAME = 1.1.0;
+				FLUTTER_BUILD_NUMBER = 2;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -687,6 +689,7 @@
 				DEVELOPMENT_TEAM = B8APUB74BJ;
 				ENABLE_BITCODE = NO;
 				FLUTTER_BUILD_NAME = 1.1.0;
+				FLUTTER_BUILD_NUMBER = 2;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

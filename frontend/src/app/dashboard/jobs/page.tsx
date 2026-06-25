@@ -71,6 +71,8 @@ const JOB_STATES = [
   { value: 'paused', label: 'Paused', color: 'bg-orange-100 text-orange-800' },
   { value: 'completed', label: 'Completed', color: 'bg-emerald-100 text-emerald-800' },
   { value: 'need_to_be_rescheduled', label: 'Need to be rescheduling', color: 'bg-orange-100 text-orange-800' },
+  { value: 'parts_need_ordering', label: 'Parts need ordering', color: 'bg-orange-100 text-orange-800' },
+  { value: 'awaiting_parts_delivery', label: 'Awaiting parts delivery', color: 'bg-orange-100 text-orange-800' },
   { value: 'closed', label: 'Closed', color: 'bg-slate-200 text-slate-600' },
 ] as const;
 const PRIORITY_OPTIONS = [

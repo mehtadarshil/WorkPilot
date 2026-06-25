@@ -52,4 +52,14 @@ const List<PostReportJobStage> kPostReportJobStages = [
     state: 'need_to_be_rescheduled',
     description: 'Office will pick a new appointment time.',
   ),
+  PostReportJobStage(
+    label: 'Parts need ordering',
+    state: 'parts_need_ordering',
+    description: 'Job is paused as parts need to be ordered.',
+  ),
+  PostReportJobStage(
+    label: 'Awaiting parts delivery',
+    state: 'awaiting_parts_delivery',
+    description: 'Job is waiting for the delivery of ordered parts.',
+  ),
 ];

@@ -314,6 +314,8 @@ export function InstallationDetailsSection() {
           label="Inspector signature"
           value={inst.inspectedBySignatureDataUrl ?? ''}
           onChange={(inspectedBySignatureDataUrl) => patch({ inspectedBySignatureDataUrl })}
+          nameValue={inst.inspectedBy}
+          onNameChange={(inspectedBy) => patch({ inspectedBy })}
         />
         <TextField label="Authorised for issue by" value={inst.authorisedBy} onChange={(v) => patch({ authorisedBy: v })} />
         <TextField label="Authorised position" value={inst.authorisedPosition} onChange={(v) => patch({ authorisedPosition: v })} />
@@ -327,6 +329,8 @@ export function InstallationDetailsSection() {
           label="Authoriser signature"
           value={inst.authorisedBySignatureDataUrl ?? ''}
           onChange={(authorisedBySignatureDataUrl) => patch({ authorisedBySignatureDataUrl })}
+          nameValue={inst.authorisedBy}
+          onNameChange={(authorisedBy) => patch({ authorisedBy })}
         />
         <TextField
           label="Recommended re-inspection"

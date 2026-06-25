@@ -52,6 +52,7 @@ interface StockItem {
   category: string;
   quality: string;
   location: string;
+  locations?: Array<{ location: string; quantity: number }>;
   image_url: string | null;
   created_by: number;
   created_at: string;
@@ -175,13 +176,25 @@ export default function StockToolsPage() {
   // --- Modal States ---
   const [showStockModal, setShowStockModal] = useState(false);
   const [editingStockItem, setEditingStockItem] = useState<StockItem | null>(null);
-  const [stockForm, setStockForm] = useState({
+  const [stockForm, setStockForm] = useState<{
+    name: string;
+    mpn: string;
+    quantity: string;
+    category: string;
+    quality: string;
+    location: string;
+    locations: Array<{ location: string; quantity: string }>;
+    image_base64: string;
+    original_filename: string;
+    content_type: string;
+  }>({
     name: '',
     mpn: '',
     quantity: '0',
     category: 'Electrical',
     quality: 'New',
     location: 'Store',
+    locations: [{ location: 'Store', quantity: '0' }],
     image_base64: '',
     original_filename: '',
     content_type: '',
@@ -386,7 +399,8 @@ export default function StockToolsPage() {
       quantity: '0',
       category: stockCategories[0] ?? 'General',
       quality: 'New',
-      location: 'Store',
+      location: locations[0] || 'Store',
+      locations: [{ location: locations[0] || 'Store', quantity: '0' }],
       image_base64: '',
       original_filename: '',
       content_type: '',
@@ -397,6 +411,10 @@ export default function StockToolsPage() {
 
   const handleOpenEditStock = (item: StockItem) => {
     setEditingStockItem(item);
+    const initialLocs = item.locations && item.locations.length > 0
+      ? item.locations.map(l => ({ location: l.location, quantity: String(l.quantity) }))
+      : [{ location: item.location || 'Store', quantity: String(item.quantity) }];
+
     setStockForm({
       name: item.name,
       mpn: item.mpn || '',
@@ -404,6 +422,7 @@ export default function StockToolsPage() {
       category: item.category,
       quality: item.quality,
       location: item.location,
+      locations: initialLocs,
       image_base64: '',
       original_filename: '',
       content_type: '',
@@ -433,13 +452,22 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
+    const parsedLocations = stockForm.locations.map(l => ({
+      location: l.location,
+      quantity: parseInt(l.quantity, 10) || 0
+    }));
+
+    if (parsedLocations.some(l => isNaN(l.quantity) || l.quantity < 0)) {
+      setErrorMsg('All location quantities must be 0 or greater');
+      return;
+    }
+
     const payload = {
       name: stockForm.name.trim(),
       mpn: stockForm.mpn.trim() || null,
-      quantity: parseInt(stockForm.quantity, 10),
       category: stockForm.category,
       quality: stockForm.quality,
-      location: stockForm.location,
+      locations: parsedLocations,
       ...(stockForm.image_base64
         ? imageUploadFields(
             stockForm.image_base64,
@@ -451,10 +479,6 @@ export default function StockToolsPage() {
 
     if (!payload.name) {
       setErrorMsg('Name is required');
-      return;
-    }
-    if (isNaN(payload.quantity) || payload.quantity < 0) {
-      setErrorMsg('Quantity must be 0 or greater');
       return;
     }
 
@@ -670,12 +694,16 @@ export default function StockToolsPage() {
 
   // --- Filtering Logic ---
   const filteredStock = stockItems.filter((item) => {
+    const locationsList = item.locations && item.locations.length > 0
+      ? item.locations.map(l => l.location)
+      : [item.location];
+
     const matchesSearch =
       item.name.toLowerCase().includes(stockSearch.toLowerCase()) ||
       (item.mpn || '').toLowerCase().includes(stockSearch.toLowerCase()) ||
-      item.location.toLowerCase().includes(stockSearch.toLowerCase());
+      locationsList.some(loc => loc.toLowerCase().includes(stockSearch.toLowerCase()));
     const matchesCategory = stockCategoryFilter === 'All' || item.category === stockCategoryFilter;
-    const matchesLocation = stockLocationFilter === 'All' || item.location === stockLocationFilter;
+    const matchesLocation = stockLocationFilter === 'All' || locationsList.includes(stockLocationFilter);
     return matchesSearch && matchesCategory && matchesLocation;
   });
 
@@ -867,7 +895,11 @@ export default function StockToolsPage() {
                           <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-xs border border-slate-100">
                             <div>
                               <p className="text-slate-400 font-semibold mb-0.5">Location</p>
-                              <p className="font-bold text-slate-700 truncate">{item.location}</p>
+                              <p className="font-bold text-slate-700 truncate" title={item.locations && item.locations.length > 0 ? item.locations.map(l => `${l.location} (${l.quantity})`).join(', ') : item.location}>
+                                {item.locations && item.locations.length > 0
+                                  ? item.locations.map(l => l.location).join(', ')
+                                  : item.location}
+                              </p>
                             </div>
                             <div>
                               <p className="text-slate-400 font-semibold mb-0.5">Quality</p>
@@ -1327,7 +1359,9 @@ export default function StockToolsPage() {
                           <div key={item.id} className="flex items-center justify-between border-b border-slate-50 pb-2.5 last:border-0 last:pb-0">
                             <div>
                               <p className="text-sm font-bold text-slate-800 leading-snug">{item.name}</p>
-                              <p className="text-xs text-slate-400">Location: {item.location} • Category: {item.category}</p>
+                              <p className="text-xs text-slate-400">
+                                Locations: {item.locations && item.locations.length > 0 ? item.locations.map(l => `${l.location} (${l.quantity})`).join(', ') : item.location} • Category: {item.category}
+                              </p>
                             </div>
                             <div className="text-right">
                               <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
@@ -1396,7 +1430,7 @@ export default function StockToolsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">MPN / Part Number</label>
                   <input
@@ -1407,20 +1441,6 @@ export default function StockToolsPage() {
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={stockForm.quantity}
-                    onChange={(e) => setStockForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Category</label>
                   <select
@@ -1445,17 +1465,74 @@ export default function StockToolsPage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location</label>
-                  <select
-                    value={stockForm.location}
-                    onChange={(e) => setStockForm((prev) => ({ ...prev, location: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+              </div>
+
+              {/* Locations & Quantities List */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Locations & Quantities</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStockForm(prev => ({
+                        ...prev,
+                        locations: [...prev.locations, { location: locations[0] || 'Store', quantity: '0' }]
+                      }));
+                    }}
+                    className="text-xs font-bold text-[#14B8A6] hover:underline flex items-center gap-1"
                   >
-                    {locations.map(loc => (
-                      <option key={loc} value={loc}>{loc}</option>
-                    ))}
-                  </select>
+                    <Plus className="size-3.5" /> Add location
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {stockForm.locations.map((loc, index) => (
+                    <div key={index} className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200/60 animate-fadeIn">
+                      <div className="flex-1">
+                        <select
+                          value={loc.location}
+                          onChange={(e) => {
+                            const newLocs = [...stockForm.locations];
+                            newLocs[index].location = e.target.value;
+                            setStockForm(prev => ({ ...prev, locations: newLocs }));
+                          }}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                        >
+                          {locations.map(l => (
+                            <option key={l} value={l}>{l}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="w-24">
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          value={loc.quantity}
+                          onChange={(e) => {
+                            const newLocs = [...stockForm.locations];
+                            newLocs[index].quantity = e.target.value;
+                            setStockForm(prev => ({ ...prev, locations: newLocs }));
+                          }}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          placeholder="Qty"
+                        />
+                      </div>
+                      {stockForm.locations.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStockForm(prev => ({
+                              ...prev,
+                              locations: prev.locations.filter((_, i) => i !== index)
+                            }));
+                          }}
+                          className="text-rose-500 hover:text-rose-700 transition"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
 

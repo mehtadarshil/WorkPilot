@@ -18,6 +18,9 @@ import '../../data/repositories/jobs_repository.dart';
 import '../site_reports/site_report_field_visibility.dart';
 import '../site_reports/site_report_page_nav.dart';
 import 'job_detail_controller.dart';
+import '../../core/services/user_profile_cache.dart';
+import '../../data/repositories/mobile_profile_repository.dart';
+import '../home/controllers/home_controller.dart';
 
 /// Customer site / FRA report — mirrors web job tab **Reports** (`CustomerSiteReportTab`).
 /// When [customerId] is provided, the tab loads that customer directly instead of
@@ -54,6 +57,8 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
   final Map<String, bool> _repeatableCollapsed = {};
   TextEditingController? _titleCtr;
   int _pageIndex = 0;
+  List<Map<String, dynamic>> _officers = [];
+  bool _fetchingOfficers = false;
 
   @override
   void dispose() {
@@ -240,6 +245,21 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         _reportId = (reportMap['id'] as num?)?.toInt();
       });
 
+      if (Get.isRegistered<HomeController>()) {
+        final home = Get.find<HomeController>().home.value;
+        final isAdmin = home?.role.toUpperCase() == 'ADMIN' || home?.role.toUpperCase() == 'SUPER_ADMIN';
+        if (isAdmin && _officers.isEmpty) {
+          try {
+            final list = await Get.find<MobileProfileRepository>().getOfficersList();
+            if (mounted) {
+              setState(() {
+                _officers = list;
+              });
+            }
+          } catch (_) {}
+        }
+      }
+
       if (fieldImages != null && _reportId != null) {
         for (final entry in fieldImages.entries) {
           final list = entry.value;
@@ -362,6 +382,129 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       setState(() {
         _signatureBusy[fieldId] = false;
       });
+    }
+  }
+
+  Future<void> _applyOfficerSignature(String fieldId, String signatureDataUrl) async {
+    final cid = _customerId;
+    final rid = _reportId;
+    final rep = _report;
+    if (cid == null || rid == null || rep == null) return;
+
+    final m = RegExp(r'^data:image\/(jpeg|jpg|png|webp);base64,(.+)$', caseSensitive: false).firstMatch(signatureDataUrl);
+    if (m == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid signature image format.')));
+      return;
+    }
+    final ext = m.group(1) ?? 'png';
+    final b64 = m.group(2) ?? '';
+    final bytes = base64Decode(b64);
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final jobs = Get.find<JobsRepository>();
+      final filename = 'signature_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      final res = await jobs.postCustomerSiteReportImage(
+        cid,
+        rid,
+        filename: filename,
+        contentType: 'image/$ext',
+        contentBase64: b64,
+      );
+
+      final image = res['image'];
+      final imageId = image is Map ? (image['id'] as num?)?.toInt() : null;
+      if (imageId == null) {
+        throw Exception('Upload succeeded but no image ID was returned.');
+      }
+
+      final doc = _jsonClone(Map<String, dynamic>.from((rep['document'] as Map?) ?? {}));
+      final fieldImages = Map<String, dynamic>.from((doc['field_images'] as Map?) ?? {});
+      final row = <String, dynamic>{
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'image_id': imageId,
+        'description': 'Signature',
+        'note': '',
+      };
+      fieldImages[fieldId] = [row];
+      doc['field_images'] = fieldImages;
+
+      final title = _titleCtr?.text.trim();
+      await jobs.putCustomerSiteReport(
+        cid,
+        <String, dynamic>{
+          'report_id': rid,
+          if (_workAddressId != null) 'work_address_id': _workAddressId,
+          'document': doc,
+          if (title != null && title.isNotEmpty) 'report_title': title,
+        },
+      );
+
+      setState(() {
+        _imageCache[imageId] = bytes;
+        _report = {
+          ...rep,
+          'document': doc,
+        };
+      });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signature saved.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save signature: $e')));
+    } finally {
+      setState(() {
+        _signatureBusy[fieldId] = false;
+      });
+    }
+  }
+
+  Future<void> _handleSelectOfficer(String fieldId, int? officerId) async {
+    if (officerId == null) {
+      if (Get.isRegistered<UserProfileCache>()) {
+        final cache = Get.find<UserProfileCache>();
+        final p = cache.profile.value;
+        final sig = p?.signatureDataUrl;
+        if (sig != null && sig.isNotEmpty) {
+          await _applyOfficerSignature(fieldId, sig);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('You do not have a saved signature yet.')),
+          );
+        }
+      }
+      return;
+    }
+
+    setState(() {
+      _signatureBusy[fieldId] = true;
+    });
+
+    try {
+      final sig = await Get.find<MobileProfileRepository>().getOfficerSignature(officerId);
+      if (sig != null && sig.isNotEmpty) {
+        await _applyOfficerSignature(fieldId, sig);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('This officer does not have a saved signature yet.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to fetch officer signature: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _signatureBusy[fieldId] = false;
+        });
+      }
     }
   }
 
@@ -927,6 +1070,22 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
     });
   }
 
+  void _moveRepeatableInstance(String sectionId, int index, String direction) {
+    setState(() {
+      final list = List<Map<String, dynamic>>.from(_repeatableInstances[sectionId] ?? []);
+      if (direction == 'up' && index > 0) {
+        final temp = list[index];
+        list[index] = list[index - 1];
+        list[index - 1] = temp;
+      } else if (direction == 'down' && index < list.length - 1) {
+        final temp = list[index];
+        list[index] = list[index + 1];
+        list[index + 1] = temp;
+      }
+      _repeatableInstances[sectionId] = list;
+    });
+  }
+
   void _copyRepeatableInstance(String sectionId, Map<String, dynamic> sourceInstance, List<Map<String, dynamic>> sectionFields) {
     final sourceInstanceId = sourceInstance['id']?.toString() ?? '';
     if (sourceInstanceId.isEmpty) return;
@@ -1044,6 +1203,16 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_upward_rounded, color: AppColors.slate300, size: 20),
+                        tooltip: 'Move Up',
+                        onPressed: i == 0 ? null : () => _moveRepeatableInstance(sectionId, i, 'up'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_downward_rounded, color: AppColors.slate300, size: 20),
+                        tooltip: 'Move Down',
+                        onPressed: i == instances.length - 1 ? null : () => _moveRepeatableInstance(sectionId, i, 'down'),
+                      ),
                       IconButton(
                         icon: const Icon(Icons.copy_rounded, color: AppColors.slate300, size: 20),
                         tooltip: 'Copy $repeatLabel',
@@ -1330,6 +1499,68 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         }
       }
 
+      bool isAdmin = false;
+      String myName = '';
+      if (Get.isRegistered<HomeController>()) {
+        final home = Get.find<HomeController>().home.value;
+        isAdmin = home?.role.toUpperCase() == 'ADMIN' || home?.role.toUpperCase() == 'SUPER_ADMIN';
+        myName = home?.profile?.fullName ?? '';
+      }
+
+      Widget? dropdownWidget;
+      if (isAdmin || myName.isNotEmpty) {
+        dropdownWidget = Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select signatory profile',
+                style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<int?>(
+                value: null,
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: AppColors.whiteOverlay(0.06),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                dropdownColor: const Color(0xFF1E293B),
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                hint: Text('-- Choose Profile --', style: GoogleFonts.inter(color: Colors.white70, fontSize: 13)),
+                items: [
+                  DropdownMenuItem<int?>(
+                    value: -99,
+                    child: Text(
+                      myName.isNotEmpty ? 'Myself ($myName)' : 'Myself',
+                      style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                  if (isAdmin)
+                    ..._officers.map((o) {
+                      final id = o['id'] as int?;
+                      final name = o['full_name'] as String? ?? '';
+                      final role = o['role_position'] as String? ?? '';
+                      final label = role.isNotEmpty ? '$name ($role)' : name;
+                      return DropdownMenuItem<int?>(
+                        value: id,
+                        child: Text(label, style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                      );
+                    }),
+                ],
+                onChanged: busy ? null : (val) {
+                  if (val != null) {
+                    _handleSelectOfficer(key, val == -99 ? null : val);
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      }
+
       final Widget content;
       if (busy) {
         content = const SizedBox(
@@ -1405,6 +1636,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
 
       return [
         labelWidget,
+        if (dropdownWidget != null) dropdownWidget,
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: content,
