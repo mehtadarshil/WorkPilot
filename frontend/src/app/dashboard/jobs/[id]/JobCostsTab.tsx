@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { AlertCircle, Calculator, Loader2, Paperclip, Pencil, Plus, Receipt, RotateCcw, Save, Trash2, UploadCloud } from 'lucide-react';
 import { deleteRequest, getBlob, getJson, patchJson, postJson } from '../../../apiClient';
+import EditTimelineModal from './components/EditTimelineModal';
+import type { VisitStatusLog, VisitTimesheetSegment } from './visitStatusLabels';
 
 type CostSource = 'manual' | 'timesheet' | 'job_pricing' | 'quotation' | 'part' | 'expense';
 
@@ -68,6 +70,14 @@ interface CostPayload {
     currency: string;
   };
   lines: CostLine[];
+  visits?: {
+    id: number;
+    start_time: string;
+    status: string;
+    officer_name: string;
+    travel_seconds: number;
+    on_site_seconds: number;
+  }[];
 }
 
 interface Props {
@@ -112,6 +122,16 @@ async function fileToPayload(file: File) {
   };
 }
 
+function formatSeconds(sec: number): string {
+  if (sec <= 0) return '0 min';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || h === 0) parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
 export default function JobCostsTab({ jobId, token }: Props) {
   const [payload, setPayload] = useState<CostPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,6 +153,31 @@ export default function JobCostsTab({ jobId, token }: Props) {
   const [editAmount, setEditAmount] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+
+  const [editingDiaryEventId, setEditingDiaryEventId] = useState<number | null>(null);
+  const [editTimelineOpen, setEditTimelineOpen] = useState(false);
+  const [visitStatusLogs, setVisitStatusLogs] = useState<VisitStatusLog[]>([]);
+  const [visitTimesheetEntries, setVisitTimesheetEntries] = useState<VisitTimesheetSegment[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+  const handleEditVisitTimesheet = async (visitId: number) => {
+    setLoadingTimeline(true);
+    setError(null);
+    try {
+      const [resTimesheet, resEvent] = await Promise.all([
+        getJson<{ entries: VisitTimesheetSegment[] }>(`/diary-events/${visitId}/timesheet`, token),
+        getJson<{ status_logs?: VisitStatusLog[] }>(`/diary-events/${visitId}`, token),
+      ]);
+      setVisitTimesheetEntries(resTimesheet.entries || []);
+      setVisitStatusLogs(resEvent.status_logs || []);
+      setEditingDiaryEventId(visitId);
+      setEditTimelineOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load timesheet data');
+    } finally {
+      setLoadingTimeline(false);
+    }
+  };
 
   const loadCosts = useCallback(async () => {
     setLoading(true);
@@ -490,6 +535,57 @@ export default function JobCostsTab({ jobId, token }: Props) {
               </div>
             ) : null}
 
+            {loadingTimeline && (
+              <div className="flex items-center gap-2 text-sm text-[#14B8A6] font-semibold">
+                <Loader2 className="size-4 animate-spin" />
+                Loading timesheet editor...
+              </div>
+            )}
+
+            {payload?.visits && payload.visits.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-white">
+                <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+                  <h3 className="text-sm font-black uppercase tracking-wide text-slate-800">Timesheet visits</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[13px] divide-y divide-slate-100">
+                    <thead className="bg-[#FBFCFD] text-[11px] font-black uppercase text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Engineer</th>
+                        <th className="px-4 py-3">On-site time</th>
+                        <th className="px-4 py-3">Travel time</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                      {payload.visits.map((v) => (
+                        <tr key={v.id} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-3.5">
+                            {dayjs(v.start_time).format('DD MMM YYYY, HH:mm')}
+                          </td>
+                          <td className="px-4 py-3.5">{v.officer_name}</td>
+                          <td className="px-4 py-3.5">{formatSeconds(v.on_site_seconds)}</td>
+                          <td className="px-4 py-3.5">{formatSeconds(v.travel_seconds)}</td>
+                          <td className="px-4 py-3.5 text-right">
+                            <button
+                              type="button"
+                              disabled={loadingTimeline}
+                              onClick={() => void handleEditVisitTimesheet(v.id)}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#14B8A6] hover:underline disabled:opacity-50"
+                            >
+                              <Pencil className="size-3" />
+                              Edit Timesheet
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {showForm ? (
               <div className="rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -697,6 +793,19 @@ export default function JobCostsTab({ jobId, token }: Props) {
           </div>
         )}
       </div>
+      {editingDiaryEventId !== null && token && (
+        <EditTimelineModal
+          open={editTimelineOpen}
+          token={token}
+          diaryEventId={editingDiaryEventId}
+          initialStatusLogs={visitStatusLogs}
+          initialTimesheetEntries={visitTimesheetEntries}
+          onClose={() => setEditTimelineOpen(false)}
+          onSaved={() => {
+            void loadCosts();
+          }}
+        />
+      )}
     </div>
   );
 }

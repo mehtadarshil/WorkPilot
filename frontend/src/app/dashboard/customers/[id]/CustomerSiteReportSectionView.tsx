@@ -34,6 +34,7 @@ type Props = {
   signatureBusyFieldId: string | null;
   imageUrlFor: (imageId: number) => string;
   h: CustomerSiteReportSectionHandlers;
+  printMode?: boolean;
 };
 
 export function CustomerSiteReportSectionView({
@@ -48,6 +49,7 @@ export function CustomerSiteReportSectionView({
   signatureBusyFieldId,
   imageUrlFor,
   h,
+  printMode = false,
 }: Props) {
   const imagesLabel = variant === 'footer' ? 'Images (e.g. signature)' : 'Section images';
   const AddIcon = variant === 'footer' ? Plus : ImagePlus;
@@ -96,7 +98,12 @@ export function CustomerSiteReportSectionView({
                 onClearSaved={() => void h.clearSignatureField(field.id)}
               />
             ) : (
-              renderSiteReportFieldInput(field, values[field.id] ?? '', (v) => h.setFieldValue(field.id, v))
+              renderSiteReportFieldInput(
+                field,
+                values[field.id] ?? '',
+                (v) => h.setFieldValue(field.id, v),
+                printMode ? `sr_print_${sec.id}_` : `sr_active_${sec.id}_`
+              )
             )}
           </div>
         ))}

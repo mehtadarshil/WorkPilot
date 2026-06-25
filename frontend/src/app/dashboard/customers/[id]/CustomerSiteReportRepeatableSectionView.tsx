@@ -24,6 +24,7 @@ type Props = {
   onRemoveInstance: (instanceId: string) => void;
   onCopyInstance: (instance: SiteReportRepeatableInstance) => void;
   onSetInstanceValue: (instanceId: string, fieldId: string, value: string) => void;
+  printMode?: boolean;
 };
 
 export function CustomerSiteReportRepeatableSectionView({
@@ -38,6 +39,7 @@ export function CustomerSiteReportRepeatableSectionView({
   onRemoveInstance,
   onCopyInstance,
   onSetInstanceValue,
+  printMode = false,
 }: Props) {
   const repeatLabel = sec.repeat_label?.trim() || 'Item';
   const addLabel = sec.add_label?.trim() || `Add ${repeatLabel.toLowerCase()}`;
@@ -141,7 +143,12 @@ export function CustomerSiteReportRepeatableSectionView({
                               {field.content || ''}
                             </div>
                           ) : (
-                            renderSiteReportFieldInput(field, value, (v) => onSetInstanceValue(instance.id, field.id, v))
+                            renderSiteReportFieldInput(
+                              field,
+                              value,
+                              (v) => onSetInstanceValue(instance.id, field.id, v),
+                              printMode ? `sr_print_${sec.id}_${instance.id}_` : `sr_active_${sec.id}_${instance.id}_`
+                            )
                           )}
                         </div>
                       );

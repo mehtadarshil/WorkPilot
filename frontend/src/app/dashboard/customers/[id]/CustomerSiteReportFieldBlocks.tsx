@@ -123,6 +123,7 @@ export function renderSiteReportFieldInput(
   f: SiteReportTemplateField,
   value: string,
   onChange: (v: string) => void,
+  namePrefix: string = 'sr_',
 ) {
   if (f.type === 'image' || f.type === 'signature') return null;
   if (f.type === 'static_text') {
@@ -139,7 +140,7 @@ export function renderSiteReportFieldInput(
           <label key={opt.value} className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
             <input
               type="radio"
-              name={`sr_${f.id}`}
+              name={`${namePrefix}${f.id}`}
               value={opt.value}
               checked={value === opt.value}
               onChange={() => onChange(opt.value)}
@@ -151,7 +152,7 @@ export function renderSiteReportFieldInput(
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-500">
           <input
             type="radio"
-            name={`sr_${f.id}`}
+            name={`${namePrefix}${f.id}`}
             value=""
             checked={!value}
             onChange={() => onChange('')}

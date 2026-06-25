@@ -42,6 +42,23 @@ function fromLocalDatetimeString(localString: string): string {
   return dayjs(localString).toISOString();
 }
 
+function getDatePart(localString: string): string {
+  if (!localString || localString.length < 10) return '';
+  return localString.substring(0, 10);
+}
+
+function getTimePart(localString: string): string {
+  if (!localString || localString.length < 16) return '';
+  return localString.substring(11, 19);
+}
+
+function combineDateTimeParts(datePart: string, timePart: string): string {
+  const d = datePart || dayjs().format('YYYY-MM-DD');
+  const t = timePart || '00:00:00';
+  const fullTime = t.split(':').length === 2 ? `${t}:00` : t;
+  return `${d}T${fullTime}`;
+}
+
 export default function EditTimelineModal({
   open,
   token,
@@ -245,13 +262,29 @@ export default function EditTimelineModal({
                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
                           Timestamp
                         </label>
-                        <input
-                          type="datetime-local"
-                          step="1"
-                          value={log.timestamp}
-                          onChange={(e) => handleStatusLogChange(index, { timestamp: e.target.value })}
-                          className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-[#14B8A6] font-mono"
-                        />
+                        <div className="flex gap-1.5">
+                          <input
+                            type="date"
+                            value={getDatePart(log.timestamp)}
+                            onChange={(e) => {
+                              const dateVal = e.target.value;
+                              const timeVal = getTimePart(log.timestamp) || '00:00:00';
+                              handleStatusLogChange(index, { timestamp: combineDateTimeParts(dateVal, timeVal) });
+                            }}
+                            className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] font-mono"
+                          />
+                          <input
+                            type="time"
+                            step="1"
+                            value={getTimePart(log.timestamp) || ''}
+                            onChange={(e) => {
+                              const dateVal = getDatePart(log.timestamp) || dayjs().format('YYYY-MM-DD');
+                              const timeVal = e.target.value;
+                              handleStatusLogChange(index, { timestamp: combineDateTimeParts(dateVal, timeVal) });
+                            }}
+                            className="w-[100px] shrink-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] font-mono"
+                          />
+                        </div>
                       </div>
                     </div>
                     <button
@@ -289,8 +322,8 @@ export default function EditTimelineModal({
                 {timesheetEntries.map((entry, index) => (
                   <div key={index} className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
                     <div className="flex items-start gap-2">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
-                        <div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
+                        <div className="sm:col-span-2">
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
                             Type
                           </label>
@@ -308,13 +341,29 @@ export default function EditTimelineModal({
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-sans">
                             Started
                           </label>
-                          <input
-                            type="datetime-local"
-                            step="1"
-                            value={entry.clock_in}
-                            onChange={(e) => handleTimesheetEntryChange(index, { clock_in: e.target.value })}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-[#14B8A6] font-mono"
-                          />
+                          <div className="flex gap-1.5">
+                            <input
+                              type="date"
+                              value={getDatePart(entry.clock_in)}
+                              onChange={(e) => {
+                                const dateVal = e.target.value;
+                                const timeVal = getTimePart(entry.clock_in) || '00:00:00';
+                                handleTimesheetEntryChange(index, { clock_in: combineDateTimeParts(dateVal, timeVal) });
+                              }}
+                              className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] font-mono"
+                            />
+                            <input
+                              type="time"
+                              step="1"
+                              value={getTimePart(entry.clock_in) || ''}
+                              onChange={(e) => {
+                                const dateVal = getDatePart(entry.clock_in) || dayjs().format('YYYY-MM-DD');
+                                const timeVal = e.target.value;
+                                handleTimesheetEntryChange(index, { clock_in: combineDateTimeParts(dateVal, timeVal) });
+                              }}
+                              className="w-[100px] shrink-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] font-mono"
+                            />
+                          </div>
                         </div>
 
                         <div>
@@ -337,20 +386,37 @@ export default function EditTimelineModal({
                               Open
                             </label>
                           </div>
-                          <input
-                            type="datetime-local"
-                            step="1"
-                            value={entry.clock_out || ''}
-                            disabled={entry.isInProgress}
-                            onChange={(e) => handleTimesheetEntryChange(index, { clock_out: e.target.value })}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-[#14B8A6] disabled:bg-slate-100 disabled:text-slate-400 font-mono"
-                          />
+                          <div className="flex gap-1.5">
+                            <input
+                              type="date"
+                              value={getDatePart(entry.clock_out || '')}
+                              disabled={entry.isInProgress}
+                              onChange={(e) => {
+                                const dateVal = e.target.value;
+                                const timeVal = getTimePart(entry.clock_out || '') || '00:00:00';
+                                handleTimesheetEntryChange(index, { clock_out: combineDateTimeParts(dateVal, timeVal) });
+                              }}
+                              className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] disabled:bg-slate-100 disabled:text-slate-400 font-mono"
+                            />
+                            <input
+                              type="time"
+                              step="1"
+                              value={getTimePart(entry.clock_out || '') || ''}
+                              disabled={entry.isInProgress}
+                              onChange={(e) => {
+                                const dateVal = getDatePart(entry.clock_out || '') || dayjs().format('YYYY-MM-DD');
+                                const timeVal = e.target.value;
+                                handleTimesheetEntryChange(index, { clock_out: combineDateTimeParts(dateVal, timeVal) });
+                              }}
+                              className="w-[100px] shrink-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6] disabled:bg-slate-100 disabled:text-slate-400 font-mono"
+                            />
+                          </div>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveTimesheetEntry(index)}
-                        className="mt-5 p-1 text-rose-500 hover:bg-rose-50 rounded"
+                        className="self-center p-1 text-rose-500 hover:bg-rose-50 rounded"
                       >
                         <Trash2 className="size-4" />
                       </button>

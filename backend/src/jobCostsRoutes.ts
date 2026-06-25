@@ -398,6 +398,20 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
     return acc;
   }, {});
 
+  const visits = await pool.query(
+    `SELECT d.id, d.start_time, d.status,
+            COALESCE(o.full_name, 'Unassigned') AS officer_name,
+            COALESCE(SUM(CASE WHEN te.segment_type = 'travelling' THEN EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in)) ELSE 0 END), 0)::numeric AS travel_seconds,
+            COALESCE(SUM(CASE WHEN te.segment_type = 'on_site' THEN EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in)) ELSE 0 END), 0)::numeric AS on_site_seconds
+     FROM diary_events d
+     LEFT JOIN officers o ON o.id = d.officer_id
+     LEFT JOIN timesheet_entries te ON te.diary_event_id = d.id
+     WHERE d.job_id = $1
+     GROUP BY d.id, d.start_time, d.status, o.full_name
+     ORDER BY d.start_time DESC`,
+    [jobId],
+  );
+
   return {
     rate_config: rateConfig,
     timesheet_summary:
@@ -425,6 +439,14 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
       currency: 'GBP',
     },
     lines,
+    visits: visits.rows.map((row) => ({
+      id: Number(row.id),
+      start_time: iso(row.start_time),
+      status: String(row.status || 'pending'),
+      officer_name: String(row.officer_name),
+      travel_seconds: Number(row.travel_seconds || 0),
+      on_site_seconds: Number(row.on_site_seconds || 0),
+    })),
   };
 }
 

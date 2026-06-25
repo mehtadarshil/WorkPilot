@@ -52,7 +52,11 @@ export default function CustomerSiteReportFormNavigator({
   const isFirst = safeIndex <= 0;
   const isLast = safeIndex >= pages.length - 1;
 
-  const renderSection = (sec: SiteReportTemplateSection, variant: 'default' | 'footer' = 'default') =>
+  const renderSection = (
+    sec: SiteReportTemplateSection,
+    variant: 'default' | 'footer' = 'default',
+    printMode = false,
+  ) =>
     sec.repeatable ? (
       <CustomerSiteReportRepeatableSectionView
         key={sec.id}
@@ -62,6 +66,7 @@ export default function CustomerSiteReportFormNavigator({
         signatureBusyFieldId={signatureBusyFieldId}
         imageUrlFor={imageUrlFor}
         h={h}
+        printMode={printMode}
         {...repeatableHandlers(sec)}
       />
     ) : (
@@ -78,6 +83,7 @@ export default function CustomerSiteReportFormNavigator({
         signatureBusyFieldId={signatureBusyFieldId}
         imageUrlFor={imageUrlFor}
         h={h}
+        printMode={printMode}
       />
     );
 
@@ -142,8 +148,8 @@ export default function CustomerSiteReportFormNavigator({
       </div>
 
       <div className="hidden print:block space-y-8">
-        {def.sections.map((sec) => renderSection(sec))}
-        {footerSection ? renderSection(footerSection, 'footer') : null}
+        {def.sections.map((sec) => renderSection(sec, 'default', true))}
+        {footerSection ? renderSection(footerSection, 'footer', true) : null}
       </div>
     </>
   );

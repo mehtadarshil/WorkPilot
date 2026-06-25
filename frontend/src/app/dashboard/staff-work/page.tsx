@@ -356,6 +356,7 @@ export default function StaffWorkPage() {
 
   // --- Calendar Tab States ---
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarOfficerFilter, setCalendarOfficerFilter] = useState<string>('all');
   const [officerColorMap, setOfficerColorMap] = useState<Map<string, string>>(new Map());
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'agenda'>('month');
@@ -822,6 +823,22 @@ export default function StaffWorkPage() {
     () => approvedExpenses.filter((e) => e.expense_type === 'personal').reduce((sum, e) => sum + e.amount, 0),
     [approvedExpenses],
   );
+
+  const filteredCalendarEvents = useMemo(() => {
+    if (calendarOfficerFilter === 'all') return calendarEvents;
+    return calendarEvents.filter((evt) => {
+      if (evt.type === 'holiday') return true;
+      if (evt.type === 'diary' && evt.raw && Array.isArray((evt.raw as any).officers)) {
+        const matchingOfficer = (evt.raw as any).officers.find(
+          (o: any) => o && String(o.id) === calendarOfficerFilter
+        );
+        if (matchingOfficer) return true;
+      }
+      if (evt.officerKey === `id:${calendarOfficerFilter}`) return true;
+      if (evt.raw && String((evt.raw as any).officer_id) === calendarOfficerFilter) return true;
+      return false;
+    });
+  }, [calendarEvents, calendarOfficerFilter]);
 
   const calendarEngineerLegend = useMemo(() => {
     const map = new Map<string, string>();
@@ -1532,36 +1549,51 @@ export default function StaffWorkPage() {
       {/* --- TAB CONTENT: CALENDAR --- */}
       {activeTab === 'calendar' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Work Calendar</h2>
               <p className="text-sm text-slate-500">Overview of all scheduled diary jobs and company/staff holidays.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handlePrev}
-                className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 transition animate-press"
-              >
-                <ChevronLeft className="size-5 text-slate-600" />
-              </button>
-              <span className="min-w-[200px] text-center font-bold text-slate-800">
-                {dateText}
-              </span>
-              <button
-                type="button"
-                onClick={handleNext}
-                className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 transition animate-press"
-              >
-                <ChevronRight className="size-5 text-slate-600" />
-              </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Filter:</span>
+                <select
+                  value={calendarOfficerFilter}
+                  onChange={(e) => setCalendarOfficerFilter(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
+                >
+                  <option value="all">All Engineers</option>
+                  {officers.map((o) => (
+                    <option key={o.id} value={String(o.id)}>{o.full_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  className="rounded-lg border border-slate-200 p-1.5 hover:bg-slate-50 transition animate-press"
+                >
+                  <ChevronLeft className="size-4.5 text-slate-600" />
+                </button>
+                <span className="min-w-[160px] text-center text-sm font-bold text-slate-800">
+                  {dateText}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="rounded-lg border border-slate-200 p-1.5 hover:bg-slate-50 transition animate-press"
+                >
+                  <ChevronRight className="size-4.5 text-slate-600" />
+                </button>
+              </div>
             </div>
           </div>
 
           <div style={{ height: 600 }} className="mt-4">
             <BigCalendar
               localizer={localizer}
-              events={calendarEvents}
+              events={filteredCalendarEvents}
               startAccessor="start"
               endAccessor="end"
               titleAccessor="title"
@@ -1587,16 +1619,34 @@ export default function StaffWorkPage() {
 
           {calendarEngineerLegend.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Engineers</span>
-              {calendarEngineerLegend.map((item) => (
-                <span
-                  key={item.key}
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200"
-                >
-                  <span className="size-2.5 rounded-full" style={{ backgroundColor: item.borderColor }} />
-                  {item.label}
-                </span>
-              ))}
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Engineers (Click to filter)</span>
+              {calendarEngineerLegend.map((item) => {
+                const isIdKey = item.key.startsWith('id:');
+                const officerId = isIdKey ? item.key.slice(3) : '';
+                const isSelected = isIdKey ? calendarOfficerFilter === officerId : false;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      if (isIdKey) {
+                        setCalendarOfficerFilter((cur) => (cur === officerId ? 'all' : officerId));
+                      }
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ring-1 transition ${
+                      isSelected
+                        ? 'bg-[#14B8A6] text-white ring-[#14B8A6]'
+                        : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`size-2.5 rounded-full ${isSelected ? 'bg-white' : ''}`}
+                      style={isSelected ? {} : { backgroundColor: item.borderColor }}
+                    />
+                    {item.label}
+                  </button>
+                );
+              })}
               <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">
                 <span className="size-2.5 rounded-full bg-indigo-600" />
                 Company holiday
