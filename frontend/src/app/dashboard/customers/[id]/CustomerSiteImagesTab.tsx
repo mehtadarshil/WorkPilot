@@ -82,6 +82,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
   const [uploading, setUploading] = useState(false);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [savingNotes, setSavingNotes] = useState<Record<string, boolean>>({});
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const fetchFiles = useCallback(async () => {
     if (!token || !customerId) return;
@@ -165,7 +166,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
     try {
       const blob = await getBlob(fileContentPath(customerId, f), token);
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      setLightboxUrl(url);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Preview failed');
     }
@@ -265,14 +266,22 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
               No images yet. Upload photos of this site here.
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {files.map((f) => (
                 <div key={f.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <div className="group relative aspect-[4/3] overflow-hidden bg-slate-100">
+                  <div className="group relative aspect-square overflow-hidden bg-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => void previewFile(f)}
+                      className="absolute inset-0 z-10 cursor-pointer"
+                      title="Click to enlarge"
+                    >
+                      <span className="sr-only">View full size</span>
+                    </button>
                     <AuthImage
                       customerId={customerId}
                       file={f}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="pointer-events-none h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 opacity-0 transition-opacity group-hover:opacity-100">
                       <p className="w-full truncate px-2 text-center text-xs font-medium text-white">{f.original_filename}</p>
@@ -280,7 +289,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
                       <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onClick={() => void previewFile(f)}
+                          onClick={(e) => { e.stopPropagation(); void previewFile(f); }}
                           className="rounded-full bg-white/20 p-2 text-white hover:bg-white/40"
                           title="View Full Size"
                         >
@@ -288,7 +297,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
                         </button>
                         <button
                           type="button"
-                          onClick={() => void removeFile(f)}
+                          onClick={(e) => { e.stopPropagation(); void removeFile(f); }}
                           className="rounded-full bg-rose-500/80 p-2 text-white hover:bg-rose-500"
                           title="Delete Image"
                         >
@@ -331,6 +340,24 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
           )}
         </div>
       </div>
+
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => { URL.revokeObjectURL(lightboxUrl); setLightboxUrl(null); }}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => { URL.revokeObjectURL(lightboxUrl); setLightboxUrl(null); }}
+              className="absolute -top-3 -right-3 z-10 rounded-full bg-white p-1.5 shadow-lg hover:bg-slate-100"
+            >
+              ✕
+            </button>
+            <img src={lightboxUrl} alt="Full size preview" className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

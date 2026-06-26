@@ -59,6 +59,12 @@ export default function JobFilesTab({ jobId, token }: Props) {
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [renameDialog, setRenameDialog] = useState<{
+    file: File;
+    suggestedName: string;
+    multiple: File[];
+  } | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const fetchManifest = useCallback(async () => {
     if (!token || !jobId) return;
@@ -77,6 +83,11 @@ export default function JobFilesTab({ jobId, token }: Props) {
 
   const attachableFiles = useMemo(() => files.filter(canAttachJobFileToEmail), [files]);
 
+  function deriveDefaultName(filename: string): string {
+    const base = filename.replace(/\.[^.]+$/, '').trim();
+    return base || 'photo';
+  }
+
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
@@ -84,37 +95,48 @@ export default function JobFilesTab({ jobId, token }: Props) {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    const suggested = deriveDefaultName(file.name);
+    setRenameDialog({ file, suggestedName: suggested, multiple: [] });
+    setRenameValue(suggested);
+  };
 
+  const uploadSingleFile = async (file: File, displayName: string) => {
+    const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.jpg';
+    const safeName = displayName.trim().replace(/[/\\]/g, '') + ext;
+    const reader = new FileReader();
+    const b64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+    await postJson(
+      `/jobs/${jobId}/files`,
+      { filename: safeName, content_type: file.type, content_base64: b64 },
+      token,
+    );
+  };
+
+  const confirmRename = async () => {
+    if (!renameDialog) return;
+    const { file, multiple } = renameDialog;
     setUploading(true);
     setError(null);
-
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const resultStr = reader.result as string;
-        const b64 = resultStr.split(',')[1];
-        try {
-          await postJson(
-            `/jobs/${jobId}/files`,
-            {
-              filename: file.name,
-              content_type: file.type,
-              content_base64: b64,
-            },
-            token
-          );
-          await fetchManifest();
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Upload failed');
-        } finally {
-          setUploading(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
+      if (multiple.length > 0) {
+        for (const f of multiple) {
+          const name = deriveDefaultName(f.name);
+          await uploadSingleFile(f, name);
         }
-      };
-      reader.readAsDataURL(file);
+      } else {
+        await uploadSingleFile(file, renameValue || deriveDefaultName(file.name));
+      }
+      await fetchManifest();
     } catch (err) {
-      setError('Failed to read file');
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
       setUploading(false);
+      setRenameDialog(null);
     }
   };
 
@@ -134,34 +156,21 @@ export default function JobFilesTab({ jobId, token }: Props) {
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles || droppedFiles.length === 0) return;
 
+    if (droppedFiles.length === 1) {
+      const file = droppedFiles[0];
+      const suggested = deriveDefaultName(file.name);
+      setRenameDialog({ file, suggestedName: suggested, multiple: [] });
+      setRenameValue(suggested);
+      return;
+    }
+
     setUploading(true);
     setError(null);
-
     try {
       for (let i = 0; i < droppedFiles.length; i++) {
         const file = droppedFiles[i];
-        await new Promise<void>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const b64 = (reader.result as string).split(',')[1];
-            try {
-              await postJson(
-                `/jobs/${jobId}/files`,
-                {
-                  filename: file.name,
-                  content_type: file.type,
-                  content_base64: b64,
-                },
-                token
-              );
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          };
-          reader.onerror = () => reject(new Error('Failed to read file'));
-          reader.readAsDataURL(file);
-        });
+        const name = deriveDefaultName(file.name);
+        await uploadSingleFile(file, name);
       }
       await fetchManifest();
     } catch (err) {
@@ -551,6 +560,52 @@ export default function JobFilesTab({ jobId, token }: Props) {
         onSent={() => {}}
         initialAttachments={emailInitialAttachments}
       />
+
+      {renameDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Name this file"
+        >
+          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={() => setRenameDialog(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-sm font-bold text-slate-800">Name this file</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Give this photo a descriptive name so it&apos;s easy to find later.
+            </p>
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void confirmRename(); }}
+              autoFocus
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-[#14B8A6] focus:outline-none focus:ring-1 focus:ring-[#14B8A6]"
+              placeholder="e.g. Broken socket before repair"
+            />
+            <p className="mt-1.5 text-[11px] text-slate-400 truncate">
+              Original: {renameDialog.file.name}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRenameDialog(null)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmRename()}
+                disabled={!renameValue.trim()}
+                className="rounded-lg bg-[#14B8A6] px-4 py-1.5 text-xs font-bold text-white hover:bg-teal-600 disabled:opacity-50"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {previewUrl && previewKind ? (
         <div

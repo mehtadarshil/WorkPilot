@@ -29,6 +29,7 @@ type EditableTimesheetSegment = {
   clock_out: string | null; // YYYY-MM-DDTHH:mm:ss format or null
   notes: string | null;
   isInProgress: boolean;
+  officer_full_name: string | null;
 };
 
 function toLocalDatetimeString(isoString: string | null | undefined): string {
@@ -91,6 +92,7 @@ export default function EditTimelineModal({
         clock_out: entry.clock_out ? toLocalDatetimeString(entry.clock_out) : '',
         notes: entry.notes || '',
         isInProgress: !entry.clock_out,
+        officer_full_name: entry.officer_full_name ?? null,
       })),
     );
   }, [open, initialStatusLogs, initialTimesheetEntries]);
@@ -128,6 +130,7 @@ export default function EditTimelineModal({
         clock_out: '',
         notes: '',
         isInProgress: true,
+        officer_full_name: null,
       },
     ]);
   };
@@ -321,6 +324,13 @@ export default function EditTimelineModal({
               <div className="space-y-3">
                 {timesheetEntries.map((entry, index) => (
                   <div key={index} className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    {entry.officer_full_name && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center rounded-full bg-[#14B8A6]/10 px-2 py-0.5 text-[10px] font-bold text-[#14B8A6] font-sans">
+                          {entry.officer_full_name}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-start gap-2">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
                         <div className="sm:col-span-2">

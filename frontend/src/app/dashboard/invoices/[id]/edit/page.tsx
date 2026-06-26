@@ -5,6 +5,12 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import { getJson, patchJson } from '../../../../apiClient';
+import InvoicePriceBookPanel from '../../../../../components/invoices/InvoicePriceBookPanel';
+import LineItemDescriptionInput from '../../../../../components/invoices/LineItemDescriptionInput';
+import {
+  InvoicePriceBooksResponse,
+  priceBookItemToLineItem,
+} from '../../../../../lib/invoicePriceBookTypes';
 
 type LineItemForm = { description: string; quantity: string; unit_price: string };
 
@@ -70,6 +76,8 @@ export default function EditInvoicePage() {
   const [totalPaid, setTotalPaid] = useState('');
   const [lineItems, setLineItems] = useState<LineItemForm[]>([{ description: '', quantity: '1', unit_price: '' }]);
   const [taxPercentage, setTaxPercentage] = useState(0);
+  const [priceBookData, setPriceBookData] = useState<InvoicePriceBooksResponse | null>(null);
+  const [priceBookLoading, setPriceBookLoading] = useState(false);
 
   const load = useCallback(async () => {
     const token = window.localStorage.getItem('wp_token');
@@ -130,6 +138,29 @@ export default function EditInvoicePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const token = window.localStorage.getItem('wp_token');
+    const cid = parseInt(customerId, 10);
+    if (!token || !Number.isFinite(cid)) {
+      setPriceBookData(null);
+      return;
+    }
+    setPriceBookLoading(true);
+    getJson<InvoicePriceBooksResponse>(`/customers/${cid}/invoice-price-items`, token)
+      .then((res) => setPriceBookData(res))
+      .catch(() => setPriceBookData(null))
+      .finally(() => setPriceBookLoading(false));
+  }, [customerId]);
+
+  const flatPriceItems = priceBookData?.flat_items ?? [];
+
+  const appendLineItem = (draft: LineItemForm) => {
+    setLineItems((prev) => {
+      const existing = prev.filter((item) => item.description.trim() || (parseFloat(item.unit_price) || 0) > 0);
+      return existing.length > 0 ? [...existing, draft] : [draft];
+    });
+  };
 
   const subtotal = lineItems.reduce((s, li) => s + (parseFloat(li.quantity) || 0) * (parseFloat(li.unit_price) || 0), 0);
   const taxAmount = Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
@@ -240,7 +271,8 @@ export default function EditInvoicePage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8">
-        <div className="mx-auto max-w-3xl">
+        <div className="mx-auto flex max-w-[1400px] flex-col gap-6 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-slate-900">Edit invoice</h1>
           <p className="mt-1 text-sm text-slate-500">Update every field including status, amounts, and line items.</p>
 
@@ -460,10 +492,18 @@ export default function EditInvoicePage() {
                   <div key={i} className="grid gap-2 sm:grid-cols-[1fr_80px_100px_auto] sm:items-end">
                     <label className="text-xs">
                       <span className="text-slate-500">Description</span>
-                      <input
+                      <LineItemDescriptionInput
                         value={li.description}
-                        onChange={(e) => updateLine(i, 'description', e.target.value)}
-                        className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+                        onChange={(value) => updateLine(i, 'description', value)}
+                        onSelectItem={(selected) => {
+                          setLineItems((prev) => {
+                            const next = [...prev];
+                            next[i] = priceBookItemToLineItem(selected);
+                            return next;
+                          });
+                        }}
+                        suggestions={flatPriceItems}
+                        className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]"
                       />
                     </label>
                     <label className="text-xs">
@@ -540,6 +580,15 @@ export default function EditInvoicePage() {
               </button>
             </div>
           </form>
+          </div>
+
+          <div className="w-full shrink-0 xl:w-[360px] xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)]">
+            <InvoicePriceBookPanel
+              priceBooks={priceBookData?.price_books ?? []}
+              loading={priceBookLoading}
+              onAddItem={(item) => appendLineItem(priceBookItemToLineItem(item))}
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -50,6 +50,8 @@ interface CustomerDetails {
   customer_type_company_name_required?: boolean | null;
   customer_type_work_address_name?: string | null;
   price_book_name: string | null;
+  price_book_ids?: number[];
+  price_books?: { id: number; name: string }[];
   created_by_name: string | null;
   created_at: string;
   credit_days: number | null;
@@ -1133,7 +1135,11 @@ export default function CustomerDetailsPage() {
                  </div>
                  <div>
                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">Price books</label>
-                   <span className="text-sm text-slate-600">{data.price_book_name || '-'}</span>
+                   <span className="text-sm text-slate-600">
+                     {data.price_books?.length
+                       ? data.price_books.map((book) => book.name).join(', ')
+                       : data.price_book_name || '-'}
+                   </span>
                  </div>
                  <div>
                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">Credit days</label>

@@ -54,7 +54,7 @@ export default function NewCustomerPage() {
   const [isLead, setIsLead] = useState(false);
 
   const [leadSource, setLeadSource] = useState('');
-  const [priceBookId, setPriceBookId] = useState<number | ''>('');
+  const [priceBookIds, setPriceBookIds] = useState<number[]>([]);
   const [creditDays, setCreditDays] = useState('');
 
   const [saving, setSaving] = useState(false);
@@ -120,7 +120,7 @@ export default function NewCustomerPage() {
         prefers_email: prefersEmail,
         prefers_letter: prefersLetter,
         lead_source: leadSource,
-        price_book_id: priceBookId === '' ? null : Number(priceBookId),
+        price_book_ids: priceBookIds,
         credit_days: creditDays
       }, token);
 
@@ -336,13 +336,32 @@ export default function NewCustomerPage() {
                       </select>
                     </div>
                     <div>
-                      <label className={labelClass}>Price Book</label>
-                      <select value={priceBookId} onChange={e => setPriceBookId(e.target.value as any)} className={inputClass}>
-                        <option value="">Select option</option>
-                        {priceBooks.map(b => (
-                           <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
+                      <label className={labelClass}>Price books</label>
+                      <p className="mb-2 text-xs text-slate-500">Assign one or more price books for invoice line item suggestions.</p>
+                      <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                        {priceBooks.length === 0 ? (
+                          <p className="text-xs text-slate-500 italic">No price books available.</p>
+                        ) : (
+                          priceBooks.map((book) => {
+                            const checked = priceBookIds.includes(book.id);
+                            return (
+                              <label key={book.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {
+                                    setPriceBookIds((prev) =>
+                                      checked ? prev.filter((id) => id !== book.id) : [...prev, book.id],
+                                    );
+                                  }}
+                                  className="rounded border-slate-300 text-[#14B8A6] focus:ring-[#14B8A6]"
+                                />
+                                <span className="text-sm font-medium text-slate-700">{book.name}</span>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div>

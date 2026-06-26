@@ -147,6 +147,7 @@ export function VisitJobSheetTimeline({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                 <tr>
+                  <th className="px-3 py-2">Engineer</th>
                   <th className="px-3 py-2">Type</th>
                   <th className="px-3 py-2">Started</th>
                   <th className="px-3 py-2">Ended</th>
@@ -159,6 +160,9 @@ export function VisitJobSheetTimeline({
                   const end = entry.clock_out ? dayjs(entry.clock_out) : null;
                   return (
                     <tr key={`${entry.clock_in}-${idx}`}>
+                      <td className="px-3 py-2 font-semibold text-slate-800">
+                        {entry.officer_full_name || '—'}
+                      </td>
                       <td className="px-3 py-2 font-semibold text-slate-800">
                         {visitSegmentLabel(entry.segment_type)}
                       </td>

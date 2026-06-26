@@ -24,6 +24,7 @@ export const TENANT_PERMISSION_KEYS = [
   'settings_users',
   'settings_import',
   'settings_master_data',
+  'todos',
 ] as const;
 
 export type TenantPermissionKey = (typeof TENANT_PERMISSION_KEYS)[number];
@@ -61,6 +62,7 @@ export const FIELD_MOBILE_PERMISSION_KEYS: readonly TenantPermissionKey[] = [
   'customers',
   'quotations',
   'invoices',
+  'todos',
 ] as const;
 
 export function pickFieldPermissionsFromStaff(

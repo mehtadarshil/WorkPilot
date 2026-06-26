@@ -4,9 +4,14 @@ import { Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson } from '../../../apiClient';
-import { ArrowLeft, ChevronDown, ChevronUp, Search, X, Check, Plus, Trash2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
+import InvoicePriceBookPanel from '../../../../components/invoices/InvoicePriceBookPanel';
+import LineItemDescriptionInput from '../../../../components/invoices/LineItemDescriptionInput';
+import {
+  InvoicePriceBooksResponse,
+  priceBookItemToLineItem,
+} from '../../../../lib/invoicePriceBookTypes';
 
 interface InvoiceTarget {
   id: number;
@@ -82,10 +87,8 @@ function AddInvoiceInner() {
   const [nominalCode, setNominalCode] = useState('Sales');
   const [submitting, setSubmitting] = useState(false);
   const [sendEmail, setSendEmail] = useState(false);
-
-  // Sidebar state
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [selectedPIs, setSelectedPIs] = useState<number[]>([]);
+  const [priceBookData, setPriceBookData] = useState<InvoicePriceBooksResponse | null>(null);
+  const [priceBookLoading, setPriceBookLoading] = useState(false);
 
   const [businessUnitsList, setBusinessUnitsList] = useState<{id: number, name: string}[]>([]);
   const [userGroupsList, setUserGroupsList] = useState<{id: number, name: string}[]>([]);
@@ -175,6 +178,25 @@ function AddInvoiceInner() {
     };
     run();
   }, [jobId, customerIdParam, workAddressIdParam]);
+
+  useEffect(() => {
+    const token = window.localStorage.getItem('wp_token');
+    if (!token || !target?.customer_id) return;
+    setPriceBookLoading(true);
+    getJson<InvoicePriceBooksResponse>(`/customers/${target.customer_id}/invoice-price-items`, token)
+      .then((res) => setPriceBookData(res))
+      .catch(() => setPriceBookData(null))
+      .finally(() => setPriceBookLoading(false));
+  }, [target?.customer_id]);
+
+  const flatPriceItems = priceBookData?.flat_items ?? [];
+
+  const appendLineItem = (draft: { description: string; quantity: string; unit_price: string }) => {
+    setLineItems((prev) => {
+      const existing = prev.filter((item) => item.description.trim() || (parseFloat(item.unit_price) || 0) > 0);
+      return existing.length > 0 ? [...existing, draft] : [draft];
+    });
+  };
 
   const copyFromEngineerFeedback = useCallback(async () => {
     const jid = target?.job_id;
@@ -293,12 +315,25 @@ function AddInvoiceInner() {
              <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push('/dashboard/customers')}>Customers</span>
              <span className="mx-2 text-slate-300">/</span>
              <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/customers/${target.customer_id}`)}>{target.customer_full_name}</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Job no. {target.id.toString().padStart(4, '0')}</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Invoices</span>
-             <span className="mx-2 text-slate-300">/</span>
-             <span className="text-slate-900 font-bold">additional</span>
+             {target.job_id ? (
+               <>
+                 <span className="mx-2 text-slate-300">/</span>
+                 <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Job no. {target.id.toString().padStart(4, '0')}</span>
+                 <span className="mx-2 text-slate-300">/</span>
+                 <span className="cursor-pointer hover:underline hover:text-[#14B8A6]" onClick={() => router.push(`/dashboard/jobs/${target.id}`)}>Invoices</span>
+               </>
+             ) : (
+               <>
+                 <span className="mx-2 text-slate-300">/</span>
+                 <span className="text-slate-900 font-bold">New invoice</span>
+               </>
+             )}
+             {target.job_id ? (
+               <>
+                 <span className="mx-2 text-slate-300">/</span>
+                 <span className="text-slate-900 font-bold">additional</span>
+               </>
+             ) : null}
           </div>
         </div>
       </header>
@@ -306,13 +341,18 @@ function AddInvoiceInner() {
       {/* Info Banner */}
       <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-baseline gap-x-8 gap-y-2 text-[12px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
         <span className="text-slate-500">Customer name: <strong className="text-slate-800 font-bold ml-1">{target.customer_full_name}</strong></span>
-        <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{target.id.toString().padStart(4, '0')}</strong></span>
-        <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{target.description_name || target.job_title || '-'}</strong></span>
+        {target.job_id ? (
+          <>
+            <span className="text-slate-500">Job number: <strong className="text-slate-800 font-bold ml-1">{target.id.toString().padStart(4, '0')}</strong></span>
+            <span className="text-slate-500">Job description: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[300px] inline-block align-bottom">{target.description_name || target.job_title || '-'}</strong></span>
+          </>
+        ) : null}
         <span className="text-slate-500">Address: <strong className="text-slate-800 font-bold ml-1 truncate max-w-[400px] inline-block align-bottom">{target.customer_address || 'N/A'}</strong></span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-8">
-         <div className="max-w-[1000px] mx-auto space-y-6">
+         <div className="mx-auto flex max-w-[1400px] flex-col gap-6 xl:flex-row xl:items-start">
+            <div className="min-w-0 flex-1 space-y-6">
             
             {/* Top Box Form */}
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden text-[13px]">
@@ -460,7 +500,7 @@ function AddInvoiceInner() {
                          <option>VAT Exclusive</option>
                          <option>VAT Inclusive</option>
                       </select>
-                      <button onClick={() => setIsSidebarOpen(true)} className="text-[#14B8A6] font-bold hover:underline ml-4 cursor-pointer">Add line items to invoice</button>
+                      <span className="ml-4 text-xs font-medium text-slate-500">Use price book items on the right or start typing a description for suggestions.</span>
                   </div>
                </div>
             </div>
@@ -490,12 +530,19 @@ function AddInvoiceInner() {
                         {lineItems.map((item, i) => (
                           <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-5 py-2.5">
-                              <input 
-                                type="text" 
-                                value={item.description} 
-                                onChange={e => updateLineItem(i, 'description', e.target.value)} 
-                                placeholder="Item description" 
-                                className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]" 
+                              <LineItemDescriptionInput
+                                value={item.description}
+                                onChange={(value) => updateLineItem(i, 'description', value)}
+                                onSelectItem={(selected) => {
+                                  setLineItems((prev) => {
+                                    const next = [...prev];
+                                    next[i] = priceBookItemToLineItem(selected);
+                                    return next;
+                                  });
+                                }}
+                                suggestions={flatPriceItems}
+                                placeholder="Item description"
+                                className="w-full border border-slate-200 rounded px-3 py-2 text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]"
                               />
                             </td>
                             <td className="px-5 py-2.5">
@@ -664,126 +711,25 @@ function AddInvoiceInner() {
                </div>
              </div>
 
+            </div>
+
+            <div className="w-full shrink-0 xl:w-[360px] xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)]">
+              <InvoicePriceBookPanel
+                priceBooks={priceBookData?.price_books ?? []}
+                jobPricingItems={target.pricing_items}
+                loading={priceBookLoading}
+                onAddItem={(item) => appendLineItem(priceBookItemToLineItem(item))}
+                onAddJobPricingItem={(item) =>
+                  appendLineItem({
+                    description: item.item_name,
+                    quantity: String(Number(item.quantity)),
+                    unit_price: String(Number(item.total) / (Number(item.quantity) || 1)),
+                  })
+                }
+              />
+            </div>
           </div>
        </div>
-
-      {/* Sidebar for Add Line items to invoice */}
-      <AnimatePresence>
-        {isSidebarOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div 
-               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-               className="fixed inset-0 bg-black/20 z-40 transition-opacity" 
-               onClick={() => setIsSidebarOpen(false)}
-            />
-            {/* Sliding Panel */}
-            <motion.div
-               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: "spring", stiffness: 300, damping: 30 }}
-               className="fixed top-0 right-0 h-full w-full max-w-[500px] bg-white shadow-2xl z-50 flex flex-col"
-            >
-               {/* Header */}
-               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
-                  <h2 className="text-[17px] font-bold text-slate-700 tracking-tight">Add line items to invoice</h2>
-                  <button onClick={() => setIsSidebarOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-200">
-                     <X className="size-5" />
-                  </button>
-               </div>
-               
-               {/* Info box */}
-               <div className="px-6 pt-6 pb-4 shrink-0">
-                  <p className="text-[13px] text-[#15803d] leading-relaxed">
-                     Below is a list of diary events associated with this target. You can add diary events to the invoice by clicking the checkbox on the left of the diary events you wish to add and clicking 'Save and add line items' at the bottom of the page.
-                  </p>
-               </div>
-
-               {/* Search */}
-               <div className="px-6 pb-6 border-b border-slate-100 flex flex-wrap sm:flex-nowrap gap-4 shrink-0">
-                  <div className="relative flex-1 min-w-[200px]">
-                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
-                     <input type="text" placeholder="Search by description" className="w-full border border-slate-200 rounded-full pl-9 pr-4 py-1.5 text-[13px] outline-none focus:border-[#14B8A6] text-slate-700" />
-                  </div>
-                  <select className="border border-slate-200 rounded px-3 py-1.5 text-[13px] text-slate-600 outline-none focus:border-[#14B8A6] bg-white w-[140px] shrink-0">
-                     <option>Invoice status: All</option>
-                  </select>
-               </div>
-
-               {/* Timeline Content */}
-               <div className="flex-1 overflow-y-auto px-6 py-8 bg-white relative">
-                  {/* Timeline Date */}
-                  <div className="relative pl-[14px]">
-                     {/* Verification Line */}
-                     <div className="absolute left-0 top-3 bottom-0 w-px bg-slate-300"></div>
-                     <div className="flex items-center gap-4 relative z-10 mb-6 -ml-[25px]">
-                        <div className="bg-slate-500 text-white text-[11px] font-bold px-3 py-1 rounded shadow-sm">
-                           {target.expected_completion ? dayjs(target.expected_completion).format('DD MMM YYYY') : dayjs().format('DD MMM YYYY')}
-                        </div>
-                        <div className="flex-1 border-t border-dashed border-slate-300 mt-[1px]"></div>
-                     </div>
-
-                     {/* Item Node */}
-                     {(!target.pricing_items || target.pricing_items.length === 0) && (
-                        <div className="text-sm text-slate-500 pl-4 py-2 italic -ml-6">No pricing items associated with this target.</div>
-                     )}
-                     
-                     {target.pricing_items?.map((pi) => (
-                        <div key={pi.id} className="relative flex items-center gap-4 mb-4 -ml-6 group">
-                           {/* Circle Node overlaying line */}
-                           <div className="relative z-10 bg-white border-2 border-slate-300 rounded-full w-8 h-8 flex items-center justify-center text-[10px] font-bold text-slate-500 shadow-sm shrink-0 mt-0.5">
-                              PI
-                           </div>
-                           
-                           {/* Card */}
-                           <div className="flex-1 bg-white border border-slate-200 rounded shadow-sm flex items-center justify-between p-3 transition-colors hover:border-[#14B8A6] cursor-pointer" onClick={() => {
-                              setSelectedPIs(prev => prev.includes(pi.id) ? prev.filter(x => x !== pi.id) : [...prev, pi.id]);
-                           }}>
-                              <div className="flex items-center gap-3">
-                                 <div className={`size-4 rounded-sm border flex items-center justify-center transition-colors ${selectedPIs.includes(pi.id) ? 'bg-[#14B8A6] border-[#14B8A6]' : 'border-slate-300 group-hover:border-[#14B8A6]'}`}>
-                                    {selectedPIs.includes(pi.id) && <Check className="size-3 text-white" strokeWidth={3} />}
-                                 </div>
-                                 <span className="text-[13px] font-bold text-slate-700 group-hover:text-[#14B8A6] transition-colors">{pi.item_name}</span>
-                              </div>
-                              <div className="text-[12px] font-medium text-slate-500 flex items-center gap-4 shrink-0">
-                                 <span>Qty: {Number(pi.quantity).toFixed(2)}</span>
-                                 <span className="w-[60px] text-right">£{Number(pi.total || 0).toFixed(2)}</span>
-                              </div>
-                           </div>
-                        </div>
-                     ))}
-                  </div>
-               </div>
-
-               {/* Footer */}
-               <div className="px-6 py-4 border-t border-slate-200 bg-white flex items-center justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] shrink-0">
-                  <button onClick={() => setIsSidebarOpen(false)} className="text-[14px] font-bold text-slate-500 hover:text-slate-800 transition-colors mr-3">Cancel</button>
-                  <button 
-                     onClick={() => {
-                        // Build line items from selected pricing items
-                        const selectedItems = (target.pricing_items || []).filter(p => selectedPIs.includes(p.id));
-                        if (selectedItems.length > 0) {
-                           const newItems = selectedItems.map(p => ({
-                              description: p.item_name,
-                              quantity: String(Number(p.quantity)),
-                              unit_price: String(Number(p.total) / (Number(p.quantity) || 1))
-                           }));
-                           setLineItems(prev => {
-                              // Remove empty placeholder rows, then append selected items
-                              const existing = prev.filter(item => item.description.trim() || (parseFloat(item.unit_price) || 0) > 0);
-                              return existing.length > 0 ? [...existing, ...newItems] : newItems;
-                           });
-                        }
-                        setIsSidebarOpen(false);
-                     }}
-                     className="rounded bg-[#14B8A6] px-6 py-2.5 text-[14px] font-bold text-white shadow-sm transition-colors hover:bg-[#13a89a]"
-                  >
-                     Save and add line items
-                  </button>
-               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
     </div>
   );
 }

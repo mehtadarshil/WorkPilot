@@ -64,6 +64,8 @@ import '../../modules/holidays/holidays_binding.dart';
 import '../../modules/holidays/holidays_view.dart';
 import '../../modules/stock_tools/stock_tools_binding.dart';
 import '../../modules/stock_tools/stock_tools_view.dart';
+import '../../modules/todos/todos_binding.dart';
+import '../../modules/todos/todos_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -238,6 +240,11 @@ class AppPages {
       name: AppRoutes.stockTools,
       page: () => const StockToolsView(),
       binding: StockToolsBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.todos,
+      page: () => const TodosView(),
+      binding: TodosBinding(),
     ),
   ];
 }

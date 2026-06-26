@@ -6,7 +6,7 @@ import { getTenantScopeUserId, tenantCrmAccessAllowed } from './tenantAccess';
 import type { TenantAuthUser } from './tenantAccess';
 import { getWorkpilotFileRootDir, loadWorkpilotFile, sendWorkpilotFile, writeWorkpilotFile } from './workpilotFileStorage';
 import { calculateTimesheetLabourTotals, formatDurationLabel } from './jobLabourCost';
-import { getPrimaryLabourRate, resolvePriceBookForJob } from './priceBookResolution';
+import { getCompanyLabourRatesForJob, resolvePriceBookForJob } from './priceBookResolution';
 
 type AuthReq = Request & { user?: TenantAuthUser };
 
@@ -156,7 +156,7 @@ async function canAccessJob(pool: Pool, jobId: number, user: TenantAuthUser, wri
 
 async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> {
   const resolved = await resolvePriceBookForJob(pool, jobId);
-  const labour = await getPrimaryLabourRate(pool, resolved.price_book_id);
+  const companyRates = await getCompanyLabourRatesForJob(pool, jobId);
 
   const overrideRes = await pool.query(
     `SELECT o.travel_hourly_rate, o.on_site_hourly_rate, o.first_hour_labour_rate, o.additional_hour_labour_rate,
@@ -167,21 +167,21 @@ async function getJobRateConfig(pool: Pool, jobId: number): Promise<RateConfig> 
     [jobId],
   );
   const row = overrideRes.rows[0] ?? {};
-  const defaultRate = labour?.basic_rate_per_hr ?? 0;
-  const pbTravel = labour?.travel_rate_per_hr ?? null;
-  const pbFirstHour = labour?.first_hour_rate_per_hr ?? null;
-  const pbAdditionalHour = labour?.additional_hour_rate_per_hr ?? null;
+  const defaultRate = companyRates.first_hour_rate_per_hr ?? 0;
+  const companyTravel = companyRates.travel_rate_per_hr;
+  const companyFirstHour = companyRates.first_hour_rate_per_hr;
+  const companyAdditionalHour = companyRates.additional_hour_rate_per_hr;
   const travelOverride = row.travel_hourly_rate == null ? null : n(row.travel_hourly_rate);
   const onSiteOverride = row.on_site_hourly_rate == null ? null : n(row.on_site_hourly_rate);
   const firstHourOverride = row.first_hour_labour_rate == null ? null : n(row.first_hour_labour_rate);
   const additionalHourOverride = row.additional_hour_labour_rate == null ? null : n(row.additional_hour_labour_rate);
   return {
     default_hourly_rate: defaultRate,
-    default_rate_name: labour?.name ?? null,
-    travel_hourly_rate: travelOverride ?? pbTravel ?? defaultRate,
-    on_site_hourly_rate: onSiteOverride ?? defaultRate,
-    first_hour_labour_rate: firstHourOverride ?? pbFirstHour ?? onSiteOverride ?? defaultRate,
-    additional_hour_labour_rate: additionalHourOverride ?? pbAdditionalHour ?? onSiteOverride ?? defaultRate,
+    default_rate_name: 'Company default',
+    travel_hourly_rate: travelOverride ?? companyTravel ?? defaultRate,
+    on_site_hourly_rate: onSiteOverride ?? companyFirstHour ?? defaultRate,
+    first_hour_labour_rate: firstHourOverride ?? companyFirstHour ?? onSiteOverride ?? defaultRate,
+    additional_hour_labour_rate: additionalHourOverride ?? companyAdditionalHour ?? onSiteOverride ?? defaultRate,
     travel_override: travelOverride,
     on_site_override: onSiteOverride,
     first_hour_override: firstHourOverride,

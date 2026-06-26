@@ -24,6 +24,7 @@ export const TENANT_PERMISSION_KEYS = [
   'settings_users',
   'settings_import',
   'settings_master_data',
+  'todos',
 ] as const;
 
 export type TenantPermissionKey = (typeof TENANT_PERMISSION_KEYS)[number];
@@ -75,6 +76,7 @@ export const FIELD_MOBILE_PERMISSION_KEYS: readonly TenantPermissionKey[] = [
   'customers',
   'quotations',
   'invoices',
+  'todos',
 ] as const;
 
 /** For field-only (or linked officer) rows: only mobile-relevant flags are stored; web-only keys are forced off. */
@@ -111,6 +113,7 @@ export const PERMISSION_UI_GROUPS: readonly {
     description: 'Manage other users and each Settings tab separately.',
     keys: [
       'field_users',
+      'todos',
       'settings_company',
       'settings_invoice',
       'settings_quotation',
@@ -156,6 +159,7 @@ export const PERMISSION_LABELS: Record<TenantPermissionKey, string> = {
   settings_users: 'Settings: Users',
   settings_import: 'Settings: Import',
   settings_master_data: 'Settings: Master data (legacy)',
+  todos: 'Todos & tasks',
 };
 
 /** One-line hint under each checkbox in settings. */
@@ -184,4 +188,5 @@ export const PERMISSION_HINTS: Record<TenantPermissionKey, string> = {
   settings_users: 'User and team settings tab.',
   settings_import: 'CSV/data import tools.',
   settings_master_data: 'Legacy broad access for master data.',
+  todos: 'Create and manage personal tasks with due dates. Admins can see all team tasks.',
 };

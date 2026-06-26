@@ -21,11 +21,9 @@ import {
   Wallet,
   Edit2,
 } from 'lucide-react';
-import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, addDays, getDay, addMonths, addHours, startOfDay, isSameDay } from 'date-fns';
-import { enUS } from 'date-fns/locale';
-import { Calendar as BigCalendar, dateFnsLocalizer } from 'react-big-calendar';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, startOfDay } from 'date-fns';
 import { getBlob, getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
+import { StaffWorkDiaryCalendar } from './StaffWorkDiaryCalendar';
 import SearchableSelect from '../SearchableSelect';
 
 // --- Type Definitions ---
@@ -190,14 +188,6 @@ type CalendarEvent = {
 };
 
 // --- Helpers ---
-const localizer = dateFnsLocalizer({
-  format,
-  parse,
-  startOfWeek,
-  getDay,
-  locales: { 'en-US': enUS },
-});
-
 function monthStart(): string {
   const d = new Date();
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
@@ -470,9 +460,29 @@ export default function StaffWorkPage() {
   const [updatingHolidayId, setUpdatingHolidayId] = useState<number | null>(null);
   const [reqForm, setReqForm] = useState({ officer_id: '', start_date: '', end_date: '', leave_type: 'annual', reason: '' });
   const [allDay, setAllDay] = useState(true);
+  const handleAllDayChange = (checked: boolean) => {
+    setAllDay(checked);
+    if (!checked) {
+      setReqForm((prev) => ({
+        ...prev,
+        start_date: prev.start_date && !prev.start_date.includes('T') ? prev.start_date + 'T09:00' : prev.start_date,
+        end_date: prev.end_date && !prev.end_date.includes('T') ? prev.end_date + 'T17:00' : prev.end_date,
+      }));
+    }
+  };
   const [editingRequest, setEditingRequest] = useState<HolidayRequest | null>(null);
   const [editForm, setEditForm] = useState({ start_date: '', end_date: '', leave_type: 'annual', reason: '' });
   const [editAllDay, setEditAllDay] = useState(true);
+  const handleEditAllDayChange = (checked: boolean) => {
+    setEditAllDay(checked);
+    if (!checked) {
+      setEditForm((prev) => ({
+        ...prev,
+        start_date: prev.start_date && !prev.start_date.includes('T') ? prev.start_date + 'T09:00' : prev.start_date,
+        end_date: prev.end_date && !prev.end_date.includes('T') ? prev.end_date + 'T17:00' : prev.end_date,
+      }));
+    }
+  };
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidayForm, setHolidayForm] = useState({ title: '', holiday_date: '', description: '', is_recurring: false });
 
@@ -481,7 +491,7 @@ export default function StaffWorkPage() {
   const [calendarOfficerFilter, setCalendarOfficerFilter] = useState<string>('all');
   const [officerColorMap, setOfficerColorMap] = useState<Map<string, string>>(new Map());
   const [calendarDate, setCalendarDate] = useState(new Date());
-  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'agenda'>('month');
+  const [calendarView, setCalendarView] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
@@ -489,21 +499,15 @@ export default function StaffWorkPage() {
     let start: Date;
     let end: Date;
 
-    if (calendarView === 'month') {
-      const monthStart = startOfMonth(calendarDate);
-      const monthEnd = endOfMonth(calendarDate);
-      start = startOfWeek(monthStart, { weekStartsOn: 1 }); // Monday start
-      end = endOfWeek(monthEnd, { weekStartsOn: 1 });
-    } else if (calendarView === 'week') {
-      start = startOfWeek(calendarDate, { weekStartsOn: 1 });
-      end = endOfWeek(calendarDate, { weekStartsOn: 1 });
-    } else if (calendarView === 'day') {
-      start = startOfDay(calendarDate);
-      end = endOfDay(calendarDate);
-    } else {
-      // agenda - show 1 month range
+    if (calendarView === 'monthly') {
       start = startOfMonth(calendarDate);
       end = endOfMonth(calendarDate);
+    } else if (calendarView === 'weekly') {
+      start = startOfWeek(calendarDate, { weekStartsOn: 0 });
+      end = endOfWeek(calendarDate, { weekStartsOn: 0 });
+    } else {
+      start = startOfDay(calendarDate);
+      end = endOfDay(calendarDate);
     }
     return { start, end };
   }, [calendarDate, calendarView]);
@@ -1038,38 +1042,6 @@ export default function StaffWorkPage() {
 
   const pendingHolidays = requests.filter((r) => r.status === 'pending');
   const processedHolidays = requests.filter((r) => r.status !== 'pending');
-
-  const dateText = useMemo(() => {
-    if (calendarView === 'month' || calendarView === 'agenda') {
-      return format(calendarDate, 'MMMM yyyy');
-    } else if (calendarView === 'week') {
-      const start = startOfWeek(calendarDate, { weekStartsOn: 1 });
-      const end = addDays(start, 6);
-      return `${format(start, 'MMM d')} – ${format(end, 'MMM d, yyyy')}`;
-    } else {
-      return format(calendarDate, 'EEEE, MMM d, yyyy');
-    }
-  }, [calendarDate, calendarView]);
-
-  const handlePrev = () => {
-    if (calendarView === 'month' || calendarView === 'agenda') {
-      setCalendarDate((d) => addMonths(d, -1));
-    } else if (calendarView === 'week') {
-      setCalendarDate((d) => addDays(d, -7));
-    } else {
-      setCalendarDate((d) => addDays(d, -1));
-    }
-  };
-
-  const handleNext = () => {
-    if (calendarView === 'month' || calendarView === 'agenda') {
-      setCalendarDate((d) => addMonths(d, 1));
-    } else if (calendarView === 'week') {
-      setCalendarDate((d) => addDays(d, 7));
-    } else {
-      setCalendarDate((d) => addDays(d, 1));
-    }
-  };
 
   return (
     <main className="min-h-screen bg-slate-50 p-6">
@@ -1729,73 +1701,40 @@ export default function StaffWorkPage() {
       {/* --- TAB CONTENT: CALENDAR --- */}
       {activeTab === 'calendar' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-slate-100 pb-4">
+          <div className="mb-4 flex flex-col gap-4 border-b border-slate-100 pb-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Work Calendar</h2>
-              <p className="text-sm text-slate-500">Overview of all scheduled diary jobs and company/staff holidays.</p>
+              <p className="text-sm text-slate-500">
+                Diary-style view of scheduled jobs, staff leave, and company holidays.
+              </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Filter:</span>
-                <select
-                  value={calendarOfficerFilter}
-                  onChange={(e) => setCalendarOfficerFilter(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
-                >
-                  <option value="all">All Engineers</option>
-                  {officers.map((o) => (
-                    <option key={o.id} value={String(o.id)}>{o.full_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
-                <button
-                  type="button"
-                  onClick={handlePrev}
-                  className="rounded-lg border border-slate-200 p-1.5 hover:bg-slate-50 transition animate-press"
-                >
-                  <ChevronLeft className="size-4.5 text-slate-600" />
-                </button>
-                <span className="min-w-[160px] text-center text-sm font-bold text-slate-800">
-                  {dateText}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="rounded-lg border border-slate-200 p-1.5 hover:bg-slate-50 transition animate-press"
-                >
-                  <ChevronRight className="size-4.5 text-slate-600" />
-                </button>
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Filter:</span>
+              <select
+                value={calendarOfficerFilter}
+                onChange={(e) => setCalendarOfficerFilter(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
+              >
+                <option value="all">All Engineers</option>
+                {officers.map((o) => (
+                  <option key={o.id} value={String(o.id)}>{o.full_name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div style={{ height: 600 }} className="mt-4">
-            <BigCalendar
-              localizer={localizer}
-              events={filteredCalendarEvents}
-              startAccessor="start"
-              endAccessor="end"
-              titleAccessor="title"
-              view={calendarView}
-              onView={(v) => setCalendarView(v as any)}
-              date={calendarDate}
-              onNavigate={(d) => setCalendarDate(d)}
-              onSelectEvent={(evt) => {
-                setSelectedEvent(evt);
-                setShowDetailModal(true);
-              }}
-              views={['month', 'week', 'day', 'agenda']}
-              eventPropGetter={(evt: CalendarEvent) => ({
-                className: 'font-semibold text-xs px-2 py-0.5 rounded shadow-sm cursor-pointer hover:opacity-90 transition border-l-[3px]',
-                style: {
-                  backgroundColor: evt.backgroundColor,
-                  borderLeftColor: evt.borderColor,
-                  color: evt.textColor,
-                },
-              })}
-            />
-          </div>
+          <StaffWorkDiaryCalendar
+            officers={officers}
+            events={filteredCalendarEvents}
+            date={calendarDate}
+            onDateChange={setCalendarDate}
+            viewMode={calendarView}
+            onViewModeChange={setCalendarView}
+            onSelectEvent={(evt) => {
+              setSelectedEvent(evt);
+              setShowDetailModal(true);
+            }}
+          />
 
           {calendarEngineerLegend.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -2052,7 +1991,7 @@ export default function StaffWorkPage() {
                 <input
                   type="checkbox"
                   checked={editAllDay}
-                  onChange={(e) => setEditAllDay(e.target.checked)}
+                  onChange={(e) => handleEditAllDayChange(e.target.checked)}
                   className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
                 />
                 <span className="text-sm font-semibold text-slate-700">All day</span>
@@ -2150,7 +2089,7 @@ export default function StaffWorkPage() {
                 <input
                   type="checkbox"
                   checked={allDay}
-                  onChange={(e) => setAllDay(e.target.checked)}
+                  onChange={(e) => handleAllDayChange(e.target.checked)}
                   className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
                 />
                 <span className="text-sm font-semibold text-slate-700">All Day</span>

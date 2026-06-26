@@ -38,4 +38,5 @@ abstract class AppRoutes {
   static const String idCard = '/profile/id-card';
   static const String holidays = '/holidays';
   static const String stockTools = '/stock-tools';
+  static const String todos = '/todos';
 }

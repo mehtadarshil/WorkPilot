@@ -11,6 +11,7 @@ export type VisitTimesheetSegment = {
   clock_out: string | null;
   duration_seconds: number;
   notes?: string | null;
+  officer_full_name?: string | null;
 };
 
 function normalizeStatus(status: string): string {

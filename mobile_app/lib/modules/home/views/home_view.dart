@@ -3128,6 +3128,58 @@ class _ProfileTab extends GetView<HomeController> {
                   Row(
                     children: [
                       Icon(
+                        Icons.checklist_rounded,
+                        size: 20,
+                        color: AppColors.primary.withValues(alpha: 0.95),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Quick actions',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: AppColors.slate300,
+                      size: 22,
+                    ),
+                    title: Text(
+                      'My Todos',
+                      style: GoogleFonts.inter(
+                        color: AppColors.slate300,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Manage tasks and to-dos',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.slate500,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    onTap: () => Get.toNamed(AppRoutes.todos),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _HomeGlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
                         Icons.info_outline_rounded,
                         size: 20,
                         color: AppColors.primary.withValues(alpha: 0.95),

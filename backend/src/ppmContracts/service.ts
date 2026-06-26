@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { applyTemplateVars } from '../emailHelpers';
+import { getCompanyLabourRates } from '../priceBookResolution';
 import { addIntervalToDate, daysBetween, isoDateOnly, parseDateOnly, projectTaskOccurrences, dateOnlyFromPg } from './dateUtils';
 import type { PpmIntervalUnit } from './types';
 
@@ -115,29 +116,19 @@ export async function applyPpmContractRatesToJob(
   updatedBy: number | null,
 ): Promise<void> {
   const overrides = (contract.rate_overrides_json || {}) as Record<string, unknown>;
-  let pbTravel: number | null = null;
-  let pbFirst: number | null = null;
-  let pbAdditional: number | null = null;
-  const priceBookId = contract.price_book_id;
-  if (priceBookId != null && Number.isFinite(priceBookId)) {
-    const pb = await pool.query<{
-      travel_rate_per_hr: string | number | null;
-      first_hour_rate_per_hr: string | number | null;
-      additional_hour_rate_per_hr: string | number | null;
-    }>(
-      `SELECT travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
-       FROM price_book_labour_rates WHERE price_book_id = $1 ORDER BY id ASC LIMIT 1`,
-      [priceBookId],
-    );
-    if ((pb.rowCount ?? 0) > 0) {
-      pbTravel = parseRate(pb.rows[0].travel_rate_per_hr);
-      pbFirst = parseRate(pb.rows[0].first_hour_rate_per_hr);
-      pbAdditional = parseRate(pb.rows[0].additional_hour_rate_per_hr);
-    }
+  let companyTravel: number | null = null;
+  let companyFirst: number | null = null;
+  let companyAdditional: number | null = null;
+  const tenantUserId = contract.created_by;
+  if (tenantUserId != null && Number.isFinite(tenantUserId)) {
+    const company = await getCompanyLabourRates(pool as Pool, tenantUserId);
+    companyTravel = company.travel_rate_per_hr;
+    companyFirst = company.first_hour_rate_per_hr;
+    companyAdditional = company.additional_hour_rate_per_hr;
   }
-  const travel = parseRate(overrides.travel_hourly_rate) ?? pbTravel;
-  const firstHour = parseRate(overrides.first_hour_labour_rate) ?? pbFirst;
-  const additionalHour = parseRate(overrides.additional_hour_labour_rate) ?? pbAdditional;
+  const travel = parseRate(overrides.travel_hourly_rate) ?? companyTravel;
+  const firstHour = parseRate(overrides.first_hour_labour_rate) ?? companyFirst;
+  const additionalHour = parseRate(overrides.additional_hour_labour_rate) ?? companyAdditional;
   if (travel == null && firstHour == null && additionalHour == null) return;
 
   await pool.query(

@@ -342,96 +342,96 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</div>}
 
       {openModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => !saving && setOpenModal(false)}>
-          <div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-slate-200 px-6 py-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-2 sm:p-4" onClick={() => !saving && setOpenModal(false)}>
+          <div className="flex max-h-[95vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
               <h3 className="text-lg font-semibold text-slate-900">{editing ? 'Edit Work address' : 'Add new Work address'}</h3>
             </div>
-            <div className="space-y-5 p-6">
+            <div className="space-y-4 overflow-y-auto p-4 sm:space-y-5 sm:p-6">
               <div className="rounded-xl border border-slate-200 bg-white">
-                <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">Add new Work address</div>
-                <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Branch</label>
-                    <select value={form.branch_name} onChange={(e) => setForm((f) => ({ ...f, branch_name: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">Details</div>
+                <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Branch</label>
+                    <select value={form.branch_name} onChange={(e) => setForm((f) => ({ ...f, branch_name: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
                       <option value="">Please Enter Branch</option>
                       {branches.map((b) => <option key={b.id} value={b.branch_name}>{b.branch_name}</option>)}
                     </select>
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Landlord</label>
-                    <input value={form.landlord} onChange={(e) => setForm((f) => ({ ...f, landlord: e.target.value }))} placeholder="Please Enter Landlord" className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Landlord</label>
+                    <input value={form.landlord} onChange={(e) => setForm((f) => ({ ...f, landlord: e.target.value }))} placeholder="Please Enter Landlord" className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white">
                 <div className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">Address</div>
-                <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Name *</label>
-                    <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Name *</label>
+                    <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Address line 1 *</label>
-                    <input value={form.address_line_1} onChange={(e) => setForm((f) => ({ ...f, address_line_1: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Address line 1 *</label>
+                    <input value={form.address_line_1} onChange={(e) => setForm((f) => ({ ...f, address_line_1: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Title</label>
-                    <select value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Title</label>
+                    <select value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
                       <option>Mr</option><option>Mrs</option><option>Ms</option><option>Dr</option>
                     </select>
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Address line 2</label>
-                    <input value={form.address_line_2} onChange={(e) => setForm((f) => ({ ...f, address_line_2: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Address line 2</label>
+                    <input value={form.address_line_2} onChange={(e) => setForm((f) => ({ ...f, address_line_2: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Name</label>
-                    <input value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">First name</label>
+                    <input value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Address line 3</label>
-                    <input value={form.address_line_3} onChange={(e) => setForm((f) => ({ ...f, address_line_3: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Address line 3</label>
+                    <input value={form.address_line_3} onChange={(e) => setForm((f) => ({ ...f, address_line_3: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Surname</label>
-                    <input value={form.surname} onChange={(e) => setForm((f) => ({ ...f, surname: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Surname</label>
+                    <input value={form.surname} onChange={(e) => setForm((f) => ({ ...f, surname: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Town</label>
-                    <input value={form.town} onChange={(e) => setForm((f) => ({ ...f, town: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Town</label>
+                    <input value={form.town} onChange={(e) => setForm((f) => ({ ...f, town: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Company name</label>
-                    <input value={form.company_name} onChange={(e) => setForm((f) => ({ ...f, company_name: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Company name</label>
+                    <input value={form.company_name} onChange={(e) => setForm((f) => ({ ...f, company_name: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">City</label>
-                    <input value={form.county} onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">City</label>
+                    <input value={form.county} onChange={(e) => setForm((f) => ({ ...f, county: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Landline</label>
-                    <input value={form.landline} onChange={(e) => setForm((f) => ({ ...f, landline: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Landline</label>
+                    <input value={form.landline} onChange={(e) => setForm((f) => ({ ...f, landline: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Postcode</label>
-                    <input value={form.postcode} onChange={(e) => setForm((f) => ({ ...f, postcode: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Postcode</label>
+                    <input value={form.postcode} onChange={(e) => setForm((f) => ({ ...f, postcode: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Mobile</label>
-                    <input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Mobile</label>
+                    <input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Email</label>
-                    <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Email</label>
+                    <input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="mb-3 text-sm font-semibold text-slate-700">Communication rules</div>
-                <div className="flex flex-wrap gap-5 text-sm text-slate-700">
+                <div className="flex flex-wrap gap-4 text-sm text-slate-700">
                   <label className="flex items-center gap-2"><input type="checkbox" checked={form.prefers_phone} onChange={(e) => setForm((f) => ({ ...f, prefers_phone: e.target.checked }))} className="rounded text-[#14B8A6]" /> Phone call</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={form.prefers_sms} onChange={(e) => setForm((f) => ({ ...f, prefers_sms: e.target.checked }))} className="rounded text-[#14B8A6]" /> SMS</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={form.prefers_email} onChange={(e) => setForm((f) => ({ ...f, prefers_email: e.target.checked }))} className="rounded text-[#14B8A6]" /> Email</label>
@@ -441,68 +441,70 @@ export default function CustomerWorkAddressTab({ customerId }: Props) {
 
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="space-y-3">
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">UPRN</label>
-                    <input value={form.uprn} onChange={(e) => setForm((f) => ({ ...f, uprn: e.target.value }))} className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">UPRN</label>
+                    <input value={form.uprn} onChange={(e) => setForm((f) => ({ ...f, uprn: e.target.value }))} className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-start gap-2">
-                    <label className="pt-2 text-sm text-slate-600">Site notes</label>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Site notes</label>
                     <textarea
                       value={form.site_notes}
                       onChange={(e) => setForm((f) => ({ ...f, site_notes: e.target.value }))}
                       rows={3}
                       placeholder="Access notes, parking, entry codes, hazards, preferred entrance..."
-                      className="resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                      className="w-full resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                     />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-start gap-2">
-                    <label className="pt-2 text-sm text-slate-600">Key info</label>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-500">Key info</label>
                     <textarea
                       value={form.key_info}
                       onChange={(e) => setForm((f) => ({ ...f, key_info: e.target.value }))}
                       rows={3}
                       placeholder="Property keys info, alarm key codes..."
-                      className="resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                      className="w-full resize-none rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
                     />
                   </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Latitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="-90"
-                      max="90"
-                      placeholder="e.g. 51.5074"
-                      value={form.latitude}
-                      onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
-                      className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
-                  </div>
-                  <div className="grid grid-cols-[130px_1fr] items-center gap-2">
-                    <label className="text-sm text-slate-600">Longitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="-180"
-                      max="180"
-                      placeholder="e.g. -0.1278"
-                      value={form.longitude}
-                      onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
-                      className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500">Latitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="-90"
+                        max="90"
+                        placeholder="e.g. 51.5074"
+                        value={form.latitude}
+                        onChange={(e) => setForm((f) => ({ ...f, latitude: e.target.value }))}
+                        className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-500">Longitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="-180"
+                        max="180"
+                        placeholder="e.g. -0.1278"
+                        value={form.longitude}
+                        onChange={(e) => setForm((f) => ({ ...f, longitude: e.target.value }))}
+                        className="w-full rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="flex justify-between gap-2 border-t border-slate-200 px-6 py-4">
+            <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 sm:px-6 sm:py-4">
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="rounded text-[#14B8A6]" />
-                Active work address
+                Active
               </label>
               <div className="flex gap-2">
                 <button onClick={() => setOpenModal(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
                 <button onClick={saveRow} disabled={saving} className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#119f90] disabled:opacity-50">
-                  {saving ? 'Saving...' : editing ? 'Update Work address' : 'Add Work address'}
+                  {saving ? 'Saving...' : editing ? 'Update' : 'Save'}
                 </button>
               </div>
             </div>

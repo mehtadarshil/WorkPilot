@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { deleteRequest, getJson, postJson, putJson } from '../../../../apiClient';
+import { deleteRequest, getJson, postJson } from '../../../../apiClient';
 import { ArrowLeft, Plus } from 'lucide-react';
 
 interface PriceBookItem {
@@ -12,54 +12,26 @@ interface PriceBookItem {
   price: number;
 }
 
-interface LabourRate {
-  id: number;
-  name: string;
-  description: string | null;
-  basic_rate_per_hr: number;
-  travel_rate_per_hr?: number | null;
-  first_hour_rate_per_hr?: number | null;
-  additional_hour_rate_per_hr?: number | null;
-  nominal_code: string | null;
-  rounding_rule: string | null;
-}
-
 interface PriceBookDetails {
   id: number;
   name: string;
   description: string | null;
   items: PriceBookItem[];
-  labour_rates: LabourRate[];
 }
 
 export default function PriceBookConfigPage() {
   const router = useRouter();
   const params = useParams();
   const pbId = params?.id as string;
-  
+
   const [data, setData] = useState<PriceBookDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'items' | 'labour'>('items');
-
-  // Form states for Items
   const [addingItem, setAddingItem] = useState(false);
   const [itemName, setItemName] = useState('');
   const [unitPrice, setUnitPrice] = useState<number>(0);
   const [price, setPrice] = useState<number>(0);
-
-  // Form states for Labour
-  const [addingLabour, setAddingLabour] = useState(false);
-  const [lName, setLName] = useState('');
-  const [lDesc, setLDesc] = useState('');
-  const [lBasicRate, setLBasicRate] = useState<number>(0);
-  const [lTravelRate, setLTravelRate] = useState<number | ''>('');
-  const [lFirstHourRate, setLFirstHourRate] = useState<number | ''>('');
-  const [lAdditionalHourRate, setLAdditionalHourRate] = useState<number | ''>('');
-  const [lNominal, setLNominal] = useState('Sales');
-  const [lRounding, setLRounding] = useState('Rounded up to nearest 15 min');
-  const [editingLabourId, setEditingLabourId] = useState<number | null>(null);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -80,14 +52,13 @@ export default function PriceBookConfigPage() {
     fetchDetails();
   }, [fetchDetails]);
 
-  // Items Handlers
   const handleAddItem = async () => {
     if (!token || !itemName.trim()) return;
     try {
-      await postJson(`/settings/price-books/${pbId}/items`, { 
-        item_name: itemName.trim(), 
-        unit_price: unitPrice, 
-        price 
+      await postJson(`/settings/price-books/${pbId}/items`, {
+        item_name: itemName.trim(),
+        unit_price: unitPrice,
+        price,
       }, token);
       setAddingItem(false);
       setItemName('');
@@ -109,92 +80,17 @@ export default function PriceBookConfigPage() {
     }
   };
 
-  // Labour Rates Handlers
-  const handleAddLabour = async () => {
-    if (!token || !lName.trim()) return;
-    try {
-      await postJson(`/settings/price-books/${pbId}/labour-rates`, {
-        name: lName.trim(),
-        description: lDesc.trim() || null,
-        basic_rate_per_hr: lBasicRate,
-        travel_rate_per_hr: lTravelRate === '' ? null : lTravelRate,
-        first_hour_rate_per_hr: lFirstHourRate === '' ? null : lFirstHourRate,
-        additional_hour_rate_per_hr: lAdditionalHourRate === '' ? null : lAdditionalHourRate,
-        nominal_code: lNominal,
-        rounding_rule: lRounding
-      }, token);
-      resetLabourForm();
-      fetchDetails();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to add labour rate');
-    }
-  };
-
-  const startEditLabour = (rate: LabourRate) => {
-    setAddingLabour(false);
-    setEditingLabourId(rate.id);
-    setLName(rate.name);
-    setLDesc(rate.description || '');
-    setLBasicRate(Number(rate.basic_rate_per_hr || 0));
-    setLTravelRate(rate.travel_rate_per_hr == null ? '' : Number(rate.travel_rate_per_hr));
-    setLFirstHourRate(rate.first_hour_rate_per_hr == null ? '' : Number(rate.first_hour_rate_per_hr));
-    setLAdditionalHourRate(rate.additional_hour_rate_per_hr == null ? '' : Number(rate.additional_hour_rate_per_hr));
-    setLNominal(rate.nominal_code || 'Sales');
-    setLRounding(rate.rounding_rule || 'Rounded up to nearest 15 min');
-  };
-
-  const resetLabourForm = () => {
-    setAddingLabour(false);
-    setEditingLabourId(null);
-    setLName('');
-    setLDesc('');
-    setLBasicRate(0);
-    setLTravelRate('');
-    setLFirstHourRate('');
-    setLAdditionalHourRate('');
-    setLNominal('Sales');
-    setLRounding('Rounded up to nearest 15 min');
-  };
-
-  const handleUpdateLabour = async () => {
-    if (!token || !editingLabourId || !lName.trim()) return;
-    try {
-      await putJson(`/settings/price-books/${pbId}/labour-rates/${editingLabourId}`, {
-        name: lName.trim(),
-        description: lDesc.trim() || null,
-        basic_rate_per_hr: lBasicRate,
-        travel_rate_per_hr: lTravelRate === '' ? null : lTravelRate,
-        first_hour_rate_per_hr: lFirstHourRate === '' ? null : lFirstHourRate,
-        additional_hour_rate_per_hr: lAdditionalHourRate === '' ? null : lAdditionalHourRate,
-        nominal_code: lNominal,
-        rounding_rule: lRounding
-      }, token);
-      resetLabourForm();
-      fetchDetails();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update labour rate');
-    }
-  };
-
-  const handleDeleteLabour = async (rateId: number) => {
-    if (!token || !confirm('Are you sure you want to delete this labour rate?')) return;
-    try {
-      await deleteRequest(`/settings/price-books/${pbId}/labour-rates/${rateId}`, token);
-      fetchDetails();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete labour rate');
-    }
-  };
-
   if (loading) return <div className="p-8 text-slate-500 font-medium">Loading price book...</div>;
-  if (!data) return (
-    <div className="p-8 text-rose-500 flex flex-col gap-4">
-      <span>{error || 'Price book not found'}</span> 
-      <button onClick={() => router.push('/dashboard/settings')} className="text-slate-600 underline font-medium self-start">Go back to Settings</button>
-    </div>
-  );
+  if (!data) {
+    return (
+      <div className="p-8 text-rose-500 flex flex-col gap-4">
+        <span>{error || 'Price book not found'}</span>
+        <button onClick={() => router.push('/dashboard/settings')} className="text-slate-600 underline font-medium self-start">Go back to Settings</button>
+      </div>
+    );
+  }
 
-  const inputClass = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20 bg-white";
+  const inputClass = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20 bg-white';
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -204,243 +100,75 @@ export default function PriceBookConfigPage() {
             <ArrowLeft className="size-5 text-slate-500" />
           </button>
           <div className="flex flex-col">
-             <h2 className="text-lg font-bold text-slate-900">{data.name}</h2>
-             <p className="text-xs text-slate-500 font-medium">Labour rates &amp; service prices — inherited by all new jobs unless overridden per job</p>
+            <h2 className="text-lg font-bold text-slate-900">{data.name}</h2>
+            <p className="text-xs text-slate-500 font-medium">Service line prices — inherited by new jobs unless overridden per job</p>
           </div>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 relative">
         <div className="mx-auto max-w-6xl">
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-slate-200 mb-6">
-             <button
-                type="button"
-                onClick={() => setActiveTab('items')}
-                className={`px-4 py-3 text-sm font-semibold transition bg-transparent border-b-2 ${
-                  activeTab === 'items' ? 'border-[#14B8A6] text-[#14B8A6]' : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                }`}
-              >
-                Pricing Items
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('labour')}
-                className={`px-4 py-3 text-sm font-semibold transition bg-transparent border-b-2 ${
-                  activeTab === 'labour' ? 'border-[#14B8A6] text-[#14B8A6]' : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
-                }`}
-              >
-                Labour Rates
-              </button>
-            </div>
-
-            {/* Content pane */}
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden min-h-[500px]">
-              {activeTab === 'items' ? (
-                <div>
-                  <div className="border-b border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
-                    <div>
-                        <h2 className="text-[15px] font-bold text-slate-800">Add Pricing Items</h2>
-                        <p className="text-xs text-slate-500 mt-1">Add new or edit your existing pricing items using the table below.</p>
-                    </div>
-                    {!addingItem && (
-                      <button onClick={() => setAddingItem(true)} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
-                        <Plus className="size-4" /> Add item
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                      <thead className="bg-white border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-16 text-center">#</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Pricing item *</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Unit price *</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Price *</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.items.map((item, idx) => (
-                          <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
-                            <td className="px-6 py-4 text-center font-medium text-slate-400">{idx + 1}</td>
-                            <td className="px-6 py-4 font-medium text-slate-900">{item.item_name}</td>
-                            <td className="px-6 py-4 text-slate-600">{Number(item.unit_price).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-slate-600">{Number(item.price).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right">
-                              <button onClick={() => handleDeleteItem(item.id)} className="text-sm font-semibold text-rose-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
-                            </td>
-                          </tr>
-                        ))}
-                        {addingItem && (
-                          <tr className="bg-emerald-50/20">
-                             <td className="px-6 py-3 text-center text-slate-400 font-medium">{data.items.length + 1}</td>
-                             <td className="px-6 py-3">
-                               <input type="text" autoFocus value={itemName} onChange={e => setItemName(e.target.value)} className={inputClass} placeholder="e.g. Gas Boiler Service" />
-                             </td>
-                             <td className="px-6 py-3">
-                               <input type="number" step="0.01" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} className={inputClass} />
-                             </td>
-                             <td className="px-6 py-3">
-                               <input type="number" step="0.01" value={price} onChange={e => setPrice(Number(e.target.value))} className={inputClass} />
-                             </td>
-                             <td className="px-6 py-3 flex items-center justify-end gap-3 mt-1.5">
-                               <button onClick={() => setAddingItem(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
-                               <button onClick={handleAddItem} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
-                             </td>
-                          </tr>
-                        )}
-                        {data.items.length === 0 && !addingItem && (
-                           <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No pricing items added yet. Use Add item to create one.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <div className="border-b border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
-                    <div>
-                        <h2 className="text-[15px] font-bold text-slate-800">Add Labour Rates</h2>
-                        <p className="text-xs text-slate-500 mt-1">Set first-hour labour, additional-hour labour, and travel rates used for job cost calculations.</p>
-                    </div>
-                    {!addingLabour && editingLabourId == null && (
-                      <button onClick={() => { resetLabourForm(); setAddingLabour(true); }} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
-                        <Plus className="size-4" /> Add labour rate
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
-                      <thead className="bg-white border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Labour rate name</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Description</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Basic rate / hr</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">First hour</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Additional hr</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Travel</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Nominal code</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Rounding rule</th>
-                          <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {data.labour_rates.map((rate) => (
-                          editingLabourId === rate.id ? (
-                            <tr key={rate.id} className="bg-emerald-50/20">
-                              <td className="px-6 py-3">
-                                <input type="text" autoFocus value={lName} onChange={e => setLName(e.target.value)} className={inputClass} placeholder="e.g. Regular Rate" />
-                              </td>
-                              <td className="px-6 py-3">
-                                <input type="text" value={lDesc} onChange={e => setLDesc(e.target.value)} className={inputClass} placeholder="Hourly charge" />
-                              </td>
-                              <td className="px-6 py-3 min-w-[120px]">
-                                <input type="number" min="0" step="0.01" value={lBasicRate} onChange={e => setLBasicRate(Number(e.target.value))} className={inputClass} />
-                              </td>
-                              <td className="px-6 py-3 min-w-[110px]">
-                                <input type="number" min="0" step="0.01" value={lFirstHourRate} onChange={e => setLFirstHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 60" />
-                              </td>
-                              <td className="px-6 py-3 min-w-[110px]">
-                                <input type="number" min="0" step="0.01" value={lAdditionalHourRate} onChange={e => setLAdditionalHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 25" />
-                              </td>
-                              <td className="px-6 py-3 min-w-[110px]">
-                                <input type="number" min="0" step="0.01" value={lTravelRate} onChange={e => setLTravelRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 10" />
-                              </td>
-                              <td className="px-6 py-3 min-w-[160px]">
-                                <select value={lNominal} onChange={e => setLNominal(e.target.value)} className={inputClass}>
-                                  <option>Sales</option>
-                                  <option>Cost of Sales</option>
-                                  <option>Overhead</option>
-                                </select>
-                              </td>
-                              <td className="px-6 py-3 min-w-[200px]">
-                                <select value={lRounding} onChange={e => setLRounding(e.target.value)} className={inputClass}>
-                                  <option>Rounded up to nearest 15 min</option>
-                                  <option>Rounded up to nearest 30 min</option>
-                                  <option>Rounded up to nearest 60 min</option>
-                                  <option>Exact minute</option>
-                                </select>
-                              </td>
-                              <td className="px-6 py-3">
-                                <div className="flex items-center justify-end gap-3">
-                                  <button onClick={resetLabourForm} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
-                                  <button onClick={handleUpdateLabour} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : (
-                            <tr key={rate.id} className="hover:bg-slate-50 transition-colors group">
-                              <td className="px-6 py-4 font-medium text-slate-900">{rate.name}</td>
-                              <td className="px-6 py-4 text-slate-500">{rate.description || '—'}</td>
-                              <td className="px-6 py-4 text-slate-900 font-medium">£ {Number(rate.basic_rate_per_hr).toFixed(2)}</td>
-                              <td className="px-6 py-4 text-slate-600">{rate.first_hour_rate_per_hr == null ? '—' : `£ ${Number(rate.first_hour_rate_per_hr).toFixed(2)}`}</td>
-                              <td className="px-6 py-4 text-slate-600">{rate.additional_hour_rate_per_hr == null ? '—' : `£ ${Number(rate.additional_hour_rate_per_hr).toFixed(2)}`}</td>
-                              <td className="px-6 py-4 text-slate-600">{rate.travel_rate_per_hr == null ? '—' : `£ ${Number(rate.travel_rate_per_hr).toFixed(2)}`}</td>
-                              <td className="px-6 py-4 text-slate-500">{rate.nominal_code || '—'}</td>
-                              <td className="px-6 py-4 text-slate-500">{rate.rounding_rule || '—'}</td>
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => startEditLabour(rate)} className="text-sm font-semibold text-slate-400 hover:text-slate-600">Edit</button>
-                                  <button onClick={() => handleDeleteLabour(rate.id)} className="text-sm font-semibold text-rose-500 hover:underline">Delete</button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        ))}
-                        {addingLabour && (
-                          <tr className="bg-emerald-50/20">
-                             <td className="px-6 py-3">
-                               <input type="text" autoFocus value={lName} onChange={e => setLName(e.target.value)} className={inputClass} placeholder="e.g. Regular Rate" />
-                             </td>
-                             <td className="px-6 py-3">
-                               <input type="text" value={lDesc} onChange={e => setLDesc(e.target.value)} className={inputClass} placeholder="Hourly Charge" />
-                             </td>
-                             <td className="px-6 py-3 min-w-[120px]">
-                               <input type="number" step="0.01" value={lBasicRate} onChange={e => setLBasicRate(Number(e.target.value))} className={inputClass} />
-                             </td>
-                             <td className="px-6 py-3 min-w-[110px]">
-                               <input type="number" step="0.01" value={lFirstHourRate} onChange={e => setLFirstHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 60" />
-                             </td>
-                             <td className="px-6 py-3 min-w-[110px]">
-                               <input type="number" step="0.01" value={lAdditionalHourRate} onChange={e => setLAdditionalHourRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 25" />
-                             </td>
-                             <td className="px-6 py-3 min-w-[110px]">
-                               <input type="number" step="0.01" value={lTravelRate} onChange={e => setLTravelRate(e.target.value === '' ? '' : Number(e.target.value))} className={inputClass} placeholder="e.g. 10" />
-                             </td>
-                             <td className="px-6 py-3 min-w-[160px]">
-                               <select value={lNominal} onChange={e => setLNominal(e.target.value)} className={inputClass}>
-                                  <option>Sales</option>
-                                  <option>Cost of Sales</option>
-                                  <option>Overhead</option>
-                               </select>
-                             </td>
-                             <td className="px-6 py-3 min-w-[200px]">
-                               <select value={lRounding} onChange={e => setLRounding(e.target.value)} className={inputClass}>
-                                  <option>Rounded up to nearest 15 min</option>
-                                  <option>Rounded up to nearest 30 min</option>
-                                  <option>Rounded up to nearest 60 min</option>
-                                  <option>Exact minute</option>
-                               </select>
-                             </td>
-                             <td className="px-6 py-3 flex items-center justify-end gap-3 mt-1.5">
-                               <button onClick={resetLabourForm} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
-                               <button onClick={handleAddLabour} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
-                             </td>
-                          </tr>
-                        )}
-                        {data.labour_rates.length === 0 && !addingLabour && (
-                           <tr><td colSpan={9} className="px-6 py-12 text-center text-slate-400">No labour rates added yet.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden min-h-[500px]">
+            <div className="border-b border-slate-200 px-6 py-4 flex justify-between items-center bg-slate-50">
+              <div>
+                <h2 className="text-[15px] font-bold text-slate-800">Pricing items</h2>
+                <p className="text-xs text-slate-500 mt-1">Add or edit standard service line prices for this price book.</p>
+              </div>
+              {!addingItem && (
+                <button onClick={() => setAddingItem(true)} className="flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition">
+                  <Plus className="size-4" /> Add item
+                </button>
               )}
             </div>
 
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm border-collapse">
+                <thead className="bg-white border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-16 text-center">#</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Pricing item *</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Unit price *</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32">Price *</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500 w-32 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.items.map((item, idx) => (
+                    <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                      <td className="px-6 py-4 text-center font-medium text-slate-400">{idx + 1}</td>
+                      <td className="px-6 py-4 font-medium text-slate-900">{item.item_name}</td>
+                      <td className="px-6 py-4 text-slate-600">{Number(item.unit_price).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-slate-600">{Number(item.price).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button onClick={() => handleDeleteItem(item.id)} className="text-sm font-semibold text-rose-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {addingItem && (
+                    <tr className="bg-emerald-50/20">
+                      <td className="px-6 py-3 text-center text-slate-400 font-medium">{data.items.length + 1}</td>
+                      <td className="px-6 py-3">
+                        <input type="text" autoFocus value={itemName} onChange={(e) => setItemName(e.target.value)} className={inputClass} placeholder="e.g. Gas Boiler Service" />
+                      </td>
+                      <td className="px-6 py-3">
+                        <input type="number" step="0.01" value={unitPrice} onChange={(e) => setUnitPrice(Number(e.target.value))} className={inputClass} />
+                      </td>
+                      <td className="px-6 py-3">
+                        <input type="number" step="0.01" value={price} onChange={(e) => setPrice(Number(e.target.value))} className={inputClass} />
+                      </td>
+                      <td className="px-6 py-3 flex items-center justify-end gap-3 mt-1.5">
+                        <button onClick={() => setAddingItem(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                        <button onClick={handleAddItem} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
+                      </td>
+                    </tr>
+                  )}
+                  {data.items.length === 0 && !addingItem && (
+                    <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400">No pricing items added yet. Use Add item to create one.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>

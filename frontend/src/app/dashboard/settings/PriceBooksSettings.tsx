@@ -15,6 +15,21 @@ interface PricingDefaults {
   default_price_book_id: number | null;
   default_price_book_name: string | null;
   default_parts_markup_pct: number;
+  default_travel_rate_per_hr: number | null;
+  default_first_hour_rate_per_hr: number | null;
+  default_additional_hour_rate_per_hr: number | null;
+}
+
+function formatRateInput(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '';
+  return String(value);
+}
+
+function parseRateInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = parseFloat(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export default function PriceBooksSettings() {
@@ -30,6 +45,9 @@ export default function PriceBooksSettings() {
 
   const [defaultBookId, setDefaultBookId] = useState<string>('');
   const [defaultMarkup, setDefaultMarkup] = useState('0');
+  const [defaultTravelRate, setDefaultTravelRate] = useState('');
+  const [defaultFirstHourRate, setDefaultFirstHourRate] = useState('');
+  const [defaultAdditionalHourRate, setDefaultAdditionalHourRate] = useState('');
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -45,6 +63,9 @@ export default function PriceBooksSettings() {
       setDefaults(defaultsData);
       setDefaultBookId(defaultsData?.default_price_book_id ? String(defaultsData.default_price_book_id) : '');
       setDefaultMarkup(String(defaultsData?.default_parts_markup_pct ?? 0));
+      setDefaultTravelRate(formatRateInput(defaultsData?.default_travel_rate_per_hr));
+      setDefaultFirstHourRate(formatRateInput(defaultsData?.default_first_hour_rate_per_hr));
+      setDefaultAdditionalHourRate(formatRateInput(defaultsData?.default_additional_hour_rate_per_hr));
     } catch {
       setBooks([]);
       setDefaults(null);
@@ -73,10 +94,16 @@ export default function PriceBooksSettings() {
         {
           default_price_book_id: defaultBookId ? parseInt(defaultBookId, 10) : null,
           default_parts_markup_pct: parseFloat(defaultMarkup) || 0,
+          default_travel_rate_per_hr: parseRateInput(defaultTravelRate),
+          default_first_hour_rate_per_hr: parseRateInput(defaultFirstHourRate),
+          default_additional_hour_rate_per_hr: parseRateInput(defaultAdditionalHourRate),
         },
         token,
       );
       setDefaults(res);
+      setDefaultTravelRate(formatRateInput(res.default_travel_rate_per_hr));
+      setDefaultFirstHourRate(formatRateInput(res.default_first_hour_rate_per_hr));
+      setDefaultAdditionalHourRate(formatRateInput(res.default_additional_hour_rate_per_hr));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save company defaults');
     } finally {
@@ -128,7 +155,10 @@ export default function PriceBooksSettings() {
   const defaultsDirty =
     defaults != null &&
     (defaultBookId !== (defaults.default_price_book_id ? String(defaults.default_price_book_id) : '') ||
-      parseFloat(defaultMarkup) !== defaults.default_parts_markup_pct);
+      parseFloat(defaultMarkup) !== defaults.default_parts_markup_pct ||
+      parseRateInput(defaultTravelRate) !== defaults.default_travel_rate_per_hr ||
+      parseRateInput(defaultFirstHourRate) !== defaults.default_first_hour_rate_per_hr ||
+      parseRateInput(defaultAdditionalHourRate) !== defaults.default_additional_hour_rate_per_hr);
 
   return (
     <div className="space-y-8">
@@ -142,52 +172,100 @@ export default function PriceBooksSettings() {
             <div>
               <h3 className="text-lg font-bold text-slate-900">Company default pricing</h3>
               <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                Set once here — every new job inherits these labour rates and sell prices automatically.
+                Set once here — every job uses these labour rates for timesheet cost and engineer billing.
                 Change rates on an individual job&apos;s <strong>Costs</strong> tab only when that job needs a different price.
               </p>
             </div>
           </div>
         </div>
-        <div className="grid gap-6 p-6 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Default price book</label>
-            <select value={defaultBookId} onChange={(e) => setDefaultBookId(e.target.value)} className={inputClass}>
-              <option value="">None — set per customer</option>
-              {books.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-            <p className="mt-1.5 text-xs text-slate-500">
-              Used when a customer has no specific price book. Customer price books always take priority.
-            </p>
+        <div className="space-y-6 p-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Default price book</label>
+              <select value={defaultBookId} onChange={(e) => setDefaultBookId(e.target.value)} className={inputClass}>
+                <option value="">None — set per customer</option>
+                {books.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Used when a customer has no specific price book. Customer price books always take priority.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Default parts markup %</label>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={defaultMarkup}
+                onChange={(e) => setDefaultMarkup(e.target.value)}
+                className={inputClass}
+              />
+              <p className="mt-1.5 text-xs text-slate-500">Applied to new job parts when no catalog markup is set.</p>
+            </div>
           </div>
+
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Default parts markup %</label>
-            <input
-              type="number"
-              min={0}
-              step={0.5}
-              value={defaultMarkup}
-              onChange={(e) => setDefaultMarkup(e.target.value)}
-              className={inputClass}
-            />
-            <p className="mt-1.5 text-xs text-slate-500">Applied to new job parts when no catalog markup is set.</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Company labour rates (£ / hr)</p>
+            <p className="mt-1 text-xs text-slate-500">Used account-wide for travel time, first hour on site, and additional hours.</p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Travel rate</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={defaultTravelRate}
+                  onChange={(e) => setDefaultTravelRate(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. 10"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">First hour rate</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={defaultFirstHourRate}
+                  onChange={(e) => setDefaultFirstHourRate(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. 60"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Additional hour rate</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={defaultAdditionalHourRate}
+                  onChange={(e) => setDefaultAdditionalHourRate(e.target.value)}
+                  className={inputClass}
+                  placeholder="e.g. 25"
+                />
+              </div>
+            </div>
           </div>
-          <button
-            type="button"
-            disabled={savingDefaults || !defaultsDirty}
-            onClick={() => void saveDefaults()}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#14B8A6] px-5 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
-          >
-            <Save className="size-4" />
-            {savingDefaults ? 'Saving…' : 'Save defaults'}
-          </button>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={savingDefaults || !defaultsDirty}
+              onClick={() => void saveDefaults()}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#14B8A6] px-5 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+            >
+              <Save className="size-4" />
+              {savingDefaults ? 'Saving…' : 'Save defaults'}
+            </button>
+          </div>
         </div>
         {defaults?.default_price_book_name && (
           <div className="border-t border-slate-100 bg-slate-50/80 px-6 py-3 text-sm text-slate-600">
             Active company book: <strong className="text-slate-900">{defaults.default_price_book_name}</strong>
             {' · '}
-            Configure labour rates and service prices in that book below.
+            Configure service line prices in that book below.
           </div>
         )}
       </section>
@@ -195,8 +273,8 @@ export default function PriceBooksSettings() {
       {/* How it works */}
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { step: '1', title: 'Set defaults', body: 'Define labour rates and standard service prices in your price book.' },
-          { step: '2', title: 'Jobs inherit', body: 'New jobs copy pricing automatically. Timesheet labour uses your rates.' },
+          { step: '1', title: 'Set defaults', body: 'Define company labour rates and standard service prices in your price books.' },
+          { step: '2', title: 'Jobs inherit', body: 'New jobs copy pricing automatically. Timesheet labour uses your company rates.' },
           { step: '3', title: 'Override per job', body: 'On the job Costs tab, change rates only for that job — others stay on defaults.' },
         ].map((item) => (
           <div key={item.step} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -232,7 +310,7 @@ export default function PriceBooksSettings() {
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-200 px-6 py-4">
             <h3 className="text-lg font-bold text-slate-900">Price books</h3>
-            <p className="text-sm text-slate-500 mt-0.5">Each book holds labour rates and service line prices.</p>
+            <p className="text-sm text-slate-500 mt-0.5">Each book holds service line prices for quotations and invoicing.</p>
           </div>
           {loading ? (
             <p className="p-6 text-sm text-slate-500">Loading…</p>

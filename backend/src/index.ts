@@ -46,6 +46,7 @@ import { mountJobCostsRoutes, buildJobCostPayload } from './jobCostsRoutes';
 import { calculateTimesheetLabourTotals } from './jobLabourCost';
 import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
 import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
+import { ensureTodoSchema, mountTodoRoutes } from './todos/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import { ensurePpmContractSchema } from './ppmContracts/schema';
@@ -125,7 +126,11 @@ import {
 } from './stockToolsRoutes';
 import {
   ensurePricingSettingsSchema,
+  ensureCustomerPriceBooksSchema,
   getTenantPricingSettings,
+  getCustomerPriceBooksSummary,
+  getCustomerInvoicePriceBooks,
+  setCustomerPriceBooks,
   seedJobPricingDefaults,
 } from './priceBookResolution';
 
@@ -664,6 +669,7 @@ pool.query(`ALTER TABLE customer_specific_notes ADD COLUMN IF NOT EXISTS created
 
 ensureStockToolsSchema(pool);
 ensurePricingSettingsSchema(pool);
+ensureCustomerPriceBooksSchema(pool);
 
 type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'STAFF' | 'OFFICER';
 type ClientStatus = 'ACTIVE' | 'PENDING_SETUP' | 'SUSPENDED';
@@ -2332,6 +2338,7 @@ async function initDb() {
   }
   await ensureStaffWorkSchema(pool);
   await ensureHolidaySchema(pool);
+  await ensureTodoSchema(pool);
   await ensurePpmContractSchema(pool);
   await ensureStockToolsSchema(pool);
   await ensurePricingSettingsSchema(pool);
@@ -4624,6 +4631,7 @@ app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'),
 
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
     const customer = result.rows[0];
+    const priceBooks = await getCustomerPriceBooksSummary(pool, id);
 
     const notesRes = await pool.query(
       'SELECT * FROM customer_specific_notes WHERE customer_id = $1 ORDER BY sort_order ASC, created_at ASC',
@@ -4632,6 +4640,8 @@ app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'),
     
     return res.json({
       ...customer,
+      price_book_ids: priceBooks.map((b) => b.id),
+      price_books: priceBooks,
       specific_notes: notesRes.rows.map((note: Record<string, unknown>) => ({
         ...note,
         media: shapeCustomerSpecificNoteMedia(id, Number(note.id), note.media),
@@ -4642,6 +4652,49 @@ app.get('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'),
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+app.get(
+  '/api/customers/:id/invoice-price-items',
+  authenticate,
+  requireTenantCrmAccess('invoices'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
+
+    const userId = getTenantScopeUserId(req.user!);
+    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+    const ownerClause = isSuperAdmin ? '' : 'AND created_by = $2';
+    const params = isSuperAdmin ? [id] : [id, userId];
+
+    try {
+      const ownerCheck = await pool.query(
+        `SELECT id, created_by FROM customers WHERE id = $1 ${ownerClause}`,
+        params,
+      );
+      if ((ownerCheck.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Customer not found' });
+      }
+      const tenantUserId = (ownerCheck.rows[0] as { created_by: number }).created_by ?? userId;
+      const priceBooks = await getCustomerInvoicePriceBooks(pool, id, tenantUserId);
+      const flatItems = priceBooks.flatMap((book) =>
+        book.items.map((item) => ({
+          ...item,
+          price_book_id: book.price_book_id,
+          price_book_name: book.price_book_name,
+          source: book.source,
+        })),
+      );
+      return res.json({
+        customer_id: id,
+        price_books: priceBooks,
+        flat_items: flatItems,
+      });
+    } catch (error) {
+      console.error('Get customer invoice price items error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
+    }
+  },
+);
 
 app.get(
   '/api/customers/:id/service-reminder-schedule',
@@ -5010,6 +5063,17 @@ app.post('/api/customers', authenticate, requireTenantCrmAccess('customers'), as
       ],
     );
     const c = result.rows[0];
+    const priceBookIds = Array.isArray(b.price_book_ids)
+      ? (b.price_book_ids as unknown[])
+          .map((raw) => (typeof raw === 'number' ? raw : parseInt(String(raw), 10)))
+          .filter((rawId) => Number.isFinite(rawId) && rawId > 0)
+      : priceBookId
+        ? [priceBookId]
+        : [];
+    if (priceBookIds.length > 0) {
+      await setCustomerPriceBooks(pool, c.id, priceBookIds);
+    }
+    const priceBooks = await getCustomerPriceBooksSummary(pool, c.id);
     return res.status(201).json({
       customer: {
         id: c.id,
@@ -5048,6 +5112,8 @@ app.post('/api/customers', authenticate, requireTenantCrmAccess('customers'), as
         service_reminders_enabled: c.service_reminders_enabled !== false,
         lead_source: c.lead_source ?? null,
         price_book_id: c.price_book_id ?? null,
+        price_book_ids: priceBooks.map((book) => book.id),
+        price_books: priceBooks,
         created_at: c.created_at,
         updated_at: c.updated_at,
         created_by: c.created_by,
@@ -5167,6 +5233,20 @@ app.patch('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'
     );
     if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Customer not found' });
     const c = result.rows[0];
+
+    if (body.price_book_ids !== undefined) {
+      const ids = Array.isArray(body.price_book_ids)
+        ? body.price_book_ids
+            .map((raw) => (typeof raw === 'number' ? raw : parseInt(String(raw), 10)))
+            .filter((rawId) => Number.isFinite(rawId) && rawId > 0)
+        : [];
+      await setCustomerPriceBooks(pool, id, ids);
+    } else if (body.price_book_id !== undefined) {
+      const singleId = typeof body.price_book_id === 'number' ? body.price_book_id : null;
+      await setCustomerPriceBooks(pool, id, singleId ? [singleId] : []);
+    }
+
+    const priceBooks = await getCustomerPriceBooksSummary(pool, id);
     return res.json({
       customer: {
         id: c.id,
@@ -5207,6 +5287,8 @@ app.patch('/api/customers/:id', authenticate, requireTenantCrmAccess('customers'
         service_reminder_recipient_mode: (c as any).service_reminder_recipient_mode ?? null,
         lead_source: (c as any).lead_source ?? null,
         price_book_id: (c as any).price_book_id ?? null,
+        price_book_ids: priceBooks.map((book) => book.id),
+        price_books: priceBooks,
         created_at: c.created_at,
         updated_at: c.updated_at,
         created_by: c.created_by,
@@ -14212,33 +14294,25 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
     const rateResult = await pool.query<{
       job_id: number;
       default_hourly_rate: string | number;
-      pb_travel_rate: string | number | null;
-      pb_first_hour_rate: string | number | null;
-      pb_additional_hour_rate: string | number | null;
+      company_travel_rate: string | number | null;
+      company_first_hour_rate: string | number | null;
+      company_additional_hour_rate: string | number | null;
       travel_hourly_rate: string | number | null;
       on_site_hourly_rate: string | number | null;
       first_hour_labour_rate: string | number | null;
       additional_hour_labour_rate: string | number | null;
     }>(
       `SELECT j.id AS job_id,
-              COALESCE(lr.basic_rate_per_hr, 0)::numeric AS default_hourly_rate,
-              lr.travel_rate_per_hr AS pb_travel_rate,
-              lr.first_hour_rate_per_hr AS pb_first_hour_rate,
-              lr.additional_hour_rate_per_hr AS pb_additional_hour_rate,
+              COALESCE(ps.default_first_hour_rate_per_hr, 0)::numeric AS default_hourly_rate,
+              ps.default_travel_rate_per_hr AS company_travel_rate,
+              ps.default_first_hour_rate_per_hr AS company_first_hour_rate,
+              ps.default_additional_hour_rate_per_hr AS company_additional_hour_rate,
               o.travel_hourly_rate,
               o.on_site_hourly_rate,
               o.first_hour_labour_rate,
               o.additional_hour_labour_rate
        FROM jobs j
-       LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN pricing_settings ps ON ps.created_by = j.created_by
-       LEFT JOIN LATERAL (
-         SELECT basic_rate_per_hr, travel_rate_per_hr, first_hour_rate_per_hr, additional_hour_rate_per_hr
-         FROM price_book_labour_rates
-         WHERE price_book_id = COALESCE(c.price_book_id, ps.default_price_book_id)
-         ORDER BY id ASC
-         LIMIT 1
-       ) lr ON true
        LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
        WHERE j.id = ANY($1::int[])`,
       [jobIds]
@@ -14250,17 +14324,17 @@ async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<
     }> = {};
     for (const row of rateResult.rows) {
       const def = typeof row.default_hourly_rate === 'number' ? row.default_hourly_rate : parseFloat(row.default_hourly_rate || '0');
-      const pbTravel = row.pb_travel_rate != null ? (typeof row.pb_travel_rate === 'number' ? row.pb_travel_rate : parseFloat(row.pb_travel_rate)) : null;
-      const pbFirst = row.pb_first_hour_rate != null ? (typeof row.pb_first_hour_rate === 'number' ? row.pb_first_hour_rate : parseFloat(row.pb_first_hour_rate)) : null;
-      const pbAdditional = row.pb_additional_hour_rate != null ? (typeof row.pb_additional_hour_rate === 'number' ? row.pb_additional_hour_rate : parseFloat(row.pb_additional_hour_rate)) : null;
+      const companyTravel = row.company_travel_rate != null ? (typeof row.company_travel_rate === 'number' ? row.company_travel_rate : parseFloat(row.company_travel_rate)) : null;
+      const companyFirst = row.company_first_hour_rate != null ? (typeof row.company_first_hour_rate === 'number' ? row.company_first_hour_rate : parseFloat(row.company_first_hour_rate)) : null;
+      const companyAdditional = row.company_additional_hour_rate != null ? (typeof row.company_additional_hour_rate === 'number' ? row.company_additional_hour_rate : parseFloat(row.company_additional_hour_rate)) : null;
       const travelOverride = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : null;
       const onsiteOverride = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : null;
       const firstOverride = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : null;
       const additionalOverride = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : null;
       ratesByJob[row.job_id] = {
-        travel: travelOverride ?? pbTravel ?? def,
-        firstHour: firstOverride ?? pbFirst ?? onsiteOverride ?? def,
-        additionalHour: additionalOverride ?? pbAdditional ?? onsiteOverride ?? def,
+        travel: travelOverride ?? companyTravel ?? def,
+        firstHour: firstOverride ?? companyFirst ?? onsiteOverride ?? def,
+        additionalHour: additionalOverride ?? companyAdditional ?? onsiteOverride ?? def,
       };
     }
     const timesheetRes = await pool.query<{
@@ -18288,7 +18362,13 @@ app.get('/api/settings/pricing-defaults', authenticate, requireAdmin, requirePer
 
 app.patch('/api/settings/pricing-defaults', authenticate, requireAdmin, requirePermission('settings_price_books'), async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
-  const body = req.body as { default_price_book_id?: unknown; default_parts_markup_pct?: unknown };
+  const body = req.body as {
+    default_price_book_id?: unknown;
+    default_parts_markup_pct?: unknown;
+    default_travel_rate_per_hr?: unknown;
+    default_first_hour_rate_per_hr?: unknown;
+    default_additional_hour_rate_per_hr?: unknown;
+  };
   try {
     await ensurePricingSettingsSchema(pool);
     const current = await getTenantPricingSettings(pool, userId);
@@ -18318,14 +18398,32 @@ app.patch('/api/settings/pricing-defaults', authenticate, requireAdmin, requireP
       defaultPartsMarkup = Number.isFinite(raw) ? Math.max(0, Math.min(1000, raw)) : 0;
     }
 
+    const parseOptionalRate = (value: unknown, fallback: number | null): number | null => {
+      if (value === undefined) return fallback;
+      if (value === null || value === '') return null;
+      const raw = typeof value === 'number' ? value : parseFloat(String(value));
+      return Number.isFinite(raw) ? Math.max(0, Math.round(raw * 100) / 100) : null;
+    };
+
+    const defaultTravelRate = parseOptionalRate(body.default_travel_rate_per_hr, current.default_travel_rate_per_hr);
+    const defaultFirstHourRate = parseOptionalRate(body.default_first_hour_rate_per_hr, current.default_first_hour_rate_per_hr);
+    const defaultAdditionalHourRate = parseOptionalRate(body.default_additional_hour_rate_per_hr, current.default_additional_hour_rate_per_hr);
+
     await pool.query(
-      `INSERT INTO pricing_settings (created_by, default_price_book_id, default_parts_markup_pct, updated_at)
-       VALUES ($1, $2, $3, NOW())
+      `INSERT INTO pricing_settings (
+         created_by, default_price_book_id, default_parts_markup_pct,
+         default_travel_rate_per_hr, default_first_hour_rate_per_hr, default_additional_hour_rate_per_hr,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
        ON CONFLICT (created_by) DO UPDATE
        SET default_price_book_id = EXCLUDED.default_price_book_id,
            default_parts_markup_pct = EXCLUDED.default_parts_markup_pct,
+           default_travel_rate_per_hr = EXCLUDED.default_travel_rate_per_hr,
+           default_first_hour_rate_per_hr = EXCLUDED.default_first_hour_rate_per_hr,
+           default_additional_hour_rate_per_hr = EXCLUDED.default_additional_hour_rate_per_hr,
            updated_at = NOW()`,
-      [userId, defaultPriceBookId, defaultPartsMarkup],
+      [userId, defaultPriceBookId, defaultPartsMarkup, defaultTravelRate, defaultFirstHourRate, defaultAdditionalHourRate],
     );
 
     const settings = await getTenantPricingSettings(pool, userId);
@@ -18393,7 +18491,13 @@ app.delete('/api/settings/price-books/:id', authenticate, requireAdmin, requireP
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid ID' });
 
   try {
-    const check = await pool.query('SELECT 1 FROM customers WHERE price_book_id = $1 LIMIT 1', [id]);
+    const check = await pool.query(
+      `SELECT 1 FROM customers WHERE price_book_id = $1
+       UNION ALL
+       SELECT 1 FROM customer_price_books WHERE price_book_id = $1
+       LIMIT 1`,
+      [id],
+    );
     if ((check.rowCount ?? 0) > 0) {
       return res.status(400).json({ message: 'Cannot delete price book because it is used by customers' });
     }
@@ -22697,6 +22801,7 @@ mountJobNotesRoutes(app, { pool, authenticate });
 mountJobCostsRoutes(app, { pool, authenticate });
 mountStaffWorkRoutes(app, { pool, authenticate });
 mountHolidayRoutes(app, { pool, authenticate });
+mountTodoRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
 mountStockToolsRoutes(app, { pool, authenticate });
 mountPpmContractRoutes(app, { pool, authenticate });
