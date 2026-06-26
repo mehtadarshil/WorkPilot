@@ -76,6 +76,7 @@ import {
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
 import { syncJobDatesFromDiaryEvents } from './jobDiaryDateSync';
+import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
@@ -2537,17 +2538,16 @@ function sqlDiaryOfficerAssigned(officerParam: string): string {
   )`;
 }
 
+
 function sqlDiaryTerminalStatusExpr(statusExpr: string): string {
   return `COALESCE(LOWER(TRIM(REPLACE(${statusExpr}, ' ', '_'))), '')`;
 }
 
-/** Diary list / home — exclude finished visits and jobs closed on the board. */
-const SQL_DIARY_ONGOING_ONLY = ` AND ${sqlDiaryTerminalStatusExpr('d.status')} NOT IN ('completed', 'cancelled', 'aborted')
-         AND j.state NOT IN ('completed', 'closed')`;
+/** Diary list / home — exclude finished visits. */
+const SQL_DIARY_ONGOING_ONLY = ` AND ${sqlDiaryTerminalStatusExpr('d.status')} NOT IN ('completed', 'cancelled', 'aborted')`;
 
 function sqlDiaryOngoingForOfficer(officerParam: string): string {
-  return ` AND ${sqlDiaryTerminalStatusExpr(sqlDiaryEventStatusForOfficer(officerParam))} NOT IN ('completed', 'cancelled', 'aborted')
-         AND j.state NOT IN ('completed', 'closed')`;
+  return ` AND ${sqlDiaryTerminalStatusExpr(sqlDiaryEventStatusForOfficer(officerParam))} NOT IN ('completed', 'cancelled', 'aborted')`;
 }
 
 /** Field officers may save job report drafts while travelling or on site (before final submit). */
@@ -2581,7 +2581,6 @@ async function resolveAbortReasonLabel(
   return { ok: true, label: r.rows[0].label };
 }
 
-/** Admin may remove a visit only before travel / on-site / completion (cancelled rows may be removed). */
 function diaryEventAllowsAdminDelete(status: string | null | undefined): boolean {
   const s = typeof status === 'string' ? status.trim().toLowerCase().replace(/\s+/g, '_') : '';
   if (s === 'completed') return false;
@@ -3751,8 +3750,28 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
     let assignedJobsOpen = parseInt(jobsOpenRes.rows[0]?.c || '0', 10);
     if (!hasJobs) assignedJobsOpen = 0;
 
-    const upcoming = hasSched
-      ? await pool.query(
+    const upcoming = hasJobs || hasSched
+      ? await (async () => {
+          const rangeStart = new Date();
+          rangeStart.setDate(rangeStart.getDate() - 1);
+          const rangeEnd = new Date();
+          rangeEnd.setDate(rangeEnd.getDate() + 7);
+          try {
+            await ensureDiaryEventsForScheduledJobsInRange(
+              pool,
+              rangeStart.toISOString(),
+              rangeEnd.toISOString(),
+              {
+                tenantUserId: userId,
+                isSuperAdmin,
+                officerId: oid,
+                createdByName: u.email || 'System',
+              },
+            );
+          } catch (backfillErr) {
+            console.error('Mobile home diary backfill:', backfillErr);
+          }
+          return pool.query(
           `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
               ${sqlDiaryEventStatusForOfficer('$1')} AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
@@ -3784,8 +3803,9 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
          ${sqlDiaryOngoingForOfficer('$1')}
        ORDER BY d.start_time ASC
        LIMIT 50`,
-          [oid],
-        )
+            [oid],
+          );
+        })()
       : { rows: [] as Record<string, unknown>[] };
 
     const diaryUpcomingWeek = upcoming.rows.length;
@@ -7114,6 +7134,19 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
       await handlePpmJobCompletion(pool, id, userId, createInvoiceFromJob);
     }
 
+    if (
+      body.schedule_start !== undefined ||
+      body.officer_ids !== undefined ||
+      body.officer_id !== undefined ||
+      body.expected_completion !== undefined
+    ) {
+      try {
+        await ensureDiaryEventsForScheduledJob(pool, id, req.user!.email || 'System User');
+      } catch (ensureErr) {
+        console.error('ensureDiaryEvents after job patch:', ensureErr);
+      }
+    }
+
     // Final fetch to return full object
     const finalResult = await pool.query<DbJob>(
       `SELECT * FROM jobs WHERE id = $1`, [id]
@@ -8510,6 +8543,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
 
     let nextParam = params.length + 1;
     let officerClause = '';
+    let officerParamIdx: number | null = null;
     const tokenOid = req.user!.officerId ?? null;
     const scopeRaw = typeof req.query.scope === 'string' ? req.query.scope.trim().toLowerCase() : 'mine';
     const scopeTeam = scopeRaw === 'team' || scopeRaw === 'all';
@@ -8518,6 +8552,21 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       officerId: tokenOid,
       permissions: req.user!.permissions ?? null,
     };
+    const mineFieldOfficer =
+      !scopeTeam && tokenOid != null && diaryActsAsFieldOfficer(req, fieldUser);
+
+    if (hasRange) {
+      try {
+        await ensureDiaryEventsForScheduledJobsInRange(pool, rangeStartRaw, rangeEndRaw, {
+          tenantUserId: getTenantScopeUserId(req.user!),
+          isSuperAdmin: req.user!.role === 'SUPER_ADMIN',
+          officerId: mineFieldOfficer ? tokenOid : null,
+          createdByName: du.email || 'System',
+        });
+      } catch (backfillErr) {
+        console.error('Diary backfill for scheduled jobs:', backfillErr);
+      }
+    }
 
     if (scopeTeam) {
       if (!canUseTeamDiaryScope(fieldUser)) {
@@ -8535,7 +8584,8 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
         params.push(getTenantScopeUserId(req.user!));
         nextParam += 1;
       }
-    } else if (tokenOid != null && diaryActsAsFieldOfficer(req, fieldUser)) {
+    } else if (mineFieldOfficer) {
+      officerParamIdx = nextParam;
       officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam} OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $${nextParam}) OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $${nextParam}))`;
       params.push(tokenOid);
       nextParam += 1;
@@ -8552,9 +8602,18 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       nextParam += 1;
     }
 
+    const ongoingClause =
+      mineFieldOfficer && officerParamIdx != null
+        ? sqlDiaryOngoingForOfficer(`$${officerParamIdx}`)
+        : SQL_DIARY_ONGOING_ONLY;
+    const statusSelect =
+      mineFieldOfficer && officerParamIdx != null
+        ? `${sqlDiaryEventStatusForOfficer(`$${officerParamIdx}`)} as event_status`
+        : 'd.status as event_status';
+
     // We fetch diary events joined with jobs and customers
     const result = await pool.query(
-      `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, d.status as event_status,
+      `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, ${statusSelect},
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
               j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
               c.full_name as customer_full_name, c.email as customer_email,
@@ -8585,16 +8644,14 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE ${timeWhere}
        ${officerClause}
-       ${SQL_DIARY_ONGOING_ONLY}
+       ${ongoingClause}
        ORDER BY d.start_time ASC`,
       params,
     );
     const rows = result.rows as Array<Record<string, unknown>>;
     const diaryIds = rows.map((r: any) => r.diary_id);
     if (
-      tokenOid != null &&
-      diaryActsAsFieldOfficer(req, fieldUser) &&
-      !scopeTeam &&
+      mineFieldOfficer &&
       diaryIds.length > 0
     ) {
       const personalStatus = await pool.query<{ diary_event_id: number; status: string }>(
@@ -12766,6 +12823,11 @@ app.patch('/api/jobs/:id/schedule', authenticate, requireAdmin, requirePermissio
     );
     if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Job not found' });
     const row = r.rows[0];
+    try {
+      await ensureDiaryEventsForScheduledJob(pool, id, req.user!.email || 'System');
+    } catch (ensureErr) {
+      console.error('ensureDiaryEvents after schedule patch:', ensureErr);
+    }
     return res.json({
       job: {
         id: row.id,

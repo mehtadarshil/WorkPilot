@@ -239,6 +239,64 @@ function formatDateTimeString(d: string) {
   return dateStr;
 }
 
+function formatHolidayRange(startDateStr: string, endDateStr: string): string {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '–';
+  
+  const startHasTime = startDateStr.includes('T') && !startDateStr.endsWith('T00:00:00') && !startDateStr.endsWith('T00:00:00.000Z');
+  const endHasTime = endDateStr.includes('T') && !endDateStr.endsWith('T00:00:00') && !endDateStr.endsWith('T00:00:00.000Z');
+  
+  const startDateStrFormatted = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const endDateStrFormatted = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  
+  const sameDay = start.getFullYear() === end.getFullYear() &&
+                  start.getMonth() === end.getMonth() &&
+                  start.getDate() === end.getDate();
+                  
+  if (sameDay) {
+    if (startHasTime || endHasTime) {
+      const startTimeStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      const endTimeStr = end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      return `${startDateStrFormatted}, ${startTimeStr} – ${endTimeStr}`;
+    }
+    return startDateStrFormatted;
+  } else {
+    let startFmt = startDateStrFormatted;
+    let endFmt = endDateStrFormatted;
+    if (startHasTime) {
+      const startTimeStr = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      startFmt = `${startDateStrFormatted} at ${startTimeStr}`;
+    }
+    if (endHasTime) {
+      const endTimeStr = end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      endFmt = `${endDateStrFormatted} at ${endTimeStr}`;
+    }
+    return `${startFmt} – ${endFmt}`;
+  }
+}
+
+function formatHolidayDuration(startDateStr: string, endDateStr: string, backendDays: number | null): string {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return backendDays != null ? `${backendDays}d` : '–';
+  }
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return '0d';
+  
+  const diffHours = diffMs / (1000 * 60 * 60);
+  if (diffHours < 24) {
+    const hrs = Number.isInteger(diffHours) ? diffHours : parseFloat(diffHours.toFixed(1));
+    return `${hrs}h`;
+  } else {
+    const diffDays = diffHours / 24;
+    const days = Number.isInteger(diffDays) ? diffDays : parseFloat(diffDays.toFixed(1));
+    return `${days}d`;
+  }
+}
+
+
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
 const selectClass = inputClass;
 
@@ -352,6 +410,7 @@ export default function StaffWorkPage() {
   const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [updatingHolidayId, setUpdatingHolidayId] = useState<number | null>(null);
   const [reqForm, setReqForm] = useState({ officer_id: '', start_date: '', end_date: '', leave_type: 'annual', reason: '' });
+  const [allDay, setAllDay] = useState(true);
   const [holidayForm, setHolidayForm] = useState({ title: '', holiday_date: '', description: '', is_recurring: false });
 
   // --- Calendar Tab States ---
@@ -753,15 +812,24 @@ export default function StaffWorkPage() {
     if (!token) return;
     setHolidayError(null);
     try {
+      let startDateStr = reqForm.start_date;
+      let endDateStr = reqForm.end_date;
+      if (allDay) {
+        const onlyStartDate = startDateStr.split('T')[0];
+        const onlyEndDate = endDateStr.split('T')[0];
+        startDateStr = `${onlyStartDate}T00:00:00`;
+        endDateStr = `${onlyEndDate}T23:59:59`;
+      }
       await postJson('/holiday-requests', {
         officer_id: reqForm.officer_id ? Number(reqForm.officer_id) : undefined,
-        start_date: reqForm.start_date,
-        end_date: reqForm.end_date,
+        start_date: startDateStr,
+        end_date: endDateStr,
         leave_type: reqForm.leave_type,
         reason: reqForm.reason || undefined,
       }, token);
       setShowRequestModal(false);
       setReqForm({ officer_id: '', start_date: '', end_date: '', leave_type: 'annual', reason: '' });
+      setAllDay(true);
       void fetchHolidaysData();
     } catch (err) {
       setHolidayError(err instanceof Error ? err.message : 'Could not submit request');
@@ -1720,7 +1788,7 @@ export default function StaffWorkPage() {
                       <tr>
                         <th className="px-5 py-3">Staff Member</th>
                         <th className="px-5 py-3">Dates</th>
-                        <th className="px-5 py-3">Days</th>
+                        <th className="px-5 py-3">Duration</th>
                         <th className="px-5 py-3">Type</th>
                         <th className="px-5 py-3">Reason</th>
                         <th className="px-5 py-3 text-right">Actions</th>
@@ -1736,9 +1804,9 @@ export default function StaffWorkPage() {
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="px-5 py-4 font-semibold text-slate-900">{r.officer_name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">
-                              {formatDateTimeString(r.start_date)}{r.start_date !== r.end_date && <> – {formatDateTimeString(r.end_date)}</>}
+                              {formatHolidayRange(r.start_date, r.end_date)}
                             </td>
-                            <td className="px-5 py-4 font-semibold text-slate-900">{r.days_count ?? '–'}</td>
+                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count)}</td>
                             <td className="px-5 py-4 capitalize text-slate-700">{r.leave_type}</td>
                             <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate">{r.reason || '–'}</td>
                             <td className="px-5 py-4 text-right">
@@ -1780,7 +1848,7 @@ export default function StaffWorkPage() {
                       <tr>
                         <th className="px-5 py-3">Staff Member</th>
                         <th className="px-5 py-3">Dates</th>
-                        <th className="px-5 py-3">Days</th>
+                        <th className="px-5 py-3">Duration</th>
                         <th className="px-5 py-3">Type</th>
                         <th className="px-5 py-3">Status</th>
                         <th className="px-5 py-3">Reviewed By</th>
@@ -1794,9 +1862,9 @@ export default function StaffWorkPage() {
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="px-5 py-4 font-semibold text-slate-900">{r.officer_name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">
-                              {formatDateTimeString(r.start_date)}{r.start_date !== r.end_date && <> – {formatDateTimeString(r.end_date)}</>}
+                              {formatHolidayRange(r.start_date, r.end_date)}
                             </td>
-                            <td className="px-5 py-4 font-semibold text-slate-900">{r.days_count ?? '–'}</td>
+                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count)}</td>
                             <td className="px-5 py-4 capitalize text-slate-700">{r.leave_type}</td>
                             <td className="px-5 py-4">
                               <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor(r.status)}`}>
@@ -1884,11 +1952,22 @@ export default function StaffWorkPage() {
                   ))}
                 </select>
               </label>
+              <label className="flex items-center gap-2 mt-2">
+                <input
+                  type="checkbox"
+                  checked={allDay}
+                  onChange={(e) => setAllDay(e.target.checked)}
+                  className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
+                />
+                <span className="text-sm font-semibold text-slate-700">All Day</span>
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="text-xs font-bold uppercase text-slate-500">Start Date & Time</span>
+                  <span className="text-xs font-bold uppercase text-slate-500">
+                    {allDay ? 'Start Date' : 'Start Date & Time'}
+                  </span>
                   <input
-                    type="datetime-local"
+                    type={allDay ? 'date' : 'datetime-local'}
                     value={reqForm.start_date}
                     onChange={(e) => setReqForm({ ...reqForm, start_date: e.target.value })}
                     required
@@ -1896,9 +1975,11 @@ export default function StaffWorkPage() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-bold uppercase text-slate-500">End Date & Time</span>
+                  <span className="text-xs font-bold uppercase text-slate-500">
+                    {allDay ? 'End Date' : 'End Date & Time'}
+                  </span>
                   <input
-                    type="datetime-local"
+                    type={allDay ? 'date' : 'datetime-local'}
                     value={reqForm.end_date}
                     onChange={(e) => setReqForm({ ...reqForm, end_date: e.target.value })}
                     required

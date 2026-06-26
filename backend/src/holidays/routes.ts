@@ -244,7 +244,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
         SELECT hr.*,
                o.full_name AS officer_name,
                u.full_name AS approved_by_name,
-               COALESCE(NULLIF(CEIL(EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400)::int, 0), 1) AS days_count
+               ROUND((EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400.0)::numeric, 2) AS days_count
         FROM holiday_requests hr
         JOIN officers o ON o.id = hr.officer_id
         LEFT JOIN users u ON u.id = hr.approved_by
@@ -339,7 +339,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
         `SELECT hr.*,
                 o.full_name AS officer_name,
                 u.full_name AS approved_by_name,
-                COALESCE(NULLIF(CEIL(EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400)::int, 0), 1) AS days_count
+                ROUND((EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400.0)::numeric, 2) AS days_count
          FROM holiday_requests hr
          JOIN officers o ON o.id = hr.officer_id
          LEFT JOIN users u ON u.id = hr.approved_by

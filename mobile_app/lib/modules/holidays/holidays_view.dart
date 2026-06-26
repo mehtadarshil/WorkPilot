@@ -240,10 +240,10 @@ class HolidaysView extends GetView<HolidaysController> {
                       Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.whiteOverlay(0.5)),
                       const SizedBox(width: 6),
                       Text(
-                        '${_fmtDate(r.startDate)}${r.startDate != r.endDate ? ' – ${_fmtDate(r.endDate)}' : ''}',
+                        _fmtRange(r.startDate, r.endDate),
                         style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.6)),
                       ),
-                      if (r.daysCount != null) ...[
+                      if (r.daysCount != null || r.startDate.isNotEmpty) ...[
                         const SizedBox(width: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -252,7 +252,7 @@ class HolidaysView extends GetView<HolidaysController> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            '${r.daysCount}d',
+                            _fmtDuration(r.startDate, r.endDate, r.daysCount),
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -497,6 +497,7 @@ class HolidaysView extends GetView<HolidaysController> {
     final reasonController = TextEditingController();
     String leaveType = 'annual';
     int? selectedOfficerId;
+    bool? isAllDayState = true;
 
     showModalBottomSheet(
       context: context,
@@ -521,6 +522,8 @@ class HolidaysView extends GetView<HolidaysController> {
           padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
           child: StatefulBuilder(
             builder: (ctx, setState) {
+              // Track all day state
+              isAllDayState ??= true;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,68 +570,119 @@ class HolidaysView extends GetView<HolidaysController> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  _sheetLabel('Start Date'),
+                  Row(
+                    children: [
+                      SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: Checkbox(
+                          value: isAllDayState,
+                          activeColor: AppColors.primary,
+                          checkColor: Colors.white,
+                          onChanged: (v) {
+                            final val = v ?? true;
+                            setState(() {
+                              isAllDayState = val;
+                              if (val) {
+                                if (startController.text.length > 10) {
+                                  startController.text = startController.text.substring(0, 10);
+                                }
+                                if (endController.text.length > 10) {
+                                  endController.text = endController.text.substring(0, 10);
+                                }
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'All Day',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _sheetLabel(isAllDayState! ? 'Start Date' : 'Start Date & Time'),
                   const SizedBox(height: 6),
                   TextField(
                     controller: startController,
                     readOnly: true,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
-                    decoration: _sheetInputDecoration('Select date').copyWith(
+                    decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
                       suffixIcon: const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
                     onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2030),
-                        builder: (context, child) {
-                          return Theme(
-                            data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(
-                                primary: AppColors.primary,
-                                surface: Color(0xFF1E293B),
+                      if (isAllDayState!) {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.dark(
+                                  primary: AppColors.primary,
+                                  surface: Color(0xFF1E293B),
+                                ),
                               ),
-                            ),
-                            child: child!,
-                          );
-                        },
-                      );
-                      if (d != null) {
-                        setState(() => startController.text = d.toIso8601String().substring(0, 10));
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (d != null) {
+                          setState(() => startController.text = d.toIso8601String().substring(0, 10));
+                        }
+                      } else {
+                        final dt = await _pickDateTime(ctx, initialDateTime: DateTime.tryParse(startController.text));
+                        if (dt != null) {
+                          setState(() => startController.text = dt.toIso8601String().substring(0, 16));
+                        }
                       }
                     },
                   ),
                   const SizedBox(height: 16),
-                  _sheetLabel('End Date'),
+                  _sheetLabel(isAllDayState! ? 'End Date' : 'End Date & Time'),
                   const SizedBox(height: 6),
                   TextField(
                     controller: endController,
                     readOnly: true,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
-                    decoration: _sheetInputDecoration('Select date').copyWith(
+                    decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
                       suffixIcon: const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
                     onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2030),
-                        builder: (context, child) {
-                          return Theme(
-                            data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(
-                                primary: AppColors.primary,
-                                surface: Color(0xFF1E293B),
+                      if (isAllDayState!) {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                          builder: (context, child) {
+                            return Theme(
+                              data: Theme.of(context).copyWith(
+                                colorScheme: const ColorScheme.dark(
+                                  primary: AppColors.primary,
+                                  surface: Color(0xFF1E293B),
+                                ),
                               ),
-                            ),
-                            child: child!,
-                          );
-                        },
-                      );
-                      if (d != null) {
-                        setState(() => endController.text = d.toIso8601String().substring(0, 10));
+                              child: child!,
+                            );
+                          },
+                        );
+                        if (d != null) {
+                          setState(() => endController.text = d.toIso8601String().substring(0, 10));
+                        }
+                      } else {
+                        final dt = await _pickDateTime(ctx, initialDateTime: DateTime.tryParse(endController.text));
+                        if (dt != null) {
+                          setState(() => endController.text = dt.toIso8601String().substring(0, 16));
+                        }
                       }
                     },
                   ),
@@ -667,10 +721,18 @@ class HolidaysView extends GetView<HolidaysController> {
                           Get.snackbar('Error', 'Please select start and end dates');
                           return;
                         }
+                        String startVal = startController.text;
+                        String endVal = endController.text;
+                        if (isAllDayState!) {
+                          final onlyStart = startVal.split('T')[0];
+                          final onlyEnd = endVal.split('T')[0];
+                          startVal = '${onlyStart}T00:00:00';
+                          endVal = '${onlyEnd}T23:59:59';
+                        }
                         controller.submitRequest(
                           officerId: selectedOfficerId,
-                          startDate: startController.text,
-                          endDate: endController.text,
+                          startDate: startVal,
+                          endDate: endVal,
                           leaveType: leaveType,
                           reason: reasonController.text.isNotEmpty ? reasonController.text : null,
                         );
@@ -696,6 +758,48 @@ class HolidaysView extends GetView<HolidaysController> {
         );
       },
     );
+  }
+
+  // Helper method for picking Date & Time
+  Future<DateTime?> _pickDateTime(BuildContext context, {DateTime? initialDateTime}) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initialDateTime ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primary,
+              surface: Color(0xFF1E293B),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (date == null) return null;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDateTime ?? DateTime.now()),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primary,
+              surface: Color(0xFF1E293B),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (time == null) {
+      return DateTime(date.year, date.month, date.day);
+    }
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
   Widget _sheetLabel(String text) {
@@ -784,6 +888,68 @@ class HolidaysView extends GetView<HolidaysController> {
       return '${date.day} ${months[date.month - 1]} ${date.year}';
     } catch (_) {
       return d;
+    }
+  }
+
+  String _fmtRange(String startStr, String endStr) {
+    try {
+      final start = DateTime.parse(startStr).toLocal();
+      final end = DateTime.parse(endStr).toLocal();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      
+      final startHasTime = !startStr.endsWith('00:00:00') && !startStr.endsWith('00:00:00.000Z') && (start.hour != 0 || start.minute != 0);
+      final endHasTime = !endStr.endsWith('00:00:00') && !endStr.endsWith('00:00:00.000Z') && (end.hour != 0 || end.minute != 0);
+      
+      final startDateStr = '${start.day} ${months[start.month - 1]} ${start.year}';
+      final endDateStr = '${end.day} ${months[end.month - 1]} ${end.year}';
+      
+      if (start.year == end.year && start.month == end.month && start.day == end.day) {
+        if (startHasTime || endHasTime) {
+          final startHr = start.hour.toString().padLeft(2, '0');
+          final startMin = start.minute.toString().padLeft(2, '0');
+          final endHr = end.hour.toString().padLeft(2, '0');
+          final endMin = end.minute.toString().padLeft(2, '0');
+          return '$startDateStr, $startHr:$startMin – $endHr:$endMin';
+        }
+        return startDateStr;
+      } else {
+        String startFmt = startDateStr;
+        String endFmt = endDateStr;
+        if (startHasTime) {
+          final startHr = start.hour.toString().padLeft(2, '0');
+          final startMin = start.minute.toString().padLeft(2, '0');
+          startFmt = '$startDateStr at $startHr:$startMin';
+        }
+        if (endHasTime) {
+          final endHr = end.hour.toString().padLeft(2, '0');
+          final endMin = end.minute.toString().padLeft(2, '0');
+          endFmt = '$endDateStr at $endHr:$endMin';
+        }
+        return '$startFmt – $endFmt';
+      }
+    } catch (_) {
+      return '$startStr – $endStr';
+    }
+  }
+
+  String _fmtDuration(String startStr, String endStr, int? backendDaysCount) {
+    try {
+      final start = DateTime.parse(startStr);
+      final end = DateTime.parse(endStr);
+      final diff = end.difference(start);
+      if (diff.inSeconds <= 0) return '0d';
+      
+      if (diff.inHours < 24) {
+        final hrs = diff.inMinutes / 60.0;
+        final hrsStr = hrs % 1 == 0 ? hrs.toInt().toString() : hrs.toStringAsFixed(1);
+        return '${hrsStr}h';
+      } else {
+        final days = diff.inHours / 24.0;
+        final daysStr = days % 1 == 0 ? days.toInt().toString() : days.toStringAsFixed(1);
+        return '${daysStr}d';
+      }
+    } catch (_) {
+      return backendDaysCount != null ? '${backendDaysCount}d' : '';
     }
   }
 }
