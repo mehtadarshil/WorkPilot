@@ -15,6 +15,7 @@ import '../certificates/certificate_catalog.dart';
 import '../home/controllers/home_controller.dart';
 import 'diary_event_detail_controller.dart';
 import 'diary_extra_submissions_panel.dart';
+import 'diary_job_expenses_panel.dart';
 import 'diary_technical_notes_panel.dart';
 
 String _formatVisitDateTime(DateTime? d) {
@@ -706,6 +707,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 ],
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            DiaryJobExpensesPanel(controller: controller),
                             const SizedBox(height: 12),
                             DiaryTechnicalNotesPanel(
                               controller: controller,

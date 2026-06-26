@@ -1,14 +1,12 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/values/app_colors.dart';
 import '../open_jobs/open_job_formatters.dart';
 import 'job_detail_controller.dart';
+import 'job_expense_dialog.dart';
 import 'job_formatters.dart';
 import 'job_states.dart';
 
@@ -525,122 +523,22 @@ class JobTabDetails extends StatelessWidget {
   }
 
   Future<void> _showAddExpense(BuildContext context, JobDetailController c) async {
-    var expenseDate = DateTime.now();
-    var expenseType = 'personal';
-    XFile? proof;
-    final picker = ImagePicker();
-    final categoryC = TextEditingController(text: 'Parking');
-    final amountC = TextEditingController();
-    final descriptionC = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Add expense'),
-          content: StatefulBuilder(
-            builder: (ctx, setS) {
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      value: expenseType,
-                      decoration: const InputDecoration(labelText: 'Expense type'),
-                      items: const [
-                        DropdownMenuItem(value: 'personal', child: Text('Personal')),
-                        DropdownMenuItem(value: 'company', child: Text('Company')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setS(() => expenseType = val);
-                      },
-                    ),
-                    TextField(
-                      controller: categoryC,
-                      decoration: const InputDecoration(labelText: 'Category'),
-                      textCapitalization: TextCapitalization.sentences,
-                    ),
-                    TextField(
-                      controller: amountC,
-                      decoration: const InputDecoration(labelText: 'Amount'),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    ),
-                    TextField(
-                      controller: descriptionC,
-                      decoration: const InputDecoration(labelText: 'Notes'),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Receipt photo'),
-                      subtitle: Text(proof?.name ?? 'Required — take or choose a photo'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        onPressed: () async {
-                          final x = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
-                          if (x != null) setS(() => proof = x);
-                        },
-                      ),
-                      onTap: () async {
-                        final x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-                        if (x != null) setS(() => proof = x);
-                      },
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Expense date'),
-                      subtitle: Text(expenseDate.toIso8601String().split('T').first),
-                      onTap: () async {
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: expenseDate,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (d != null) setS(() => expenseDate = DateTime(d.year, d.month, d.day));
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-          ],
-        );
-      },
-    );
-    if (ok == true) {
-      try {
-        final amount = double.tryParse(amountC.text.trim().replaceAll(',', '')) ?? 0;
-        if (amount <= 0) throw Exception('Enter an expense amount greater than zero.');
-        if (proof == null) throw Exception('A receipt photo is required.');
-        final bytes = await proof!.readAsBytes();
-        await c.postExpense(
-          category: categoryC.text.trim().isEmpty ? 'Expense' : categoryC.text.trim(),
-          amount: amount,
-          description: descriptionC.text.trim().isEmpty ? null : descriptionC.text.trim(),
-          expenseDate: expenseDate.toIso8601String().split('T').first,
-          expenseType: expenseType,
-          proofFiles: [
-            {
-              'filename': proof!.name.isNotEmpty ? proof!.name : 'expense-receipt.jpg',
-              'content_type': 'image/jpeg',
-              'content_base64': base64Encode(bytes),
-            },
-          ],
-        );
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
-        }
+    final data = await showAddJobExpenseDialog(context, requireProof: true);
+    if (data == null) return;
+    try {
+      await c.postExpense(
+        category: data.category,
+        amount: data.amount,
+        description: data.description,
+        expenseDate: data.expenseDate,
+        expenseType: data.expenseType,
+        proofFiles: data.proofFiles,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
-    categoryC.dispose();
-    amountC.dispose();
-    descriptionC.dispose();
   }
 
   Widget _diaryRow(BuildContext context, JobDetailController c, Map<String, dynamic> e, Map<String, dynamic> job) {

@@ -10,6 +10,7 @@ import '../../core/values/app_constants.dart';
 import 'customer_detail_controller.dart';
 import 'customer_tab_widgets.dart';
 import 'customer_tabs/customer_notes_tab.dart';
+import 'customer_tabs/customer_site_images_tab.dart';
 import 'customer_tabs/helpers.dart';
 
 String _customerFileContentUrl(int customerId, int fileId) {
@@ -78,10 +79,7 @@ List<String> _detailTabKeys(CustomerDetailController c) {
   final cust = c.customer.value;
   final wid = c.scopedWorkAddressId.value;
   final allowBranches = cust == null || cust['customer_type_allow_branches'] != false;
-  final keys = <String>['all_works', 'notes', 'communications', 'contacts'];
-  if (wid != null) {
-    keys.add('invoices');
-  }
+  final keys = <String>['all_works', 'notes', 'communications', 'contacts', 'invoices', 'site_images'];
   if (allowBranches) {
     keys.add('branches');
   }
@@ -104,6 +102,8 @@ String _tabChipLabel(String key, Map<String, dynamic>? cust) {
       return 'Contacts';
     case 'invoices':
       return 'Invoices';
+    case 'site_images':
+      return 'Site images';
     case 'branches':
       return 'Branches';
     case 'work_address':
@@ -262,6 +262,36 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Customer-level KEY INFO (behaviour notes) banner — visible when NOT scoped to a work address
+          if (scoped == null) Obx(() {
+            final behavNotes = (_c.customer.value?['notes'] ?? '').toString().trim();
+            if (behavNotes.isEmpty) return const SizedBox.shrink();
+            return Material(
+              color: const Color(0x25F59E0B),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'KEY INFO',
+                      style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.4,
+                        color: const Color(0xFFFBBF24),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      behavNotes,
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.85), height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
           if (scoped != null)
             Material(
               color: const Color(0x33F59E0B),
@@ -448,6 +478,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
         return CustomerContactsTab(customerId: id, workAddressId: wid);
       case 'invoices':
         return CustomerInvoicesTab(customerId: id, workAddressId: wid);
+      case 'site_images':
+        return CustomerSiteImagesTab(customerId: id, workAddressId: wid);
       case 'branches':
         return CustomerBranchesTab(customerId: id);
       case 'work_address':

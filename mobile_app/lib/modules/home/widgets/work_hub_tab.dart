@@ -63,6 +63,10 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.holidays);
       return;
     }
+    if (module == 'stock_tools') {
+      Get.toNamed(AppRoutes.stockTools);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
@@ -128,6 +132,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.assignment_turned_in_rounded,
           accent: Color(0xFFFBBF24),
         ),
+        'stock_tools': (
+          label: 'Stock & Tools',
+          subtitle: 'Inventory, tools & uniforms',
+          icon: Icons.inventory_2_rounded,
+          accent: Color(0xFFFCD34D),
+        ),
       };
 
   @override
@@ -179,6 +189,7 @@ class WorkHubTab extends StatelessWidget {
       if (p('jobs') && roleUp != 'OFFICER') add('jobs', count: s.jobsOpen);
       if (hasSettings && roleUp != 'OFFICER') add('settings');
       if (p('field_users') && roleUp != 'OFFICER') add('holidays');
+      add('stock_tools');
 
       return CustomScrollView(
         physics: const BouncingScrollPhysics(),

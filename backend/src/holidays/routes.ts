@@ -52,16 +52,19 @@ function holidayRow(row: Record<string, unknown>) {
 }
 
 function holidayRequestRow(row: Record<string, unknown>) {
+  const startRaw = row.start_date instanceof Date
+    ? row.start_date.toISOString()
+    : String(row.start_date ?? '');
+  const endRaw = row.end_date instanceof Date
+    ? row.end_date.toISOString()
+    : String(row.end_date ?? '');
+  const sqlDays = row.days_count != null ? Number(row.days_count) : null;
   return {
     id: Number(row.id),
     officer_id: row.officer_id == null ? null : Number(row.officer_id),
     officer_name: (row.officer_name as string | null) ?? null,
-    start_date: row.start_date instanceof Date
-      ? row.start_date.toISOString()
-      : String(row.start_date ?? ''),
-    end_date: row.end_date instanceof Date
-      ? row.end_date.toISOString()
-      : String(row.end_date ?? ''),
+    start_date: startRaw,
+    end_date: endRaw,
     leave_type: (row.leave_type as string) ?? 'annual',
     reason: (row.reason as string | null) ?? null,
     status: (row.status as string) ?? 'pending',
@@ -70,8 +73,54 @@ function holidayRequestRow(row: Record<string, unknown>) {
     approved_at: row.approved_at instanceof Date ? row.approved_at.toISOString() : null,
     rejection_reason: (row.rejection_reason as string | null) ?? null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
-    days_count: row.days_count != null ? Number(row.days_count) : null,
+    days_count: computeHolidayDaysCount(startRaw, endRaw, sqlDays),
   };
+}
+
+function computeHolidayDaysCount(
+  startDateStr: string,
+  endDateStr: string,
+  sqlDays: number | null,
+): number | null {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return sqlDays;
+  }
+  const diffMs = end.getTime() - start.getTime();
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+  if (diffMs <= 0 && sameDay) return 1;
+  if (sameDay && diffMs < 24 * 60 * 60 * 1000) {
+    if (diffMs < 60 * 60 * 1000) return 1;
+    return Math.round((diffMs / (1000 * 60 * 60 * 24)) * 100) / 100;
+  }
+  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  const calendarDays = Math.round((endDay - startDay) / 86400000) + 1;
+  if (calendarDays > 1 && diffMs >= (calendarDays - 1) * 86400000 * 0.9) {
+    return calendarDays;
+  }
+  if (sqlDays != null && Number.isFinite(sqlDays)) return sqlDays;
+  return Math.round((diffMs / 86400000) * 100) / 100;
+}
+
+async function fetchHolidayRequestById(pool: Pool, requestId: number) {
+  const enriched = await pool.query(
+    `SELECT hr.*,
+            o.full_name AS officer_name,
+            u.full_name AS approved_by_name,
+            ROUND((EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400.0)::numeric, 2) AS days_count
+     FROM holiday_requests hr
+     JOIN officers o ON o.id = hr.officer_id
+     LEFT JOIN users u ON u.id = hr.approved_by
+     WHERE hr.id = $1`,
+    [requestId],
+  );
+  const row = enriched.rows[0] as Record<string, unknown> | undefined;
+  return row ? holidayRequestRow(row) : null;
 }
 
 export async function ensureHolidaySchema(pool: Pool): Promise<void> {
@@ -316,39 +365,94 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
     if (!requestId) return res.status(400).json({ message: 'Invalid request id' });
     const body = req.body as Record<string, unknown>;
     const status = typeof body.status === 'string' ? body.status.trim() : '';
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ message: 'Status must be approved or rejected' });
+    const hasStatusUpdate = ['approved', 'rejected'].includes(status);
+    const startDate = body.start_date !== undefined ? parseTimestamp(body.start_date) : null;
+    const endDate = body.end_date !== undefined ? parseTimestamp(body.end_date) : null;
+    const leaveType = body.leave_type !== undefined ? (str(body.leave_type, 50) || 'annual') : null;
+    const hasFieldUpdate =
+      startDate != null ||
+      endDate != null ||
+      leaveType != null ||
+      body.reason !== undefined;
+
+    if (!hasStatusUpdate && !hasFieldUpdate) {
+      return res.status(400).json({ message: 'No valid fields to update' });
     }
-    if (!hasStaffPermission(user)) {
+    if ((hasStatusUpdate || hasFieldUpdate) && !hasStaffPermission(user)) {
       return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
     }
-    const rejectionReason = status === 'rejected' ? str(body.rejection_reason, 2000) : null;
+
     try {
-      const result = await pool.query(
-        `UPDATE holiday_requests
-         SET status = $1::varchar(30),
-             approved_by = $2,
-             approved_at = CASE WHEN $1::varchar(30) = 'approved' THEN NOW() ELSE NULL END,
-             rejection_reason = $3
-         WHERE id = $4
-         RETURNING *`,
-        [status, user.userId, rejectionReason, requestId],
-      );
-      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Request not found' });
-      const enriched = await pool.query(
-        `SELECT hr.*,
-                o.full_name AS officer_name,
-                u.full_name AS approved_by_name,
-                ROUND((EXTRACT(EPOCH FROM (hr.end_date - hr.start_date)) / 86400.0)::numeric, 2) AS days_count
-         FROM holiday_requests hr
-         JOIN officers o ON o.id = hr.officer_id
-         LEFT JOIN users u ON u.id = hr.approved_by
-         WHERE hr.id = $1`,
+      const current = await pool.query<{
+        status: string;
+        start_date: Date;
+        end_date: Date;
+      }>(
+        'SELECT status, start_date, end_date FROM holiday_requests WHERE id = $1',
         [requestId],
       );
-      const row = enriched.rows[0] as Record<string, unknown> | undefined;
-      if (!row) return res.status(404).json({ message: 'Request not found' });
-      return res.json({ request: holidayRequestRow(row) });
+      if ((current.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Request not found' });
+      const existing = current.rows[0]!;
+
+      if (hasFieldUpdate) {
+        if (existing.status !== 'pending') {
+          return res.status(400).json({ message: 'Only pending requests can be edited' });
+        }
+        const nextStart = startDate ?? existing.start_date.toISOString();
+        const nextEnd = endDate ?? existing.end_date.toISOString();
+        if (new Date(nextStart).getTime() > new Date(nextEnd).getTime()) {
+          return res.status(400).json({ message: 'start_date must be before or equal to end_date' });
+        }
+      }
+
+      const sets: string[] = [];
+      const params: unknown[] = [];
+      let idx = 1;
+
+      if (startDate) {
+        sets.push(`start_date = $${idx}::timestamptz`);
+        params.push(startDate);
+        idx += 1;
+      }
+      if (endDate) {
+        sets.push(`end_date = $${idx}::timestamptz`);
+        params.push(endDate);
+        idx += 1;
+      }
+      if (leaveType != null) {
+        sets.push(`leave_type = $${idx}`);
+        params.push(leaveType);
+        idx += 1;
+      }
+      if (body.reason !== undefined) {
+        sets.push(`reason = $${idx}`);
+        params.push(str(body.reason, 2000));
+        idx += 1;
+      }
+      if (hasStatusUpdate) {
+        const rejectionReason = status === 'rejected' ? str(body.rejection_reason, 2000) : null;
+        sets.push(`status = $${idx}::varchar(30)`);
+        params.push(status);
+        idx += 1;
+        sets.push(`approved_by = $${idx}`);
+        params.push(user.userId);
+        idx += 1;
+        sets.push(`approved_at = CASE WHEN $${idx - 2}::varchar(30) = 'approved' THEN NOW() ELSE NULL END`);
+        sets.push(`rejection_reason = $${idx}`);
+        params.push(rejectionReason);
+        idx += 1;
+      }
+
+      params.push(requestId);
+      const result = await pool.query(
+        `UPDATE holiday_requests SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id`,
+        params,
+      );
+      if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Request not found' });
+
+      const request = await fetchHolidayRequestById(pool, requestId);
+      if (!request) return res.status(404).json({ message: 'Request not found' });
+      return res.json({ request });
     } catch (error) {
       console.error('Update holiday request error:', error);
       return res.status(500).json({ message: 'Internal server error' });

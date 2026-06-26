@@ -76,7 +76,7 @@ import {
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
 import { syncJobDatesFromDiaryEvents } from './jobDiaryDateSync';
-import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange } from './ensureJobDiaryEvents';
+import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
@@ -2314,6 +2314,22 @@ async function initDb() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_diary_event_officers_officer ON diary_event_officers(officer_id)`);
   await pool.query(`ALTER TABLE diary_event_officers ADD COLUMN IF NOT EXISTS status VARCHAR(80)`);
   await pool.query(`ALTER TABLE diary_event_status_logs ADD COLUMN IF NOT EXISTS officer_id INTEGER REFERENCES officers(id) ON DELETE SET NULL`);
+  try {
+    const legacyCombined = await pool.query<{ id: number }>(
+      `SELECT d.id FROM diary_events d
+       WHERE (SELECT COUNT(*)::int FROM diary_event_officers deo WHERE deo.diary_event_id = d.id) > 1
+       LIMIT 500`,
+    );
+    const { splitCombinedDiaryEvent: splitLegacyDiary } = await import('./ensureJobDiaryEvents');
+    for (const row of legacyCombined.rows) {
+      await splitLegacyDiary(pool, row.id);
+    }
+    if (legacyCombined.rows.length > 0) {
+      console.log(`Split ${legacyCombined.rows.length} legacy combined diary visit(s) into per-engineer rows`);
+    }
+  } catch (splitErr) {
+    console.error('Legacy combined diary split migration:', splitErr);
+  }
   await ensureStaffWorkSchema(pool);
   await ensureHolidaySchema(pool);
   await ensurePpmContractSchema(pool);
@@ -2535,6 +2551,14 @@ function sqlDiaryOfficerAssigned(officerParam: string): string {
     d.officer_id = ${officerParam}
     OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = ${officerParam})
     OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = ${officerParam})
+  )`;
+}
+
+/** Mobile diary lists — each engineer sees only their visit row, not teammates' on the same job. */
+function sqlDiaryOfficerMineOnly(officerParam: string): string {
+  return `(
+    d.officer_id = ${officerParam}
+    OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = ${officerParam})
   )`;
 }
 
@@ -3757,6 +3781,16 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
           const rangeEnd = new Date();
           rangeEnd.setDate(rangeEnd.getDate() + 7);
           try {
+            await splitCombinedDiaryEventsInRange(
+              pool,
+              rangeStart.toISOString(),
+              rangeEnd.toISOString(),
+              {
+                tenantUserId: userId,
+                isSuperAdmin,
+                officerId: oid,
+              },
+            );
             await ensureDiaryEventsForScheduledJobsInRange(
               pool,
               rangeStart.toISOString(),
@@ -3797,7 +3831,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
-       WHERE ${sqlDiaryOfficerAssigned('$1')}
+       WHERE ${sqlDiaryOfficerMineOnly('$1')}
          AND d.start_time < NOW() + INTERVAL '7 days'
          AND (d.start_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute')) > NOW()
          ${sqlDiaryOngoingForOfficer('$1')}
@@ -3949,8 +3983,11 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
     >(
       `SELECT j.id, j.job_number, j.title, j.description, j.state, j.priority,
               COALESCE(
-                NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
-                j.location
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1),''), NULLIF(TRIM(wa.address_line_2),''), NULLIF(TRIM(wa.address_line_3),''), NULLIF(TRIM(wa.town),''), NULLIF(TRIM(wa.county),''), NULLIF(TRIM(wa.postcode),''))),''),
+                NULLIF(TRIM(wa.name),''),
+                NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(c.address_line_1),''), NULLIF(TRIM(c.address_line_2),''), NULLIF(TRIM(c.address_line_3),''), NULLIF(TRIM(c.town),''), NULLIF(TRIM(c.county),''), NULLIF(TRIM(c.postcode),''))),''),
+                NULLIF(TRIM(c.address),''),
+                NULLIF(TRIM(j.location),'')
               ) AS location,
               j.schedule_start, j.duration_minutes, j.scheduling_notes,
               j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
@@ -3966,7 +4003,7 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
        LEFT JOIN ppm_contracts pc ON pc.id = j.ppm_contract_id
        WHERE (j.officer_id = $1 OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $1))
          AND j.state NOT IN ('completed', 'closed')
-       ORDER BY j.schedule_start ASC NULLS LAST, j.updated_at DESC
+       ORDER BY j.id DESC
        LIMIT 200`,
       [oid],
     );
@@ -6547,7 +6584,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
        FROM jobs j
        ${joinClause}
        ${whereClause}
-       ORDER BY j.updated_at DESC NULLS LAST, j.created_at DESC
+       ORDER BY j.id DESC NULLS LAST
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       listParams,
     );
@@ -8557,6 +8594,11 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
 
     if (hasRange) {
       try {
+        await splitCombinedDiaryEventsInRange(pool, rangeStartRaw, rangeEndRaw, {
+          tenantUserId: getTenantScopeUserId(req.user!),
+          isSuperAdmin: req.user!.role === 'SUPER_ADMIN',
+          officerId: mineFieldOfficer ? tokenOid : null,
+        });
         await ensureDiaryEventsForScheduledJobsInRange(pool, rangeStartRaw, rangeEndRaw, {
           tenantUserId: getTenantScopeUserId(req.user!),
           isSuperAdmin: req.user!.role === 'SUPER_ADMIN',
@@ -8586,7 +8628,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       }
     } else if (mineFieldOfficer) {
       officerParamIdx = nextParam;
-      officerClause = ` AND (d.officer_id = $${nextParam} OR j.officer_id = $${nextParam} OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $${nextParam}) OR EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $${nextParam}))`;
+      officerClause = ` AND ${sqlDiaryOfficerMineOnly(`$${nextParam}`)}`;
       params.push(tokenOid);
       nextParam += 1;
     } else if (typeof req.query.officer_id === 'string') {
@@ -8707,6 +8749,14 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
 
   try {
     const tokenOfficerId = req.user!.officerId ?? null;
+    let detailId = id;
+    if (tokenOfficerId != null && Number.isFinite(tokenOfficerId)) {
+      try {
+        detailId = await resolveActingDiaryEventId(pool, id, tokenOfficerId);
+      } catch (splitErr) {
+        console.error('resolveActingDiaryEventId on GET detail:', splitErr);
+      }
+    }
     const result = await pool.query(
       `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
               ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
@@ -8762,7 +8812,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE d.id = $1`,
-      tokenOfficerId != null ? [id, tokenOfficerId] : [id],
+      tokenOfficerId != null ? [detailId, tokenOfficerId] : [detailId],
     );
     if ((result.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: 'Event not found' });
@@ -8795,7 +8845,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        FROM diary_event_officers deo JOIN officers o ON o.id = deo.officer_id
        WHERE deo.diary_event_id = $1
        ORDER BY deo.is_primary DESC, o.full_name`,
-      [id]
+      [detailId]
     );
 
     let siteImages: unknown[] = [];
@@ -11758,6 +11808,11 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
         return res.status(404).json({ message: 'Job not found' });
       }
     }
+    try {
+      await splitCombinedDiaryEventsForJob(pool, jobId);
+    } catch (splitErr) {
+      console.error('splitCombinedDiaryEventsForJob:', splitErr);
+    }
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
               (
@@ -12451,6 +12506,11 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
 
+    let targetEventId = id;
+    if (tokenOfficerId != null && Number.isFinite(tokenOfficerId)) {
+      targetEventId = await resolveActingDiaryEventId(client, id, tokenOfficerId);
+    }
+
     const eventRes = await client.query<{
       job_id: number;
       officer_id: number | null;
@@ -12464,7 +12524,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
-      [id, tokenOfficerId],
+      [targetEventId, tokenOfficerId],
     );
     if ((eventRes.rowCount ?? 0) === 0) {
       await client.query('ROLLBACK');
@@ -12485,13 +12545,18 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     const lngVal = (typeof longitude === 'number' && Number.isFinite(longitude)) ? longitude : (typeof longitude === 'string' && longitude.trim() !== '' ? parseFloat(longitude) : null);
     const tsVal = (typeof timestamp === 'string' && timestamp.trim() !== '') ? timestamp.trim() : null;
 
+    const actingOfficerId =
+      tokenOfficerId != null && Number.isFinite(tokenOfficerId)
+        ? tokenOfficerId
+        : row.officer_id ?? row.job_officer_id;
+
     const normalizedPre = normalizeDiaryStatusForTimesheet(status);
     if (normalizedPre === 'completed') {
       const qc = await countJobReportQuestionsForJob(client, row.job_id);
       if (qc > 0) {
         const reportSubCheck = await client.query(
           `SELECT EXISTS (SELECT 1 FROM job_report_answers WHERE diary_event_id = $1) AS submitted`,
-          [id]
+          [targetEventId]
         );
         if (!reportSubCheck.rows[0]?.submitted) {
           await client.query('ROLLBACK');
@@ -12520,41 +12585,35 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       return res.status(400).json({ message: 'abort_reason is only allowed when cancelling a visit.' });
     }
 
-    const actingOfficerId =
-      tokenOfficerId != null && Number.isFinite(tokenOfficerId)
-        ? tokenOfficerId
-        : row.officer_id ?? row.job_officer_id;
-    const multiOfficerVisit = await diaryEventHasMultipleOfficers(client, id);
+    await client.query(
+      `UPDATE diary_events SET status = $1, notes = COALESCE($2, notes),
+         abort_reason = $3, updated_at = NOW() WHERE id = $4`,
+      [storedStatus, notesVal, storedStatus === 'cancelled' ? abortReasonVal : null, targetEventId],
+    );
 
-    if (multiOfficerVisit && actingOfficerId != null) {
+    if (actingOfficerId != null && Number.isFinite(actingOfficerId)) {
       await client.query(
         `UPDATE diary_event_officers SET status = $1
          WHERE diary_event_id = $2 AND officer_id = $3`,
-        [storedStatus, id, actingOfficerId],
-      );
-    } else {
-      await client.query(
-        `UPDATE diary_events SET status = $1, notes = COALESCE($2, notes),
-           abort_reason = $3, updated_at = NOW() WHERE id = $4`,
-        [storedStatus, notesVal, storedStatus === 'cancelled' ? abortReasonVal : null, id],
+        [storedStatus, targetEventId, actingOfficerId],
       );
     }
 
-    await logDiaryEventStatusTransition(client, id, storedStatus, latVal, lngVal, tsVal, userId, actingOfficerId ?? null);
+    await logDiaryEventStatusTransition(client, targetEventId, storedStatus, latVal, lngVal, tsVal, userId, actingOfficerId ?? null);
 
     const normalized = normalizeDiaryStatusForTimesheet(status);
     if (actingOfficerId != null && Number.isFinite(actingOfficerId)) {
-      await applyDiaryStatusToTimesheet(client, actingOfficerId, id, normalized);
+      await applyDiaryStatusToTimesheet(client, actingOfficerId, targetEventId, normalized);
     }
 
     await client.query('COMMIT');
 
     if (normalized === 'completed') {
-      const shouldFinalize = await shouldFinalizeJobAfterVisitComplete(client, row.job_id, id, multiOfficerVisit);
+      const shouldFinalize = await shouldFinalizeJobAfterVisitComplete(client, row.job_id, targetEventId, false);
       if (shouldFinalize) {
         const eventRowCheck = await pool.query<{ next_job_state: string | null }>(
           'SELECT next_job_state FROM diary_events WHERE id = $1',
-          [id]
+          [targetEventId]
         );
         const nextState = eventRowCheck.rows[0]?.next_job_state || 'completed';
 
@@ -12584,7 +12643,11 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
       }
     }
 
-    return res.json({ message: 'Diary event updated successfully', status: storedStatus });
+    return res.json({
+      message: 'Diary event updated successfully',
+      status: storedStatus,
+      diary_id: targetEventId,
+    });
   } catch (error) {
     try {
       await client.query('ROLLBACK');

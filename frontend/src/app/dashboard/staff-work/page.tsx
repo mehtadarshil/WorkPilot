@@ -283,17 +283,76 @@ function formatHolidayDuration(startDateStr: string, endDateStr: string, backend
     return backendDays != null ? `${backendDays}d` : '–';
   }
   const diffMs = end.getTime() - start.getTime();
-  if (diffMs <= 0) return '0d';
-  
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  if (diffMs <= 0 && sameDay) return '1d';
+
   const diffHours = diffMs / (1000 * 60 * 60);
+  if (sameDay && diffHours < 24) {
+    if (diffHours < 1) return '1d';
+    const hrs = Number.isInteger(diffHours) ? diffHours : parseFloat(diffHours.toFixed(1));
+    return `${hrs}h`;
+  }
+
   if (diffHours < 24) {
     const hrs = Number.isInteger(diffHours) ? diffHours : parseFloat(diffHours.toFixed(1));
     return `${hrs}h`;
-  } else {
-    const diffDays = diffHours / 24;
-    const days = Number.isInteger(diffDays) ? diffDays : parseFloat(diffDays.toFixed(1));
-    return `${days}d`;
   }
+
+  const startDay = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  const calendarDays = Math.round((endDay - startDay) / 86400000) + 1;
+  if (calendarDays > 1 && diffMs >= (calendarDays - 1) * 86400000 * 0.9) {
+    return `${calendarDays}d`;
+  }
+
+  const days = backendDays != null && backendDays > 0
+    ? backendDays
+    : (Number.isInteger(diffHours / 24) ? diffHours / 24 : parseFloat((diffHours / 24).toFixed(1)));
+  return `${days}d`;
+}
+
+function holidayRequestLooksAllDay(startDateStr: string, endDateStr: string): boolean {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+  const diffMs = end.getTime() - start.getTime();
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+  if (diffMs <= 0 && sameDay) return true;
+  if (sameDay && diffMs >= 23 * 60 * 60 * 1000) return true;
+  const startMidnight = start.getHours() === 0 && start.getMinutes() === 0;
+  const endLate = end.getHours() === 23 && end.getMinutes() >= 59;
+  if (!sameDay && startMidnight && endLate) return true;
+  return false;
+}
+
+function toHolidayFormDateValue(iso: string, allDay: boolean): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (allDay) return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildHolidayTimestamps(startInput: string, endInput: string, allDay: boolean): { start: string; end: string } {
+  if (allDay) {
+    const onlyStart = startInput.split('T')[0];
+    const onlyEnd = endInput.split('T')[0];
+    return {
+      start: `${onlyStart}T00:00:00`,
+      end: `${onlyEnd}T23:59:59`,
+    };
+  }
+  return {
+    start: new Date(startInput).toISOString(),
+    end: new Date(endInput).toISOString(),
+  };
 }
 
 
@@ -411,6 +470,10 @@ export default function StaffWorkPage() {
   const [updatingHolidayId, setUpdatingHolidayId] = useState<number | null>(null);
   const [reqForm, setReqForm] = useState({ officer_id: '', start_date: '', end_date: '', leave_type: 'annual', reason: '' });
   const [allDay, setAllDay] = useState(true);
+  const [editingRequest, setEditingRequest] = useState<HolidayRequest | null>(null);
+  const [editForm, setEditForm] = useState({ start_date: '', end_date: '', leave_type: 'annual', reason: '' });
+  const [editAllDay, setEditAllDay] = useState(true);
+  const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidayForm, setHolidayForm] = useState({ title: '', holiday_date: '', description: '', is_recurring: false });
 
   // --- Calendar Tab States ---
@@ -564,12 +627,13 @@ export default function StaffWorkPage() {
         .map((r: any) => {
           const oKey = officerColorKey(r.officer_id, r.officer_name);
           const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
+          const allDayLeave = holidayRequestLooksAllDay(r.start_date, r.end_date);
           return {
             id: `leave-${r.id}`,
             title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
             start: new Date(r.start_date),
             end: new Date(r.end_date),
-            allDay: false,
+            allDay: allDayLeave,
             backgroundColor: palette.backgroundColor,
             borderColor: palette.borderColor,
             textColor: palette.textColor,
@@ -812,14 +876,11 @@ export default function StaffWorkPage() {
     if (!token) return;
     setHolidayError(null);
     try {
-      let startDateStr = reqForm.start_date;
-      let endDateStr = reqForm.end_date;
-      if (allDay) {
-        const onlyStartDate = startDateStr.split('T')[0];
-        const onlyEndDate = endDateStr.split('T')[0];
-        startDateStr = `${onlyStartDate}T00:00:00`;
-        endDateStr = `${onlyEndDate}T23:59:59`;
-      }
+      const { start: startDateStr, end: endDateStr } = buildHolidayTimestamps(
+        reqForm.start_date,
+        reqForm.end_date,
+        allDay,
+      );
       await postJson('/holiday-requests', {
         officer_id: reqForm.officer_id ? Number(reqForm.officer_id) : undefined,
         start_date: startDateStr,
@@ -833,6 +894,45 @@ export default function StaffWorkPage() {
       void fetchHolidaysData();
     } catch (err) {
       setHolidayError(err instanceof Error ? err.message : 'Could not submit request');
+    }
+  };
+
+  const openEditRequest = (request: HolidayRequest) => {
+    const isAllDay = holidayRequestLooksAllDay(request.start_date, request.end_date);
+    setEditingRequest(request);
+    setEditAllDay(isAllDay);
+    setEditForm({
+      start_date: toHolidayFormDateValue(request.start_date, isAllDay),
+      end_date: toHolidayFormDateValue(request.end_date, isAllDay),
+      leave_type: request.leave_type,
+      reason: request.reason ?? '',
+    });
+  };
+
+  const submitEditRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !editingRequest) return;
+    setHolidayError(null);
+    setEditSubmitting(true);
+    try {
+      const { start: startDateStr, end: endDateStr } = buildHolidayTimestamps(
+        editForm.start_date,
+        editForm.end_date,
+        editAllDay,
+      );
+      await patchJson(`/holiday-requests/${editingRequest.id}`, {
+        start_date: startDateStr,
+        end_date: endDateStr,
+        leave_type: editForm.leave_type,
+        reason: editForm.reason || null,
+      }, token);
+      setEditingRequest(null);
+      setShowDetailModal(false);
+      void fetchHolidaysData();
+    } catch (err) {
+      setHolidayError(err instanceof Error ? err.message : 'Could not update request');
+    } finally {
+      setEditSubmitting(false);
     }
   };
 
@@ -1813,6 +1913,13 @@ export default function StaffWorkPage() {
                               <div className="flex justify-end gap-2">
                                 <button
                                   type="button"
+                                  onClick={() => openEditRequest(r)}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  <Edit2 className="mr-1 inline size-3" /> Edit
+                                </button>
+                                <button
+                                  type="button"
                                   disabled={updatingHolidayId === r.id}
                                   onClick={() => void updateHolidayRequestStatus(r.id, 'rejected')}
                                   className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
@@ -1930,6 +2037,93 @@ export default function StaffWorkPage() {
             </section>
           )}
         </>
+      )}
+
+      {/* --- MODAL: EDIT HOLIDAY REQUEST --- */}
+      {editingRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingRequest(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900">Edit holiday request</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {editingRequest.officer_name || 'Staff member'} — adjust dates, times, or leave details before approval.
+            </p>
+            <form onSubmit={submitEditRequest} className="mt-4 space-y-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editAllDay}
+                  onChange={(e) => setEditAllDay(e.target.checked)}
+                  className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
+                />
+                <span className="text-sm font-semibold text-slate-700">All day</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-slate-500">
+                    {editAllDay ? 'Start date' : 'Start date & time'}
+                  </span>
+                  <input
+                    type={editAllDay ? 'date' : 'datetime-local'}
+                    value={editForm.start_date}
+                    onChange={(e) => setEditForm({ ...editForm, start_date: e.target.value })}
+                    required
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-bold uppercase text-slate-500">
+                    {editAllDay ? 'End date' : 'End date & time'}
+                  </span>
+                  <input
+                    type={editAllDay ? 'date' : 'datetime-local'}
+                    value={editForm.end_date}
+                    onChange={(e) => setEditForm({ ...editForm, end_date: e.target.value })}
+                    required
+                    className={inputClass}
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-slate-500">Leave type</span>
+                <select
+                  value={editForm.leave_type}
+                  onChange={(e) => setEditForm({ ...editForm, leave_type: e.target.value })}
+                  className={selectClass}
+                >
+                  <option value="annual">Annual Leave</option>
+                  <option value="sick">Sick Leave</option>
+                  <option value="unpaid">Unpaid Leave</option>
+                  <option value="other">Other time off</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-bold uppercase text-slate-500">Reason / notes</span>
+                <textarea
+                  value={editForm.reason}
+                  onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
+                  rows={3}
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                />
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRequest(null)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSubmitting}
+                  className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+                >
+                  {editSubmitting ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* --- MODAL: REQUEST TIME OFF --- */}
@@ -2257,20 +2451,22 @@ export default function StaffWorkPage() {
                 </h3>
 
                 <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Start Date</span>
-                      <p className="mt-0.5 text-slate-800">{format(new Date(selectedEvent.raw.start_date + 'T00:00:00'), 'EEE, d MMM yyyy')}</p>
-                    </div>
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">End Date</span>
-                      <p className="mt-0.5 text-slate-800">{format(new Date(selectedEvent.raw.end_date + 'T00:00:00'), 'EEE, d MMM yyyy')}</p>
-                    </div>
+                  <div>
+                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Dates</span>
+                    <p className="mt-0.5 text-slate-800">
+                      {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date)}
+                    </p>
                   </div>
 
                   <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Leave Duration</span>
-                    <p className="mt-0.5 text-slate-800">{selectedEvent.raw.days_count ?? '–'} Days</p>
+                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Duration</span>
+                    <p className="mt-0.5 text-slate-800">
+                      {formatHolidayDuration(
+                        selectedEvent.raw.start_date,
+                        selectedEvent.raw.end_date,
+                        selectedEvent.raw.days_count,
+                      )}
+                    </p>
                   </div>
 
                   <div>
@@ -2293,7 +2489,16 @@ export default function StaffWorkPage() {
                   )}
                 </div>
 
-                <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
+                <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
+                  {selectedEvent.raw.status === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => openEditRequest(selectedEvent.raw as HolidayRequest)}
+                      className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"
+                    >
+                      <Edit2 className="size-4" /> Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowDetailModal(false)}
                     className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"

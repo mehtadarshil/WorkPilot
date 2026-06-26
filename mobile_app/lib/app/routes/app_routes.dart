@@ -37,4 +37,5 @@ abstract class AppRoutes {
   static const String profileEdit = '/profile/edit';
   static const String idCard = '/profile/id-card';
   static const String holidays = '/holidays';
+  static const String stockTools = '/stock-tools';
 }

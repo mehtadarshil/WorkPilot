@@ -401,6 +401,13 @@ class CustomersRepository extends GetxService {
     await _api.delete<void>('/customers/$customerId/files/$fileId');
   }
 
+  Future<void> patchCustomerFile(int customerId, int fileId, Map<String, dynamic> body) async {
+    await _api.patch<Map<String, dynamic>>(
+      '/customers/$customerId/files/$fileId',
+      data: body,
+    );
+  }
+
   Future<Uint8List> getCustomerFileBytes(int customerId, int fileId) async {
     final res = await _api.getBytes('/customers/$customerId/files/$fileId/content');
     final d = res.data;
@@ -456,6 +463,7 @@ class CustomersRepository extends GetxService {
   Future<Map<String, dynamic>> listInvoicesForCustomer(
     int customerId, {
     int? invoiceWorkAddressId,
+    bool includeWorkAddressInvoices = false,
   }) async {
     final res = await _api.get<Map<String, dynamic>>(
       '/invoices',
@@ -464,6 +472,7 @@ class CustomersRepository extends GetxService {
         'limit': 500,
         'page': 1,
         if (invoiceWorkAddressId != null) 'invoice_work_address_id': invoiceWorkAddressId,
+        if (includeWorkAddressInvoices && invoiceWorkAddressId == null) 'include_work_address_invoices': 'true',
       },
     );
     return _asMap(res.data);

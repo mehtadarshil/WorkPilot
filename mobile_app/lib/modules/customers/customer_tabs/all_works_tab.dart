@@ -25,7 +25,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
   List<Map<String, dynamic>> _jobs = [];
   List<Map<String, dynamic>> _invoices = [];
   bool _loading = true;
-  int _historyKind = 0; // 0 jobs 1 invoices 2 credit notes
+  int _historyKind = 0; // 0=All 1=Jobs 2=Invoices 3=Credits
   final _historySearch = TextEditingController();
   Worker? _scopeWorker;
 
@@ -50,7 +50,11 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
       final id = widget.controller.customerId;
       final wid = widget.controller.scopedWorkAddressId.value;
       _jobs = await _repo.getCustomerJobs(id, workAddressId: wid);
-      final inv = await _repo.listInvoicesForCustomer(id, invoiceWorkAddressId: wid);
+      final inv = await _repo.listInvoicesForCustomer(
+        id,
+        invoiceWorkAddressId: wid,
+        includeWorkAddressInvoices: wid == null,
+      );
       final raw = inv['invoices'];
       _invoices = raw is List
           ? raw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
@@ -167,7 +171,6 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
       if (c == null) return const SizedBox.shrink();
 
       final ongoing = _jobs.where(jobIsOngoing).toList();
-      final completedJobs = _jobs.where((j) => !jobIsOngoing(j)).toList();
       final notes = c['specific_notes'];
       final rawNotes = notes is List ? notes : const [];
       final wid = widget.controller.scopedWorkAddressId.value;
@@ -183,7 +186,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
       bool match(String a) => q.isEmpty || a.toLowerCase().contains(q);
 
       List<Widget> historyRows() {
-        if (_historyKind == 2) {
+        if (_historyKind == 3) {
           return [
             customerEmptyState(
               icon: Icons.receipt_long_outlined,
@@ -192,90 +195,149 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
             ),
           ];
         }
-        if (_historyKind == 0) {
-          final rows = completedJobs.where((j) {
-            final desc = ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name');
-            return match(desc) || match(ctStr(j, 'id'));
-          }).toList();
-          if (rows.isEmpty) {
-            return [customerEmptyState(icon: Icons.history_rounded, title: 'No completed jobs in history', subtitle: null)];
+
+        // History jobs: completed or closed
+        final histJobs = _jobs.where((j) =>
+          !jobIsOngoing(j) &&
+          (match(ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name')) ||
+           match(ctStr(j, 'id')))
+        ).toList();
+
+        // History invoices filtered by search
+        final histInvoices = _invoices.where((inv) =>
+          match(ctStr(inv, 'invoice_number')) || match(ctStr(inv, 'job_title'))
+        ).toList();
+
+        // Build rows as typed maps for sorting
+        final List<Map<String, dynamic>> merged = [];
+
+        if (_historyKind == 0 || _historyKind == 1) {
+          for (final j in histJobs) {
+            merged.add({'_type': 'job', '_date': ctStr(j, 'created_at'), '_data': j});
           }
-          return rows
-              .map(
-                (j) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: customerPanel(
-                    child: InkWell(
-                      onTap: () => _openJobDetail(j),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
-                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${formatIsoDateWeekday(ctStr(j, 'created_at'))} · Job #${(j['id'] as num?)?.toInt() ?? 0}',
-                                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.chevron_right_rounded, color: AppColors.whiteOverlay(0.35)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              )
-              .toList();
         }
-        final invRows = _invoices.where((inv) {
-          return match(ctStr(inv, 'invoice_number')) || match(ctStr(inv, 'job_title'));
-        }).toList();
-        if (invRows.isEmpty) {
-          return [customerEmptyState(icon: Icons.receipt_outlined, title: 'No invoices in history', subtitle: null)];
+        if (_historyKind == 0 || _historyKind == 2) {
+          for (final inv in histInvoices) {
+            merged.add({'_type': 'invoice', '_date': ctStr(inv, 'invoice_date'), '_data': inv});
+          }
         }
-        return invRows
-            .map(
-              (inv) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: customerPanel(
+
+        // Sort by date descending
+        merged.sort((a, b) {
+          final da = DateTime.tryParse(a['_date'] as String? ?? '') ?? DateTime(2000);
+          final db = DateTime.tryParse(b['_date'] as String? ?? '') ?? DateTime(2000);
+          return db.compareTo(da);
+        });
+
+        if (merged.isEmpty) {
+          final icon = _historyKind == 1 ? Icons.history_rounded : Icons.receipt_outlined;
+          final title = _historyKind == 1 ? 'No completed jobs in history' : 'No invoices in history';
+          return [customerEmptyState(icon: icon, title: title, subtitle: null)];
+        }
+
+        return merged.map((entry) {
+          if (entry['_type'] == 'job') {
+            final j = entry['_data'] as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: customerPanel(
+                child: InkWell(
+                  onTap: () => _openJobDetail(j),
+                  borderRadius: BorderRadius.circular(12),
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              ctStr(inv, 'invoice_number'),
-                              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.whiteOverlay(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text('JOB', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.primary, letterSpacing: 0.8)),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
+                                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              ctStr(inv, 'job_title').isEmpty ? 'Invoice' : ctStr(inv, 'job_title'),
-                              style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.75)),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${formatIsoDateShort(ctStr(inv, 'invoice_date'))} · ${formatGbp(inv['total_amount'])}',
+                              '${formatIsoDateWeekday(ctStr(j, 'created_at'))} · Job #${(j['id'] as num?)?.toInt() ?? 0}',
                               style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
                             ),
                           ],
                         ),
                       ),
-                      invoiceStateBadge(ctStr(inv, 'state')),
+                      Icon(Icons.chevron_right_rounded, color: AppColors.whiteOverlay(0.35)),
                     ],
                   ),
                 ),
               ),
-            )
-            .toList();
+            );
+          } else {
+            final inv = entry['_data'] as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: customerPanel(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.whiteOverlay(0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text('INV', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFFFBBF24), letterSpacing: 0.8)),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  ctStr(inv, 'invoice_number'),
+                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              invoiceStateBadge(ctStr(inv, 'state')),
+                            ],
+                          ),
+                          if (ctStr(inv, 'job_title').isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                ctStr(inv, 'job_title'),
+                                style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.75)),
+                              ),
+                            ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${formatIsoDateShort(ctStr(inv, 'invoice_date'))} · ${formatGbp(inv['total_amount'])}',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+        }).toList();
       }
 
       return RefreshIndicator(
@@ -471,9 +533,10 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                   const SizedBox(height: 10),
                   SegmentedButton<int>(
                     segments: const [
-                      ButtonSegment(value: 0, label: Text('Jobs'), icon: Icon(Icons.work_outline, size: 16)),
-                      ButtonSegment(value: 1, label: Text('Invoices'), icon: Icon(Icons.receipt_long_outlined, size: 16)),
-                      ButtonSegment(value: 2, label: Text('Credits'), icon: Icon(Icons.description_outlined, size: 16)),
+                      ButtonSegment(value: 0, label: Text('All'), icon: Icon(Icons.history_rounded, size: 16)),
+                      ButtonSegment(value: 1, label: Text('Jobs'), icon: Icon(Icons.work_outline, size: 16)),
+                      ButtonSegment(value: 2, label: Text('Invoices'), icon: Icon(Icons.receipt_long_outlined, size: 16)),
+                      ButtonSegment(value: 3, label: Text('Credits'), icon: Icon(Icons.description_outlined, size: 16)),
                     ],
                     selected: {_historyKind},
                     onSelectionChanged: (s) => setState(() => _historyKind = s.first),

@@ -9,6 +9,7 @@ import '../../data/models/diary_event_detail.dart';
 import '../../data/models/diary_extra_submission.dart';
 import '../../data/models/electrical_certificate_models.dart';
 import '../../data/models/job_report_history_models.dart';
+import '../../data/repositories/jobs_repository.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../home/controllers/home_controller.dart';
 import '../../core/utils/location_helper.dart';
@@ -37,12 +38,14 @@ DiaryVisitUiPhase visitPhaseFromStatus(String? status) {
 }
 
 class DiaryEventDetailController extends GetxController {
-  DiaryEventDetailController({MobileRepository? mobile})
-    : _mobile = mobile ?? Get.find<MobileRepository>();
+  DiaryEventDetailController({MobileRepository? mobile, JobsRepository? jobs})
+    : _mobile = mobile ?? Get.find<MobileRepository>(),
+      _jobs = jobs ?? Get.find<JobsRepository>();
 
   final MobileRepository _mobile;
+  final JobsRepository _jobs;
 
-  late final int diaryId;
+  int diaryId = 0;
   final Rxn<DiaryEventDetail> detail = Rxn<DiaryEventDetail>();
   final RxInt jobReportQuestionCountHint = 0.obs;
   final RxBool loading = true.obs;
@@ -50,6 +53,9 @@ class DiaryEventDetailController extends GetxController {
   final RxBool saving = false.obs;
   final RxBool submittingExtra = false.obs;
   final RxBool submittingTechnicalNote = false.obs;
+  final RxList<Map<String, dynamic>> expenses = <Map<String, dynamic>>[].obs;
+  final RxBool expensesLoading = false.obs;
+  final RxBool postingExpense = false.obs;
 
   /// True when visit details were loaded from local cache (offline / no connection).
   final RxBool visitDetailFromCache = false.obs;
@@ -132,6 +138,9 @@ class DiaryEventDetailController extends GetxController {
       } else {
         detail.value = r.detail;
       }
+      if (r.detail.diaryId > 0) {
+        diaryId = r.detail.diaryId;
+      }
       visitDetailFromCache.value = r.fromCache;
       final n = detail.value?.jobReportQuestionCount ?? 0;
       jobReportQuestionCountHint.value = max(
@@ -155,6 +164,7 @@ class DiaryEventDetailController extends GetxController {
         completionDocuments.value = null;
         completionDocumentsError.value = '';
       }
+      await _loadJobExpensesIfNeeded();
     } on ApiException catch (e) {
       if (silent) {
         Get.snackbar(
@@ -567,5 +577,83 @@ class DiaryEventDetailController extends GetxController {
       pendingMediaCount: mediaCount,
     );
     detail.value = d.copyWith(technicalNotes: [...d.technicalNotes, row]);
+  }
+
+  bool get _canShowJobExpenses {
+    final jobId = detail.value?.jobId ?? 0;
+    if (jobId <= 0) return false;
+    final p = phase;
+    if (p == DiaryVisitUiPhase.cancelled) return false;
+    return p == DiaryVisitUiPhase.travelling ||
+        p == DiaryVisitUiPhase.onSite ||
+        p == DiaryVisitUiPhase.completed;
+  }
+
+  Future<void> _loadJobExpensesIfNeeded() async {
+    if (!_canShowJobExpenses) {
+      expenses.clear();
+      return;
+    }
+    final jobId = detail.value!.jobId;
+    expensesLoading.value = true;
+    try {
+      final list = await _jobs.getJobExpenses(jobId);
+      expenses.assignAll(list);
+    } catch (_) {
+      expenses.clear();
+    } finally {
+      expensesLoading.value = false;
+    }
+  }
+
+  Future<void> postJobExpense({
+    required String category,
+    required double amount,
+    String? description,
+    String? expenseDate,
+    String? expenseType,
+    List<Map<String, dynamic>>? proofFiles,
+  }) async {
+    if (postingExpense.value) return;
+    final jobId = detail.value?.jobId ?? 0;
+    if (jobId <= 0) return;
+    postingExpense.value = true;
+    try {
+      await _jobs.postJobExpense(
+        jobId,
+        category: category,
+        amount: amount,
+        description: description,
+        expenseDate: expenseDate,
+        expenseType: expenseType,
+        proofFiles: proofFiles,
+      );
+      await _loadJobExpensesIfNeeded();
+      Get.snackbar(
+        'Expense',
+        'Expense saved.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } on ApiException catch (e) {
+      Get.snackbar(
+        'Expense',
+        e.message,
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Expense',
+        e.toString().replaceFirst('Exception: ', ''),
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+      );
+    } finally {
+      postingExpense.value = false;
+    }
   }
 }

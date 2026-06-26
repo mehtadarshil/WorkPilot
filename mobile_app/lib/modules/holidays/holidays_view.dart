@@ -937,17 +937,28 @@ class HolidaysView extends GetView<HolidaysController> {
       final start = DateTime.parse(startStr);
       final end = DateTime.parse(endStr);
       final diff = end.difference(start);
-      if (diff.inSeconds <= 0) return '0d';
-      
+      final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
+      if (diff.inSeconds <= 0 && sameDay) return '1d';
+      if (sameDay && diff.inHours < 24) {
+        if (diff.inHours < 1) return '1d';
+        final hrs = diff.inMinutes / 60.0;
+        final hrsStr = hrs % 1 == 0 ? hrs.toInt().toString() : hrs.toStringAsFixed(1);
+        return '${hrsStr}h';
+      }
       if (diff.inHours < 24) {
         final hrs = diff.inMinutes / 60.0;
         final hrsStr = hrs % 1 == 0 ? hrs.toInt().toString() : hrs.toStringAsFixed(1);
         return '${hrsStr}h';
-      } else {
-        final days = diff.inHours / 24.0;
-        final daysStr = days % 1 == 0 ? days.toInt().toString() : days.toStringAsFixed(1);
-        return '${daysStr}d';
       }
+      final startDay = DateTime.utc(start.year, start.month, start.day);
+      final endDay = DateTime.utc(end.year, end.month, end.day);
+      final calendarDays = endDay.difference(startDay).inDays + 1;
+      if (calendarDays > 1 && diff.inHours >= (calendarDays - 1) * 24 * 0.9) {
+        return '${calendarDays}d';
+      }
+      final days = diff.inHours / 24.0;
+      final daysStr = days % 1 == 0 ? days.toInt().toString() : days.toStringAsFixed(1);
+      return '${daysStr}d';
     } catch (_) {
       return backendDaysCount != null ? '${backendDaysCount}d' : '';
     }

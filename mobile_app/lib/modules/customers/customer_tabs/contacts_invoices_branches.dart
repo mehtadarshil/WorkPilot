@@ -415,6 +415,7 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
       final d = await _repo.listInvoicesForCustomer(
         widget.customerId,
         invoiceWorkAddressId: widget.workAddressId,
+        includeWorkAddressInvoices: widget.workAddressId == null,
       );
       final raw = d['invoices'];
       _rows = raw is List ? raw.map((e) => Map<String, dynamic>.from(e as Map)).toList() : [];

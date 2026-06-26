@@ -62,6 +62,8 @@ import '../../modules/certificates/certificate_type_picker_binding.dart';
 import '../../modules/certificates/certificate_type_picker_view.dart';
 import '../../modules/holidays/holidays_binding.dart';
 import '../../modules/holidays/holidays_view.dart';
+import '../../modules/stock_tools/stock_tools_binding.dart';
+import '../../modules/stock_tools/stock_tools_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -231,6 +233,11 @@ class AppPages {
       name: AppRoutes.holidays,
       page: () => const HolidaysView(),
       binding: HolidaysBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.stockTools,
+      page: () => const StockToolsView(),
+      binding: StockToolsBinding(),
     ),
   ];
 }
