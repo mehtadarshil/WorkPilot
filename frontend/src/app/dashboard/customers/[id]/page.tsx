@@ -685,19 +685,9 @@ export default function CustomerDetailsPage() {
     } : null);
   }, []);
 
-  if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
-  if (!data) return (
-    <div className="flex flex-col gap-4 p-8">
-      <span className="text-rose-500 font-medium">{error || 'Customer not found'}</span>
-      <button onClick={() => router.push('/dashboard/customers')} className="text-blue-500 hover:underline self-start">Back to customers</button>
-    </div>
-  );
+  const allowBranches = data?.customer_type_allow_branches !== false;
+  const workAddressLabel = (data?.customer_type_work_address_name || 'Work address').trim() || 'Work address';
 
-  const addressString = [data.address_line_1, data.address_line_2, data.town, data.county, data.postcode].filter(Boolean).join(', ');
-  const displayAddress = addressString || 'No address provided';
-
-  const allowBranches = data.customer_type_allow_branches !== false;
-  const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
   const tabs: { key: string; label: string }[] = useMemo(() => {
     let perms: Partial<Record<TenantPermissionKey, boolean>> | null = null;
     let userRole: string | null = null;
@@ -758,6 +748,17 @@ export default function CustomerDetailsPage() {
     const keys = tabs.map((t) => t.key);
     if (!keys.includes(activeTab)) setActiveTab('Overview');
   }, [tabs, activeTab]);
+
+  if (loading) return <div className="p-8 text-slate-500 font-medium">Loading customer...</div>;
+  if (!data) return (
+    <div className="flex flex-col gap-4 p-8">
+      <span className="text-rose-500 font-medium">{error || 'Customer not found'}</span>
+      <button onClick={() => router.push('/dashboard/customers')} className="text-blue-500 hover:underline self-start">Back to customers</button>
+    </div>
+  );
+
+  const addressString = [data.address_line_1, data.address_line_2, data.town, data.county, data.postcode].filter(Boolean).join(', ');
+  const displayAddress = addressString || 'No address provided';
 
   return (
     <div className="flex h-full flex-col bg-slate-50">

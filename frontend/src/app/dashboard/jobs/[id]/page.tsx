@@ -802,26 +802,6 @@ export default function JobDetailsPage() {
     });
   }, [officeTasks]);
 
-  if (loading) return <div className="p-8 text-slate-500 font-medium">Loading job details...</div>;
-  if (!job) return (
-    <div className="p-8">
-      <div className="rounded-lg bg-rose-50 p-4 text-sm font-medium text-rose-800 border border-rose-200 mb-4">{error || 'Job not found'}</div>
-      <button onClick={() => router.back()} className="text-[#14B8A6] hover:underline flex items-center gap-1">
-        <ArrowLeft className="size-4" /> Go back
-      </button>
-    </div>
-  );
-
-  const diaryRecipientEmail = (job.site_contact_email || job.customer_email || '').trim();
-  const diaryRecipientPhone = (job.site_contact_phone || job.customer_phone || '').trim();
-  const jobContactDisplayName = (job.site_contact_name || job.contact_name || job.customer_full_name || '').trim();
-  const workAddress = job.work_address ?? null;
-  const workSiteAddressLine = workAddress ? formatJobWorkAddressLine(workAddress) : '';
-  const hasJobAddressListed = Boolean(job.customer_address?.trim() || workSiteAddressLine);
-  const showDiaryCustomerConfirmationEmail = Boolean(diaryRecipientEmail);
-  const showDiaryAddressReminderEmail = !hasJobAddressListed;
-  const showDiaryEngineerJobSheetEmail = Boolean(viewingEvent?.officer_full_name?.trim());
-
   const tabs = useMemo(() => {
     const allTabs = [
       'Details',
@@ -879,6 +859,26 @@ export default function JobDetailsPage() {
       setActiveTab(tabs[0] ?? 'Details');
     }
   }, [tabs, activeTab]);
+
+  if (loading) return <div className="p-8 text-slate-500 font-medium">Loading job details...</div>;
+  if (!job) return (
+    <div className="p-8">
+      <div className="rounded-lg bg-rose-50 p-4 text-sm font-medium text-rose-800 border border-rose-200 mb-4">{error || 'Job not found'}</div>
+      <button onClick={() => router.back()} className="text-[#14B8A6] hover:underline flex items-center gap-1">
+        <ArrowLeft className="size-4" /> Go back
+      </button>
+    </div>
+  );
+
+  const diaryRecipientEmail = (job.site_contact_email || job.customer_email || '').trim();
+  const diaryRecipientPhone = (job.site_contact_phone || job.customer_phone || '').trim();
+  const jobContactDisplayName = (job.site_contact_name || job.contact_name || job.customer_full_name || '').trim();
+  const workAddress = job.work_address ?? null;
+  const workSiteAddressLine = workAddress ? formatJobWorkAddressLine(workAddress) : '';
+  const hasJobAddressListed = Boolean(job.customer_address?.trim() || workSiteAddressLine);
+  const showDiaryCustomerConfirmationEmail = Boolean(diaryRecipientEmail);
+  const showDiaryAddressReminderEmail = !hasJobAddressListed;
+  const showDiaryEngineerJobSheetEmail = Boolean(viewingEvent?.officer_full_name?.trim());
 
   return (
     <div className="flex h-full flex-col bg-background-light">
