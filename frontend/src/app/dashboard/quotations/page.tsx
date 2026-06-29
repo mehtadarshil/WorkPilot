@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { Search, Quote, Plus, ChevronDown, ChevronRight, ChevronUp, ImagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
+import { localDateAndTimeToIso } from '@/lib/localDateTime';
 import { Pagination } from '../Pagination';
 import ImportCustomerSelect from '../ImportCustomerSelect';
 import WorkAddressSelect from '../WorkAddressSelect';
@@ -493,7 +494,7 @@ export default function QuotationsPage() {
     }
     if (!token) return;
     try {
-      const startTime = `${visitDate}T${visitTime}:00`;
+      const startTime = localDateAndTimeToIso(visitDate, visitTime);
       const res = await postJson<{
         job: { id: number };
         diary_event: { id: number };

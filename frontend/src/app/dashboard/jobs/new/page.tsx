@@ -6,6 +6,7 @@ import { getJson, postJson } from '../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import ImportCustomerSelect, { type ImportCustomerOption } from '../../ImportCustomerSelect';
 import SearchableSelect, { type SearchableSelectOption } from '../../SearchableSelect';
+import { localDateAndTimeToIso, localDateEndOfDayToIso } from '@/lib/localDateTime';
 import {
   buildCompletedServiceItemsPayload,
   formatChecklistReminderSummary,
@@ -376,7 +377,9 @@ export default function JobsNewJobPage() {
     // Build expected completion datetime
     let expectedCompletion: string | null = null;
     if (expectedDate) {
-      expectedCompletion = expectedTime ? `${expectedDate}T${expectedTime}:00` : `${expectedDate}T23:59:00`;
+      expectedCompletion = expectedTime
+        ? localDateAndTimeToIso(expectedDate, expectedTime)
+        : localDateEndOfDayToIso(expectedDate);
     }
 
     try {

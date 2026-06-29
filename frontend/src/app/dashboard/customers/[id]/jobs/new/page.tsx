@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { getJson, postJson, patchJson } from '../../../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../../../../SearchableSelect';
+import { localDateAndTimeToIso, localDateEndOfDayToIso } from '@/lib/localDateTime';
 import {
   buildCompletedServiceItemsPayload,
   formatChecklistReminderSummary,
@@ -563,7 +564,9 @@ export default function AddNewJobPage() {
     // Build expected completion datetime
     let expectedCompletion: string | null = null;
     if (expectedDate) {
-      expectedCompletion = expectedTime ? `${expectedDate}T${expectedTime}:00` : `${expectedDate}T23:59:00`;
+      expectedCompletion = expectedTime
+        ? localDateAndTimeToIso(expectedDate, expectedTime)
+        : localDateEndOfDayToIso(expectedDate);
     }
 
     const back =
