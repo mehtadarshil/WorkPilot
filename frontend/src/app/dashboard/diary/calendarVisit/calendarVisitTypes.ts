@@ -6,6 +6,9 @@ export type CalendarVisit = {
   title: string;
   customerName: string;
   address?: string | null;
+  addressLine1?: string | null;
+  worksCategory?: string | null;
+  jobState?: string | null;
   eventStatus?: string | null;
   jobNumber?: string | null;
   customerEmail?: string | null;

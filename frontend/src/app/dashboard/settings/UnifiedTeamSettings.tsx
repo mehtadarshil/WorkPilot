@@ -11,6 +11,10 @@ import {
   PERMISSION_UI_GROUPS,
   FIELD_MOBILE_PERMISSION_KEYS,
   stripToFieldMobilePermissions,
+  JOB_DETAIL_TAB_PERMISSION_KEYS,
+  CUSTOMER_TAB_PERMISSION_KEYS,
+  JOB_DETAIL_TAB_LABELS,
+  CUSTOMER_TAB_LABELS,
   type TenantPermissionsMap,
   presetManagerPermissions,
   presetDeskOfficerPermissions,
@@ -286,6 +290,48 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
                 </div>
               </div>
             ))}
+            {(perms.jobs || preset === 'custom') && (
+              <div className="border-b border-slate-100 pb-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Job detail tabs</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Optional fine control. Leave all checked for full job access, or uncheck tabs to hide them on web and mobile.
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {JOB_DETAIL_TAB_PERMISSION_KEYS.map((k) => (
+                    <label key={k} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2 text-sm shadow-sm">
+                      <input
+                        type="checkbox"
+                        checked={perms[k] !== false}
+                        disabled={!perms.jobs}
+                        onChange={(e) => setPerms((prev) => ({ ...prev, [k]: e.target.checked }))}
+                        className="rounded border-slate-300"
+                      />
+                      {JOB_DETAIL_TAB_LABELS[k]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(perms.customers || perms.jobs || preset === 'custom') && (
+              <div className="border-b border-slate-100 pb-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Customer page tabs</p>
+                <p className="mt-0.5 text-xs text-slate-500">Control which customer sub-tabs appear on web and mobile.</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {CUSTOMER_TAB_PERMISSION_KEYS.map((k) => (
+                    <label key={k} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white p-2 text-sm shadow-sm">
+                      <input
+                        type="checkbox"
+                        checked={perms[k] !== false}
+                        disabled={!perms.customers && !perms.jobs}
+                        onChange={(e) => setPerms((prev) => ({ ...prev, [k]: e.target.checked }))}
+                        className="rounded border-slate-300"
+                      />
+                      {CUSTOMER_TAB_LABELS[k]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

@@ -7,7 +7,10 @@ import '../../app/routes/app_routes.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
+import '../../core/tenant_permissions.dart';
+import '../home/controllers/home_controller.dart';
 import 'customer_detail_controller.dart';
+import 'customer_ongoing_works_strip.dart';
 import 'customer_tab_widgets.dart';
 import 'customer_tabs/customer_notes_tab.dart';
 import 'customer_tabs/customer_site_images_tab.dart';
@@ -75,19 +78,36 @@ String _workAddressTabLabel(Map<String, dynamic>? cust) {
 }
 
 /// Internal tab keys (aligned with web tab routing).
-List<String> _detailTabKeys(CustomerDetailController c) {
+List<String> _detailTabKeys(CustomerDetailController c, Map<String, bool> perms, {String? role}) {
   final cust = c.customer.value;
   final wid = c.scopedWorkAddressId.value;
   final allowBranches = cust == null || cust['customer_type_allow_branches'] != false;
-  final keys = <String>['all_works', 'notes', 'communications', 'contacts', 'invoices', 'site_images'];
-  if (allowBranches) {
+  final keys = <String>['all_works', 'notes'];
+  if (canViewCustomerTab(perms, 'customer_tab_communications', role: role)) keys.add('communications');
+  if (canViewCustomerTab(perms, 'customer_tab_contacts', role: role)) keys.add('contacts');
+  if (canViewInvoicesModule(perms, role: role) && canViewCustomerTab(perms, 'customer_tab_invoices', role: role)) {
+    keys.add('invoices');
+  }
+  if (canViewCustomerTab(perms, 'customer_tab_site_images', role: role)) keys.add('site_images');
+  if (allowBranches && canViewCustomerTab(perms, 'customer_tab_branches', role: role)) {
     keys.add('branches');
   }
   if (wid == null) {
     keys.add('work_address');
   }
-  keys.addAll(['assets', 'files']);
+  if (canViewCustomerTab(perms, 'customer_tab_assets', role: role)) keys.add('assets');
+  if (canViewCustomerTab(perms, 'customer_tab_files', role: role)) keys.add('files');
   return keys;
+}
+
+Map<String, bool> _mobilePerms() {
+  if (!Get.isRegistered<HomeController>()) return {};
+  return Get.find<HomeController>().home.value?.mobilePermissions ?? {};
+}
+
+String? _mobileRole() {
+  if (!Get.isRegistered<HomeController>()) return null;
+  return Get.find<HomeController>().home.value?.role;
 }
 
 String _tabChipLabel(String key, Map<String, dynamic>? cust) {
@@ -139,7 +159,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      final keys = _detailTabKeys(_c);
+      final keys = _detailTabKeys(_c, _mobilePerms(), role: _mobileRole());
       _c.clampTabIndex(keys.length);
       final cust = _c.customer.value;
       if (cust != null && keys.isNotEmpty) {
@@ -458,6 +478,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
             ],
           ),
         ),
+          if (scoped != null)
+            CustomerOngoingWorksStrip(customerId: _c.customerId, workAddressId: scoped),
           Expanded(child: _tabBody(keys[idx])),
         ],
       ),

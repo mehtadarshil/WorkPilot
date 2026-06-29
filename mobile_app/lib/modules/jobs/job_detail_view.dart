@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../app/routes/app_routes.dart';
+import '../../core/tenant_permissions.dart';
 import '../../core/values/app_colors.dart';
 import '../home/controllers/home_controller.dart';
 import 'job_detail_controller.dart';
@@ -17,6 +18,18 @@ import 'job_tab_office_tasks.dart';
 import 'job_tab_dynamic_reports.dart';
 import 'job_tab_parts.dart';
 
+class _JobTabEntry {
+  const _JobTabEntry({
+    required this.label,
+    required this.widget,
+    this.permissionKey,
+  });
+
+  final String label;
+  final Widget widget;
+  final String? permissionKey;
+}
+
 /// Job detail with the same primary tabs as the web job page (details, report, site report, client share, reminders, files, invoices).
 class JobDetailView extends StatefulWidget {
   const JobDetailView({super.key});
@@ -27,24 +40,42 @@ class JobDetailView extends StatefulWidget {
 
 class _JobDetailViewState extends State<JobDetailView>
     with SingleTickerProviderStateMixin {
+  static const _allTabs = <_JobTabEntry>[
+    _JobTabEntry(label: 'Details', widget: JobTabDetails()),
+    _JobTabEntry(label: 'Job report', widget: JobTabJobReport(), permissionKey: 'job_tab_job_report'),
+    _JobTabEntry(label: 'Reports', widget: JobTabDynamicReports(), permissionKey: 'job_tab_reports'),
+    _JobTabEntry(label: 'Parts', widget: JobTabParts(), permissionKey: 'job_tab_parts'),
+    _JobTabEntry(label: 'Client', widget: JobTabClientPanel(), permissionKey: 'job_tab_client_panel'),
+    _JobTabEntry(label: 'Reminders', widget: JobTabOfficeTasks(), permissionKey: 'job_tab_reminders'),
+    _JobTabEntry(label: 'Files', widget: JobTabFiles(), permissionKey: 'job_tab_files'),
+    _JobTabEntry(label: 'Invoices', widget: JobTabInvoices(), permissionKey: 'job_tab_invoices'),
+    _JobTabEntry(label: 'Costs', widget: JobTabCosts(), permissionKey: 'job_tab_costs'),
+  ];
+
+  late final List<_JobTabEntry> _visibleTabs;
   late final TabController _tabs;
 
-  static const _tabWidgets = <Widget>[
-    JobTabDetails(),
-    JobTabJobReport(),
-    JobTabDynamicReports(),
-    JobTabParts(),
-    JobTabClientPanel(),
-    JobTabOfficeTasks(),
-    JobTabFiles(),
-    JobTabInvoices(),
-    JobTabCosts(),
-  ];
+  Map<String, bool> _perms() {
+    if (!Get.isRegistered<HomeController>()) return {};
+    return Get.find<HomeController>().home.value?.mobilePermissions ?? {};
+  }
+
+  String? _role() {
+    if (!Get.isRegistered<HomeController>()) return null;
+    return Get.find<HomeController>().home.value?.role;
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: _tabWidgets.length, vsync: this);
+    final perms = _perms();
+    final role = _role();
+    _visibleTabs = _allTabs
+        .where((t) =>
+            t.permissionKey == null ||
+            canViewJobDetailTab(perms, t.permissionKey!, role: role))
+        .toList();
+    _tabs = TabController(length: _visibleTabs.length, vsync: this);
   }
 
   @override
@@ -104,16 +135,8 @@ class _JobDetailViewState extends State<JobDetailView>
             indicatorColor: AppColors.primary,
             labelColor: AppColors.primary,
             unselectedLabelColor: AppColors.slate400,
-            tabs: const [
-              Tab(text: 'Details'),
-              Tab(text: 'Job report'),
-              Tab(text: 'Reports'),
-              Tab(text: 'Parts'),
-              Tab(text: 'Client'),
-              Tab(text: 'Reminders'),
-              Tab(text: 'Files'),
-              Tab(text: 'Invoices'),
-              Tab(text: 'Costs'),
+            tabs: [
+              for (final t in _visibleTabs) Tab(text: t.label),
             ],
           ),
         ),
@@ -169,7 +192,7 @@ class _JobDetailViewState extends State<JobDetailView>
             return TabBarView(
               controller: _tabs,
               physics: const BouncingScrollPhysics(),
-              children: _tabWidgets,
+              children: [for (final t in _visibleTabs) t.widget],
             );
           }),
         ),

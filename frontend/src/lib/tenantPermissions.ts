@@ -25,9 +25,134 @@ export const TENANT_PERMISSION_KEYS = [
   'settings_import',
   'settings_master_data',
   'todos',
+  'job_tab_parts',
+  'job_tab_job_report',
+  'job_tab_reports',
+  'job_tab_client_panel',
+  'job_tab_reminders',
+  'job_tab_notes',
+  'job_tab_files',
+  'job_tab_invoices',
+  'job_tab_costs',
+  'job_tab_expenses',
+  'job_tab_items_to_invoice',
+  'customer_tab_invoices',
+  'customer_tab_communications',
+  'customer_tab_contacts',
+  'customer_tab_branches',
+  'customer_tab_assets',
+  'customer_tab_files',
+  'customer_tab_site_images',
 ] as const;
 
 export type TenantPermissionKey = (typeof TENANT_PERMISSION_KEYS)[number];
+
+export const JOB_DETAIL_TAB_PERMISSION_KEYS = [
+  'job_tab_parts',
+  'job_tab_job_report',
+  'job_tab_reports',
+  'job_tab_client_panel',
+  'job_tab_reminders',
+  'job_tab_notes',
+  'job_tab_files',
+  'job_tab_invoices',
+  'job_tab_costs',
+  'job_tab_expenses',
+  'job_tab_items_to_invoice',
+] as const;
+
+export const CUSTOMER_TAB_PERMISSION_KEYS = [
+  'customer_tab_invoices',
+  'customer_tab_communications',
+  'customer_tab_contacts',
+  'customer_tab_branches',
+  'customer_tab_assets',
+  'customer_tab_files',
+  'customer_tab_site_images',
+] as const;
+
+export const JOB_DETAIL_TAB_LABELS: Record<(typeof JOB_DETAIL_TAB_PERMISSION_KEYS)[number], string> = {
+  job_tab_parts: 'Parts',
+  job_tab_job_report: 'Job report',
+  job_tab_reports: 'Reports',
+  job_tab_client_panel: 'Client panel',
+  job_tab_reminders: 'Reminders',
+  job_tab_notes: 'Notes',
+  job_tab_files: 'Files',
+  job_tab_invoices: 'Invoices',
+  job_tab_costs: 'Costs',
+  job_tab_expenses: 'Expenses',
+  job_tab_items_to_invoice: 'Items to invoice',
+};
+
+export const CUSTOMER_TAB_LABELS: Record<(typeof CUSTOMER_TAB_PERMISSION_KEYS)[number], string> = {
+  customer_tab_invoices: 'Invoices tab',
+  customer_tab_communications: 'Communications tab',
+  customer_tab_contacts: 'Contacts tab',
+  customer_tab_branches: 'Branches tab',
+  customer_tab_assets: 'Assets tab',
+  customer_tab_files: 'Files tab',
+  customer_tab_site_images: 'Site images tab',
+};
+
+function jobTabsCustomized(p: TenantPermissionsMap): boolean {
+  return JOB_DETAIL_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+}
+
+function customerTabsCustomized(p: TenantPermissionsMap): boolean {
+  return CUSTOMER_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+}
+
+function isAdminRole(role?: string | null): boolean {
+  const r = (role ?? '').toUpperCase();
+  return r === 'ADMIN' || r === 'SUPER_ADMIN';
+}
+
+export function canViewJobDetailTab(
+  raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined,
+  tabKey: (typeof JOB_DETAIL_TAB_PERMISSION_KEYS)[number],
+  role?: string | null,
+): boolean {
+  const p = normalizePermissions(raw);
+  if (isAdminRole(role)) {
+    if (!jobTabsCustomized(p)) return true;
+    return p[tabKey] === true;
+  }
+  if (!p.jobs) return false;
+  if (!jobTabsCustomized(p)) return true;
+  return p[tabKey] === true;
+}
+
+export function canViewCustomerTab(
+  raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined,
+  tabKey: (typeof CUSTOMER_TAB_PERMISSION_KEYS)[number],
+  role?: string | null,
+): boolean {
+  const p = normalizePermissions(raw);
+  if (isAdminRole(role)) {
+    if (!customerTabsCustomized(p)) return true;
+    return p[tabKey] === true;
+  }
+  if (!p.customers && !p.jobs) return false;
+  if (!customerTabsCustomized(p)) return true;
+  return p[tabKey] === true;
+}
+
+export function canViewInvoicesModule(
+  raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined,
+  role?: string | null,
+): boolean {
+  if (isAdminRole(role)) return true;
+  return normalizePermissions(raw).invoices === true;
+}
+
+export function canViewQuotationsModule(
+  raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined,
+  role?: string | null,
+): boolean {
+  if (isAdminRole(role)) return true;
+  return normalizePermissions(raw).quotations === true;
+}
 
 export type TenantPermissionsMap = Record<TenantPermissionKey, boolean>;
 
@@ -40,7 +165,10 @@ export function emptyPermissions(): TenantPermissionsMap {
 export function normalizePermissions(p?: Partial<Record<TenantPermissionKey, boolean>> | null): TenantPermissionsMap {
   const o = emptyPermissions();
   if (p) {
-    for (const k of TENANT_PERMISSION_KEYS) o[k] = p[k] === true;
+    for (const k of TENANT_PERMISSION_KEYS) {
+      if (p[k] === true) o[k] = true;
+      else if (p[k] === false) o[k] = false;
+    }
   }
   if (o.customers && o.jobs && o.quotations && o.invoices && o.scheduling) {
     o.certifications = true;
@@ -77,6 +205,8 @@ export const FIELD_MOBILE_PERMISSION_KEYS: readonly TenantPermissionKey[] = [
   'quotations',
   'invoices',
   'todos',
+  ...JOB_DETAIL_TAB_PERMISSION_KEYS,
+  ...CUSTOMER_TAB_PERMISSION_KEYS,
 ] as const;
 
 /** For field-only (or linked officer) rows: only mobile-relevant flags are stored; web-only keys are forced off. */
@@ -84,6 +214,7 @@ export function stripToFieldMobilePermissions(p: TenantPermissionsMap): TenantPe
   const o = emptyPermissions();
   for (const k of FIELD_MOBILE_PERMISSION_KEYS) {
     o[k] = p[k] === true;
+    if (p[k] === false) o[k] = false;
   }
   return o;
 }
@@ -160,6 +291,24 @@ export const PERMISSION_LABELS: Record<TenantPermissionKey, string> = {
   settings_import: 'Settings: Import',
   settings_master_data: 'Settings: Master data (legacy)',
   todos: 'Todos & tasks',
+  job_tab_parts: 'Job tab: Parts',
+  job_tab_job_report: 'Job tab: Job report',
+  job_tab_reports: 'Job tab: Reports',
+  job_tab_client_panel: 'Job tab: Client panel',
+  job_tab_reminders: 'Job tab: Reminders',
+  job_tab_notes: 'Job tab: Notes',
+  job_tab_files: 'Job tab: Files',
+  job_tab_invoices: 'Job tab: Invoices',
+  job_tab_costs: 'Job tab: Costs',
+  job_tab_expenses: 'Job tab: Expenses',
+  job_tab_items_to_invoice: 'Job tab: Items to invoice',
+  customer_tab_invoices: 'Customer tab: Invoices',
+  customer_tab_communications: 'Customer tab: Communications',
+  customer_tab_contacts: 'Customer tab: Contacts',
+  customer_tab_branches: 'Customer tab: Branches',
+  customer_tab_assets: 'Customer tab: Assets',
+  customer_tab_files: 'Customer tab: Files',
+  customer_tab_site_images: 'Customer tab: Site images',
 };
 
 /** One-line hint under each checkbox in settings. */
@@ -189,4 +338,22 @@ export const PERMISSION_HINTS: Record<TenantPermissionKey, string> = {
   settings_import: 'CSV/data import tools.',
   settings_master_data: 'Legacy broad access for master data.',
   todos: 'Create and manage personal tasks with due dates. Admins can see all team tasks.',
+  job_tab_parts: 'Job page: Parts tab',
+  job_tab_job_report: 'Job page: Job report tab',
+  job_tab_reports: 'Job page: Site/FRA Reports tab',
+  job_tab_client_panel: 'Job page: Client panel tab',
+  job_tab_reminders: 'Job page: Reminders tab',
+  job_tab_notes: 'Job page: Notes tab',
+  job_tab_files: 'Job page: Files tab',
+  job_tab_invoices: 'Job page: Invoices tab',
+  job_tab_costs: 'Job page: Costs tab',
+  job_tab_expenses: 'Job page: Expenses tab',
+  job_tab_items_to_invoice: 'Job page: Items to invoice tab',
+  customer_tab_invoices: 'Customer page: Invoices tab',
+  customer_tab_communications: 'Customer page: Communications tab',
+  customer_tab_contacts: 'Customer page: Contacts tab',
+  customer_tab_branches: 'Customer page: Branches tab',
+  customer_tab_assets: 'Customer page: Assets tab',
+  customer_tab_files: 'Customer page: Files tab',
+  customer_tab_site_images: 'Customer page: Site images tab',
 };

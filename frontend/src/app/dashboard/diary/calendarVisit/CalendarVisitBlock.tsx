@@ -3,6 +3,7 @@
 import { format } from 'date-fns';
 import { Ban, Check, Clock, Home, Navigation } from 'lucide-react';
 import type { CalendarVisit } from './calendarVisitTypes';
+import { formatJobStateLabel } from './jobStateLabel';
 import { paletteForJob, resolveVisitStatus, statusIconColor } from './calendarVisitTheme';
 
 type Props = {
@@ -32,6 +33,53 @@ function StatusCornerIcon({ status }: { status: ReturnType<typeof resolveVisitSt
   }
 }
 
+function visitJobNumber(visit: CalendarVisit): string {
+  const n = visit.jobNumber?.trim();
+  if (n) return n;
+  return `JOB-${String(visit.jobId).padStart(4, '0')}`;
+}
+
+function visitAddressLine(visit: CalendarVisit): string {
+  return visit.addressLine1?.trim() || visit.address?.trim() || 'No address';
+}
+
+function visitWorksCategory(visit: CalendarVisit): string {
+  return visit.worksCategory?.trim() || visit.title?.trim() || 'General works';
+}
+
+function VisitSummaryLines({
+  visit,
+  showTime,
+  compact,
+}: {
+  visit: CalendarVisit;
+  showTime?: boolean;
+  compact?: boolean;
+}) {
+  const start = new Date(visit.startTime);
+  const jobNo = visitJobNumber(visit);
+  const address = visitAddressLine(visit);
+  const category = visitWorksCategory(visit);
+  const status = formatJobStateLabel(visit.jobState);
+  const textSize = compact ? 'text-[9px]' : 'text-[10px]';
+
+  return (
+    <div className={`space-y-0.5 leading-tight ${textSize}`}>
+      <div className="truncate font-semibold text-slate-800">
+        {showTime ? (
+          <>
+            <span className="text-slate-500">{format(start, 'HH:mm')}</span>{' '}
+          </>
+        ) : null}
+        {jobNo}
+        {address ? <span className="font-medium text-slate-600"> · {address}</span> : null}
+      </div>
+      <div className="truncate font-medium text-slate-700">{category}</div>
+      <div className="truncate font-semibold uppercase tracking-wide text-slate-500">{status}</div>
+    </div>
+  );
+}
+
 export function CalendarVisitBlock({
   visit,
   variant = 'timeline',
@@ -50,14 +98,13 @@ export function CalendarVisitBlock({
   if (variant === 'chip') {
     return (
       <div
-        className={`truncate rounded border px-1 py-0.5 text-[10px] leading-tight cursor-help ${className}`}
+        className={`rounded border px-1 py-0.5 cursor-help ${className}`}
         style={{ backgroundColor: palette.bg, borderColor: palette.border, ...style }}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
         onClick={onClick}
       >
-        <span className="font-semibold text-slate-700">{format(start, 'HH:mm')}</span>{' '}
-        <span className="text-slate-600">{visit.customerName.slice(0, 24)}</span>
+        <VisitSummaryLines visit={visit} showTime compact />
       </div>
     );
   }
@@ -89,19 +136,9 @@ export function CalendarVisitBlock({
         </div>
         <StatusCornerIcon status={status} />
       </div>
-      {!isCompact && (
-        <div className="space-y-0.5 px-1.5 pb-1 pt-0.5">
-          <div className="truncate rounded-sm bg-black/[0.06] px-1 py-0.5 text-[10px] font-medium text-slate-700">
-            {visit.customerName}
-          </div>
-          <div className="truncate rounded-sm bg-black/[0.04] px-1 py-0.5 text-[10px] text-slate-500">
-            {visit.address?.trim() || 'Address not listed'}
-          </div>
-        </div>
-      )}
-      {isCompact && (
-        <div className="truncate px-1.5 pb-1 text-[10px] font-medium text-slate-700">{visit.customerName}</div>
-      )}
+      <div className={`px-1.5 pb-1 pt-0.5 ${isCompact ? 'pt-0' : ''}`}>
+        <VisitSummaryLines visit={visit} compact={isCompact} />
+      </div>
     </div>
   );
 }

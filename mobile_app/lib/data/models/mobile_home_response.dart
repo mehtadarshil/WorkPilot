@@ -112,7 +112,7 @@ class MobileHomeResponse {
     final mobilePermissions = <String, bool>{};
     if (permRaw is Map) {
       permRaw.forEach((k, v) {
-        if (k is String && v == true) mobilePermissions[k] = true;
+        if (k is String && v is bool) mobilePermissions[k] = v;
       });
     }
 

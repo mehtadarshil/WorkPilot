@@ -11,6 +11,9 @@ export function diaryEventToVisit(evt: {
   title: string;
   customer_full_name: string;
   customer_address?: string;
+  address_line_1?: string | null;
+  description_name?: string | null;
+  job_state?: string | null;
   site_contact_name?: string | null;
   event_status: string;
   job_number?: string | null;
@@ -19,6 +22,15 @@ export function diaryEventToVisit(evt: {
   officer_full_name?: string | null;
   officers?: { full_name: string }[];
 }): import('./calendarVisitTypes').CalendarVisit {
+  const worksCategory =
+    evt.description_name?.trim() ||
+    evt.title?.trim() ||
+    null;
+  const addressLine1 =
+    evt.address_line_1?.trim() ||
+    evt.customer_address?.split(',')[0]?.trim() ||
+    null;
+
   return {
     id: evt.diary_id,
     jobId: evt.job_id,
@@ -27,6 +39,9 @@ export function diaryEventToVisit(evt: {
     title: evt.title,
     customerName: evt.site_contact_name?.trim() || evt.customer_full_name,
     address: evt.customer_address,
+    addressLine1,
+    worksCategory,
+    jobState: evt.job_state ?? null,
     eventStatus: evt.event_status,
     jobNumber: evt.job_number,
     customerEmail: evt.customer_email,

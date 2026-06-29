@@ -16,6 +16,7 @@ import CustomerFilesTab from './CustomerFilesTab';
 import CustomerSiteImagesTab from './CustomerSiteImagesTab';
 import CustomerSiteReportTab from './CustomerSiteReportTab';
 import CustomerPpmContractsTab from './CustomerPpmContractsTab';
+import { canViewCustomerTab, canViewInvoicesModule, type TenantPermissionKey } from '@/lib/tenantPermissions';
 import CustomerOverviewMapTab from './CustomerOverviewMapTab';
 import CustomerTechnicalNoteMedia, { type TechnicalNoteMediaItem } from './CustomerTechnicalNoteMedia';
 import { IMAGE_MAX_BYTES, prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
@@ -568,6 +569,30 @@ export default function CustomerDetailsPage() {
     workAddressDetails?.postcode,
   ]);
 
+  const historyAccess = useMemo(() => {
+    let perms: Partial<Record<TenantPermissionKey, boolean>> | null = null;
+    let userRole: string | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem('wp_user');
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            role?: string;
+            permissions?: Partial<Record<TenantPermissionKey, boolean>>;
+          };
+          perms = parsed.permissions ?? null;
+          userRole = parsed.role ?? null;
+        }
+      } catch {
+        perms = null;
+      }
+    }
+    const invoices =
+      canViewInvoicesModule(perms, userRole) &&
+      (!workAddressId || canViewCustomerTab(perms, 'customer_tab_invoices', userRole));
+    return { invoices };
+  }, [workAddressId]);
+
   const historyRows = useMemo(() => {
     const jobRows = jobs
       .filter((j) => ['completed', 'closed'].includes(j.state))
@@ -584,7 +609,8 @@ export default function CustomerDetailsPage() {
         badgeClass: 'bg-slate-100 text-slate-600',
       }));
 
-    const invoiceRows = invoices.map((inv) => ({
+    const invoiceRows = historyAccess.invoices
+      ? invoices.map((inv) => ({
       id: `invoice-${inv.id}`,
       date: inv.invoice_date,
       typeLabel: 'Invoice',
@@ -595,7 +621,8 @@ export default function CustomerDetailsPage() {
       balance: `£${Math.max(0, Number(inv.total_amount) - Number(inv.total_paid)).toFixed(2)}`,
       viewPath: `/dashboard/invoices/${inv.id}`,
       badgeClass: inv.state === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
-    }));
+    }))
+      : [];
 
     const rows =
       historyType === 'jobs'
@@ -607,11 +634,17 @@ export default function CustomerDetailsPage() {
             : [...jobRows, ...invoiceRows];
 
     return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [historyType, jobs, invoices]).filter((row) => {
+  }, [historyType, jobs, invoices, historyAccess.invoices]).filter((row) => {
     if (!historySearch.trim()) return true;
     const text = `${row.recordNo} ${row.description} ${row.typeLabel}`.toLowerCase();
     return text.includes(historySearch.trim().toLowerCase());
   });
+
+  useEffect(() => {
+    if (!historyAccess.invoices && (historyType === 'invoices' || historyType === 'credit_notes')) {
+      setHistoryType('');
+    }
+  }, [historyAccess.invoices, historyType]);
 
   const specificNotes = useMemo(() => {
     const all = data?.specific_notes ?? [];
@@ -665,19 +698,66 @@ export default function CustomerDetailsPage() {
 
   const allowBranches = data.customer_type_allow_branches !== false;
   const workAddressLabel = (data.customer_type_work_address_name || 'Work address').trim() || 'Work address';
-  const tabs: { key: string; label: string }[] = [
-    { key: 'Overview', label: 'Overview' },
-    { key: 'Communications', label: 'Communications' },
-    { key: 'Contacts', label: 'Contacts' },
-    ...(workAddressId ? [{ key: 'Invoices', label: 'Invoices' }] : []),
-    ...(allowBranches ? [{ key: 'Branches', label: 'Branches' }] : []),
-    ...(!workAddressId ? [{ key: 'Work address', label: workAddressLabel }] : []),
-    { key: 'Assets', label: 'Assets' },
-    { key: 'Site images', label: 'Site images' },
-    { key: 'Files', label: 'Files' },
-    { key: 'Site Reports', label: 'Site Reports' },
-    { key: 'PPM Contracts', label: 'PPM Contracts' },
-  ];
+  const tabs: { key: string; label: string }[] = useMemo(() => {
+    let perms: Partial<Record<TenantPermissionKey, boolean>> | null = null;
+    let userRole: string | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem('wp_user');
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            role?: string;
+            permissions?: Partial<Record<TenantPermissionKey, boolean>>;
+          };
+          perms = parsed.permissions ?? null;
+          userRole = parsed.role ?? null;
+        }
+      } catch {
+        perms = null;
+      }
+    }
+    const out: { key: string; label: string }[] = [
+      { key: 'Overview', label: 'Overview' },
+    ];
+    if (canViewCustomerTab(perms, 'customer_tab_communications', userRole)) {
+      out.push({ key: 'Communications', label: 'Communications' });
+    }
+    if (canViewCustomerTab(perms, 'customer_tab_contacts', userRole)) {
+      out.push({ key: 'Contacts', label: 'Contacts' });
+    }
+    if (
+      workAddressId &&
+      canViewInvoicesModule(perms, userRole) &&
+      canViewCustomerTab(perms, 'customer_tab_invoices', userRole)
+    ) {
+      out.push({ key: 'Invoices', label: 'Invoices' });
+    }
+    if (allowBranches && canViewCustomerTab(perms, 'customer_tab_branches', userRole)) {
+      out.push({ key: 'Branches', label: 'Branches' });
+    }
+    if (!workAddressId) {
+      out.push({ key: 'Work address', label: workAddressLabel });
+    }
+    if (canViewCustomerTab(perms, 'customer_tab_assets', userRole)) {
+      out.push({ key: 'Assets', label: 'Assets' });
+    }
+    if (canViewCustomerTab(perms, 'customer_tab_site_images', userRole)) {
+      out.push({ key: 'Site images', label: 'Site images' });
+    }
+    if (canViewCustomerTab(perms, 'customer_tab_files', userRole)) {
+      out.push({ key: 'Files', label: 'Files' });
+    }
+    out.push({ key: 'Site Reports', label: 'Site Reports' });
+    if (!workAddressId) {
+      out.push({ key: 'PPM Contracts', label: 'PPM Contracts' });
+    }
+    return out;
+  }, [allowBranches, workAddressId, workAddressLabel]);
+
+  useEffect(() => {
+    const keys = tabs.map((t) => t.key);
+    if (!keys.includes(activeTab)) setActiveTab('Overview');
+  }, [tabs, activeTab]);
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -1548,8 +1628,12 @@ export default function CustomerDetailsPage() {
                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-0.5">
                           <span className="text-xs font-medium text-slate-500 px-3 uppercase tracking-wide">Filter by type:</span>
                           <button onClick={() => setHistoryType(historyType === 'jobs' ? '' : 'jobs')} className={`${historyType === 'jobs' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Jobs</button>
-                          <button onClick={() => setHistoryType(historyType === 'invoices' ? '' : 'invoices')} className={`${historyType === 'invoices' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Invoices</button>
-                          <button onClick={() => setHistoryType(historyType === 'credit_notes' ? '' : 'credit_notes')} className={`${historyType === 'credit_notes' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Credit notes</button>
+                          {historyAccess.invoices && (
+                            <>
+                              <button onClick={() => setHistoryType(historyType === 'invoices' ? '' : 'invoices')} className={`${historyType === 'invoices' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Invoices</button>
+                              <button onClick={() => setHistoryType(historyType === 'credit_notes' ? '' : 'credit_notes')} className={`${historyType === 'credit_notes' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Credit notes</button>
+                            </>
+                          )}
                        </div>
                     </div>
 

@@ -96,6 +96,9 @@ function diaryVisitFromEvent(evt: StaffWorkCalendarEvent) {
     title: (raw.title as string) || 'Job',
     customer_full_name: (raw.customer_full_name as string) || 'Customer',
     customer_address: (raw.customer_address as string) || (raw.location as string),
+    address_line_1: raw.address_line_1 as string | null | undefined,
+    description_name: raw.description_name as string | null | undefined,
+    job_state: raw.job_state as string | null | undefined,
     site_contact_name: raw.site_contact_name as string | null | undefined,
     event_status: (raw.event_status as string) || 'scheduled',
     job_number: raw.job_number as string | null | undefined,
@@ -356,7 +359,7 @@ export function StaffWorkDiaryCalendar({
                       setActiveMonthDate(d);
                       onViewModeChange('daily');
                     }}
-                    className={`flex min-h-[104px] flex-col bg-white p-1.5 text-left transition-colors ${
+                    className={`flex min-h-[118px] flex-col bg-white p-1.5 text-left transition-colors ${
                       !inMonth ? 'text-slate-300' : 'text-slate-800'
                     } ${isToday ? 'ring-1 ring-inset ring-[#14B8A6]' : ''} ${
                       isSelected && inMonth ? 'bg-teal-50/70' : ''
@@ -366,9 +369,9 @@ export function StaffWorkDiaryCalendar({
                       {format(d, 'd')}
                     </span>
                     <div className="min-h-0 flex-1 space-y-0.5 overflow-hidden">
-                      {dayEvents.slice(0, 4).map((evt) => renderEvent(evt, 'chip'))}
-                      {dayEvents.length > 4 && (
-                        <div className="text-[10px] font-medium text-slate-500">+{dayEvents.length - 4} more</div>
+                      {dayEvents.slice(0, 3).map((evt) => renderEvent(evt, 'chip'))}
+                      {dayEvents.length > 3 && (
+                        <div className="text-[10px] font-medium text-slate-500">+{dayEvents.length - 3} more</div>
                       )}
                     </div>
                   </button>

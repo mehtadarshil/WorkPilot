@@ -8740,6 +8740,8 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, ${statusSelect},
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
               j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
+              j.state AS job_state,
+              jd.name AS description_name,
               c.full_name as customer_full_name, c.email as customer_email,
               o.full_name as officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
@@ -8748,6 +8750,10 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
                 NULLIF(TRIM(j.contact_name), ''),
                 c.full_name
               ) AS site_contact_name,
+              COALESCE(
+                NULLIF(TRIM(wa.address_line_1), ''),
+                NULLIF(TRIM(c.address_line_1), '')
+              ) AS address_line_1,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(', ',
                   NULLIF(TRIM(wa.address_line_1), ''),
@@ -8762,6 +8768,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
               ) AS customer_address
        FROM diary_events d
        JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN job_descriptions jd ON jd.id = j.job_description_id
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
@@ -19541,8 +19548,21 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
 app.get('/api/customers/:customerId/jobs', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const customerId = parseInt(String(req.params.customerId), 10);
   if (!Number.isFinite(customerId)) return res.status(400).json({ message: 'Invalid customer ID' });
+  const u = req.user!;
+  if (u.role === 'STAFF' && !assertStaffPermissionAny(u, ['customers', 'jobs'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
+  const userId = getTenantScopeUserId(u);
+  const isSuperAdmin = u.role === 'SUPER_ADMIN';
   const workAddressId = typeof req.query.work_address_id === 'string' ? parseInt(req.query.work_address_id, 10) : null;
   try {
+    const ownerCheck = await pool.query<{ id: number }>(
+      `SELECT id FROM customers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
+      isSuperAdmin ? [customerId] : [customerId, userId],
+    );
+    if ((ownerCheck.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
     const params: any[] = [customerId];
     let whereClause = 'WHERE j.customer_id = $1';
     if (workAddressId && Number.isFinite(workAddressId)) {
@@ -19551,6 +19571,10 @@ app.get('/api/customers/:customerId/jobs', authenticate, async (req: Authenticat
     } else {
       /* Customer (parent) view: do not list jobs that belong to a work address / site. */
       whereClause += ' AND j.work_address_id IS NULL';
+    }
+    if (!isSuperAdmin) {
+      params.push(userId);
+      whereClause += ` AND j.created_by = $${params.length}`;
     }
     const result = await pool.query(
       `SELECT j.*, jd.name as description_name,

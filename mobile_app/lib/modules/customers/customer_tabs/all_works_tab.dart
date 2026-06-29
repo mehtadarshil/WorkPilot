@@ -4,8 +4,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../app/routes/app_routes.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/tenant_permissions.dart';
 import '../../../core/values/app_colors.dart';
 import '../../../data/repositories/customers_repository.dart';
+import '../../home/controllers/home_controller.dart';
 import '../customer_detail_controller.dart';
 import 'helpers.dart';
 import 'shell.dart';
@@ -174,6 +176,18 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
       final notes = c['specific_notes'];
       final rawNotes = notes is List ? notes : const [];
       final wid = widget.controller.scopedWorkAddressId.value;
+      final perms = Get.isRegistered<HomeController>()
+          ? Get.find<HomeController>().home.value?.mobilePermissions ?? {}
+          : <String, bool>{};
+      final role = Get.isRegistered<HomeController>() ? Get.find<HomeController>().home.value?.role : null;
+      final showInvoiceHistory =
+          canViewInvoicesModule(perms, role: role) &&
+          (wid == null || canViewCustomerTab(perms, 'customer_tab_invoices', role: role));
+      if (!showInvoiceHistory && (_historyKind == 2 || _historyKind == 3)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _historyKind = 0);
+        });
+      }
       final noteList = rawNotes.where((raw) {
         if (raw is! Map) return false;
         final n = Map<String, dynamic>.from(raw);
@@ -216,7 +230,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
             merged.add({'_type': 'job', '_date': ctStr(j, 'created_at'), '_data': j});
           }
         }
-        if (_historyKind == 0 || _historyKind == 2) {
+        if (showInvoiceHistory && (_historyKind == 0 || _historyKind == 2)) {
           for (final inv in histInvoices) {
             merged.add({'_type': 'invoice', '_date': ctStr(inv, 'invoice_date'), '_data': inv});
           }
@@ -349,6 +363,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
+            if (wid == null)
             customerPanel(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,6 +404,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                 ],
               ),
             ),
+            if (wid == null) ...[
             customerSectionHeader(
               'Ongoing works',
               trailing: FilledButton.icon(
@@ -457,6 +473,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                   ),
                 ),
               ),
+            ],
             customerSectionHeader(
               'Technical notes',
               trailing: IconButton.filledTonal(
@@ -532,11 +549,13 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                   ),
                   const SizedBox(height: 10),
                   SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('All'), icon: Icon(Icons.history_rounded, size: 16)),
-                      ButtonSegment(value: 1, label: Text('Jobs'), icon: Icon(Icons.work_outline, size: 16)),
-                      ButtonSegment(value: 2, label: Text('Invoices'), icon: Icon(Icons.receipt_long_outlined, size: 16)),
-                      ButtonSegment(value: 3, label: Text('Credits'), icon: Icon(Icons.description_outlined, size: 16)),
+                    segments: [
+                      const ButtonSegment(value: 0, label: Text('All'), icon: Icon(Icons.history_rounded, size: 16)),
+                      const ButtonSegment(value: 1, label: Text('Jobs'), icon: Icon(Icons.work_outline, size: 16)),
+                      if (showInvoiceHistory) ...[
+                        const ButtonSegment(value: 2, label: Text('Invoices'), icon: Icon(Icons.receipt_long_outlined, size: 16)),
+                        const ButtonSegment(value: 3, label: Text('Credits'), icon: Icon(Icons.description_outlined, size: 16)),
+                      ],
                     ],
                     selected: {_historyKind},
                     onSelectionChanged: (s) => setState(() => _historyKind = s.first),

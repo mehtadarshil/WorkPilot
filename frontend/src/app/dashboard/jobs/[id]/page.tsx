@@ -18,6 +18,7 @@ import { POST_REPORT_JOB_STAGES, type PostReportJobState } from '../postReportJo
 import { ArrowLeft, Calendar, Clock, User, Clipboard, Info, Receipt, Plus, Trash2, Key, ChevronDown, Download, CalendarClock, AlertTriangle, Wrench, X } from 'lucide-react';
 import Link from 'next/link';
 import dayjs from 'dayjs';
+import { canViewJobDetailTab, JOB_DETAIL_TAB_PERMISSION_KEYS, type TenantPermissionKey } from '@/lib/tenantPermissions';
 import { formatCompletedServicesForJobDetail } from '../serviceJobCompletedItems';
 import { pickJobScheduledDateIso } from '../jobScheduledDate';
 import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
@@ -821,20 +822,63 @@ export default function JobDetailsPage() {
   const showDiaryAddressReminderEmail = !hasJobAddressListed;
   const showDiaryEngineerJobSheetEmail = Boolean(viewingEvent?.officer_full_name?.trim());
 
-  const tabs = [
-    'Details',
-    'Parts',
-    'Job report',
-    'Reports',
-    'Client panel',
-    'Reminders',
-    'Notes',
-    'Files',
-    'Invoices',
-    'Costs',
-    'Expenses',
-    'Items to invoice',
-  ];
+  const tabs = useMemo(() => {
+    const allTabs = [
+      'Details',
+      'Parts',
+      'Job report',
+      'Reports',
+      'Client panel',
+      'Reminders',
+      'Notes',
+      'Files',
+      'Invoices',
+      'Costs',
+      'Expenses',
+      'Items to invoice',
+    ] as const;
+    const tabPerm: Partial<Record<(typeof allTabs)[number], TenantPermissionKey>> = {
+      Parts: 'job_tab_parts',
+      'Job report': 'job_tab_job_report',
+      Reports: 'job_tab_reports',
+      'Client panel': 'job_tab_client_panel',
+      Reminders: 'job_tab_reminders',
+      Notes: 'job_tab_notes',
+      Files: 'job_tab_files',
+      Invoices: 'job_tab_invoices',
+      Costs: 'job_tab_costs',
+      Expenses: 'job_tab_expenses',
+      'Items to invoice': 'job_tab_items_to_invoice',
+    };
+    let perms: Partial<Record<TenantPermissionKey, boolean>> | null = null;
+    let userRole: string | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem('wp_user');
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            role?: string;
+            permissions?: Partial<Record<TenantPermissionKey, boolean>>;
+          };
+          perms = parsed.permissions ?? null;
+          userRole = parsed.role ?? currentUser?.role ?? null;
+        }
+      } catch {
+        perms = null;
+      }
+    }
+    return allTabs.filter((tab) => {
+      const key = tabPerm[tab];
+      if (!key) return true;
+      return canViewJobDetailTab(perms, key as (typeof JOB_DETAIL_TAB_PERMISSION_KEYS)[number], userRole);
+    });
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!tabs.includes(activeTab as (typeof tabs)[number])) {
+      setActiveTab(tabs[0] ?? 'Details');
+    }
+  }, [tabs, activeTab]);
 
   return (
     <div className="flex h-full flex-col bg-background-light">
