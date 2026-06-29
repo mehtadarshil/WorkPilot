@@ -19568,9 +19568,6 @@ app.get('/api/customers/:customerId/jobs', authenticate, async (req: Authenticat
     if (workAddressId && Number.isFinite(workAddressId)) {
       whereClause += ' AND j.work_address_id = $2';
       params.push(workAddressId);
-    } else {
-      /* Customer (parent) view: do not list jobs that belong to a work address / site. */
-      whereClause += ' AND j.work_address_id IS NULL';
     }
     if (!isSuperAdmin) {
       params.push(userId);

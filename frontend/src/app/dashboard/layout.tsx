@@ -19,8 +19,8 @@ interface StoredUser {
 function hasNavPermission(user: StoredUser, key: TenantPermissionKey): boolean {
   if (user.role === 'OFFICER') return true;
   if (user.role === 'SUPER_ADMIN') return true;
-  if (user.role === 'ADMIN' && user.permissions == null) return true;
-  if (user.role === 'ADMIN' || user.role === 'STAFF') {
+  if (user.role === 'ADMIN') return true;
+  if (user.role === 'STAFF') {
     if (user.permissions?.[key] === true) return true;
     if (
       (key === 'settings_invoice' || key === 'settings_quotation' || key === 'settings_email') &&
@@ -44,8 +44,7 @@ function hasNavPermission(user: StoredUser, key: TenantPermissionKey): boolean {
 }
 
 function normalizedStoredUser(user: StoredUser): StoredUser {
-  if (user.role === 'ADMIN' && user.permissions == null) return user;
-  if (user.role === 'SUPER_ADMIN') return user;
+  if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return user;
   return { ...user, permissions: normalizePermissions(user.permissions) };
 }
 

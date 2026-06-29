@@ -95,12 +95,14 @@ export const CUSTOMER_TAB_LABELS: Record<(typeof CUSTOMER_TAB_PERMISSION_KEYS)[n
   customer_tab_site_images: 'Site images tab',
 };
 
-function jobTabsCustomized(p: TenantPermissionsMap): boolean {
-  return JOB_DETAIL_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+function jobTabsCustomized(raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined): boolean {
+  if (!raw) return false;
+  return JOB_DETAIL_TAB_PERMISSION_KEYS.some((k) => raw[k] === true || raw[k] === false);
 }
 
-function customerTabsCustomized(p: TenantPermissionsMap): boolean {
-  return CUSTOMER_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+function customerTabsCustomized(raw: Partial<Record<TenantPermissionKey, boolean>> | null | undefined): boolean {
+  if (!raw) return false;
+  return CUSTOMER_TAB_PERMISSION_KEYS.some((k) => raw[k] === true || raw[k] === false);
 }
 
 function isAdminRole(role?: string | null): boolean {
@@ -113,13 +115,10 @@ export function canViewJobDetailTab(
   tabKey: (typeof JOB_DETAIL_TAB_PERMISSION_KEYS)[number],
   role?: string | null,
 ): boolean {
+  if (isAdminRole(role)) return true;
   const p = normalizePermissions(raw);
-  if (isAdminRole(role)) {
-    if (!jobTabsCustomized(p)) return true;
-    return p[tabKey] === true;
-  }
   if (!p.jobs) return false;
-  if (!jobTabsCustomized(p)) return true;
+  if (!jobTabsCustomized(raw)) return true;
   return p[tabKey] === true;
 }
 
@@ -128,13 +127,10 @@ export function canViewCustomerTab(
   tabKey: (typeof CUSTOMER_TAB_PERMISSION_KEYS)[number],
   role?: string | null,
 ): boolean {
+  if (isAdminRole(role)) return true;
   const p = normalizePermissions(raw);
-  if (isAdminRole(role)) {
-    if (!customerTabsCustomized(p)) return true;
-    return p[tabKey] === true;
-  }
   if (!p.customers && !p.jobs) return false;
-  if (!customerTabsCustomized(p)) return true;
+  if (!customerTabsCustomized(raw)) return true;
   return p[tabKey] === true;
 }
 

@@ -32,20 +32,14 @@ bool _tabsCustomized(Map<String, bool> perms, List<String> keys) {
 }
 
 bool canViewJobDetailTab(Map<String, bool> perms, String tabKey, {String? role}) {
-  if (_isAdminRole(role)) {
-    if (!_tabsCustomized(perms, jobDetailTabPermissionKeys)) return true;
-    return perms[tabKey] == true;
-  }
+  if (_isAdminRole(role)) return true;
   if (perms['jobs'] != true) return false;
   if (!_tabsCustomized(perms, jobDetailTabPermissionKeys)) return true;
   return perms[tabKey] == true;
 }
 
 bool canViewCustomerTab(Map<String, bool> perms, String tabKey, {String? role}) {
-  if (_isAdminRole(role)) {
-    if (!_tabsCustomized(perms, customerTabPermissionKeys)) return true;
-    return perms[tabKey] == true;
-  }
+  if (_isAdminRole(role)) return true;
   if (perms['customers'] != true && perms['jobs'] != true) return false;
   if (!_tabsCustomized(perms, customerTabPermissionKeys)) return true;
   return perms[tabKey] == true;

@@ -71,12 +71,16 @@ export const CUSTOMER_TAB_PERMISSION_KEYS = [
   'customer_tab_site_images',
 ] as const;
 
-function jobTabsCustomized(p: Record<TenantPermissionKey, boolean>): boolean {
-  return JOB_DETAIL_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+function jobTabsCustomized(raw: unknown): boolean {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const obj = raw as Record<string, unknown>;
+  return JOB_DETAIL_TAB_PERMISSION_KEYS.some((k) => obj[k] === true || obj[k] === false);
 }
 
-function customerTabsCustomized(p: Record<TenantPermissionKey, boolean>): boolean {
-  return CUSTOMER_TAB_PERMISSION_KEYS.some((k) => p[k] === true || p[k] === false);
+function customerTabsCustomized(raw: unknown): boolean {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const obj = raw as Record<string, unknown>;
+  return CUSTOMER_TAB_PERMISSION_KEYS.some((k) => obj[k] === true || obj[k] === false);
 }
 
 function isAdminRole(role?: string | null): boolean {
@@ -89,13 +93,10 @@ export function canViewJobDetailTab(
   tabKey: (typeof JOB_DETAIL_TAB_PERMISSION_KEYS)[number],
   role?: string | null,
 ): boolean {
+  if (isAdminRole(role)) return true;
   const p = normalizePermissionsJson(raw);
-  if (isAdminRole(role)) {
-    if (!jobTabsCustomized(p)) return true;
-    return p[tabKey] === true;
-  }
   if (!p.jobs) return false;
-  if (!jobTabsCustomized(p)) return true;
+  if (!jobTabsCustomized(raw)) return true;
   return p[tabKey] === true;
 }
 
@@ -104,13 +105,10 @@ export function canViewCustomerTab(
   tabKey: (typeof CUSTOMER_TAB_PERMISSION_KEYS)[number],
   role?: string | null,
 ): boolean {
+  if (isAdminRole(role)) return true;
   const p = normalizePermissionsJson(raw);
-  if (isAdminRole(role)) {
-    if (!customerTabsCustomized(p)) return true;
-    return p[tabKey] === true;
-  }
   if (!p.customers && !p.jobs) return false;
-  if (!customerTabsCustomized(p)) return true;
+  if (!customerTabsCustomized(raw)) return true;
   return p[tabKey] === true;
 }
 
