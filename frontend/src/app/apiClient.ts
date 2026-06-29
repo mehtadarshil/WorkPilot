@@ -2,6 +2,21 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+function networkErrorMessage(): string {
+  return 'Could not reach the server. Check your connection and try again in a minute. If this keeps happening, your network may be temporarily blocked — contact support.';
+}
+
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new Error(networkErrorMessage());
+    }
+    throw err instanceof Error ? err : new Error(networkErrorMessage());
+  }
+}
+
 interface RequestOptions extends RequestInit {
   method?: HttpMethod;
   authToken?: string | null;
@@ -11,7 +26,7 @@ let activeRefreshPromise: Promise<{ token: string; refreshToken?: string }> | nu
 
 async function performTokenRefresh(refreshToken: string): Promise<{ token: string; refreshToken?: string }> {
   const url = `${API_BASE_URL}/auth/refresh`;
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -40,7 +55,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     (headers as Record<string, string>)['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     ...options,
     headers,
   });
@@ -74,7 +89,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
             'Authorization': `Bearer ${refreshData.token}`,
           } as Record<string, string>;
 
-          const retryResponse = await fetch(url, {
+          const retryResponse = await safeFetch(url, {
             ...options,
             headers: newHeaders,
           });
@@ -159,7 +174,7 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
   }
   if (token) (headers as Record<string, string>).Authorization = `Bearer ${token}`;
   
-  let response = await fetch(url, { method: 'GET', headers });
+  let response = await safeFetch(url, { method: 'GET', headers });
 
   if (response.status === 401 && typeof window !== 'undefined') {
     const refreshToken = window.localStorage.getItem('wp_refresh_token');
@@ -177,7 +192,7 @@ export async function getBlob(path: string, authToken?: string | null): Promise<
         }
 
         (headers as Record<string, string>).Authorization = `Bearer ${refreshData.token}`;
-        response = await fetch(url, { method: 'GET', headers });
+        response = await safeFetch(url, { method: 'GET', headers });
       } catch (err) {
         activeRefreshPromise = null;
         console.error('Auto token refresh failed in getBlob:', err);

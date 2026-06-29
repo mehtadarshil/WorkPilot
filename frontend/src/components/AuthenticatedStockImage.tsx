@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { enqueueFetch } from '@/lib/fetchQueue';
 import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
@@ -12,6 +13,8 @@ type Props = {
   alt: string;
   className?: string;
   fallback?: React.ReactNode;
+  /** When true (default), only fetch the image once it scrolls into view. */
+  lazy?: boolean;
 };
 
 function buildFetchUrl(
@@ -43,16 +46,39 @@ export function AuthenticatedStockImage({
   alt,
   className,
   fallback = null,
+  lazy = true,
 }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [inView, setInView] = useState(!lazy);
   const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    if (!lazy) {
+      setInView(true);
+      return;
+    }
+    const el = rootRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true);
+          obs.disconnect();
+        }
+      },
+      { rootMargin: '120px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [lazy]);
+
+  useEffect(() => {
     setBlobSrc(null);
     setImgSrc(null);
     setFailed(false);
-    if (!imageUrl?.trim() || !token?.trim()) return;
+    if (!inView || !imageUrl?.trim() || !token?.trim()) return;
 
     const fetchUrl = buildFetchUrl(imageUrl.trim(), category);
     if (!fetchUrl) {
@@ -65,10 +91,12 @@ export function AuthenticatedStockImage({
 
     (async () => {
       try {
-        const res = await fetch(fetchUrl, {
-          headers: { Authorization: `Bearer ${token.trim()}` },
-          credentials: 'omit',
-        });
+        const res = await enqueueFetch(() =>
+          fetch(fetchUrl, {
+            headers: { Authorization: `Bearer ${token.trim()}` },
+            credentials: 'omit',
+          }),
+        );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const blob = await res.blob();
         if (!blob.type.startsWith('image/') && blob.size < 32) {
@@ -92,29 +120,43 @@ export function AuthenticatedStockImage({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [imageUrl, category, token]);
+  }, [imageUrl, category, token, inView]);
 
   const src = blobSrc || imgSrc;
-  if (failed || !src) {
+  const showFallback = failed || !src;
+
+  if (showFallback) {
     if (imageUrl?.trim() && fallback) {
       return (
-        <div className={`relative flex flex-col items-center justify-center gap-1 text-center ${className || ''}`}>
+        <div
+          ref={rootRef}
+          className={`relative flex flex-col items-center justify-center gap-1 text-center ${className || ''}`}
+        >
           {fallback}
-          <span className="absolute bottom-1 left-1 right-1 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium text-white">
-            Re-upload photo
-          </span>
+          {inView && (
+            <span className="absolute bottom-1 left-1 right-1 rounded bg-black/50 px-1 py-0.5 text-[9px] font-medium text-white">
+              Re-upload photo
+            </span>
+          )}
         </div>
       );
     }
-    return <>{fallback}</>;
+    return (
+      <div ref={rootRef} className={className}>
+        {fallback}
+      </div>
+    );
   }
+
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt}
-      className={className}
-      onError={() => setFailed(true)}
-    />
+    <div ref={rootRef} className="contents">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className={className}
+        onError={() => setFailed(true)}
+      />
+    </div>
   );
 }
