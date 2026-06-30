@@ -15,8 +15,6 @@ import {
   FileText,
   Upload,
   Calendar,
-  User,
-  MapPin,
   CheckCircle,
   Clock,
   ExternalLink,
@@ -1103,7 +1101,7 @@ export default function StockToolsPage() {
               <p className="text-sm font-medium">No tools match your filters.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredTools.map((tool) => {
                 let statusClass = 'bg-slate-100 text-slate-700';
                 let statusLabel = 'Available';
@@ -1124,59 +1122,66 @@ export default function StockToolsPage() {
                 return (
                   <div
                     key={tool.id}
-                    className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-[#14B8A6]/40 transition"
+                    className="group relative flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:border-[#14B8A6]/40 transition"
                   >
-                    {/* Tool Image Preview Header */}
-                    <div className="relative aspect-video w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center">
-                      {tool.image_url && activeToken ? (
-                        <AuthenticatedStockImage
-                          imageUrl={tool.image_url}
-                          category="tool-photos"
-                          token={activeToken}
-                          alt={tool.name}
-                          className="size-full object-cover"
-                          fallback={
+                    <div>
+                      <div className="flex gap-4 mb-3">
+                        <div className="relative size-16 shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
+                          {tool.image_url && activeToken ? (
+                            <AuthenticatedStockImage
+                              imageUrl={tool.image_url}
+                              category="tool-photos"
+                              token={activeToken}
+                              alt={tool.name}
+                              className="size-full object-cover"
+                              fallback={
+                                <div className="flex size-full items-center justify-center text-slate-300">
+                                  <Wrench className="size-6" />
+                                </div>
+                              }
+                            />
+                          ) : (
                             <div className="flex size-full items-center justify-center text-slate-300">
-                              <Wrench className="size-8" />
+                              <Wrench className="size-6" />
                             </div>
-                          }
-                        />
-                      ) : (
-                        <div className="flex size-full items-center justify-center text-slate-300">
-                          <Wrench className="size-8" />
+                          )}
                         </div>
-                      )}
-                      <span className={`absolute right-3 top-3 px-2 py-0.5 rounded-full text-xs font-bold shadow-sm ${statusClass}`}>
-                        {statusLabel}
-                      </span>
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-4 flex-1 flex flex-col justify-between">
-                      <div>
-                        <span className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500 mb-1">
-                          {tool.category}
-                        </span>
-                        <h3 className="font-bold text-slate-900 truncate mb-2">{tool.name}</h3>
-
-                        <div className="flex flex-col gap-1.5 text-xs text-slate-600 mt-2">
-                          <div className="flex items-center gap-1.5">
-                            <Package className="size-3.5 text-slate-400" />
-                            <span>Quantity: <strong>{tool.quantity ?? 1}</strong></span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="size-3.5 text-slate-400" />
-                            <span>Location: <strong>{tool.location}</strong></span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <User className="size-3.5 text-slate-400" />
-                            <span>Custodian: <strong>{tool.assigned_officer_name || 'None Assigned'}</strong></span>
-                          </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                            {tool.category}
+                          </span>
+                          <h3 className="font-bold text-slate-900 truncate mt-1">{tool.name}</h3>
+                          <p className="text-xs text-slate-500 truncate">
+                            Custodian: {tool.assigned_officer_name || 'None Assigned'}
+                          </p>
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center justify-end border-t border-slate-100 mt-4 pt-3 opacity-80 group-hover:opacity-100 transition gap-1">
+                      <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-xs border border-slate-100">
+                        <div>
+                          <p className="text-slate-400 font-semibold mb-0.5">Location</p>
+                          <p className="font-bold text-slate-700 truncate" title={tool.location}>
+                            {tool.location}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400 font-semibold mb-0.5">Quantity</p>
+                          <p className="font-bold text-slate-700 truncate">{tool.quantity ?? 1}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400 font-semibold mb-0.5">Status</p>
+                          <p className="font-bold text-slate-700 truncate">{statusLabel}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-100 mt-4 pt-3">
+                      <div>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${statusClass}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition">
                         <button
                           onClick={() => openConvertToStock(tool)}
                           className="rounded-lg p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700 transition"
