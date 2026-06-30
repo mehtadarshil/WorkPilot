@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getJson, postJson, deleteRequest, getBlob, patchJson } from '../../../apiClient';
 import { prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
 import { Upload, FileText, Trash2, Download, AlertCircle, Eye } from 'lucide-react';
+import { showFullscreenImage } from '@/components/ImageLightboxProvider';
 import dayjs from 'dayjs';
 
 interface CustomerFileRow {
@@ -158,15 +159,13 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
   const canPreviewInline = (f: CustomerFileRow) => {
     const t = (f.content_type || '').toLowerCase();
     return t.startsWith('image/') || t === 'application/pdf';
-  };
-
-  const previewFile = async (f: CustomerFileRow) => {
+  };  const previewFile = async (f: CustomerFileRow) => {
     if (!token || !canPreviewInline(f)) return;
     setError(null);
     try {
       const blob = await getBlob(fileContentPath(customerId, f), token);
       const url = URL.createObjectURL(blob);
-      setLightboxUrl(url);
+      showFullscreenImage(url);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Preview failed');
     }
@@ -339,25 +338,6 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
             </div>
           )}
         </div>
-      </div>
-
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => { URL.revokeObjectURL(lightboxUrl); setLightboxUrl(null); }}
-        >
-          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => { URL.revokeObjectURL(lightboxUrl); setLightboxUrl(null); }}
-              className="absolute -top-3 -right-3 z-10 rounded-full bg-white p-1.5 shadow-lg hover:bg-slate-100"
-            >
-              ✕
-            </button>
-            <img src={lightboxUrl} alt="Full size preview" className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

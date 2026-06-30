@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2, Clock3, CalendarDays, CalendarClock, ListTodo } from 'lucide-react';
 import { getJson } from '../apiClient';
 import { normalizePermissions, type TenantPermissionKey } from '../../lib/tenantPermissions';
+import { ImageLightboxProvider } from '../../components/ImageLightboxProvider';
 
 interface StoredUser {
   id: number;
@@ -401,7 +402,9 @@ export default function DashboardLayout({
 
       {/* Main Content Area */}
       <main className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
-        {children}
+        <ImageLightboxProvider>
+          {children}
+        </ImageLightboxProvider>
       </main>
     </div>
   );

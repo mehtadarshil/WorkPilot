@@ -15,6 +15,7 @@ import '../../../core/values/app_constants.dart';
 import '../../../data/repositories/customers_repository.dart';
 import 'helpers.dart';
 import 'shell.dart';
+import 'image_viewer_helper.dart';
 
 const int _kMaxUploadBytes = 8 * 1024 * 1024;
 
@@ -156,45 +157,10 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
     final tok = Get.find<StorageService>().authToken ?? '';
     final url = _customerFileContentUrl(widget.customerId, id);
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final mq = MediaQuery.of(ctx);
-        return Dialog(
-          backgroundColor: Colors.black87,
-          insetPadding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: mq.size.width * 0.94,
-            height: mq.size.height * 0.82,
-            child: Column(
-              children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => Navigator.pop(ctx)),
-                ),
-                Expanded(
-                  child: InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 4,
-                    child: Image.network(
-                      url,
-                      fit: BoxFit.contain,
-                      headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
-                      loadingBuilder: (_, child, prog) {
-                        if (prog == null) return child;
-                        return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-                      },
-                      errorBuilder: (_, __, ___) => const Center(
-                        child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    openFullscreenImage(
+      context,
+      url,
+      headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
     );
   }
 

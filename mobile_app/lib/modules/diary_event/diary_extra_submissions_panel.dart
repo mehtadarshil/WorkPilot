@@ -12,6 +12,7 @@ import '../../data/models/diary_extra_submission.dart';
 import 'diary_event_detail_controller.dart';
 import 'extra_submission_media_tiles.dart';
 import 'extra_submission_helpers.dart';
+import '../customers/customer_tabs/image_viewer_helper.dart';
 
 const int _kMaxItemsPerSubmission = 8;
 
@@ -540,22 +541,31 @@ class _SubmissionCard extends StatelessWidget {
                         ),
                       );
                     }
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        m.fullUrl,
-                        width: 88,
-                        height: 88,
-                        fit: BoxFit.cover,
-                        headers: t != null && t.isNotEmpty
-                            ? {'Authorization': 'Bearer $t'}
-                            : null,
-                        errorBuilder: (_, __, ___) => Container(
+                    return GestureDetector(
+                      onTap: () {
+                        openFullscreenImage(
+                          context,
+                          m.fullUrl,
+                          headers: t != null && t.isNotEmpty ? {'Authorization': 'Bearer $t'} : null,
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          m.fullUrl,
                           width: 88,
-                          color: AppColors.slate900,
-                          child: const Icon(
-                            Icons.broken_image_outlined,
-                            color: AppColors.slate500,
+                          height: 88,
+                          fit: BoxFit.cover,
+                          headers: t != null && t.isNotEmpty
+                              ? {'Authorization': 'Bearer $t'}
+                              : null,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 88,
+                            color: AppColors.slate900,
+                            child: const Icon(
+                              Icons.broken_image_outlined,
+                              color: AppColors.slate500,
+                            ),
                           ),
                         ),
                       ),

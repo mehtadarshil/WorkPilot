@@ -11,6 +11,7 @@ import '../../core/values/app_constants.dart';
 import '../../data/models/diary_extra_submission.dart';
 import '../../data/models/job_report_history_models.dart';
 import 'extra_submission_media_tiles.dart';
+import '../customers/customer_tabs/image_viewer_helper.dart';
 
 Uint8List? _bytesFromDataUrl(String? s) {
   if (s == null || !s.startsWith('data:image')) return null;
@@ -260,18 +261,27 @@ class _HistoryExtraSubmissionCard extends StatelessWidget {
                       ),
                     );
                   }
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.network(
-                      m.fullUrl,
-                      width: 88,
-                      height: 88,
-                      fit: BoxFit.cover,
-                      headers: t != null && t.isNotEmpty ? {'Authorization': 'Bearer $t'} : null,
-                      errorBuilder: (_, __, ___) => Container(
+                  return GestureDetector(
+                    onTap: () {
+                      openFullscreenImage(
+                        context,
+                        m.fullUrl,
+                        headers: t != null && t.isNotEmpty ? {'Authorization': 'Bearer $t'} : null,
+                      );
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        m.fullUrl,
                         width: 88,
-                        color: AppColors.slate900,
-                        child: const Icon(Icons.broken_image_outlined, color: AppColors.slate500),
+                        height: 88,
+                        fit: BoxFit.cover,
+                        headers: t != null && t.isNotEmpty ? {'Authorization': 'Bearer $t'} : null,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 88,
+                          color: AppColors.slate900,
+                          child: const Icon(Icons.broken_image_outlined, color: AppColors.slate500),
+                        ),
                       ),
                     ),
                   );
@@ -301,28 +311,67 @@ class _HistoryAnswerValue extends StatelessWidget {
       case 'after_photo':
         final bytes = _bytesFromDataUrl(v);
         if (bytes != null) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.memory(
-              bytes,
-              height: 140,
-              width: double.infinity,
-              fit: BoxFit.contain,
+          return GestureDetector(
+            onTap: () {
+              showDialog<void>(
+                context: context,
+                builder: (ctx) => Dialog(
+                  backgroundColor: Colors.black.withOpacity(0.9),
+                  insetPadding: const EdgeInsets.all(8),
+                  child: Column(
+                    children: [
+                      SafeArea(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: CircleAvatar(
+                            backgroundColor: Colors.black45,
+                            child: IconButton(
+                              icon: const Icon(Icons.close_rounded, color: Colors.white),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: InteractiveViewer(
+                          minScale: 0.5,
+                          maxScale: 6,
+                          child: Image.memory(bytes, fit: BoxFit.contain),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.memory(
+                bytes,
+                height: 140,
+                width: double.infinity,
+                fit: BoxFit.contain,
+              ),
             ),
           );
         }
         if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('/')) {
           final uri = _resolveImageUrl(v);
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.network(
-              uri,
-              height: 140,
-              width: double.infinity,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Text(
-                'Could not load image',
-                style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400),
+          return GestureDetector(
+            onTap: () {
+              openFullscreenImage(context, uri);
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                uri,
+                height: 140,
+                width: double.infinity,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Text(
+                  'Could not load image',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400),
+                ),
               ),
             ),
           );

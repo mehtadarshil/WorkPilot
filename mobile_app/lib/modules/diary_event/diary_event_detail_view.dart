@@ -17,6 +17,7 @@ import 'diary_event_detail_controller.dart';
 import 'diary_extra_submissions_panel.dart';
 import 'diary_job_expenses_panel.dart';
 import 'diary_technical_notes_panel.dart';
+import '../customers/customer_tabs/image_viewer_helper.dart';
 
 String _formatVisitDateTime(DateTime? d) {
   if (d == null) return '—';
@@ -60,48 +61,10 @@ void _showImagePreviewDialog(BuildContext context, int customerId, int fileId) {
   final tok = Get.find<StorageService>().authToken ?? '';
   final base = AppConstants.apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
   final url = '$base/customers/$customerId/files/$fileId/content';
-  showDialog<void>(
-    context: context,
-    builder: (ctx) {
-      final mq = MediaQuery.of(ctx);
-      return Dialog(
-        backgroundColor: Colors.black87,
-        insetPadding: const EdgeInsets.all(12),
-        child: SizedBox(
-          width: mq.size.width * 0.94,
-          height: mq.size.height * 0.82,
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-              Expanded(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4,
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.contain,
-                    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
-                    loadingBuilder: (_, child, prog) {
-                      if (prog == null) return child;
-                      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-                    },
-                    errorBuilder: (_, __, ___) => const Center(
-                      child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
+  openFullscreenImage(
+    context,
+    url,
+    headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
   );
 }
 

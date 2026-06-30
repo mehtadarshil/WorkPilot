@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import dayjs from 'dayjs';
 import { resolveWorkpilotAssetUrl } from '@/lib/resolveWorkpilotAssetUrl';
+import { showFullscreenImage } from '@/components/ImageLightboxProvider';
 
 export type QuotationPrintSettings = {
   company_name: string;
@@ -279,7 +280,8 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
                               key={`${image.original_filename}-${index}`}
                               src={image.data_url}
                               alt={image.original_filename}
-                              className="max-h-32 max-w-[200px] w-auto h-auto rounded-lg border border-slate-200 object-contain bg-white"
+                              className="max-h-32 max-w-[200px] w-auto h-auto rounded-lg border border-slate-200 object-contain bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => showFullscreenImage(image.data_url!)}
                             />
                           ) : null,
                         )}

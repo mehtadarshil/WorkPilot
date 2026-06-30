@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Lock, Trash2, ImagePlus, X, Pencil, Check } from 'lucide-react';
 import dayjs from 'dayjs';
 import { postJson, patchJson, deleteRequest, getBlob } from '../../../apiClient';
+import { showFullscreenImage } from '@/components/ImageLightboxProvider';
 
 export type QuotationInternalNoteMedia = {
   stored_filename: string;
@@ -73,14 +74,12 @@ function InternalNoteImage({ filePath, alt, token }: { filePath: string; alt: st
     return <div className="h-24 w-32 shrink-0 animate-pulse rounded border border-slate-200 bg-slate-100" aria-hidden />;
   }
   return (
-    <a
-      href={src}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-block max-w-full shrink-0 rounded border border-slate-200 bg-white shadow-sm"
+    <div
+      className="inline-block max-w-full shrink-0 rounded border border-slate-200 bg-white shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+      onClick={() => showFullscreenImage(src)}
     >
       <img src={src} alt={alt} className="max-h-48 max-w-full rounded object-contain" />
-    </a>
+    </div>
   );
 }
 

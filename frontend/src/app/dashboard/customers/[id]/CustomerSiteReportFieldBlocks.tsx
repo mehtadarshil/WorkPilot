@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- blob previews */
 import { useState, useEffect } from 'react';
 import { ImagePlus, Loader2 } from 'lucide-react';
+import { showFullscreenImage } from '@/components/ImageLightboxProvider';
 import type { SiteReportTemplateField, SiteReportSectionImageRow } from '@/lib/siteReportTemplateTypes';
 import { PASS_FAIL_OPTIONS, YES_NO_NA_OPTIONS } from '@/lib/siteReportTemplateTypes';
 import CustomerSiteReportSignaturePad from './CustomerSiteReportSignaturePad';
@@ -57,7 +58,12 @@ export function SiteReportFieldImageList({
             <div key={im.id} className="flex flex-wrap gap-3 rounded-lg border border-slate-100 p-3">
               <div className="w-full sm:w-40 shrink-0">
                 {src ? (
-                  <img src={src} alt="" className="w-full rounded-md border border-slate-100 object-contain max-h-36 bg-slate-50" />
+                  <img
+                    src={src}
+                    alt=""
+                    className="w-full rounded-md border border-slate-100 object-contain max-h-36 bg-slate-50 cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => showFullscreenImage(src)}
+                  />
                 ) : (
                   <div className="flex h-24 items-center justify-center rounded border border-dashed text-xs text-slate-400">No preview</div>
                 )}
@@ -212,7 +218,12 @@ export function SiteReportSignatureBlock({
       {primary && src ? (
         <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 space-y-2">
           <p className="text-xs font-semibold text-slate-600">Saved signature</p>
-          <img src={src} alt="" className="max-h-32 max-w-full rounded border border-slate-200 bg-white object-contain" />
+          <img
+            src={src}
+            alt=""
+            className="max-h-32 max-w-full rounded border border-slate-200 bg-white object-contain cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => showFullscreenImage(src)}
+          />
           <button
             type="button"
             disabled={isBusy}

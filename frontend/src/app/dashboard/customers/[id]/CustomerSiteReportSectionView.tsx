@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- blob previews for section images */
 import { ImagePlus, Loader2, Plus } from 'lucide-react';
+import { showFullscreenImage } from '@/components/ImageLightboxProvider';
 import type { SiteReportTemplateSection, SiteReportSectionImageRow } from '@/lib/siteReportTemplateTypes';
 import { visibleSiteReportFields } from '@/lib/siteReportFieldVisibility';
 import {
@@ -193,7 +194,8 @@ export function CustomerSiteReportSectionView({
                         <img
                           src={src}
                           alt=""
-                          className="w-full rounded-md border border-slate-100 object-contain max-h-36 bg-slate-50"
+                          className="w-full rounded-md border border-slate-100 object-contain max-h-36 bg-slate-50 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => showFullscreenImage(src)}
                         />
                       ) : (
                         <div className="flex h-24 items-center justify-center rounded border border-dashed text-xs text-slate-400">

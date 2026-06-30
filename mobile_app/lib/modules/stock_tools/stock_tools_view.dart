@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
 import 'stock_tools_controller.dart';
+import '../customers/customer_tabs/image_viewer_helper.dart';
 
 class StockToolsView extends GetView<StockToolsController> {
   const StockToolsView({super.key});
@@ -62,7 +63,7 @@ class StockToolsView extends GetView<StockToolsController> {
   }
 
   // Helper secure image widget
-  Widget _buildSecureImage(String? url, {required String category, double size = 60}) {
+  Widget _buildSecureImage(BuildContext context, String? url, {required String category, double size = 60}) {
     if (url == null || url.trim().isEmpty) {
       return Container(
         width: size,
@@ -83,30 +84,42 @@ class StockToolsView extends GetView<StockToolsController> {
     }
     final fullUrl = '$baseUrl$url';
 
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppColors.slate500.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
+    return GestureDetector(
+      onTap: () {
+        openFullscreenImage(
+          context,
           fullUrl,
           headers: {
             'Authorization': 'Bearer ${controller.authToken}',
             'X-WorkPilot-Client': 'mobile',
           },
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return const Icon(Icons.broken_image_outlined, color: Colors.redAccent, size: 24);
-          },
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)));
-          },
+        );
+      },
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AppColors.slate500.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(
+            fullUrl,
+            headers: {
+              'Authorization': 'Bearer ${controller.authToken}',
+              'X-WorkPilot-Client': 'mobile',
+            },
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return const Icon(Icons.broken_image_outlined, color: Colors.redAccent, size: 24);
+            },
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)));
+            },
+          ),
         ),
       ),
     );
@@ -157,7 +170,7 @@ class StockToolsView extends GetView<StockToolsController> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildSecureImage(img, category: 'stock-photos'),
+                          _buildSecureImage(context, img, category: 'stock-photos'),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -342,7 +355,7 @@ class StockToolsView extends GetView<StockToolsController> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildSecureImage(img, category: 'tool-photos'),
+                          _buildSecureImage(context, img, category: 'tool-photos'),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -530,7 +543,7 @@ class StockToolsView extends GetView<StockToolsController> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildSecureImage(img, category: 'uniform-photos'),
+                          _buildSecureImage(context, img, category: 'uniform-photos'),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
