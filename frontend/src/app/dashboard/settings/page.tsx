@@ -21,6 +21,7 @@ import SiteReportTemplatesSettings from './SiteReportTemplatesSettings';
 import AbortReasonsSettings from './AbortReasonsSettings';
 import CertificateNumberingSettings from './CertificateNumberingSettings';
 import PatTestEquipmentSettings from './PatTestEquipmentSettings';
+import QuotationQuickPhrasesSettings from './QuotationQuickPhrasesSettings';
 import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
 interface InvoiceSettings {
@@ -166,6 +167,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [reminderErrors, setReminderErrors] = useState<string[]>([]);
+  const [reminderLastRun, setReminderLastRun] = useState<string | null>(null);
+
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
   const [signatureLoading, setSignatureLoading] = useState(false);
   const [signatureSaving, setSignatureSaving] = useState(false);
@@ -208,7 +212,7 @@ export default function SettingsPage() {
   // Sub-tabs for Company, Invoice, Quotation
   const [companySubTab, setCompanySubTab] = useState<'details' | 'preview'>('details');
   const [invoiceSubTab, setInvoiceSubTab] = useState<'details' | 'preview'>('details');
-  const [quotationSubTab, setQuotationSubTab] = useState<'details' | 'preview'>('details');
+  const [quotationSubTab, setQuotationSubTab] = useState<'details' | 'quick-phrases' | 'preview'>('details');
 
   const DUMMY_INVOICE = {
     invoice_number: `${formPrefix}-000001`,
@@ -438,7 +442,19 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchInvoiceSettings();
     fetchQuotationSettings();
-  }, [fetchInvoiceSettings, fetchQuotationSettings]);
+
+    if (token) {
+      getJson<{ logs: { error_count: number; errors: string[]; run_at: string }[] }>('/settings/reminder-logs', token)
+        .then((data) => {
+          const latest = data.logs?.[0];
+          if (latest && latest.error_count > 0) {
+            setReminderErrors(latest.errors || []);
+            setReminderLastRun(latest.run_at);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [fetchInvoiceSettings, fetchQuotationSettings, token]);
 
   useEffect(() => {
     if (activeTab === 'quotation') fetchQuotationSettings();
@@ -574,6 +590,39 @@ export default function SettingsPage() {
       <div className={`mx-auto ${['site-report-templates', 'job-report-template'].includes(activeTab) ? 'max-w-none px-2' : 'max-w-6xl'} w-full transition-all duration-300`}>
         <h1 className="text-3xl font-black tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-slate-500">Configure your application preferences.</p>
+
+        {reminderErrors.length > 0 && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 rounded-full bg-amber-100 p-2">
+                <Bell className="size-4 text-amber-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-amber-800">Scheduled reminders are not working</h3>
+                <p className="mt-1 text-xs text-amber-700">
+                  The automated email reminder system encountered errors{reminderLastRun ? ` at ${new Date(reminderLastRun).toLocaleString()}` : ''}. Payment reminders for overdue invoices may not be sent.
+                </p>
+                <ul className="mt-2 list-disc list-inside text-xs text-amber-700 space-y-1">
+                  {reminderErrors.slice(0, 3).map((err, i) => (
+                    <li key={i} className="truncate" title={err}>{err.length > 100 ? err.slice(0, 100) + '...' : err}</li>
+                  ))}
+                  {reminderErrors.length > 3 && <li>+ {reminderErrors.length - 3} more errors</li>}
+                </ul>
+                <p className="mt-2 text-xs text-amber-600">
+                  Check <strong>Settings &rarr; Email</strong> to verify your email configuration is working correctly.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setReminderErrors([]); setReminderLastRun(null); }}
+                className="shrink-0 rounded p-1 text-amber-400 hover:bg-amber-100 hover:text-amber-600"
+                aria-label="Dismiss"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 flex flex-col md:flex-row gap-8">
           {/* Sidebar */}
@@ -1216,12 +1265,28 @@ export default function SettingsPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setQuotationSubTab('quick-phrases')}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold transition ${quotationSubTab === 'quick-phrases' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Quick Phrases
+              </button>
+              <button
+                type="button"
                 onClick={() => setQuotationSubTab('preview')}
                 className={`rounded-md px-4 py-1.5 text-xs font-bold transition ${quotationSubTab === 'preview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 Preview Quotation
               </button>
             </div>
+
+            {quotationSubTab === 'quick-phrases' && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <QuotationQuickPhrasesSettings />
+              </motion.div>
+            )}
 
             {quotationSubTab === 'details' ? (
               <motion.div

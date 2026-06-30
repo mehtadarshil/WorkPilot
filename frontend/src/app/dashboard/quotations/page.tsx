@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Search, Quote, Plus, ChevronDown, ChevronRight, ChevronUp, ImagePlus, X } from 'lucide-react';
+import { Search, Quote, Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getJson, postJson } from '../../apiClient';
 import { localDateAndTimeToIso } from '@/lib/localDateTime';
@@ -49,29 +48,6 @@ interface Customer {
   postcode?: string;
 }
 
-interface QuotationSettings {
-  default_currency: string;
-  default_valid_days: number;
-  default_tax_percentage: number;
-}
-
-interface JobDescPreset {
-  id: number;
-  name: string;
-  default_job_notes: string | null;
-}
-
-type LineItemImage = {
-  original_filename: string;
-  content_type: string;
-  byte_size: number;
-  data_url?: string | null;
-  content_base64?: string;
-  filename?: string;
-};
-
-type LineItemForm = { description: string; quantity: number; unit_price: number; images: LineItemImage[] };
-
 const PAGE_SIZE = 10;
 const QUOTATION_STATES = [
   { value: 'draft', label: 'Draft', color: 'bg-slate-100 text-slate-600' },
@@ -90,40 +66,6 @@ function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
 }
 
-function formatCustomerAddress(c: Customer): string {
-  return [c.address_line_1, c.address_line_2, c.town, c.county, c.postcode]
-    .filter((p) => typeof p === 'string' && p.trim() !== '')
-    .join(', ');
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const s = String(r.result || '');
-      const i = s.indexOf(',');
-      resolve(i >= 0 ? s.slice(i + 1) : s);
-    };
-    r.onerror = () => reject(new Error('Could not read file'));
-    r.readAsDataURL(file);
-  });
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result || ''));
-    r.onerror = () => reject(new Error('Could not preview file'));
-    r.readAsDataURL(file);
-  });
-}
-
-function resizeLineDescriptionTextarea(el: HTMLTextAreaElement | null) {
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = `${Math.max(el.scrollHeight, 40)}px`;
-}
-
 export default function QuotationsPage() {
   const router = useRouter();
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -135,8 +77,6 @@ export default function QuotationsPage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
 
   const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
@@ -150,30 +90,10 @@ export default function QuotationsPage() {
   const [visitWorkAddressOptions, setVisitWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
   const [officers, setOfficers] = useState<{ id: number; full_name: string; state: string }[]>([]);
 
-  const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
-  const [formQuotationDate, setFormQuotationDate] = useState('');
-  const [formValidUntil, setFormValidUntil] = useState('');
-  const [formCurrency, setFormCurrency] = useState('USD');
-  const [formNotes, setFormNotes] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formLineItems, setFormLineItems] = useState<LineItemForm[]>([
-    { description: '', quantity: 1, unit_price: 0, images: [] },
-  ]);
-  const lineDescriptionRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
-  const [formTaxPercentage, setFormTaxPercentage] = useState(0);
-  const [jobDescriptions, setJobDescriptions] = useState<JobDescPreset[]>([]);
-
-  useLayoutEffect(() => {
-    if (!addModalOpen) return;
-    lineDescriptionRefs.current.forEach((el) => resizeLineDescriptionTextarea(el));
-  }, [formLineItems, addModalOpen]);
-  const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
-  const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
-
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
   const fetchWorkAddressesForCustomer = useCallback(
-    async (customerId: number, setter: (options: { id: number; label: string }[]) => void = setWorkAddressOptions) => {
+    async (customerId: number, setter: (options: { id: number; label: string }[]) => void) => {
       if (!token) {
         setter([]);
         return;
@@ -234,26 +154,6 @@ export default function QuotationsPage() {
     }
   }, [token]);
 
-  const fetchJobDescriptions = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<JobDescPreset[]>('/settings/job-descriptions', token);
-      setJobDescriptions(data || []);
-    } catch {
-      setJobDescriptions([]);
-    }
-  }, [token]);
-
-  const fetchQuotationSettings = useCallback(async () => {
-    if (!token) return null;
-    try {
-      const data = await getJson<{ settings: QuotationSettings }>('/settings/quotation', token);
-      return data.settings ?? null;
-    } catch {
-      return null;
-    }
-  }, [token]);
-
   useEffect(() => {
     const t = setTimeout(() => {
       setSearchDebounced(search);
@@ -270,168 +170,13 @@ export default function QuotationsPage() {
   }, [fetchQuotations]);
 
   useEffect(() => {
-    if (addModalOpen || visitModalOpen) {
+    if (visitModalOpen) {
       const t = setTimeout(() => {
         void fetchCustomers();
-        void fetchJobDescriptions();
       }, 0);
       return () => clearTimeout(t);
     }
-  }, [addModalOpen, visitModalOpen, fetchCustomers, fetchJobDescriptions]);
-
-  const resetForm = (settings: QuotationSettings | null) => {
-    setFormCustomerId(null);
-    setFormWorkAddressId(null);
-    setWorkAddressOptions([]);
-    const today = new Date().toISOString().slice(0, 10);
-    const validDays = settings?.default_valid_days ?? 30;
-    const valid = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    setFormQuotationDate(today);
-    setFormValidUntil(valid);
-    setFormCurrency(settings?.default_currency ?? 'USD');
-    setFormNotes('');
-    setFormDescription('');
-    setFormLineItems([{ description: '', quantity: 1, unit_price: 0, images: [] }]);
-    setFormTaxPercentage(settings?.default_tax_percentage ?? 20);
-  };
-
-  const openAdd = async () => {
-    setAddError(null);
-    const settings = await fetchQuotationSettings();
-    resetForm(settings);
-    setAddModalOpen(true);
-  };
-
-  const handleAddPresetDescription = (presetText: string) => {
-    setFormDescription((prev) => {
-      const trimmed = prev.trim();
-      if (!trimmed) return presetText;
-      return `${trimmed}\n${presetText}`;
-    });
-  };
-
-  const handleFormCustomerChange = (customerId: number | null) => {
-    setFormCustomerId(customerId);
-    setFormWorkAddressId(null);
-    setWorkAddressOptions([]);
-    if (customerId) {
-      void fetchWorkAddressesForCustomer(customerId);
-    }
-  };
-
-  const addLineItem = () => {
-    setFormLineItems((prev) => [...prev, { description: '', quantity: 1, unit_price: 0, images: [] }]);
-  };
-
-  const updateLineItem = (i: number, field: 'description' | 'quantity' | 'unit_price', value: string | number) => {
-    setFormLineItems((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
-  };
-
-  const removeLineItem = (i: number) => {
-    if (formLineItems.length <= 1) return;
-    setFormLineItems((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const moveLineItem = (from: number, to: number) => {
-    if (to < 0 || to >= formLineItems.length) return;
-    setFormLineItems((prev) => {
-      const next = [...prev];
-      const [item] = next.splice(from, 1);
-      if (!item) return prev;
-      next.splice(to, 0, item);
-      return next;
-    });
-  };
-
-  const addLineItemImages = async (lineIndex: number, files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const selected = Array.from(files).filter((f) => f.type.startsWith('image/') || /\.(heic|heif|jpe?g|png|gif|webp)$/i.test(f.name));
-    if (selected.length === 0) return;
-    const images = await Promise.all(
-      selected.map(async (file) => ({
-        original_filename: file.name || 'image',
-        filename: file.name || 'image',
-        content_type: file.type || 'image/jpeg',
-        byte_size: file.size,
-        content_base64: await readFileAsBase64(file),
-        data_url: await readFileAsDataUrl(file),
-      })),
-    );
-    setFormLineItems((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-      next[lineIndex] = { ...current, images: [...current.images, ...images].slice(0, 8) };
-      return next;
-    });
-  };
-
-  const removeLineItemImage = (lineIndex: number, imageIndex: number) => {
-    setFormLineItems((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-      next[lineIndex] = { ...current, images: current.images.filter((_, idx) => idx !== imageIndex) };
-      return next;
-    });
-  };
-
-  const subtotal = formLineItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const taxAmount = Math.round(subtotal * (formTaxPercentage / 100) * 100) / 100;
-  const totalAmount = subtotal + taxAmount;
-
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    if (formCustomerId === null) {
-      setAddError('Customer is required.');
-      return;
-    }
-    const validItems = formLineItems.filter((item) => item.description.trim());
-    if (validItems.length === 0) {
-      setAddError('At least one line item with description is required.');
-      return;
-    }
-    if (!token) return;
-    try {
-      const res = await postJson<{ quotation: Quotation }>(
-        '/quotations',
-        {
-          customer_id: formCustomerId,
-          quotation_date: formQuotationDate,
-          valid_until: formValidUntil,
-          currency: formCurrency,
-          notes: formNotes.trim() || undefined,
-          description: formDescription.trim() || undefined,
-          ...(formWorkAddressId != null ? { quotation_work_address_id: formWorkAddressId } : {}),
-          line_items: validItems.map((item) => ({
-            description: item.description.trim(),
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            images: item.images.map((image) => ({
-              original_filename: image.original_filename,
-              content_type: image.content_type,
-              byte_size: image.byte_size,
-              filename: image.filename,
-              content_base64: image.content_base64,
-            })),
-          })),
-          tax_percentage: formTaxPercentage,
-        },
-        token,
-      );
-      setAddModalOpen(false);
-      resetForm(null);
-      fetchQuotations();
-      if (res.quotation?.id) router.push(`/dashboard/quotations/${res.quotation.id}`);
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create quotation.');
-    }
-  };
+  }, [visitModalOpen, fetchCustomers]);
 
   const stateBadge = (state: string) => {
     const opt = QUOTATION_STATES.find((s) => s.value === state) ?? QUOTATION_STATES[0];
@@ -559,7 +304,7 @@ export default function QuotationsPage() {
               </motion.button>
               <motion.button
                 type="button"
-                onClick={openAdd}
+                onClick={() => router.push('/dashboard/quotations/new')}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
@@ -688,265 +433,6 @@ export default function QuotationsPage() {
           </motion.div>
         </div>
       </div>
-
-      {addModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setAddModalOpen(false)}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-slate-900">Create Quotation</h3>
-            <form onSubmit={handleAdd} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700">Customer *</label>
-                <div className="mt-1 flex gap-2">
-                  <div className="flex-1">
-                    <ImportCustomerSelect
-                      customers={customers}
-                      value={formCustomerId}
-                      onChange={handleFormCustomerChange}
-                      className="w-full"
-                    />
-                  </div>
-                  <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
-                    <Plus className="size-4" />
-                  </button>
-                </div>
-                {formCustomerId && (
-                  <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                    {(() => {
-                      const c = customers.find(x => x.id === formCustomerId);
-                      if (!c) return null;
-                      const addr = formatCustomerAddress(c);
-                      return (
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-800">{c.full_name}</p>
-                          <p>{c.email}</p>
-                          {addr && <p className="mt-1 border-t border-slate-200 pt-1 text-slate-500">{addr}</p>}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-                {formCustomerId && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-slate-700">Work / site address (optional)</label>
-                    <div className="mt-1 flex gap-2">
-                      <div className="min-w-0 flex-1">
-                        <WorkAddressSelect
-                          options={workAddressOptions}
-                          value={formWorkAddressId}
-                          onChange={setFormWorkAddressId}
-                          className="w-full"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.open(
-                            `/dashboard/customers/${formCustomerId}?tab=${encodeURIComponent('Work address')}`,
-                            '_blank',
-                          )
-                        }
-                        className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
-                        title="Add work / site address"
-                      >
-                        <Plus className="size-4" />
-                      </button>
-                    </div>
-                    {workAddressOptions.length === 0 && (
-                      <p className="mt-1 text-xs text-slate-500">This customer has no active work addresses yet.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Quotation date</label>
-                  <input type="date" required value={formQuotationDate} onChange={(e) => setFormQuotationDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Valid until</label>
-                  <input type="date" required value={formValidUntil} onChange={(e) => setFormValidUntil(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Currency</label>
-                  <select value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
-                    {['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'INR', 'JPY'].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label className="block text-sm font-medium text-slate-700">Line items</label>
-                  <button type="button" onClick={addLineItem} className="text-sm font-medium text-[#14B8A6] hover:underline">+ Add item</button>
-                </div>
-                <div className="space-y-2">
-                  {formLineItems.map((item, i) => (
-                    <div key={i} className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/40 p-2">
-                      <label className="block text-xs font-medium text-slate-700">
-                        Description
-                        <textarea
-                          ref={(el) => {
-                            lineDescriptionRefs.current[i] = el;
-                            resizeLineDescriptionTextarea(el);
-                          }}
-                          rows={1}
-                          value={item.description}
-                          onChange={(e) => {
-                            updateLineItem(i, 'description', e.target.value);
-                            resizeLineDescriptionTextarea(e.target);
-                          }}
-                          placeholder="Describe this line item"
-                          className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
-                        />
-                      </label>
-                      <div className="flex flex-wrap items-end gap-2">
-                        <label className="text-xs text-slate-600">
-                          Qty
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={item.quantity === 0 ? '' : item.quantity}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                              updateLineItem(i, 'quantity', isNaN(val) ? 0 : val);
-                            }}
-                            className="mt-1 block w-20 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                          />
-                        </label>
-                        <label className="text-xs text-slate-600">
-                          Unit price
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={item.unit_price === 0 ? '' : item.unit_price}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                              updateLineItem(i, 'unit_price', isNaN(val) ? 0 : val);
-                            }}
-                            placeholder="Price"
-                            className="mt-1 block w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                          />
-                        </label>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
-                          <span className="block text-slate-500">Line total</span>
-                          <span className="text-sm font-semibold text-slate-900">
-                            {(item.quantity * item.unit_price).toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="ml-auto flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => moveLineItem(i, i - 1)}
-                            disabled={i === 0}
-                            className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
-                            aria-label="Move item up"
-                          >
-                            <ChevronUp className="size-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveLineItem(i, i + 1)}
-                            disabled={i === formLineItems.length - 1}
-                            className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
-                            aria-label="Move item down"
-                          >
-                            <ChevronDown className="size-4" />
-                          </button>
-                          <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
-                        </div>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {item.images.map((image, imageIndex) => (
-                          <div key={`${image.original_filename}-${imageIndex}`} className="group relative h-16 w-20 overflow-hidden rounded border border-slate-200 bg-white">
-                            {image.data_url ? (
-                              <Image src={image.data_url} alt={image.original_filename} fill unoptimized className="object-cover" />
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={() => removeLineItemImage(i, imageIndex)}
-                              className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-rose-600 opacity-0 shadow-sm transition group-hover:opacity-100"
-                              aria-label="Remove image"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </div>
-                        ))}
-                        <label className="inline-flex h-16 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded border border-dashed border-slate-300 bg-white text-[10px] font-semibold text-slate-500 hover:border-[#14B8A6] hover:text-[#14B8A6]">
-                          <ImagePlus className="size-4" />
-                          Photos
-                          <input
-                            type="file"
-                            accept="image/*,.heic,.heif"
-                            multiple
-                            className="hidden"
-                            onChange={(event) => {
-                              void addLineItemImages(i, event.target.files);
-                              event.currentTarget.value = '';
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Tax (%)</label>
-                  <input type="number" min={0} max={100} step={0.01} value={formTaxPercentage} onChange={(e) => setFormTaxPercentage(parseFloat(e.target.value) || 0)} className="mt-1 w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" placeholder="0" />
-                </div>
-                <div className="flex flex-col justify-end gap-0.5">
-                  {formTaxPercentage > 0 && (
-                    <p className="text-xs text-slate-500">Tax: {formatCurrency(taxAmount, formCurrency)}</p>
-                  )}
-                  <p className="text-sm font-semibold text-slate-700">Total: {formatCurrency(totalAmount, formCurrency)}</p>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700">Project Description</label>
-                <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Overview of the project scope..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-                {jobDescriptions.length > 0 && (
-                  <div className="mt-2">
-                    <span className="text-xs font-semibold text-slate-500">Quick Phrases:</span>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {jobDescriptions.map((desc) => {
-                        const textToAppend = desc.default_job_notes?.trim() || desc.name;
-                        return (
-                          <button
-                            key={desc.id}
-                            type="button"
-                            onClick={() => handleAddPresetDescription(textToAppend)}
-                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/30 transition-all active:scale-[0.98]"
-                          >
-                            + {desc.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700">Internal Notes</label>
-                <textarea rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Internal reference notes..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-              </div>
-              {addError && <p className="text-sm text-red-600">{addError}</p>}
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setAddModalOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-                <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a]">Create Quotation</button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
 
       {visitModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setVisitModalOpen(false)}>

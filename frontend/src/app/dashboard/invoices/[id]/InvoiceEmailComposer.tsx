@@ -227,7 +227,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
   const handleSend = async () => {
     if (!token || !draft) return;
     if (!draft.can_send) {
-      setError('Issue the invoice before sending email.');
+      setError('This invoice cannot be sent in its current state.');
       return;
     }
     if (!draft.smtp_ready) {
@@ -348,7 +348,7 @@ export default function InvoiceEmailComposer({ open, onClose, invoiceId, onSent 
 
             {!draft?.can_send && (
               <div className="shrink-0 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
-                This invoice is <strong>{draft?.invoice_state?.replace(/_/g, ' ') ?? 'not issued'}</strong>. Issue it before you can send email.
+                This invoice is <strong>{draft?.invoice_state?.replace(/_/g, ' ') ?? 'not issued'}</strong>. You cannot send emails for {draft?.invoice_state === 'paid' ? 'paid' : 'this state'} invoices.
               </div>
             )}
 

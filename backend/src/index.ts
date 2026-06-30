@@ -1587,6 +1587,22 @@ async function initDb() {
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_invoice_reminder_sent_tenant ON invoice_reminder_sent(tenant_user_id)`,
   );
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_reminder_logs (
+      id SERIAL PRIMARY KEY,
+      tenant_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reminder_type VARCHAR(50) NOT NULL,
+      run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      skipped_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      errors JSONB NOT NULL DEFAULT '[]'::jsonb,
+      details JSONB
+    );
+  `);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_scheduled_reminder_logs_tenant ON scheduled_reminder_logs(tenant_user_id, reminder_type, run_at DESC)`,
+  );
   await pool.query(
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS service_reminders_enabled BOOLEAN NOT NULL DEFAULT true`,
   );
@@ -2181,6 +2197,20 @@ async function initDb() {
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS quotation_accent_color VARCHAR(32)`);
     await pool.query(`ALTER TABLE quotation_settings ADD COLUMN IF NOT EXISTS quotation_accent_end_color VARCHAR(32)`);
   } catch { /* columns may already exist */ }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_quick_phrases (
+      id SERIAL PRIMARY KEY,
+      label VARCHAR(255) NOT NULL,
+      phrase_text TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(created_by, label)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS email_settings (
@@ -15658,7 +15688,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireTenantCrmAccess(
       from_display: formatFromHeader(emailCfg.from_name, emailCfg.from_email) || emailCfg.from_email || '',
       reply_to: emailCfg.reply_to,
       smtp_ready: !!((emailCfg.smtp_enabled && transport) || emailCfg.oauth_provider) && !!emailCfg.from_email?.trim(),
-      can_send: inv.state === 'issued',
+      can_send: inv.state !== 'draft' && inv.state !== 'cancelled' && inv.state !== 'paid',
       invoice_state: inv.state,
       job_id: inv.job_id ?? null,
       default_to: inv.customer_email ?? '',
@@ -15741,9 +15771,11 @@ app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('i
   }
 
   try {
-    const upd = await pool.query("UPDATE invoices SET state = 'pending_payment', updated_at = NOW() WHERE id = $1 AND state = 'issued' RETURNING id", [id]);
-    if ((upd.rowCount ?? 0) === 0) {
-      return res.status(400).json({ message: 'Only issued invoices can be sent. Issue the invoice first.' });
+    if (inv.state === 'draft' || inv.state === 'cancelled' || inv.state === 'paid') {
+      return res.status(400).json({ message: 'This invoice cannot be sent in its current state.' });
+    }
+    if (inv.state === 'issued') {
+      await pool.query("UPDATE invoices SET state = 'pending_payment', updated_at = NOW() WHERE id = $1", [id]);
     }
 
     const sigHtml = appendSig ? emailCfg.default_signature_html : null;
@@ -17919,6 +17951,120 @@ app.patch('/api/settings/quotation', authenticate, requireAdmin, requireAnyPermi
   }
 });
 
+// ---------- Quotation Quick Phrases ----------
+app.get('/api/settings/quotation-quick-phrases', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    const result = await pool.query(
+      `SELECT id, label, phrase_text, sort_order, is_active, created_at, updated_at
+       FROM quotation_quick_phrases
+       WHERE created_by = $1
+       ORDER BY sort_order ASC, label ASC`,
+      [userId],
+    );
+    return res.json({ phrases: result.rows });
+  } catch (error) {
+    console.error('Get quotation quick phrases error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/settings/quotation-quick-phrases', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const { label, phrase_text, sort_order, is_active } = req.body as Record<string, unknown>;
+  const cleanLabel = typeof label === 'string' ? label.trim() : '';
+  const cleanText = typeof phrase_text === 'string' ? phrase_text.trim() : '';
+  if (!cleanLabel || !cleanText) {
+    return res.status(400).json({ message: 'Label and phrase text are required' });
+  }
+  const order = typeof sort_order === 'number' ? sort_order : 0;
+  const active = typeof is_active === 'boolean' ? is_active : true;
+  try {
+    const result = await pool.query(
+      `INSERT INTO quotation_quick_phrases (label, phrase_text, sort_order, is_active, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (created_by, label) DO UPDATE
+       SET phrase_text = EXCLUDED.phrase_text, sort_order = EXCLUDED.sort_order, is_active = EXCLUDED.is_active, updated_at = NOW()
+       RETURNING id, label, phrase_text, sort_order, is_active, created_at, updated_at`,
+      [cleanLabel, cleanText, order, active, userId],
+    );
+    return res.status(201).json({ phrase: result.rows[0] });
+  } catch (error) {
+    console.error('Create quotation quick phrase error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/quotation-quick-phrases/:id', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid phrase id' });
+  }
+  const { label, phrase_text, sort_order, is_active } = req.body as Record<string, unknown>;
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (label !== undefined) {
+    const cleanLabel = typeof label === 'string' ? label.trim() : '';
+    if (!cleanLabel) return res.status(400).json({ message: 'Label cannot be empty' });
+    updates.push(`label = $${idx++}`);
+    values.push(cleanLabel);
+  }
+  if (phrase_text !== undefined) {
+    const cleanText = typeof phrase_text === 'string' ? phrase_text.trim() : '';
+    if (!cleanText) return res.status(400).json({ message: 'Phrase text cannot be empty' });
+    updates.push(`phrase_text = $${idx++}`);
+    values.push(cleanText);
+  }
+  if (sort_order !== undefined) {
+    updates.push(`sort_order = $${idx++}`);
+    values.push(typeof sort_order === 'number' ? sort_order : 0);
+  }
+  if (is_active !== undefined) {
+    updates.push(`is_active = $${idx++}`);
+    values.push(!!is_active);
+  }
+  if (updates.length === 0) {
+    return res.status(400).json({ message: 'No fields to update' });
+  }
+  updates.push('updated_at = NOW()');
+  values.push(id, userId);
+  try {
+    const result = await pool.query(
+      `UPDATE quotation_quick_phrases SET ${updates.join(', ')} WHERE id = $${idx++} AND created_by = $${idx++} RETURNING id, label, phrase_text, sort_order, is_active, created_at, updated_at`,
+      values,
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Phrase not found' });
+    }
+    return res.json({ phrase: result.rows[0] });
+  } catch (error) {
+    console.error('Update quotation quick phrase error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/settings/quotation-quick-phrases/:id', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid phrase id' });
+  }
+  try {
+    const result = await pool.query('DELETE FROM quotation_quick_phrases WHERE id = $1 AND created_by = $2', [id, userId]);
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Phrase not found' });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete quotation quick phrase error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // ---------- Invoice Settings (Admin only) ----------
 app.get('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_invoice']), async (req: AuthenticatedRequest, res: Response) => {
   const userId = getTenantScopeUserId(req.user!);
@@ -18351,6 +18497,36 @@ app.delete('/api/settings/email-templates/:key', authenticate, requireAdmin, req
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete email template error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- Scheduled reminder logs ----------
+app.get('/api/settings/reminder-logs', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    const r = await pool.query(
+      `SELECT id, reminder_type, run_at, sent_count, skipped_count, error_count, errors, details
+       FROM scheduled_reminder_logs
+       WHERE tenant_user_id = $1
+       ORDER BY run_at DESC
+       LIMIT 50`,
+      [userId],
+    );
+    return res.json({ logs: r.rows });
+  } catch (error) {
+    console.error('Get reminder logs error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/settings/reminder-logs', authenticate, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    await pool.query('DELETE FROM scheduled_reminder_logs WHERE tenant_user_id = $1', [userId]);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Clear reminder logs error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -22598,7 +22774,7 @@ initDb()
             buildInvoiceEmailTemplateVars(inv as unknown as Parameters<typeof buildInvoiceEmailTemplateVars>[0], settings),
           getInvoiceSettings,
         })
-          .then((r) => {
+          .then(async (r) => {
             const loggable =
               r.service_reminders.sent > 0 ||
               r.service_reminders.errors.length > 0 ||
@@ -22611,6 +22787,37 @@ initDb()
               r.invoice_reminders.sent > 0 ||
               r.invoice_reminders.errors.length > 0;
             if (loggable) console.log('[scheduled-reminders]', r);
+
+            const allErrors: string[] = [
+              ...r.service_reminders.errors,
+              ...r.site_report_renewals.errors,
+              ...r.job_office_task_reminders.errors,
+              ...r.staff_reminders.errors,
+              ...r.invoice_reminders.errors,
+            ];
+            const totalSent = r.service_reminders.sent + r.site_report_renewals.sent + r.job_office_task_reminders.sent + r.staff_reminders.sent + r.invoice_reminders.sent;
+            const totalSkipped = (r.service_reminders.skipped ?? 0) + r.site_report_renewals.skipped + (r.invoice_reminders.skipped ?? 0);
+
+            if (allErrors.length > 0 || totalSent > 0) {
+              try {
+                const tenantRows = await pool.query<{ created_by: number }>(
+                  `SELECT DISTINCT created_by FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN') AND created_by IS NULL
+                   UNION
+                   SELECT DISTINCT id FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN')`,
+                );
+                for (const t of tenantRows.rows) {
+                  const uid = Number(t.created_by);
+                  if (!Number.isFinite(uid)) continue;
+                  await pool.query(
+                    `INSERT INTO scheduled_reminder_logs (tenant_user_id, reminder_type, sent_count, skipped_count, error_count, errors, details)
+                     VALUES ($1, 'all', $2, $3, $4, $5, $6)`,
+                    [uid, totalSent, totalSkipped, allErrors.length, JSON.stringify(allErrors), JSON.stringify(r)],
+                  );
+                }
+              } catch (logErr) {
+                console.error('[scheduled-reminders] Failed to log results:', logErr);
+              }
+            }
           })
           .catch((e) => console.error('[scheduled-reminders]', e));
       };

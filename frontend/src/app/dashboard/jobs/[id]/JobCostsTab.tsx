@@ -372,6 +372,32 @@ export default function JobCostsTab({ jobId, token }: Props) {
   const summary = payload?.summary;
   const rateConfig = payload?.rate_config;
   const timesheetSummary = payload?.timesheet_summary;
+
+  const travelByOfficer = useMemo(() => {
+    if (!payload?.visits?.length) return [];
+    const map = new Map<string, { officer_name: string; travel_seconds: number; travel_hours: number; travel_amount: number }>();
+    for (const v of payload.visits) {
+      if (v.travel_seconds <= 0) continue;
+      const key = v.officer_name;
+      const existing = map.get(key);
+      const hours = v.travel_seconds / 3600;
+      const amount = hours * (rateConfig?.travel_hourly_rate ?? 0);
+      if (existing) {
+        existing.travel_seconds += v.travel_seconds;
+        existing.travel_hours += hours;
+        existing.travel_amount += amount;
+      } else {
+        map.set(key, {
+          officer_name: v.officer_name,
+          travel_seconds: v.travel_seconds,
+          travel_hours: hours,
+          travel_amount: amount,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.travel_seconds - a.travel_seconds);
+  }, [payload?.visits, rateConfig?.travel_hourly_rate]);
+
   const tableLines = useMemo(
     () => (payload?.lines ?? []).filter((line) => line.source !== 'timesheet'),
     [payload?.lines],
@@ -530,7 +556,35 @@ export default function JobCostsTab({ jobId, token }: Props) {
                       { label: 'Travel time', value: timesheetSummary.travel_duration_label },
                       { label: 'Travel rate', value: `${money(timesheetSummary.travel_hourly_rate)}/hr` },
                     ]}
-                  />
+                  >
+                    {travelByOfficer.length > 0 && (
+                      <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3">
+                        <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500">Per engineer</p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-[13px]">
+                            <thead className="text-[11px] font-black uppercase text-slate-500">
+                              <tr>
+                                <th className="pb-2 pr-4">Engineer</th>
+                                <th className="pb-2 pr-4">Travel time</th>
+                                <th className="pb-2 pr-4 text-right">Hours</th>
+                                <th className="pb-2 text-right">Cost</th>
+                              </tr>
+                            </thead>
+                            <tbody className="font-semibold text-slate-700">
+                              {travelByOfficer.map((row) => (
+                                <tr key={row.officer_name}>
+                                  <td className="py-1.5 pr-4">{row.officer_name}</td>
+                                  <td className="py-1.5 pr-4">{formatSeconds(row.travel_seconds)}</td>
+                                  <td className="py-1.5 pr-4 text-right">{row.travel_hours.toFixed(2)}</td>
+                                  <td className="py-1.5 text-right font-black text-slate-900">{money(row.travel_amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </TimesheetCostSection>
                 ) : null}
               </div>
             ) : null}
@@ -812,10 +866,12 @@ function TimesheetCostSection({
   title,
   total,
   columns,
+  children,
 }: {
   title: string;
   total: number;
   columns: { label: string; value: string }[];
+  children?: React.ReactNode;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -845,6 +901,7 @@ function TimesheetCostSection({
           </tbody>
         </table>
       </div>
+      {children}
     </div>
   );
 }

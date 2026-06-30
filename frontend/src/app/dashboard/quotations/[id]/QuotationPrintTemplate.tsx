@@ -248,6 +248,13 @@ export default function QuotationPrintTemplate({ quotation, settings, shellClass
         </div>
       )}
 
+      {quotation.notes && (
+        <div className="px-8 pt-4 pb-8">
+          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Customer Notes</p>
+          <p className="whitespace-pre-wrap text-base leading-relaxed text-slate-700">{quotation.notes}</p>
+        </div>
+      )}
+
       <div className="px-8 pb-8">
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <table className="w-full border-collapse">

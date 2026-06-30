@@ -22,6 +22,9 @@ const REMINDER_PHASES = [
   { phase: 14, daysOverdue: 14, label: 'Final payment reminder' },
 ] as const;
 
+const RECURRING_REMINDER_INTERVAL_DAYS = 7;
+const FIRST_RECURRING_PHASE = 21;
+
 function utcToday(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -147,17 +150,37 @@ export async function runOverdueInvoiceReminderEmails(
         continue;
       }
       const daysOverdue = daysBetween(dueYmd, today);
-      const phaseDef = REMINDER_PHASES.find((p) => p.daysOverdue === daysOverdue);
-      if (!phaseDef) {
+
+      let phase: number;
+      let label: string;
+
+      const fixedPhase = REMINDER_PHASES.find((p) => p.daysOverdue === daysOverdue);
+      if (fixedPhase) {
+        phase = fixedPhase.phase;
+        label = fixedPhase.label;
+      } else if (daysOverdue >= FIRST_RECURRING_PHASE) {
+        const intervalsSinceFirstRecurring = Math.floor((daysOverdue - FIRST_RECURRING_PHASE) / RECURRING_REMINDER_INTERVAL_DAYS);
+        phase = FIRST_RECURRING_PHASE + intervalsSinceFirstRecurring * RECURRING_REMINDER_INTERVAL_DAYS;
+        label = 'Payment follow-up reminder';
+      } else {
         skipped += 1;
         continue;
       }
 
-      const already = await pool.query(
-        `SELECT 1 FROM invoice_reminder_sent WHERE invoice_id = $1 AND phase = $2`,
-        [inv.id, phaseDef.phase],
+      const alreadyToday = await pool.query(
+        `SELECT 1 FROM invoice_reminder_sent WHERE invoice_id = $1 AND sent_on = $2::date`,
+        [inv.id, today],
       );
-      if ((already.rowCount ?? 0) > 0) {
+      if ((alreadyToday.rowCount ?? 0) > 0) {
+        skipped += 1;
+        continue;
+      }
+
+      const alreadyPhase = await pool.query(
+        `SELECT 1 FROM invoice_reminder_sent WHERE invoice_id = $1 AND phase = $2`,
+        [inv.id, phase],
+      );
+      if ((alreadyPhase.rowCount ?? 0) > 0) {
         skipped += 1;
         continue;
       }
@@ -170,7 +193,7 @@ export async function runOverdueInvoiceReminderEmails(
 
       try {
         const vars = await deps.buildInvoiceEmailTemplateVars(inv as Record<string, unknown>, invSettings);
-        vars.phase_label = phaseDef.label;
+        vars.phase_label = label;
         vars.days_overdue = String(daysOverdue);
         const balanceDue = Math.max(0, parseFloat(inv.total_amount) - parseFloat(inv.total_paid));
         vars.balance_due = balanceDue.toFixed(2);
@@ -191,7 +214,7 @@ export async function runOverdueInvoiceReminderEmails(
         await pool.query(
           `INSERT INTO invoice_reminder_sent (invoice_id, phase, sent_on, tenant_user_id)
            VALUES ($1, $2, $3::date, $4)`,
-          [inv.id, phaseDef.phase, today, tenantUserId],
+          [inv.id, phase, today, tenantUserId],
         );
 
         let workAddressId: number | null = inv.invoice_work_address_id;

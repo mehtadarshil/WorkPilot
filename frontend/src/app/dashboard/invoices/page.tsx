@@ -5,10 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Search, FileText, Plus, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getJson, postJson } from '../../apiClient';
+import { getJson } from '../../apiClient';
 import { Pagination } from '../Pagination';
-import ImportCustomerSelect from '../ImportCustomerSelect';
-import WorkAddressSelect from '../WorkAddressSelect';
 
 interface Invoice {
   id: number;
@@ -51,29 +49,6 @@ interface InvoicesResponse {
   overallProfit?: number;
   overallNetProfit?: number;
   expenseStats?: ExpenseStats;
-}
-
-interface Customer {
-  id: number;
-  full_name: string;
-  email: string;
-  address_line_1?: string;
-  address_line_2?: string;
-  town?: string;
-  county?: string;
-  postcode?: string;
-}
-
-interface Job {
-  id: number;
-  title: string;
-  state: string;
-}
-
-interface InvoiceSettings {
-  default_currency: string;
-  default_due_days: number;
-  default_tax_percentage: number;
 }
 
 const PAGE_SIZE = 10;
@@ -148,17 +123,9 @@ function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
 }
 
-function formatCustomerAddress(c: Customer): string {
-  return [c.address_line_1, c.address_line_2, c.town, c.county, c.postcode]
-    .filter((p) => typeof p === 'string' && p.trim() !== '')
-    .join(', ');
-}
-
 export default function InvoicesPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [stateStats, setStateStats] = useState<Record<string, { count: number; total_amount: number }>>({});
@@ -171,60 +138,12 @@ export default function InvoicesPage() {
   const [searchDebounced, setSearchDebounced] = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const [deleteAllConfirm, setDeleteAllConfirm] = useState('');
   const [deleteAllError, setDeleteAllError] = useState<string | null>(null);
   const [deleteAllBusy, setDeleteAllBusy] = useState(false);
 
-  const [formCustomerId, setFormCustomerId] = useState<number | null>(null);
-  const [formJobId, setFormJobId] = useState<string>('');
-  const [formInvoiceDate, setFormInvoiceDate] = useState('');
-  const [formDueDate, setFormDueDate] = useState('');
-  const [formCurrency, setFormCurrency] = useState('USD');
-  const [formNotes, setFormNotes] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formLineItems, setFormLineItems] = useState<{ description: string; quantity: number; unit_price: number }[]>([
-    { description: '', quantity: 1, unit_price: 0 },
-  ]);
-  const [formTaxPercentage, setFormTaxPercentage] = useState(0);
-  const [formCustomerReference, setFormCustomerReference] = useState('');
-  const [formWorkAddressId, setFormWorkAddressId] = useState<number | null>(null);
-  const [workAddressOptions, setWorkAddressOptions] = useState<{ id: number; label: string }[]>([]);
-
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
-
-  const fetchWorkAddressesForCustomer = useCallback(
-    async (customerId: number) => {
-      if (!token) {
-        setWorkAddressOptions([]);
-        return;
-      }
-      try {
-        const res = await getJson<{
-          work_addresses: {
-            id: number;
-            name: string;
-            address_line_1?: string | null;
-            town?: string | null;
-            postcode?: string | null;
-          }[];
-        }>(`/customers/${customerId}/work-addresses?status=active`, token);
-        const rows = res.work_addresses ?? [];
-        setWorkAddressOptions(
-          rows.map((w) => {
-            const addr = [w.address_line_1, w.town, w.postcode].filter((x): x is string => Boolean(x && String(x).trim())).join(', ');
-            const label = [w.name?.trim() || `Site #${w.id}`, addr].filter(Boolean).join(' — ');
-            return { id: w.id, label: label || `Work #${w.id}` };
-          }),
-        );
-      } catch {
-        setWorkAddressOptions([]);
-      }
-    },
-    [token],
-  );
 
   const fetchInvoices = useCallback(async () => {
     if (!token) return;
@@ -267,36 +186,6 @@ export default function InvoicesPage() {
     });
   };
 
-  const fetchCustomers = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<{ customers: Customer[] }>('/customers?limit=5000&page=1', token);
-      setCustomers(data.customers ?? []);
-    } catch {
-      setCustomers([]);
-    }
-  }, [token]);
-
-  const fetchJobs = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await getJson<{ jobs: Job[] }>('/jobs?limit=100&page=1', token);
-      setJobs((data.jobs ?? []).filter((j) => j.state === 'completed' || j.state === 'closed'));
-    } catch {
-      setJobs([]);
-    }
-  }, [token]);
-
-  const fetchInvoiceSettings = useCallback(async () => {
-    if (!token) return null;
-    try {
-      const data = await getJson<{ settings: InvoiceSettings }>('/settings/invoice', token);
-      return data.settings ?? null;
-    } catch {
-      return null;
-    }
-  }, [token]);
-
   useEffect(() => {
     const t = setTimeout(() => {
       setSearchDebounced(search);
@@ -312,120 +201,6 @@ export default function InvoicesPage() {
   useEffect(() => {
     fetchInvoices();
   }, [fetchInvoices]);
-
-  useEffect(() => {
-    if (addModalOpen) {
-      fetchCustomers();
-      fetchJobs();
-    }
-  }, [addModalOpen, fetchCustomers, fetchJobs]);
-
-  useEffect(() => {
-    if (!formCustomerId) {
-      setFormWorkAddressId(null);
-      setWorkAddressOptions([]);
-      return;
-    }
-    setFormWorkAddressId(null);
-    fetchWorkAddressesForCustomer(formCustomerId);
-  }, [formCustomerId, fetchWorkAddressesForCustomer]);
-
-  useEffect(() => {
-    if (formWorkAddressId == null) return;
-    if (!workAddressOptions.some((w) => w.id === formWorkAddressId)) {
-      setFormWorkAddressId(null);
-    }
-  }, [workAddressOptions, formWorkAddressId]);
-
-  const resetForm = (settings: InvoiceSettings | null) => {
-    setFormCustomerId(null);
-    setFormJobId('');
-    setFormWorkAddressId(null);
-    setWorkAddressOptions([]);
-    const today = new Date().toISOString().slice(0, 10);
-    const dueDays = settings?.default_due_days ?? 30;
-    const due = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    setFormInvoiceDate(today);
-    setFormDueDate(due);
-    setFormCurrency(settings?.default_currency ?? 'USD');
-    setFormNotes('');
-    setFormDescription('');
-    setFormLineItems([{ description: '', quantity: 1, unit_price: 0 }]);
-    setFormTaxPercentage(settings?.default_tax_percentage ?? 20);
-    setFormCustomerReference('');
-  };
-
-  const openAdd = async () => {
-    setAddError(null);
-    const settings = await fetchInvoiceSettings();
-    resetForm(settings);
-    setAddModalOpen(true);
-  };
-
-  const addLineItem = () => {
-    setFormLineItems((prev) => [...prev, { description: '', quantity: 1, unit_price: 0 }]);
-  };
-
-  const updateLineItem = (i: number, field: 'description' | 'quantity' | 'unit_price', value: string | number) => {
-    setFormLineItems((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
-  };
-
-  const removeLineItem = (i: number) => {
-    if (formLineItems.length <= 1) return;
-    setFormLineItems((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const subtotal = formLineItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const taxAmount = Math.round(subtotal * (formTaxPercentage / 100) * 100) / 100;
-  const totalAmount = subtotal + taxAmount;
-
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    if (formCustomerId === null) {
-      setAddError('Customer is required.');
-      return;
-    }
-    const validItems = formLineItems.filter((item) => item.description.trim());
-    if (validItems.length === 0) {
-      setAddError('At least one line item with description is required.');
-      return;
-    }
-    if (!token) return;
-    try {
-      const res = await postJson<{ invoice: Invoice }>(
-        '/invoices',
-        {
-          customer_id: formCustomerId,
-          job_id: formJobId ? parseInt(formJobId, 10) : undefined,
-          invoice_date: formInvoiceDate,
-          due_date: formDueDate,
-          currency: formCurrency,
-          notes: formNotes.trim() || undefined,
-          description: formDescription.trim() || undefined,
-          line_items: validItems.map((item) => ({
-            description: item.description.trim(),
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-          })),
-          tax_percentage: formTaxPercentage,
-          ...(formCustomerReference.trim() ? { customer_reference: formCustomerReference.trim() } : {}),
-          ...(formWorkAddressId != null ? { invoice_work_address_id: formWorkAddressId } : {}),
-        },
-        token,
-      );
-      setAddModalOpen(false);
-      resetForm(null);
-      fetchInvoices();
-      if (res.invoice?.id) router.push(`/dashboard/invoices/${res.invoice.id}`);
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to create invoice.');
-    }
-  };
 
   const stateBadge = (state: string) => {
     const opt = INVOICE_STATES.find((s) => s.value === state) ?? INVOICE_STATES[0];
@@ -463,7 +238,7 @@ export default function InvoicesPage() {
             </div>
             <motion.button
               type="button"
-              onClick={openAdd}
+              onClick={() => router.push('/dashboard/invoices/new')}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#14B8A6] px-5 py-2.5 font-bold text-white shadow-sm transition hover:brightness-110"
@@ -740,172 +515,6 @@ export default function InvoicesPage() {
           </motion.div>
         </div>
       </div>
-
-      {addModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setAddModalOpen(false)}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold text-slate-900">Create Invoice</h3>
-            <form onSubmit={handleAdd} className="mt-6 space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Customer *</label>
-                  <div className="mt-1 flex gap-2">
-                    <div className="flex-1">
-                      <ImportCustomerSelect
-                        customers={customers}
-                        value={formCustomerId}
-                        onChange={setFormCustomerId}
-                        className="w-full"
-                      />
-                    </div>
-                    <button type="button" onClick={() => window.open('/dashboard/customers/new', '_blank')} className="shrink-0 flex items-center justify-center size-[38px] rounded-lg border border-slate-200 text-[#14B8A6] hover:bg-[#14B8A6] hover:text-white transition-colors" title="Add new customer">
-                      <Plus className="size-4" />
-                    </button>
-                  </div>
-                  {formCustomerId && (
-                    <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                      {(() => {
-                        const c = customers.find(x => x.id === formCustomerId);
-                        if (!c) return null;
-                        const addr = formatCustomerAddress(c);
-                        return (
-                          <div className="flex flex-col gap-1">
-                            <p className="font-semibold text-slate-800">{c.full_name}</p>
-                            <p>{c.email}</p>
-                            {addr && <p className="mt-1 border-t border-slate-200 pt-1 text-slate-500">{addr}</p>}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Related job</label>
-                  <select value={formJobId} onChange={(e) => setFormJobId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
-                    <option value="">None</option>
-                    {jobs.map((j) => (
-                      <option key={j.id} value={j.id}>{j.title}</option>
-                    ))}
-                  </select>
-                </div>
-                {formCustomerId && (
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-slate-700">Work / site on invoice (optional)</label>
-                    <div className="mt-1 flex gap-2">
-                      <div className="min-w-0 flex-1">
-                        <WorkAddressSelect
-                          options={workAddressOptions}
-                          value={formWorkAddressId}
-                          onChange={setFormWorkAddressId}
-                          className="w-full"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          window.open(
-                            `/dashboard/customers/${formCustomerId}?tab=${encodeURIComponent('Work address')}`,
-                            '_blank',
-                          )
-                        }
-                        className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-slate-200 text-[#14B8A6] transition-colors hover:bg-[#14B8A6] hover:text-white"
-                        title="Add work / site address"
-                      >
-                        <Plus className="size-4" />
-                      </button>
-                    </div>
-                    {workAddressOptions.length === 0 && (
-                      <p className="mt-1 text-xs text-slate-500">No active work addresses — default billing address is used.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Invoice date</label>
-                  <input type="date" required value={formInvoiceDate} onChange={(e) => setFormInvoiceDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Due date</label>
-                  <input type="date" required value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Currency</label>
-                  <select value={formCurrency} onChange={(e) => setFormCurrency(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30">
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                  </select>
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-4 sm:col-span-2">
-                <p className="text-sm font-medium text-slate-800">Address on invoice</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {formWorkAddressId != null
-                    ? 'Uses the selected work / site as the invoice address line (customer billing details unchanged).'
-                    : "Uses the customer's default billing address. Pick a work / site above to show a specific location on the invoice."}
-                </p>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-slate-700">Customer reference (optional)</label>
-                <input
-                  type="text"
-                  value={formCustomerReference}
-                  onChange={(e) => setFormCustomerReference(e.target.value)}
-                  placeholder="Shown on invoice when entered"
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
-                />
-              </div>
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label className="block text-sm font-medium text-slate-700">Line items</label>
-                  <button type="button" onClick={addLineItem} className="text-sm font-medium text-[#14B8A6] hover:underline">+ Add item</button>
-                </div>
-                <div className="space-y-2">
-                  {formLineItems.map((item, i) => (
-                    <div key={i} className="flex gap-2">
-                      <input type="text" value={item.description} onChange={(e) => updateLineItem(i, 'description', e.target.value)} placeholder="Description" className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <input type="number" min={0} step={0.01} value={item.quantity} onChange={(e) => updateLineItem(i, 'quantity', parseFloat(e.target.value) || 0)} className="w-20 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <input type="number" min={0} step={0.01} value={item.unit_price} onChange={(e) => updateLineItem(i, 'unit_price', parseFloat(e.target.value) || 0)} placeholder="Price" className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                      <button type="button" onClick={() => removeLineItem(i)} className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-red-600">×</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">Tax (%)</label>
-                  <input type="number" min={0} max={100} step={0.01} value={formTaxPercentage} onChange={(e) => setFormTaxPercentage(parseFloat(e.target.value) || 0)} className="mt-1 w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" placeholder="0" />
-                </div>
-                <div className="flex flex-col justify-end gap-0.5">
-                  {formTaxPercentage > 0 && (
-                    <p className="text-xs text-slate-500">Tax: {formatCurrency(taxAmount, formCurrency)}</p>
-                  )}
-                  <p className="text-sm font-semibold text-slate-700">Total: {formatCurrency(totalAmount, formCurrency)}</p>
-                </div>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-slate-700">Project Description</label>
-                <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Overview of the project scope..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-slate-700">Internal Notes</label>
-                <textarea rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Payment terms, instructions..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
-              </div>
-              {addError && <p className="text-sm text-red-600">{addError}</p>}
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setAddModalOpen(false)} className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-                <button type="submit" className="flex-1 rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#13a89a]">Create Invoice</button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
     </>
   );
 }
