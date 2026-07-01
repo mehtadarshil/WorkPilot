@@ -13,6 +13,15 @@ import {
   workpilotFileUrl
 } from './workpilotFileStorage';
 import { decodeBase64ImageUpload } from './inlineBlobStorage';
+import {
+  type StockPlacement,
+  applyPlacementQuantityDelta,
+  formatPlacementLabel,
+  normalizeStockPlacements,
+  parseLocationsFromDb,
+  pickDefaultPlacementIndex,
+  totalPlacementQuantity,
+} from './stockPlacements';
 
 function storeStockToolImage(
   category: 'stock-photos' | 'tool-photos' | 'uniform-photos',
@@ -115,6 +124,23 @@ export async function ensureStockToolsSchema(pool: Pool) {
       ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS locations JSONB;
     `);
     await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS storage_bin_options JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS require_bin_for_locations JSONB NOT NULL DEFAULT '["Store"]'::jsonb;
+    `);
+    await pool.query(`
+      ALTER TABLE job_parts ADD COLUMN IF NOT EXISTS stock_placement_index INTEGER;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_transactions ADD COLUMN IF NOT EXISTS placement_index INTEGER;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_transactions ADD COLUMN IF NOT EXISTS placement_label VARCHAR(255);
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS uniforms (
         id SERIAL PRIMARY KEY,
         name VARCHAR(500) NOT NULL,
@@ -145,6 +171,70 @@ export async function ensureStockToolsSchema(pool: Pool) {
   }
 }
 
+async function loadStockItemPlacements(
+  client: { query: Pool['query'] },
+  stockItemId: number,
+): Promise<{ item: { location: string; quantity: number; locations: unknown }; placements: StockPlacement[] } | null> {
+  const itemRes = await client.query<{ location: string; quantity: number; locations: unknown }>(
+    'SELECT location, quantity, locations FROM stock_items WHERE id = $1 FOR UPDATE',
+    [stockItemId],
+  );
+  if ((itemRes.rowCount ?? 0) === 0) return null;
+  const item = itemRes.rows[0];
+  const placements = parseLocationsFromDb(item.locations, item.location, item.quantity);
+  return { item, placements };
+}
+
+async function persistStockPlacements(
+  client: { query: Pool['query'] },
+  stockItemId: number,
+  placements: StockPlacement[],
+) {
+  const totalQty = totalPlacementQuantity(placements);
+  const primaryLocation = placements[0]?.location || 'Store';
+  await client.query(
+    `UPDATE stock_items SET quantity = $1, location = $2, locations = $3 WHERE id = $4`,
+    [totalQty, primaryLocation, JSON.stringify(placements), stockItemId],
+  );
+}
+
+async function restorePlacementStock(
+  client: { query: Pool['query'] },
+  stockItemId: number,
+  placementIndex: number | null,
+  qtyToRestore: number,
+) {
+  const loaded = await loadStockItemPlacements(client, stockItemId);
+  if (!loaded) return;
+  const idx = placementIndex != null && placementIndex >= 0 && placementIndex < loaded.placements.length
+    ? placementIndex
+    : pickDefaultPlacementIndex(loaded.placements);
+  const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, qtyToRestore);
+  if (!adjusted) return;
+  await persistStockPlacements(client, stockItemId, adjusted.placements);
+}
+
+async function consumePlacementStock(
+  client: { query: Pool['query'] },
+  stockItemId: number,
+  qtyToConsume: number,
+  preferredPlacementIndex: number | null,
+): Promise<{ placementIndex: number; placementLabel: string }> {
+  const loaded = await loadStockItemPlacements(client, stockItemId);
+  if (!loaded) throw new Error('Stock item not found');
+  const idx = preferredPlacementIndex != null
+    && preferredPlacementIndex >= 0
+    && preferredPlacementIndex < loaded.placements.length
+    ? preferredPlacementIndex
+    : pickDefaultPlacementIndex(loaded.placements);
+  const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, -qtyToConsume);
+  if (!adjusted) {
+    throw new Error('Insufficient stock at the selected placement');
+  }
+  await persistStockPlacements(client, stockItemId, adjusted.placements);
+  return { placementIndex: idx, placementLabel: adjusted.label };
+}
+
 export async function syncStockTransaction(
   pool: Pool,
   partId: number,
@@ -152,7 +242,8 @@ export async function syncStockTransaction(
   stockItemId: number | null,
   quantity: number,
   status: string,
-  userId: number
+  userId: number,
+  placementIndex: number | null = null,
 ) {
   const client = await pool.connect();
   try {
@@ -162,9 +253,10 @@ export async function syncStockTransaction(
       id: number;
       stock_item_id: number;
       quantity: number;
+      placement_index: number | null;
     }>(
-      'SELECT id, stock_item_id, quantity FROM stock_transactions WHERE job_part_id = $1',
-      [partId]
+      'SELECT id, stock_item_id, quantity, placement_index FROM stock_transactions WHERE job_part_id = $1',
+      [partId],
     );
 
     const oldTrans = transRes.rows[0];
@@ -177,53 +269,61 @@ export async function syncStockTransaction(
           const oldQtyConsumed = -oldTrans.quantity;
           const diff = quantity - oldQtyConsumed;
           if (diff !== 0) {
+            const useIdx = placementIndex ?? oldTrans.placement_index;
+            if (diff > 0) {
+              const consumed = await consumePlacementStock(client, stockItemId, diff, useIdx);
+              await client.query(
+                `UPDATE stock_transactions
+                 SET quantity = $1, placement_index = $2, placement_label = $3
+                 WHERE id = $4`,
+                [-quantity, consumed.placementIndex, consumed.placementLabel, oldTrans.id],
+              );
+            } else {
+              await restorePlacementStock(client, stockItemId, oldTrans.placement_index, -diff);
+              const loaded = await loadStockItemPlacements(client, stockItemId);
+              const label = loaded
+                ? formatPlacementLabel(loaded.placements[oldTrans.placement_index ?? pickDefaultPlacementIndex(loaded.placements)])
+                : null;
+              await client.query(
+                `UPDATE stock_transactions
+                 SET quantity = $1, placement_label = $2
+                 WHERE id = $3`,
+                [-quantity, label, oldTrans.id],
+              );
+            }
+          } else if (placementIndex != null && placementIndex !== oldTrans.placement_index) {
+            await restorePlacementStock(client, stockItemId, oldTrans.placement_index, oldQtyConsumed);
+            const consumed = await consumePlacementStock(client, stockItemId, quantity, placementIndex);
             await client.query(
-              'UPDATE stock_items SET quantity = quantity - $1 WHERE id = $2',
-              [diff, stockItemId]
-            );
-            await client.query(
-              'UPDATE stock_transactions SET quantity = $1 WHERE id = $2',
-              [-quantity, oldTrans.id]
+              `UPDATE stock_transactions
+               SET quantity = $1, placement_index = $2, placement_label = $3
+               WHERE id = $4`,
+              [-quantity, consumed.placementIndex, consumed.placementLabel, oldTrans.id],
             );
           }
         } else {
+          await restorePlacementStock(client, oldTrans.stock_item_id, oldTrans.placement_index, -oldTrans.quantity);
+          const consumed = await consumePlacementStock(client, stockItemId, quantity, placementIndex);
           await client.query(
-            'UPDATE stock_items SET quantity = quantity + $1 WHERE id = $2',
-            [-oldTrans.quantity, oldTrans.stock_item_id]
-          );
-          await client.query(
-            'UPDATE stock_items SET quantity = quantity - $1 WHERE id = $2',
-            [quantity, stockItemId]
-          );
-          await client.query(
-            `UPDATE stock_transactions 
-             SET stock_item_id = $1, quantity = $2 
-             WHERE id = $3`,
-            [stockItemId, -quantity, oldTrans.id]
+            `UPDATE stock_transactions
+             SET stock_item_id = $1, quantity = $2, placement_index = $3, placement_label = $4
+             WHERE id = $5`,
+            [stockItemId, -quantity, consumed.placementIndex, consumed.placementLabel, oldTrans.id],
           );
         }
       } else {
+        const consumed = await consumePlacementStock(client, stockItemId, quantity, placementIndex);
         await client.query(
-          'UPDATE stock_items SET quantity = quantity - $1 WHERE id = $2',
-          [quantity, stockItemId]
-        );
-        await client.query(
-          `INSERT INTO stock_transactions (stock_item_id, job_id, job_part_id, quantity, transaction_type, created_by)
-           VALUES ($1, $2, $3, $4, 'consumption', $5)`,
-          [stockItemId, jobId, partId, -quantity, userId]
-        );
-      }
-    } else {
-      if (oldTrans) {
-        await client.query(
-          'UPDATE stock_items SET quantity = quantity + $1 WHERE id = $2',
-          [-oldTrans.quantity, oldTrans.stock_item_id]
-        );
-        await client.query(
-          'DELETE FROM stock_transactions WHERE id = $1',
-          [oldTrans.id]
+          `INSERT INTO stock_transactions (
+             stock_item_id, job_id, job_part_id, quantity, transaction_type, created_by, placement_index, placement_label
+           )
+           VALUES ($1, $2, $3, $4, 'consumption', $5, $6, $7)`,
+          [stockItemId, jobId, partId, -quantity, userId, consumed.placementIndex, consumed.placementLabel],
         );
       }
+    } else if (oldTrans) {
+      await restorePlacementStock(client, oldTrans.stock_item_id, oldTrans.placement_index, -oldTrans.quantity);
+      await client.query('DELETE FROM stock_transactions WHERE id = $1', [oldTrans.id]);
     }
 
     await client.query('COMMIT');
@@ -259,6 +359,8 @@ async function loadStockToolsSettingsRow(
   tool_category_options: string[];
   uniform_category_options: string[];
   uniform_size_options: string[];
+  storage_bin_options: string[];
+  require_bin_for_locations: string[];
 }> {
   const row = await pool.query<{
     location_options: unknown;
@@ -266,9 +368,12 @@ async function loadStockToolsSettingsRow(
     tool_category_options: unknown;
     uniform_category_options: unknown;
     uniform_size_options: unknown;
+    storage_bin_options: unknown;
+    require_bin_for_locations: unknown;
   }>(
     `SELECT location_options, stock_category_options, tool_category_options,
-            uniform_category_options, uniform_size_options
+            uniform_category_options, uniform_size_options,
+            storage_bin_options, require_bin_for_locations
      FROM stock_tools_settings WHERE created_by = $1`,
     [userId],
   );
@@ -279,6 +384,8 @@ async function loadStockToolsSettingsRow(
       tool_category_options: [...DEFAULT_TOOL_CATEGORIES],
       uniform_category_options: [...DEFAULT_UNIFORM_CATEGORIES],
       uniform_size_options: [...DEFAULT_UNIFORM_SIZES],
+      storage_bin_options: [],
+      require_bin_for_locations: ['Store'],
     };
   }
   const r = row.rows[0];
@@ -288,6 +395,8 @@ async function loadStockToolsSettingsRow(
     tool_category_options: parseStringOptions(r.tool_category_options, DEFAULT_TOOL_CATEGORIES),
     uniform_category_options: parseStringOptions(r.uniform_category_options, DEFAULT_UNIFORM_CATEGORIES),
     uniform_size_options: parseStringOptions(r.uniform_size_options, DEFAULT_UNIFORM_SIZES),
+    storage_bin_options: parseStringOptions(r.storage_bin_options, []),
+    require_bin_for_locations: parseStringOptions(r.require_bin_for_locations, ['Store']),
   };
 }
 
@@ -314,6 +423,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       tool_category_options?: unknown;
       uniform_category_options?: unknown;
       uniform_size_options?: unknown;
+      storage_bin_options?: unknown;
+      require_bin_for_locations?: unknown;
     };
 
     const current = await loadStockToolsSettingsRow(pool, userId);
@@ -332,6 +443,12 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const uniform_size_options = body.uniform_size_options !== undefined
       ? parseStringOptions(body.uniform_size_options, DEFAULT_UNIFORM_SIZES).slice(0, 40)
       : current.uniform_size_options;
+    const storage_bin_options = body.storage_bin_options !== undefined
+      ? parseStringOptions(body.storage_bin_options, []).slice(0, 200)
+      : current.storage_bin_options;
+    const require_bin_for_locations = body.require_bin_for_locations !== undefined
+      ? parseStringOptions(body.require_bin_for_locations, ['Store']).slice(0, 30)
+      : current.require_bin_for_locations;
 
     if (
       location_options.length === 0
@@ -347,15 +464,18 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       await pool.query(
         `INSERT INTO stock_tools_settings (
            created_by, location_options, stock_category_options, tool_category_options,
-           uniform_category_options, uniform_size_options, updated_at
+           uniform_category_options, uniform_size_options, storage_bin_options,
+           require_bin_for_locations, updated_at
          )
-         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, NOW())
+         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, NOW())
          ON CONFLICT (created_by) DO UPDATE
          SET location_options = EXCLUDED.location_options,
              stock_category_options = EXCLUDED.stock_category_options,
              tool_category_options = EXCLUDED.tool_category_options,
              uniform_category_options = EXCLUDED.uniform_category_options,
              uniform_size_options = EXCLUDED.uniform_size_options,
+             storage_bin_options = EXCLUDED.storage_bin_options,
+             require_bin_for_locations = EXCLUDED.require_bin_for_locations,
              updated_at = NOW()`,
         [
           userId,
@@ -364,6 +484,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
           JSON.stringify(tool_category_options),
           JSON.stringify(uniform_category_options),
           JSON.stringify(uniform_size_options),
+          JSON.stringify(storage_bin_options),
+          JSON.stringify(require_bin_for_locations),
         ],
       );
       return res.json({
@@ -372,6 +494,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         tool_category_options,
         uniform_category_options,
         uniform_size_options,
+        storage_bin_options,
+        require_bin_for_locations,
       });
     } catch (error) {
       console.error('Patch stock tools settings error:', error);
@@ -452,7 +576,11 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       if (search) {
         params.push(`%${search}%`);
-        query += ` AND (name ILIKE $${params.length} OR mpn ILIKE $${params.length})`;
+        query += ` AND (
+          name ILIKE $${params.length}
+          OR mpn ILIKE $${params.length}
+          OR COALESCE(locations::text, '') ILIKE $${params.length}
+        )`;
       }
 
       if (category) {
@@ -483,15 +611,19 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    let resolvedLocations = locations;
-    if (!Array.isArray(resolvedLocations) || resolvedLocations.length === 0) {
-      resolvedLocations = [{ location: location || 'Store', quantity: typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0 }];
-    }
-
-    const qty = resolvedLocations.reduce((sum: number, loc: any) => sum + (Number(loc.quantity) || 0), 0);
-    const primaryLocation = resolvedLocations[0]?.location || 'Store';
-
     try {
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
+      const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0;
+      const resolvedLocations = normalizeStockPlacements(
+        locations,
+        fallbackLocation,
+        fallbackQty,
+        settings.require_bin_for_locations,
+      );
+      const qty = totalPlacementQuantity(resolvedLocations);
+      const primaryLocation = resolvedLocations[0]?.location || 'Store';
+
       let imageUrl: string | null = null;
       if (image_base64) {
         imageUrl = await storeStockToolImage('stock-photos', image_base64, original_filename, content_type);
@@ -516,6 +648,9 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       return res.status(201).json(newItem);
     } catch (err) {
+      if (err instanceof Error && err.message.includes('Box or storage code')) {
+        return res.status(400).json({ message: err.message });
+      }
       console.error('Error creating stock item:', err);
       return res.status(500).json({ message: 'Internal server error' });
     }
@@ -573,11 +708,18 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       let newQty = existing.quantity;
       if (Array.isArray(locations)) {
-        newQty = locations.reduce((sum: number, loc: any) => sum + (Number(loc.quantity) || 0), 0);
-        const primaryLocation = locations[0]?.location || 'Store';
+        const settings = await loadStockToolsSettingsRow(pool, userId);
+        const normalized = normalizeStockPlacements(
+          locations,
+          existing.location || 'Store',
+          existing.quantity,
+          settings.require_bin_for_locations,
+        );
+        newQty = totalPlacementQuantity(normalized);
+        const primaryLocation = normalized[0]?.location || 'Store';
 
         updates.push(`locations = $${idx++}`);
-        values.push(JSON.stringify(locations));
+        values.push(JSON.stringify(normalized));
 
         updates.push(`location = $${idx++}`);
         values.push(primaryLocation);
@@ -628,6 +770,9 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const updatedRes = await pool.query('SELECT * FROM stock_items WHERE id = $1', [itemId]);
       return res.json(updatedRes.rows[0]);
     } catch (err) {
+      if (err instanceof Error && err.message.includes('Box or storage code')) {
+        return res.status(400).json({ message: err.message });
+      }
       console.error('Error updating stock item:', err);
       return res.status(500).json({ message: 'Internal server error' });
     }
@@ -704,8 +849,9 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         [item.name, toolCategory, item.location, convertQty, item.image_url, userId],
       );
 
-      const newQty = item.quantity - convertQty;
-      await client.query('UPDATE stock_items SET quantity = $1 WHERE id = $2', [newQty, itemId]);
+      await consumePlacementStock(client, itemId, convertQty, null);
+      const remainingRes = await client.query<{ quantity: number }>('SELECT quantity FROM stock_items WHERE id = $1', [itemId]);
+      const newQty = remainingRes.rows[0]?.quantity ?? 0;
       await client.query(
         `INSERT INTO stock_transactions (stock_item_id, quantity, transaction_type, created_by)
          VALUES ($1, $2, 'convert_to_tool', $3)`,
@@ -1162,14 +1308,26 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       let newStockQty: number;
       if ((existingStock.rowCount ?? 0) > 0) {
         stockItemId = existingStock.rows[0].id;
-        newStockQty = existingStock.rows[0].quantity + convertQty;
-        await client.query('UPDATE stock_items SET quantity = $1 WHERE id = $2', [newStockQty, stockItemId]);
+        const loaded = await loadStockItemPlacements(client, stockItemId);
+        if (!loaded) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ message: 'Stock item not found' });
+        }
+        const idx = pickDefaultPlacementIndex(loaded.placements);
+        const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, convertQty);
+        if (!adjusted) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Could not add stock to placement' });
+        }
+        await persistStockPlacements(client, stockItemId, adjusted.placements);
+        newStockQty = totalPlacementQuantity(adjusted.placements);
       } else {
+        const initialPlacements = [{ location: tool.location, quantity: convertQty }];
         const stockIns = await client.query(
-          `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by)
-           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, quantity`,
-          [tool.name, convertQty, stockCategory, quality, tool.location, tool.image_url, userId],
+          [tool.name, convertQty, stockCategory, quality, tool.location, tool.image_url, userId, JSON.stringify(initialPlacements)],
         );
         stockItemId = stockIns.rows[0].id;
         newStockQty = stockIns.rows[0].quantity;

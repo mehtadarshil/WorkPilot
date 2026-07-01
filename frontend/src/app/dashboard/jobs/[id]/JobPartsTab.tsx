@@ -16,6 +16,12 @@ import {
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
+import {
+  formatPlacementLabel,
+  parsePlacementsFromItem,
+  pickDefaultPlacementIndex,
+  type StockPlacement,
+} from '@/lib/stockPlacements';
 
 dayjs.extend(advancedFormat);
 
@@ -45,6 +51,8 @@ export type JobPartRow = {
   created_at: string;
   created_by_name: string;
   stock_item_id: number | null;
+  stock_placement_index?: number | null;
+  stock_placement_label?: string | null;
 };
 
 interface Props {
@@ -72,6 +80,7 @@ export default function JobPartsTab({ jobId }: Props) {
   const [selectedCatalogId, setSelectedCatalogId] = useState('');
   const [stockItems, setStockItems] = useState<any[]>([]);
   const [selectedStockId, setSelectedStockId] = useState('');
+  const [selectedPlacementIndex, setSelectedPlacementIndex] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitCost, setUnitCost] = useState('');
   const [markup, setMarkup] = useState('0');
@@ -198,12 +207,20 @@ export default function JobPartsTab({ jobId }: Props) {
   const resetAddForm = () => {
     setSelectedCatalogId('');
     setSelectedStockId('');
+    setSelectedPlacementIndex('');
     setQuantity('1');
     setUnitCost('');
     setMarkup('0');
     setVatRate('20');
     setFulfillment('');
   };
+
+  const selectedStockPlacements = useMemo((): StockPlacement[] => {
+    if (!selectedStockId) return [];
+    const st = stockItems.find((s) => String(s.id) === selectedStockId);
+    if (!st) return [];
+    return parsePlacementsFromItem(st);
+  }, [selectedStockId, stockItems]);
 
   const savePart = async () => {
     if (!token) return;
@@ -220,6 +237,9 @@ export default function JobPartsTab({ jobId }: Props) {
             vat_rate: parseFloat(vatRate) || 20,
             fulfillment_type: fulfillment.trim() || null,
             stock_item_id: selectedStockId ? parseInt(selectedStockId, 10) : null,
+            stock_placement_index: selectedStockId && selectedPlacementIndex !== ''
+              ? parseInt(selectedPlacementIndex, 10)
+              : null,
           },
           token,
         );
@@ -235,6 +255,9 @@ export default function JobPartsTab({ jobId }: Props) {
           quantity: parseFloat(quantity) || 1,
           fulfillment_type: fulfillment.trim() || null,
           stock_item_id: selectedStockId ? parseInt(selectedStockId, 10) : null,
+          stock_placement_index: selectedStockId && selectedPlacementIndex !== ''
+            ? parseInt(selectedPlacementIndex, 10)
+            : null,
         };
         if (unitCost.trim() !== '') body.unit_cost_price = parseFloat(unitCost);
         if (markup.trim() !== '') body.markup_pct = parseFloat(markup);
@@ -353,6 +376,9 @@ export default function JobPartsTab({ jobId }: Props) {
     setEditing(p);
     setSelectedCatalogId('');
     setSelectedStockId(p.stock_item_id ? String(p.stock_item_id) : '');
+    setSelectedPlacementIndex(
+      p.stock_placement_index != null ? String(p.stock_placement_index) : '',
+    );
     setQuantity(String(p.quantity));
     setUnitCost(String(p.unit_cost_price));
     setMarkup(String(p.markup_pct));
@@ -536,8 +562,16 @@ export default function JobPartsTab({ jobId }: Props) {
                 if (val) {
                   const st = stockItems.find(s => String(s.id) === val);
                   if (st) {
-                    setFulfillment(`Van stock - ${st.location}`);
+                    const placements = parsePlacementsFromItem(st);
+                    const defaultIdx = pickDefaultPlacementIndex(placements);
+                    setSelectedPlacementIndex(String(defaultIdx));
+                    const label = placements[defaultIdx]
+                      ? formatPlacementLabel(placements[defaultIdx])
+                      : st.location;
+                    setFulfillment(`Stock - ${label}`);
                   }
+                } else {
+                  setSelectedPlacementIndex('');
                 }
               }}
               className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
@@ -545,10 +579,36 @@ export default function JobPartsTab({ jobId }: Props) {
               <option value="">-- Not Linked to Stock --</option>
               {stockItems.map((s) => (
                 <option key={s.id} value={String(s.id)}>
-                  {s.name} ({s.location} - {s.quantity} available)
+                  {s.name} ({s.quantity} available)
                 </option>
               ))}
             </select>
+            {selectedStockId && selectedStockPlacements.length > 0 && (
+              <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+                <label className="text-xs font-bold uppercase tracking-wide text-emerald-800">Pick from placement</label>
+                <select
+                  value={selectedPlacementIndex}
+                  onChange={(e) => {
+                    const idx = e.target.value;
+                    setSelectedPlacementIndex(idx);
+                    const placement = selectedStockPlacements[parseInt(idx, 10)];
+                    if (placement) {
+                      setFulfillment(`Stock - ${formatPlacementLabel(placement)}`);
+                    }
+                  }}
+                  className="mt-1 w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                >
+                  {selectedStockPlacements.map((placement, idx) => (
+                    <option key={idx} value={String(idx)}>
+                      {formatPlacementLabel(placement)} — {placement.quantity} available
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] leading-snug text-emerald-800/80">
+                  Inventory is deducted from this bin when status is Installed or Picked up.
+                </p>
+              </div>
+            )}
             <p className="mt-1 text-[11px] leading-snug text-slate-500">
               Linking to stock will automatically deduct inventory when status is "Installed" or "Picked up".
             </p>
@@ -684,9 +744,12 @@ export default function JobPartsTab({ jobId }: Props) {
                         <div className="mt-0.5">
                           {(() => {
                             const st = stockItems.find((s) => s.id === p.stock_item_id);
+                            const placementLabel = p.stock_placement_label
+                              || (st ? formatPlacementLabel(parsePlacementsFromItem(st)[pickDefaultPlacementIndex(parsePlacementsFromItem(st))]) : null);
                             return (
                               <span className="inline-flex items-center gap-1 rounded bg-[#14B8A6]/10 px-1.5 py-0.5 text-[10px] font-bold text-[#14B8A6]">
-                                <Package className="size-2.5" /> Stock: {st ? `${st.name} (${st.location})` : `Item #${p.stock_item_id}`}
+                                <Package className="size-2.5" /> Stock: {st ? `${st.name}` : `Item #${p.stock_item_id}`}
+                                {placementLabel ? ` · ${placementLabel}` : ''}
                               </span>
                             );
                           })()}

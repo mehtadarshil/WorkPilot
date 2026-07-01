@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/services/storage_service.dart';
 import '../../data/repositories/stock_tools_repository.dart';
+import '../../core/stock_placements.dart';
 
 class StockToolsController extends GetxController {
   StockToolsController({required this.repository});
@@ -29,6 +30,8 @@ class StockToolsController extends GetxController {
   final RxList<String> toolCategories = <String>['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'].obs;
   final RxList<String> uniformCategories = <String>['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'Footwear', 'Branded', 'Other'].obs;
   final RxList<String> uniformSizes = <String>['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'].obs;
+  final RxList<String> storageBins = <String>[].obs;
+  final RxList<String> requireBinLocations = <String>['Store'].obs;
 
   // Filter values
   final RxString stockSearch = ''.obs;
@@ -119,6 +122,13 @@ class StockToolsController extends GetxController {
     if (json['uniform_size_options'] is List) {
       uniformSizes.value = List<String>.from(json['uniform_size_options']);
     }
+    if (json['storage_bin_options'] is List) {
+      storageBins.value = List<String>.from(json['storage_bin_options']);
+    }
+    if (json['require_bin_for_locations'] is List) {
+      final req = List<String>.from(json['require_bin_for_locations']);
+      requireBinLocations.value = req.isNotEmpty ? req : <String>['Store'];
+    }
   }
 
   Future<void> saveSettings({
@@ -127,6 +137,8 @@ class StockToolsController extends GetxController {
     required List<String> toolCats,
     required List<String> uniCats,
     required List<String> uniSizes,
+    List<String>? bins,
+    List<String>? requireBins,
   }) async {
     try {
       final res = await repository.patchSettings({
@@ -135,6 +147,8 @@ class StockToolsController extends GetxController {
         'tool_category_options': toolCats,
         'uniform_category_options': uniCats,
         'uniform_size_options': uniSizes,
+        if (bins != null) 'storage_bin_options': bins,
+        if (requireBins != null) 'require_bin_for_locations': requireBins,
       });
       _parseSettings(res);
       Get.snackbar('Success', 'Options updated successfully');
@@ -264,8 +278,13 @@ class StockToolsController extends GetxController {
       'mpn': mpn.trim().isEmpty ? null : mpn.trim(),
       'category': category,
       'quality': quality,
-      'locations': locs,
+      'locations': locs.map(placementRowToApi).toList(),
     };
+    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    if (binError != null) {
+      Get.snackbar('Error', binError);
+      return false;
+    }
     if (base64Image.isNotEmpty) {
       payload['image_base64'] = base64Image.value;
       payload['original_filename'] = imageFilename.value;

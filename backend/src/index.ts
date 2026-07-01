@@ -124,6 +124,7 @@ import {
   mountStockToolsRoutes,
   syncStockTransaction,
 } from './stockToolsRoutes';
+import { formatPlacementLabel, parseLocationsFromDb } from './stockPlacements';
 import {
   ensurePricingSettingsSchema,
   ensureCustomerPriceBooksSchema,
@@ -2022,6 +2023,7 @@ async function initDb() {
     await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS invoice_accent_end_color VARCHAR(16) NOT NULL DEFAULT '#0d9488'`);
     await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS payment_terms TEXT`);
     await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS bank_details TEXT`);
+    await pool.query(`ALTER TABLE invoice_settings ADD COLUMN IF NOT EXISTS after_due_reminder_days INT NOT NULL DEFAULT 7`);
   } catch { /* columns may already exist */ }
 
   await pool.query(`
@@ -8308,6 +8310,7 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_ca
     const result = await pool.query(
       `SELECT jp.*, COALESCE(u.full_name, u.email, 'User') AS created_by_name,
               s.name AS stock_item_name, s.location AS stock_item_location, s.quantity AS stock_item_quantity,
+              s.locations AS stock_item_locations,
               COUNT(*) OVER() AS full_count
        FROM job_parts jp
        LEFT JOIN users u ON u.id = jp.created_by
@@ -8324,7 +8327,19 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_ca
       status_counts[String((row as { status: string }).status)] = Number((row as { c: number }).c);
     }
     return res.json({
-      parts: result.rows.map((r: Record<string, unknown>) => ({
+      parts: result.rows.map((r: Record<string, unknown>) => {
+        const stockPlacementIndex = r.stock_placement_index != null ? Number(r.stock_placement_index) : null;
+        let stockPlacementLabel: string | null = null;
+        if (stockPlacementIndex != null && r.stock_item_locations != null) {
+          const placements = parseLocationsFromDb(
+            r.stock_item_locations,
+            String(r.stock_item_location ?? 'Store'),
+            Number(r.stock_item_quantity ?? 0),
+          );
+          const placement = placements[stockPlacementIndex];
+          if (placement) stockPlacementLabel = formatPlacementLabel(placement);
+        }
+        return {
         id: Number(r.id),
         job_id: Number(r.job_id),
         part_catalog_id: r.part_catalog_id != null ? Number(r.part_catalog_id) : null,
@@ -8344,7 +8359,10 @@ app.get('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_ca
         stock_item_name: r.stock_item_name != null ? String(r.stock_item_name) : null,
         stock_item_location: r.stock_item_location != null ? String(r.stock_item_location) : null,
         stock_item_quantity: r.stock_item_quantity != null ? Number(r.stock_item_quantity) : null,
-      })),
+        stock_placement_index: stockPlacementIndex,
+        stock_placement_label: stockPlacementLabel,
+      };
+      }),
       total,
       status_counts,
     });
@@ -8417,17 +8435,21 @@ app.post('/api/jobs/:jobId/parts', authenticate, requireTenantCrmAccess('parts_c
     const stockItemId = stockItemIdRaw !== undefined && stockItemIdRaw !== null && stockItemIdRaw !== ''
       ? parseInt(String(stockItemIdRaw), 10)
       : null;
+    const stockPlacementIndexRaw = body.stock_placement_index;
+    const stockPlacementIndex = stockPlacementIndexRaw !== undefined && stockPlacementIndexRaw !== null && stockPlacementIndexRaw !== ''
+      ? parseInt(String(stockPlacementIndexRaw), 10)
+      : null;
 
     const ins = await pool.query(
       `INSERT INTO job_parts (job_id, part_catalog_id, part_name, mpn, quantity, fulfillment_type, status,
-         unit_cost_price, markup_pct, vat_rate, unit_sell_price, created_by, stock_item_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-      [jobId, partCatalogId, partName, mpn, qty, fulfillmentType, status, unitCost, markupPct, vatRate, unitSell, userId, stockItemId],
+         unit_cost_price, markup_pct, vat_rate, unit_sell_price, created_by, stock_item_id, stock_placement_index)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      [jobId, partCatalogId, partName, mpn, qty, fulfillmentType, status, unitCost, markupPct, vatRate, unitSell, userId, stockItemId, stockPlacementIndex],
     );
     const newPartId = Number(ins.rows[0].id);
 
     if (stockItemId !== null) {
-      await syncStockTransaction(pool, newPartId, jobId, stockItemId, qty, status, userId);
+      await syncStockTransaction(pool, newPartId, jobId, stockItemId, qty, status, userId, stockPlacementIndex);
     }
 
     return res.status(201).json({ part: { id: newPartId } });
@@ -8551,6 +8573,11 @@ app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess
       updates.push(`stock_item_id = $${idx++}`);
       values.push(body.stock_item_id ? parseInt(String(body.stock_item_id), 10) || null : null);
     }
+    if (body.stock_placement_index !== undefined) {
+      const rawPlacement = body.stock_placement_index;
+      updates.push(`stock_placement_index = $${idx++}`);
+      values.push(rawPlacement !== null && rawPlacement !== '' ? parseInt(String(rawPlacement), 10) || null : null);
+    }
 
     if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
 
@@ -8570,13 +8597,23 @@ app.patch('/api/jobs/:jobId/parts/:partId', authenticate, requireTenantCrmAccess
       quantity: number;
       status: string;
       stock_item_id: number | null;
+      stock_placement_index: number | null;
     }>(
-      'SELECT quantity, status, stock_item_id FROM job_parts WHERE job_id = $1 AND id = $2',
+      'SELECT quantity, status, stock_item_id, stock_placement_index FROM job_parts WHERE job_id = $1 AND id = $2',
       [jobId, partId]
     );
     if ((newPartRes.rowCount ?? 0) > 0) {
       const newPart = newPartRes.rows[0];
-      await syncStockTransaction(pool, partId, jobId, newPart.stock_item_id, newPart.quantity, newPart.status, userId);
+      await syncStockTransaction(
+        pool,
+        partId,
+        jobId,
+        newPart.stock_item_id,
+        newPart.quantity,
+        newPart.status,
+        userId,
+        newPart.stock_placement_index,
+      );
     }
 
     return res.json({ success: true });
@@ -13368,6 +13405,7 @@ async function getInvoiceSettings(userId: number): Promise<{
   invoice_prefix: string;
   terms_and_conditions: string | null;
   default_due_days: number;
+  after_due_reminder_days: number;
   company_name: string;
   company_address: string | null;
   company_phone: string | null;
@@ -13402,6 +13440,7 @@ async function getInvoiceSettings(userId: number): Promise<{
       invoice_prefix: (row.invoice_prefix as string) ?? 'INV',
       terms_and_conditions: (row.terms_and_conditions as string) ?? null,
       default_due_days: Number(row.default_due_days) ?? 30,
+      after_due_reminder_days: Math.max(1, Math.min(30, Number(row.after_due_reminder_days) || 7)),
       company_name: (row.company_name as string) ?? 'WorkPilot',
       company_address: (row.company_address as string) ?? null,
       company_phone: (row.company_phone as string) ?? null,
@@ -13423,6 +13462,7 @@ async function getInvoiceSettings(userId: number): Promise<{
     invoice_prefix: 'INV',
     terms_and_conditions: null,
     default_due_days: 30,
+    after_due_reminder_days: 7,
     company_name: 'WorkPilot',
     company_address: null,
     company_phone: null,
@@ -18084,6 +18124,9 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
   const invoicePrefix = typeof body.invoice_prefix === 'string' ? body.invoice_prefix.trim().replace(/[^A-Za-z0-9_-]/g, '') || 'INV' : undefined;
   const termsAndConditions = typeof body.terms_and_conditions === 'string' ? body.terms_and_conditions.trim() || null : undefined;
   const defaultDueDays = typeof body.default_due_days === 'number' ? Math.max(1, Math.min(365, body.default_due_days)) : undefined;
+  const afterDueReminderDays = typeof body.after_due_reminder_days === 'number'
+    ? Math.max(1, Math.min(30, Math.round(body.after_due_reminder_days)))
+    : undefined;
   const companyName = typeof body.company_name === 'string' ? body.company_name.trim() || null : undefined;
   const companyAddress = typeof body.company_address === 'string' ? body.company_address.trim() || null : undefined;
   const companyPhone = typeof body.company_phone === 'string' ? body.company_phone.trim() || null : undefined;
@@ -18114,6 +18157,7 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
   if (invoicePrefix !== undefined) { updates.push(`invoice_prefix = $${idx++}`); values.push(invoicePrefix); }
   if (termsAndConditions !== undefined) { updates.push(`terms_and_conditions = $${idx++}`); values.push(termsAndConditions); }
   if (defaultDueDays !== undefined) { updates.push(`default_due_days = $${idx++}`); values.push(defaultDueDays); }
+  if (afterDueReminderDays !== undefined) { updates.push(`after_due_reminder_days = $${idx++}`); values.push(afterDueReminderDays); }
   if (companyName !== undefined) { updates.push(`company_name = $${idx++}`); values.push(companyName); }
   if (companyAddress !== undefined) { updates.push(`company_address = $${idx++}`); values.push(companyAddress); }
   if (companyPhone !== undefined) { updates.push(`company_phone = $${idx++}`); values.push(companyPhone); }
@@ -18147,6 +18191,7 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
         invoice_prefix: invoicePrefix ?? def.invoice_prefix,
         terms_and_conditions: termsAndConditions !== undefined ? termsAndConditions : def.terms_and_conditions,
         default_due_days: defaultDueDays ?? def.default_due_days,
+        after_due_reminder_days: afterDueReminderDays ?? def.after_due_reminder_days,
         company_name: companyName ?? def.company_name,
         company_address: companyAddress !== undefined ? companyAddress : def.company_address,
         company_phone: companyPhone !== undefined ? companyPhone : def.company_phone,
@@ -18163,10 +18208,10 @@ app.patch('/api/settings/invoice', authenticate, requireAdmin, requireAnyPermiss
         invoice_accent_end_color: invoiceAccentEndColor ?? def.invoice_accent_end_color,
       };
       await pool.query(
-        `INSERT INTO invoice_settings (created_by, default_currency, invoice_prefix, terms_and_conditions, default_due_days, company_name, company_address, company_phone, company_email, company_logo, company_website, company_tax_id, tax_label, default_tax_percentage, footer_text, payment_terms, bank_details, invoice_accent_color, invoice_accent_end_color)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-         ON CONFLICT (created_by) DO UPDATE SET default_currency = EXCLUDED.default_currency, invoice_prefix = EXCLUDED.invoice_prefix, terms_and_conditions = EXCLUDED.terms_and_conditions, default_due_days = EXCLUDED.default_due_days, company_name = EXCLUDED.company_name, company_address = EXCLUDED.company_address, company_phone = EXCLUDED.company_phone, company_email = EXCLUDED.company_email, company_logo = EXCLUDED.company_logo, company_website = EXCLUDED.company_website, company_tax_id = EXCLUDED.company_tax_id, tax_label = EXCLUDED.tax_label, default_tax_percentage = EXCLUDED.default_tax_percentage, footer_text = EXCLUDED.footer_text, payment_terms = EXCLUDED.payment_terms, bank_details = EXCLUDED.bank_details, invoice_accent_color = EXCLUDED.invoice_accent_color, invoice_accent_end_color = EXCLUDED.invoice_accent_end_color, updated_at = NOW()`,
-        [userId, merged.default_currency, merged.invoice_prefix, merged.terms_and_conditions, merged.default_due_days, merged.company_name, merged.company_address, merged.company_phone, merged.company_email, merged.company_logo, merged.company_website, merged.company_tax_id, merged.tax_label, merged.default_tax_percentage, merged.footer_text, merged.payment_terms, merged.bank_details, merged.invoice_accent_color, merged.invoice_accent_end_color],
+        `INSERT INTO invoice_settings (created_by, default_currency, invoice_prefix, terms_and_conditions, default_due_days, after_due_reminder_days, company_name, company_address, company_phone, company_email, company_logo, company_website, company_tax_id, tax_label, default_tax_percentage, footer_text, payment_terms, bank_details, invoice_accent_color, invoice_accent_end_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+         ON CONFLICT (created_by) DO UPDATE SET default_currency = EXCLUDED.default_currency, invoice_prefix = EXCLUDED.invoice_prefix, terms_and_conditions = EXCLUDED.terms_and_conditions, default_due_days = EXCLUDED.default_due_days, after_due_reminder_days = EXCLUDED.after_due_reminder_days, company_name = EXCLUDED.company_name, company_address = EXCLUDED.company_address, company_phone = EXCLUDED.company_phone, company_email = EXCLUDED.company_email, company_logo = EXCLUDED.company_logo, company_website = EXCLUDED.company_website, company_tax_id = EXCLUDED.company_tax_id, tax_label = EXCLUDED.tax_label, default_tax_percentage = EXCLUDED.default_tax_percentage, footer_text = EXCLUDED.footer_text, payment_terms = EXCLUDED.payment_terms, bank_details = EXCLUDED.bank_details, invoice_accent_color = EXCLUDED.invoice_accent_color, invoice_accent_end_color = EXCLUDED.invoice_accent_end_color, updated_at = NOW()`,
+        [userId, merged.default_currency, merged.invoice_prefix, merged.terms_and_conditions, merged.default_due_days, merged.after_due_reminder_days, merged.company_name, merged.company_address, merged.company_phone, merged.company_email, merged.company_logo, merged.company_website, merged.company_tax_id, merged.tax_label, merged.default_tax_percentage, merged.footer_text, merged.payment_terms, merged.bank_details, merged.invoice_accent_color, merged.invoice_accent_end_color],
       );
     }
     if (companyLogo !== undefined) {
@@ -20940,14 +20985,19 @@ app.get('/api/customers/:customerId/files/:fileId/content', authenticate, requir
       stored_filename: string;
       original_filename: string;
       content_type: string | null;
-    }>('SELECT stored_filename, original_filename, content_type FROM customer_files WHERE id = $1 AND customer_id = $2', [fileId, customerId]);
+      spaces_key: string | null;
+    }>(
+      'SELECT stored_filename, original_filename, content_type, spaces_key FROM customer_files WHERE id = $1 AND customer_id = $2',
+      [fileId, customerId],
+    );
     if ((row.rowCount ?? 0) === 0) return res.status(404).json({ message: 'File not found' });
 
-    const file = await loadWorkpilotFile('customer-files', [customerId], row.rows[0].stored_filename);
+    const meta = row.rows[0];
+    const file = await loadWorkpilotFile('customer-files', [customerId], meta.stored_filename, meta.spaces_key);
     if (!file) return res.status(404).json({ message: 'File not found' });
 
-    const ct = row.rows[0].content_type || 'application/octet-stream';
-    const asciiName = String(row.rows[0].original_filename).replace(/[^\x20-\x7E]/g, '_') || 'download';
+    const ct = meta.content_type || 'application/octet-stream';
+    const asciiName = String(meta.original_filename).replace(/[^\x20-\x7E]/g, '_') || 'download';
     return sendWorkpilotFile(res, file, ct, {
       disposition: `attachment; filename="${asciiName}"`,
     });
@@ -22800,14 +22850,12 @@ initDb()
 
             if (allErrors.length > 0 || totalSent > 0) {
               try {
-                const tenantRows = await pool.query<{ created_by: number }>(
-                  `SELECT DISTINCT created_by FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN') AND created_by IS NULL
-                   UNION
-                   SELECT DISTINCT id FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN')`,
+                const tenantRows = await pool.query<{ tenant_user_id: number }>(
+                  `SELECT id AS tenant_user_id FROM users WHERE role IN ('ADMIN', 'SUPER_ADMIN') AND created_by IS NULL`,
                 );
                 for (const t of tenantRows.rows) {
-                  const uid = Number(t.created_by);
-                  if (!Number.isFinite(uid)) continue;
+                  const uid = Number(t.tenant_user_id);
+                  if (!Number.isFinite(uid) || uid <= 0) continue;
                   await pool.query(
                     `INSERT INTO scheduled_reminder_logs (tenant_user_id, reminder_type, sent_count, skipped_count, error_count, errors, details)
                      VALUES ($1, 'all', $2, $3, $4, $5, $6)`,

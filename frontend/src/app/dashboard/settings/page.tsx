@@ -29,6 +29,7 @@ interface InvoiceSettings {
   invoice_prefix: string;
   terms_and_conditions: string | null;
   default_due_days: number;
+  after_due_reminder_days: number;
   company_name: string;
   company_address: string | null;
   company_phone: string | null;
@@ -191,6 +192,7 @@ export default function SettingsPage() {
   const [formPrefix, setFormPrefix] = useState('INV');
   const [formTerms, setFormTerms] = useState('');
   const [formDueDays, setFormDueDays] = useState(30);
+  const [formAfterDueReminderDays, setFormAfterDueReminderDays] = useState(7);
   const [formDefaultTaxPercentage, setFormDefaultTaxPercentage] = useState(20);
   const [formFooter, setFormFooter] = useState('');
   const [formInvoiceAccent, setFormInvoiceAccent] = useState('#14B8A6');
@@ -392,6 +394,7 @@ export default function SettingsPage() {
       setFormPrefix(s.invoice_prefix);
       setFormTerms(s.terms_and_conditions ?? '');
       setFormDueDays(s.default_due_days);
+      setFormAfterDueReminderDays(s.after_due_reminder_days ?? 7);
       setCompanyName(s.company_name ?? 'WorkPilot');
       setCompanyAddress(s.company_address ?? '');
       setCompanyPhone(s.company_phone ?? '');
@@ -524,6 +527,7 @@ export default function SettingsPage() {
         invoice_prefix: formPrefix.trim() || 'INV',
         terms_and_conditions: formTerms.trim() || null,
         default_due_days: formDueDays,
+        after_due_reminder_days: formAfterDueReminderDays,
         company_name: companyName.trim() || 'WorkPilot',
         company_address: companyAddress.trim() || null,
         company_phone: companyPhone.trim() || null,
@@ -1101,7 +1105,24 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Default due duration (days)</label>
                 <input type="number" min={1} max={365} value={formDueDays} onChange={(e) => setFormDueDays(parseInt(e.target.value, 10) || 30)} className={inputClass} />
-                <p className="mt-1 text-xs text-slate-500">Number of days from invoice date until payment is due</p>
+                <p className="mt-1 text-xs text-slate-500">Number of days from invoice date until payment is due. Also used for the second automated payment reminder after the due date.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">After due reminder interval (days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={formAfterDueReminderDays}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    setFormAfterDueReminderDays(Number.isFinite(n) ? Math.max(1, Math.min(30, n)) : 7);
+                  }}
+                  className={inputClass}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Automated reminders: on the due date, again after {formDueDays || 14} day{formDueDays === 1 ? '' : 's'} overdue, then every {formAfterDueReminderDays || 7} day{(formAfterDueReminderDays || 7) === 1 ? '' : 's'} while still unpaid.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Terms and conditions</label>

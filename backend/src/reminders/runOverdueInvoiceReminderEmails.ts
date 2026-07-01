@@ -5,6 +5,7 @@ import {
   formatFromHeader,
   createMailTransport,
 } from '../emailHelpers';
+import { resolveInvoiceReminderSlot } from './invoiceReminderSchedule';
 
 export type OverdueInvoiceReminderDeps = {
   loadEmailSettingsPayload: (userId: number) => Promise<Record<string, unknown>>;
@@ -13,17 +14,12 @@ export type OverdueInvoiceReminderDeps = {
     inv: Record<string, unknown>,
     invSettings: { company_name?: string | null },
   ) => Promise<Record<string, string>>;
-  getInvoiceSettings: (userId: number) => Promise<{ company_name?: string | null }>;
+  getInvoiceSettings: (userId: number) => Promise<{
+    company_name?: string | null;
+    default_due_days: number;
+    after_due_reminder_days: number;
+  }>;
 };
-
-const REMINDER_PHASES = [
-  { phase: 1, daysOverdue: 1, label: 'Payment reminder' },
-  { phase: 7, daysOverdue: 7, label: 'Second payment reminder' },
-  { phase: 14, daysOverdue: 14, label: 'Final payment reminder' },
-] as const;
-
-const RECURRING_REMINDER_INTERVAL_DAYS = 7;
-const FIRST_RECURRING_PHASE = 21;
 
 function utcToday(): string {
   const d = new Date();
@@ -49,7 +45,7 @@ function daysBetween(earlierYmd: string, laterYmd: string): number {
 async function ensureInvoiceReminderTemplateRow(pool: Pool, userId: number): Promise<void> {
   const subject = '{{company_name}} — Payment reminder for invoice {{invoice_number}}';
   const body =
-    '<p>Hi {{customer_name}},</p><p>This is a friendly reminder that invoice <strong>{{invoice_number}}</strong> for <strong>{{currency}} {{invoice_total}}</strong> was due on <strong>{{due_date}}</strong> and remains outstanding.</p><p>Billing address: {{customer_address}}</p><p>{{work_address}}</p><p>You can view the invoice here: {{invoice_link}}</p><p>Please arrange payment at your earliest convenience. If you have already paid, please disregard this message.</p><p>Kind regards,<br/>{{company_name}}</p>';
+    '<p>Hi {{customer_name}},</p><p>This is a friendly reminder regarding invoice <strong>{{invoice_number}}</strong> for <strong>{{currency}} {{invoice_total}}</strong> (due on <strong>{{due_date}}</strong>). Outstanding balance: <strong>{{currency}} {{balance_due}}</strong>.</p><p>Billing address: {{customer_address}}</p><p>{{work_address}}</p><p>You can view the invoice here: {{invoice_link}}</p><p>Please arrange payment at your earliest convenience. If you have already paid, please disregard this message.</p><p>Kind regards,<br/>{{company_name}}</p>';
   await pool.query(
     `INSERT INTO email_templates (created_by, template_key, name, subject, body_html)
      VALUES ($1, 'invoice_reminder', $2, $3, $4)
@@ -58,7 +54,12 @@ async function ensureInvoiceReminderTemplateRow(pool: Pool, userId: number): Pro
   );
 }
 
-/** Automated payment-chase emails for overdue unpaid invoices. Logs to customer communications. */
+/**
+ * Automated invoice payment reminders:
+ * 1. On due date (day 0 after due)
+ * 2. After default_due_days from due date (e.g. 14 days overdue when terms are 14 days)
+ * 3. Every after_due_reminder_days thereafter (1–30, tenant setting)
+ */
 export async function runOverdueInvoiceReminderEmails(
   pool: Pool,
   deps: OverdueInvoiceReminderDeps,
@@ -102,6 +103,8 @@ export async function runOverdueInvoiceReminderEmails(
       continue;
     }
     const invSettings = await deps.getInvoiceSettings(tenantUserId);
+    const defaultDueDays = invSettings.default_due_days;
+    const afterDueReminderDays = invSettings.after_due_reminder_days;
 
     const candidates = await pool.query<{
       id: number;
@@ -137,7 +140,7 @@ export async function runOverdueInvoiceReminderEmails(
        WHERE COALESCE(i.created_by, c.created_by) = $1
          AND i.state NOT IN ('draft', 'paid', 'cancelled')
          AND (i.total_amount - i.total_paid) > 0.005
-         AND i.due_date < $2::date
+         AND i.due_date <= $2::date
          AND COALESCE(c.invoice_reminders_enabled, true) = true
          AND NULLIF(TRIM(c.email), '') IS NOT NULL`,
       [tenantUserId, today],
@@ -149,23 +152,14 @@ export async function runOverdueInvoiceReminderEmails(
         skipped += 1;
         continue;
       }
-      const daysOverdue = daysBetween(dueYmd, today);
-
-      let phase: number;
-      let label: string;
-
-      const fixedPhase = REMINDER_PHASES.find((p) => p.daysOverdue === daysOverdue);
-      if (fixedPhase) {
-        phase = fixedPhase.phase;
-        label = fixedPhase.label;
-      } else if (daysOverdue >= FIRST_RECURRING_PHASE) {
-        const intervalsSinceFirstRecurring = Math.floor((daysOverdue - FIRST_RECURRING_PHASE) / RECURRING_REMINDER_INTERVAL_DAYS);
-        phase = FIRST_RECURRING_PHASE + intervalsSinceFirstRecurring * RECURRING_REMINDER_INTERVAL_DAYS;
-        label = 'Payment follow-up reminder';
-      } else {
+      const daysFromDue = daysBetween(dueYmd, today);
+      const slot = resolveInvoiceReminderSlot(daysFromDue, defaultDueDays, afterDueReminderDays);
+      if (!slot) {
         skipped += 1;
         continue;
       }
+
+      const { phase, label } = slot;
 
       const alreadyToday = await pool.query(
         `SELECT 1 FROM invoice_reminder_sent WHERE invoice_id = $1 AND sent_on = $2::date`,
@@ -194,7 +188,7 @@ export async function runOverdueInvoiceReminderEmails(
       try {
         const vars = await deps.buildInvoiceEmailTemplateVars(inv as Record<string, unknown>, invSettings);
         vars.phase_label = label;
-        vars.days_overdue = String(daysOverdue);
+        vars.days_overdue = String(daysFromDue);
         const balanceDue = Math.max(0, parseFloat(inv.total_amount) - parseFloat(inv.total_paid));
         vars.balance_due = balanceDue.toFixed(2);
 

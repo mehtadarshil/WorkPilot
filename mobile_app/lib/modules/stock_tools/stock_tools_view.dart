@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
+import '../../core/stock_placements.dart';
 import 'stock_tools_controller.dart';
 import '../customers/customer_tabs/image_viewer_helper.dart';
 
@@ -157,6 +158,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   final quality = item['quality'] as String? ?? 'New';
                   final loc = item['location'] as String? ?? 'Store';
                   final img = item['image_url'] as String?;
+                  final placements = parsePlacementsFromItem(item);
 
                   return Card(
                     color: AppColors.slate900.withOpacity(0.4),
@@ -198,6 +200,39 @@ class StockToolsView extends GetView<StockToolsController> {
                                     _buildChip(loc, Colors.orange.withOpacity(0.1), Colors.orange),
                                   ],
                                 ),
+                                if (placements.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Where is it?',
+                                    style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ...placements.map((p) {
+                                    final label = formatPlacementLabel(p);
+                                    final pq = (p['quantity'] as num?)?.toInt() ?? 0;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              style: GoogleFonts.outfit(color: Colors.white70, fontSize: 11),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Text(
+                                            '×$pq',
+                                            style: GoogleFonts.outfit(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
                               ],
                             ),
                           ),
@@ -269,7 +304,7 @@ class StockToolsView extends GetView<StockToolsController> {
             onChanged: (val) => controller.stockSearch.value = val,
             style: GoogleFonts.outfit(color: Colors.white),
             decoration: InputDecoration(
-              hintText: 'Search Stock (name, MPN)...',
+              hintText: 'Search name, MPN, box, aisle...',
               hintStyle: GoogleFonts.outfit(color: AppColors.slate500),
               prefixIcon: const Icon(Icons.search, color: AppColors.slate500),
               filled: true,
@@ -878,6 +913,8 @@ class StockToolsView extends GetView<StockToolsController> {
     final toolC = TextEditingController(text: controller.toolCategories.join('\n'));
     final uniC = TextEditingController(text: controller.uniformCategories.join('\n'));
     final uniSzC = TextEditingController(text: controller.uniformSizes.join('\n'));
+    final binC = TextEditingController(text: controller.storageBins.join('\n'));
+    final requireBinC = TextEditingController(text: controller.requireBinLocations.join('\n'));
 
     Get.bottomSheet(
       Container(
@@ -907,6 +944,8 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildSettingsField('Tool Categories (one per line)', toolC),
                   _buildSettingsField('Uniform Categories (one per line)', uniC),
                   _buildSettingsField('Uniform Sizes (one per line)', uniSzC),
+                  _buildSettingsField('Storage bins (one per line)', binC),
+                  _buildSettingsField('Require box/code for sites', requireBinC),
                 ],
               ),
             ),
@@ -922,6 +961,8 @@ class StockToolsView extends GetView<StockToolsController> {
                 final toolCats = toolC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
                 final uniCats = uniC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
                 final uniSizes = uniSzC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+                final bins = binC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+                final requireBins = requireBinC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
 
                 if (locs.isEmpty || stockCats.isEmpty || toolCats.isEmpty || uniCats.isEmpty || uniSizes.isEmpty) {
                   Get.snackbar('Error', 'Lists cannot be empty');
@@ -933,6 +974,8 @@ class StockToolsView extends GetView<StockToolsController> {
                   toolCats: toolCats,
                   uniCats: uniCats,
                   uniSizes: uniSizes,
+                  bins: bins,
+                  requireBins: requireBins.isNotEmpty ? requireBins : <String>['Store'],
                 );
                 Get.back();
               },
@@ -977,23 +1020,21 @@ class StockToolsView extends GetView<StockToolsController> {
     final nameC = TextEditingController(text: isEdit ? (item['name'] ?? '') : '');
     final mpnC = TextEditingController(text: isEdit ? (item['mpn'] ?? '') : '');
 
-    // Parse existing locations list or set defaults
+    // Parse existing placements or set defaults
     final List<Map<String, dynamic>> rawLocations = [];
-    if (isEdit && item['locations'] is List) {
-      for (final l in item['locations']) {
-        if (l is Map) {
-          rawLocations.add({
-            'location': l['location'] as String? ?? 'Store',
-            'quantity': (l['quantity'] as num?)?.toInt() ?? 0,
-          });
-        }
+    if (isEdit) {
+      rawLocations.addAll(parsePlacementsFromItem(item));
+      for (final row in rawLocations) {
+        row['zone'] = row['zone'] ?? '';
+        row['aisle'] = row['aisle'] ?? '';
+        row['shelf'] = row['shelf'] ?? '';
+        row['box'] = row['box'] ?? '';
+        row['storage_code'] = row['storage_code'] ?? '';
+        row['notes'] = row['notes'] ?? '';
       }
     }
     if (rawLocations.isEmpty) {
-      rawLocations.add({
-        'location': isEdit ? (item['location'] ?? 'Store') : 'Store',
-        'quantity': isEdit ? (item['quantity'] as num?)?.toInt() ?? 0 : 0,
-      });
+      rawLocations.add(emptyPlacementRow(controller.locations.isNotEmpty ? controller.locations[0] : 'Store'));
     }
 
     final formLocs = rawLocations.obs;
@@ -1031,11 +1072,11 @@ class StockToolsView extends GetView<StockToolsController> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Stock Quantities by Location', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
+                      Text('Storage placements', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
                         onPressed: () {
-                          formLocs.add({'location': controller.locations[0], 'quantity': 0});
+                          formLocs.add(emptyPlacementRow(controller.locations.isNotEmpty ? controller.locations[0] : 'Store'));
                         },
                       ),
                     ],
@@ -1047,41 +1088,68 @@ class StockToolsView extends GetView<StockToolsController> {
                     itemBuilder: (context, idx) {
                       final l = formLocs[idx];
                       final qtyC = TextEditingController(text: '${l['quantity']}');
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: Row(
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.slate500.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
+                        ),
+                        child: Column(
                           children: [
-                            Expanded(
-                              flex: 2,
-                              child: _buildDropdown(
-                                value: l['location'],
-                                items: controller.locations,
-                                label: 'Loc',
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    formLocs[idx] = {'location': val, 'quantity': l['quantity']};
-                                  }
-                                },
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: _buildDropdown(
+                                    value: l['location'],
+                                    items: controller.locations,
+                                    label: 'Site',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        formLocs[idx] = {...l, 'location': val};
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: qtyC,
+                                    keyboardType: TextInputType.number,
+                                    style: GoogleFonts.outfit(color: Colors.white),
+                                    decoration: const InputDecoration(labelText: 'Qty', labelStyle: TextStyle(color: AppColors.slate400)),
+                                    onChanged: (val) {
+                                      formLocs[idx] = {...l, 'quantity': int.tryParse(val) ?? 0};
+                                    },
+                                  ),
+                                ),
+                                if (formLocs.length > 1)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    onPressed: () => formLocs.removeAt(idx),
+                                  ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: qtyC,
-                                keyboardType: TextInputType.number,
-                                style: GoogleFonts.outfit(color: Colors.white),
-                                decoration: const InputDecoration(labelText: 'Qty', labelStyle: TextStyle(color: AppColors.slate400)),
-                                onChanged: (val) {
-                                  final q = int.tryParse(val) ?? 0;
-                                  formLocs[idx] = {'location': l['location'], 'quantity': q};
-                                },
-                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(child: _buildPlacementMiniField('Zone', l['zone'] ?? '', (v) => formLocs[idx] = {...l, 'zone': v})),
+                                const SizedBox(width: 8),
+                                Expanded(child: _buildPlacementMiniField('Aisle', l['aisle'] ?? '', (v) => formLocs[idx] = {...l, 'aisle': v})),
+                              ],
                             ),
-                            if (formLocs.length > 1)
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                onPressed: () => formLocs.removeAt(idx),
-                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(child: _buildPlacementMiniField('Shelf', l['shelf'] ?? '', (v) => formLocs[idx] = {...l, 'shelf': v})),
+                                const SizedBox(width: 8),
+                                Expanded(child: _buildPlacementMiniField('Box', l['box'] ?? '', (v) => formLocs[idx] = {...l, 'box': v})),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _buildPlacementMiniField('Storage code', l['storage_code'] ?? '', (v) => formLocs[idx] = {...l, 'storage_code': v}),
                           ],
                         ),
                       );
@@ -1488,6 +1556,29 @@ class StockToolsView extends GetView<StockToolsController> {
   }
 
   // Helpers widgets for forms
+  Widget _buildPlacementMiniField(String label, String value, ValueChanged<String> onChanged) {
+    return TextField(
+      controller: TextEditingController(text: value),
+      onChanged: onChanged,
+      style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: AppColors.slate400, fontSize: 11),
+        filled: true,
+        fillColor: AppColors.slate500.withOpacity(0.08),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.slate500.withOpacity(0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primary),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      ),
+    );
+  }
+
   Widget _buildInput(String label, TextEditingController textC, {bool isMultiline = false, bool isNumber = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),

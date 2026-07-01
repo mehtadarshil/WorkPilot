@@ -50,15 +50,20 @@ function fileContentPath(customerId: string, file: CustomerFileRow): string {
 function AuthImage({ customerId, file, className }: { customerId: string; file: CustomerFileRow; className?: string }) {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
   const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
     if (!token) return;
+    setFailed(false);
+    setSrc(null);
     getBlob(fileContentPath(customerId, file), token)
       .then((blob) => {
         if (active) setSrc(URL.createObjectURL(blob));
       })
-      .catch((err) => console.error('Failed to load image preview:', err));
+      .catch(() => {
+        if (active) setFailed(true);
+      });
     return () => {
       active = false;
     };
@@ -71,6 +76,13 @@ function AuthImage({ customerId, file, className }: { customerId: string; file: 
     };
   }, [src]);
 
+  if (failed) {
+    return (
+      <div className={`flex items-center justify-center bg-slate-100 text-slate-400 ${className || ''}`}>
+        <Upload className="size-6 opacity-40" />
+      </div>
+    );
+  }
   if (!src) return <div className={`animate-pulse bg-slate-200 ${className || ''}`} />;
   return <img src={src} alt={file.original_filename} className={className} />;
 }
@@ -338,6 +350,7 @@ export default function CustomerSiteImagesTab({ customerId, workAddressId }: Pro
             </div>
           )}
         </div>
+      </div>
     </div>
   );
 }

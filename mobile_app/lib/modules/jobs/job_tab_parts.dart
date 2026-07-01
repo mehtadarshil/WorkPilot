@@ -232,8 +232,11 @@ class _JobTabPartsState extends State<JobTabParts> {
               final name = (p['part_name'] as String?) ?? '';
               final st = (p['status'] as String?) ?? '';
               final stockLoc = p['stock_item_location'] as String?;
+              final stockPlacementLabel = p['stock_placement_label'] as String?;
               final stockQty = p['stock_item_quantity'] as num?;
-              final stockInfo = stockLoc != null ? ' · Stock: $stockLoc (${stockQty ?? 0} avail)' : '';
+              final stockInfo = stockLoc != null
+                  ? ' · Stock: ${stockPlacementLabel ?? stockLoc} (${stockQty ?? 0} avail)'
+                  : '';
               return ListTile(
                 tileColor: AppColors.whiteOverlay(0.06),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

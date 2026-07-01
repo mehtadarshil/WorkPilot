@@ -20,10 +20,23 @@ import {
   ExternalLink,
   ArrowRightLeft,
   Shirt,
+  Copy,
+  MapPin,
 } from 'lucide-react';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
 import { UniformTab } from './UniformTab';
+import {
+  type StockPlacement,
+  type StockPlacementFormRow,
+  emptyPlacementFormRow,
+  formatPlacementLabel,
+  parsePlacementsFromItem,
+  placementFormFromApi,
+  placementFormToApi,
+  placementSearchBlob,
+  validatePlacementsRequireBin,
+} from '@/lib/stockPlacements';
 
 function imageUploadFields(dataUrl: string, originalFilename: string, contentType: string) {
   const m = /^data:([^;]+);base64,(.+)$/i.exec(dataUrl.trim());
@@ -50,7 +63,7 @@ interface StockItem {
   category: string;
   quality: string;
   location: string;
-  locations?: Array<{ location: string; quantity: number }>;
+  locations?: StockPlacement[];
   image_url: string | null;
   created_by: number;
   created_at: string;
@@ -181,7 +194,7 @@ export default function StockToolsPage() {
     category: string;
     quality: string;
     location: string;
-    locations: Array<{ location: string; quantity: string }>;
+    locations: StockPlacementFormRow[];
     image_base64: string;
     original_filename: string;
     content_type: string;
@@ -192,7 +205,7 @@ export default function StockToolsPage() {
     category: 'Electrical',
     quality: 'New',
     location: 'Store',
-    locations: [{ location: 'Store', quantity: '0' }],
+    locations: [emptyPlacementFormRow('Store')],
     image_base64: '',
     original_filename: '',
     content_type: '',
@@ -224,7 +237,12 @@ export default function StockToolsPage() {
   const [toolCategoryDraft, setToolCategoryDraft] = useState('');
   const [uniformCategoryDraft, setUniformCategoryDraft] = useState('');
   const [uniformSizeDraft, setUniformSizeDraft] = useState('');
+  const [storageBinDraft, setStorageBinDraft] = useState('');
+  const [requireBinDraft, setRequireBinDraft] = useState('Store');
+  const [storageBins, setStorageBins] = useState<string[]>([]);
+  const [requireBinLocations, setRequireBinLocations] = useState<string[]>(['Store']);
   const [savingListSettings, setSavingListSettings] = useState(false);
+  const [copiedPlacementKey, setCopiedPlacementKey] = useState<string | null>(null);
 
   const [showConvertToToolModal, setShowConvertToToolModal] = useState(false);
   const [convertStockItem, setConvertStockItem] = useState<StockItem | null>(null);
@@ -247,17 +265,23 @@ export default function StockToolsPage() {
         tool_category_options: string[];
         uniform_category_options?: string[];
         uniform_size_options?: string[];
+        storage_bin_options?: string[];
+        require_bin_for_locations?: string[];
       }>('/settings/stock-tools', token);
       const locs = data.location_options?.filter((v) => v.trim().length > 0) ?? [];
       const stockCats = data.stock_category_options?.filter((v) => v.trim().length > 0) ?? [];
       const toolCats = data.tool_category_options?.filter((v) => v.trim().length > 0) ?? [];
       const uniformCats = data.uniform_category_options?.filter((v) => v.trim().length > 0) ?? [];
       const uniformSz = data.uniform_size_options?.filter((v) => v.trim().length > 0) ?? [];
+      const bins = data.storage_bin_options?.filter((v) => v.trim().length > 0) ?? [];
+      const requireBins = data.require_bin_for_locations?.filter((v) => v.trim().length > 0) ?? ['Store'];
       if (locs.length > 0) setLocations(locs);
       if (stockCats.length > 0) setStockCategories(stockCats);
       if (toolCats.length > 0) setToolCategories(toolCats);
       if (uniformCats.length > 0) setUniformCategories(uniformCats);
       if (uniformSz.length > 0) setUniformSizes(uniformSz);
+      setStorageBins(bins);
+      setRequireBinLocations(requireBins.length > 0 ? requireBins : ['Store']);
     } catch {
       setLocations(DEFAULT_LOCATIONS);
       setStockCategories(DEFAULT_STOCK_CATEGORIES);
@@ -277,6 +301,8 @@ export default function StockToolsPage() {
       const tool_category_options = toolCategoryDraft.split('\n').map((line) => line.trim()).filter(Boolean);
       const uniform_category_options = uniformCategoryDraft.split('\n').map((line) => line.trim()).filter(Boolean);
       const uniform_size_options = uniformSizeDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const storage_bin_options = storageBinDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const require_bin_for_locations = requireBinDraft.split('\n').map((line) => line.trim()).filter(Boolean);
       if (
         location_options.length === 0
         || stock_category_options.length === 0
@@ -293,18 +319,24 @@ export default function StockToolsPage() {
         tool_category_options: string[];
         uniform_category_options: string[];
         uniform_size_options: string[];
+        storage_bin_options: string[];
+        require_bin_for_locations: string[];
       }>('/settings/stock-tools', {
         location_options,
         stock_category_options,
         tool_category_options,
         uniform_category_options,
         uniform_size_options,
+        storage_bin_options,
+        require_bin_for_locations: require_bin_for_locations.length > 0 ? require_bin_for_locations : ['Store'],
       }, token);
       setLocations(res.location_options);
       setStockCategories(res.stock_category_options);
       setToolCategories(res.tool_category_options);
       setUniformCategories(res.uniform_category_options);
       setUniformSizes(res.uniform_size_options);
+      setStorageBins(res.storage_bin_options ?? []);
+      setRequireBinLocations(res.require_bin_for_locations ?? ['Store']);
       setShowListSettings(false);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Could not save list options');
@@ -319,7 +351,19 @@ export default function StockToolsPage() {
     setToolCategoryDraft(toolCategories.join('\n'));
     setUniformCategoryDraft(uniformCategories.join('\n'));
     setUniformSizeDraft(uniformSizes.join('\n'));
+    setStorageBinDraft(storageBins.join('\n'));
+    setRequireBinDraft(requireBinLocations.join('\n'));
     setShowListSettings(true);
+  };
+
+  const copyPlacementLabel = async (key: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(label);
+      setCopiedPlacementKey(key);
+      setTimeout(() => setCopiedPlacementKey((current) => (current === key ? null : current)), 1500);
+    } catch {
+      // ignore clipboard errors
+    }
   };
 
   const fetchOfficers = useCallback(async () => {
@@ -398,7 +442,7 @@ export default function StockToolsPage() {
       category: stockCategories[0] ?? 'General',
       quality: 'New',
       location: locations[0] || 'Store',
-      locations: [{ location: locations[0] || 'Store', quantity: '0' }],
+      locations: [emptyPlacementFormRow(locations[0] || 'Store')],
       image_base64: '',
       original_filename: '',
       content_type: '',
@@ -409,9 +453,7 @@ export default function StockToolsPage() {
 
   const handleOpenEditStock = (item: StockItem) => {
     setEditingStockItem(item);
-    const initialLocs = item.locations && item.locations.length > 0
-      ? item.locations.map(l => ({ location: l.location, quantity: String(l.quantity) }))
-      : [{ location: item.location || 'Store', quantity: String(item.quantity) }];
+    const initialLocs = parsePlacementsFromItem(item).map(placementFormFromApi);
 
     setStockForm({
       name: item.name,
@@ -450,13 +492,16 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
-    const parsedLocations = stockForm.locations.map(l => ({
-      location: l.location,
-      quantity: parseInt(l.quantity, 10) || 0
-    }));
+    const parsedLocations = stockForm.locations.map(placementFormToApi);
 
-    if (parsedLocations.some(l => isNaN(l.quantity) || l.quantity < 0)) {
-      setErrorMsg('All location quantities must be 0 or greater');
+    if (parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
+      setErrorMsg('All placement quantities must be 0 or greater');
+      return;
+    }
+
+    const binError = validatePlacementsRequireBin(parsedLocations, requireBinLocations);
+    if (binError) {
+      setErrorMsg(binError);
       return;
     }
 
@@ -692,14 +737,15 @@ export default function StockToolsPage() {
 
   // --- Filtering Logic ---
   const filteredStock = stockItems.filter((item) => {
-    const locationsList = item.locations && item.locations.length > 0
-      ? item.locations.map(l => l.location)
-      : [item.location];
+    const placements = parsePlacementsFromItem(item);
+    const locationsList = placements.map((l) => l.location);
+    const searchLower = stockSearch.toLowerCase();
 
     const matchesSearch =
-      item.name.toLowerCase().includes(stockSearch.toLowerCase()) ||
-      (item.mpn || '').toLowerCase().includes(stockSearch.toLowerCase()) ||
-      locationsList.some(loc => loc.toLowerCase().includes(stockSearch.toLowerCase()));
+      item.name.toLowerCase().includes(searchLower) ||
+      (item.mpn || '').toLowerCase().includes(searchLower) ||
+      locationsList.some((loc) => loc.toLowerCase().includes(searchLower)) ||
+      placements.some((p) => placementSearchBlob(p).includes(searchLower));
     const matchesCategory = stockCategoryFilter === 'All' || item.category === stockCategoryFilter;
     const matchesLocation = stockLocationFilter === 'All' || locationsList.includes(stockLocationFilter);
     return matchesSearch && matchesCategory && matchesLocation;
@@ -783,7 +829,7 @@ export default function StockToolsPage() {
                 <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search by part name, MPN, location..."
+                  placeholder="Search by name, MPN, box, aisle, shelf..."
                   value={stockSearch}
                   onChange={(e) => setStockSearch(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 pl-10 pr-4 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-1 focus:ring-[#14B8A6]"
@@ -851,6 +897,7 @@ export default function StockToolsPage() {
                   {filteredStock.map((item) => {
                     const isLow = item.quantity > 0 && item.quantity <= 5;
                     const isOut = item.quantity === 0;
+                    const placements = parsePlacementsFromItem(item);
 
                     return (
                       <div
@@ -892,11 +939,9 @@ export default function StockToolsPage() {
                           {/* Stats Info */}
                           <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-xs border border-slate-100">
                             <div>
-                              <p className="text-slate-400 font-semibold mb-0.5">Location</p>
-                              <p className="font-bold text-slate-700 truncate" title={item.locations && item.locations.length > 0 ? item.locations.map(l => `${l.location} (${l.quantity})`).join(', ') : item.location}>
-                                {item.locations && item.locations.length > 0
-                                  ? item.locations.map(l => l.location).join(', ')
-                                  : item.location}
+                              <p className="text-slate-400 font-semibold mb-0.5">Sites</p>
+                              <p className="font-bold text-slate-700 truncate" title={placements.map((l) => l.location).join(', ')}>
+                                {[...new Set(placements.map((l) => l.location))].join(', ')}
                               </p>
                             </div>
                             <div>
@@ -910,6 +955,47 @@ export default function StockToolsPage() {
                               </p>
                             </div>
                           </div>
+
+                          {placements.length > 0 && (
+                            <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <MapPin className="size-3.5 text-[#14B8A6]" />
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                                  Where is it? ({placements.length})
+                                </p>
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                {placements.map((placement, pIdx) => {
+                                  const label = formatPlacementLabel(placement);
+                                  const copyKey = `${item.id}-${pIdx}`;
+                                  return (
+                                    <div
+                                      key={copyKey}
+                                      className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5 border border-slate-100"
+                                    >
+                                      <p className="text-xs font-semibold text-slate-700 truncate" title={label}>
+                                        {label}
+                                      </p>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <span className="text-xs font-bold text-[#14B8A6]">×{placement.quantity}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => void copyPlacementLabel(copyKey, label)}
+                                          className="rounded p-1 text-slate-400 hover:bg-white hover:text-[#14B8A6] transition"
+                                          title="Copy location"
+                                        >
+                                          <Copy className="size-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {copiedPlacementKey?.startsWith(`${item.id}-`) && (
+                                <p className="mt-1.5 text-[10px] font-semibold text-emerald-600">Copied to clipboard</p>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Badges / Alerts & Actions */}
@@ -1365,7 +1451,7 @@ export default function StockToolsPage() {
                             <div>
                               <p className="text-sm font-bold text-slate-800 leading-snug">{item.name}</p>
                               <p className="text-xs text-slate-400">
-                                Locations: {item.locations && item.locations.length > 0 ? item.locations.map(l => `${l.location} (${l.quantity})`).join(', ') : item.location} • Category: {item.category}
+                                {parsePlacementsFromItem(item).map((l) => `${formatPlacementLabel(l)} (${l.quantity})`).join(' · ')} • {item.category}
                               </p>
                             </div>
                             <div className="text-right">
@@ -1472,73 +1558,171 @@ export default function StockToolsPage() {
                 </div>
               </div>
 
-              {/* Locations & Quantities List */}
+              {/* Storage placements */}
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Locations & Quantities</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
                   <button
                     type="button"
                     onClick={() => {
                       setStockForm(prev => ({
                         ...prev,
-                        locations: [...prev.locations, { location: locations[0] || 'Store', quantity: '0' }]
+                        locations: [...prev.locations, emptyPlacementFormRow(locations[0] || 'Store')]
                       }));
                     }}
                     className="text-xs font-bold text-[#14B8A6] hover:underline flex items-center gap-1"
                   >
-                    <Plus className="size-3.5" /> Add location
+                    <Plus className="size-3.5" /> Add placement
                   </button>
                 </div>
-                <div className="flex flex-col gap-2">
+                <p className="text-[11px] text-slate-500 mb-3">
+                  Record site, aisle, shelf, and box/cell so warehouse staff can find parts quickly.
+                  {requireBinLocations.length > 0 && (
+                    <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
+                  )}
+                </p>
+                <div className="flex flex-col gap-3">
                   {stockForm.locations.map((loc, index) => (
-                    <div key={index} className="flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-200/60 animate-fadeIn">
-                      <div className="flex-1">
-                        <select
-                          value={loc.location}
-                          onChange={(e) => {
-                            const newLocs = [...stockForm.locations];
-                            newLocs[index].location = e.target.value;
-                            setStockForm(prev => ({ ...prev, locations: newLocs }));
-                          }}
-                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
-                        >
-                          {locations.map(l => (
-                            <option key={l} value={l}>{l}</option>
-                          ))}
-                        </select>
+                    <div key={index} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 animate-fadeIn">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Site</label>
+                          <select
+                            value={loc.location}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], location: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {locations.map(l => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Zone</label>
+                          <input
+                            value={loc.zone}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], zone: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="WH-A"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Aisle</label>
+                          <input
+                            value={loc.aisle}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], aisle: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="3"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Shelf</label>
+                          <input
+                            value={loc.shelf}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], shelf: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="B"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
                       </div>
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          min="0"
-                          required
-                          value={loc.quantity}
-                          onChange={(e) => {
-                            const newLocs = [...stockForm.locations];
-                            newLocs[index].quantity = e.target.value;
-                            setStockForm(prev => ({ ...prev, locations: newLocs }));
-                          }}
-                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
-                          placeholder="Qty"
-                        />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Box / Cell</label>
+                          <input
+                            value={loc.box}
+                            list={storageBins.length > 0 ? 'storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], box: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Storage code</label>
+                          <input
+                            value={loc.storage_code}
+                            list={storageBins.length > 0 ? 'storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], storage_code: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="A3-B-14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={loc.quantity}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], quantity: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          {stockForm.locations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStockForm(prev => ({
+                                  ...prev,
+                                  locations: prev.locations.filter((_, i) => i !== index)
+                                }));
+                              }}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 transition"
+                              title="Remove placement"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      {stockForm.locations.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStockForm(prev => ({
-                              ...prev,
-                              locations: prev.locations.filter((_, i) => i !== index)
-                            }));
-                          }}
-                          className="text-rose-500 hover:text-rose-700 transition"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      )}
+                      <input
+                        value={loc.notes}
+                        onChange={(e) => {
+                          const newLocs = [...stockForm.locations];
+                          newLocs[index] = { ...newLocs[index], notes: e.target.value };
+                          setStockForm(prev => ({ ...prev, locations: newLocs }));
+                        }}
+                        placeholder="Notes (optional) — e.g. top shelf, left side"
+                        className="mt-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                      />
                     </div>
                   ))}
                 </div>
+                {storageBins.length > 0 && (
+                  <datalist id="storage-bin-suggestions">
+                    {storageBins.map((bin) => (
+                      <option key={bin} value={bin} />
+                    ))}
+                  </datalist>
+                )}
               </div>
 
               {/* Photo Upload */}
@@ -1782,6 +1966,16 @@ export default function StockToolsPage() {
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Uniform types</label>
                 <textarea value={uniformCategoryDraft} onChange={(e) => setUniformCategoryDraft(e.target.value)} rows={4} placeholder="Jacket&#10;Hi-Vis&#10;Fire Safety" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Storage bins (one per line)</label>
+                <p className="mt-0.5 text-[11px] text-slate-500">Reusable bin labels for autocomplete when adding stock (e.g. A3-B-14, Van-Tote-1).</p>
+                <textarea value={storageBinDraft} onChange={(e) => setStorageBinDraft(e.target.value)} rows={4} placeholder="A3-B-14&#10;A3-B-15&#10;Van-Tote-1" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Require box/code for sites</label>
+                <p className="mt-0.5 text-[11px] text-slate-500">Sites where a box or storage code is mandatory when qty &gt; 0.</p>
+                <textarea value={requireBinDraft} onChange={(e) => setRequireBinDraft(e.target.value)} rows={2} placeholder="Store" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Uniform sizes</label>

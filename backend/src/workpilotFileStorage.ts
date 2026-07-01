@@ -4,6 +4,7 @@ import path from 'path';
 import type { Response } from 'express';
 import {
   getSpacesBuffer,
+  isSpacesEnabled,
   putSpacesBuffer,
   spacesKey,
   spacesObjectExists,
@@ -128,14 +129,23 @@ export async function writeWorkpilotFile(
   const storedFilename = cleanStoredFilename(filename);
   const dir = path.join(getWorkpilotFileRootDir(category), ...pathParts.map(cleanPathPart));
   const fullPath = path.join(dir, storedFilename);
-
   const key = workpilotFileKey(category, pathParts, storedFilename);
-  const uploaded = await putSpacesBuffer(key, buffer, contentType);
-  if (!uploaded) {
+
+  let spacesOk = false;
+  if (isSpacesEnabled()) {
+    try {
+      spacesOk = await putSpacesBuffer(key, buffer, contentType);
+    } catch (err) {
+      console.warn('[workpilotFileStorage] Spaces upload failed, falling back to local storage:', key, err);
+    }
+  }
+
+  if (!spacesOk) {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(fullPath, buffer);
   }
-  return { fullPath, spacesKey: key, fileUrl: spacesObjectUrl(key) };
+
+  return { fullPath, spacesKey: key, fileUrl: spacesOk ? spacesObjectUrl(key) : null };
 }
 
 export async function findLocalWorkpilotFile(
@@ -163,14 +173,25 @@ export async function loadWorkpilotFile(
   category: WorkpilotFileCategory,
   pathParts: Array<string | number>,
   filename: string,
+  spacesKeyOverride?: string | null,
 ): Promise<LoadedStoredFile | null> {
-  const key = workpilotFileKey(category, pathParts, filename);
-  const fromSpaces = await getSpacesBuffer(key);
-  if (fromSpaces) return { buffer: fromSpaces, size: fromSpaces.length, spacesKey: key, from: 'spaces' };
+  const storedFilename = cleanStoredFilename(filename);
+  const defaultKey = workpilotFileKey(category, pathParts, storedFilename);
+  const keys = Array.from(
+    new Set([spacesKeyOverride?.trim() || null, defaultKey].filter((k): k is string => Boolean(k))),
+  );
+  for (const key of keys) {
+    const fromSpaces = await getSpacesBuffer(key);
+    if (fromSpaces) return { buffer: fromSpaces, size: fromSpaces.length, spacesKey: key, from: 'spaces' };
+  }
 
-  const local = await findLocalWorkpilotFile(category, pathParts, filename);
-  if (!local) return null;
-  return { fullPath: local.fullPath, size: local.size, spacesKey: key, from: 'local' };
+  const local = await findLocalWorkpilotFile(category, pathParts, storedFilename);
+  if (local) return { fullPath: local.fullPath, size: local.size, spacesKey: defaultKey, from: 'local' };
+
+  const flatLocal = await findLocalWorkpilotFile(category, [], storedFilename);
+  if (flatLocal) return { fullPath: flatLocal.fullPath, size: flatLocal.size, spacesKey: defaultKey, from: 'local' };
+
+  return null;
 }
 
 export async function workpilotFileExists(
