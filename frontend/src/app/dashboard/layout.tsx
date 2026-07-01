@@ -290,6 +290,32 @@ export default function DashboardLayout({
                 PPM Contracts
               </Link>
             )}
+            {hasNavPermission(user, 'scheduling') && (
+              <Link
+                href="/dashboard/diary"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/diary')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <CalendarDays className="size-4" />
+                Diary
+              </Link>
+            )}
+            {hasNavPermission(user, 'scheduling') && (
+              <Link
+                href="/dashboard/scheduling"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/scheduling')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <CalendarClock className="size-4" />
+                Scheduling
+              </Link>
+            )}
             {hasNavPermission(user, 'field_users') && (
               <Link
                 href="/dashboard/staff-work"
