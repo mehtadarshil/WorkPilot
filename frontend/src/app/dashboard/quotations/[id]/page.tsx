@@ -9,6 +9,7 @@ import {
   Printer,
   Check,
   X,
+  Pause,
   FileText,
   Pencil,
   Trash2,
@@ -98,6 +99,8 @@ interface Quotation {
   activities: Activity[];
   internal_notes?: QuotationInternalNote[];
   settings?: QuotationSettings;
+  rejection_reason?: string | null;
+  rejection_notes?: string | null;
 }
 
 const QUOTATION_STATES = [
@@ -106,6 +109,7 @@ const QUOTATION_STATES = [
   { value: 'accepted', label: 'Accepted', color: 'bg-emerald-100 text-emerald-800' },
   { value: 'rejected', label: 'Rejected', color: 'bg-rose-100 text-rose-800' },
   { value: 'expired', label: 'Expired', color: 'bg-slate-200 text-slate-500' },
+  { value: 'on_hold', label: 'On Hold', color: 'bg-amber-100 text-amber-800' },
 ] as const;
 
 function formatDate(iso: string | null): string {
@@ -132,8 +136,13 @@ export default function QuotationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [appOrigin, setAppOrigin] = useState('');
-  const [linkCopied, setLinkCopied] = useState(false);
   const [workJobChoiceOpen, setWorkJobChoiceOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectionReasons, setRejectionReasons] = useState<{ id: number; reason: string; is_active: boolean }[]>([]);
+  const [selectedReason, setSelectedReason] = useState('');
+  const [rejectionNotes, setRejectionNotes] = useState('');
+  const [loadingReasons, setLoadingReasons] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -176,9 +185,56 @@ export default function QuotationDetailPage() {
   const handleReject = async () => {
     if (!token || !quotation) return;
     setActionError(null);
+    setLoadingReasons(true);
+    setRejectModalOpen(true);
+    setRejectionNotes('');
     try {
-      await postJson(`/quotations/${id}/reject`, {}, token);
-      fetchQuotation({ silent: true });
+      const data = await getJson<{ reasons: { id: number; reason: string; is_active: boolean }[] }>(
+        '/settings/quotation-rejection-reasons',
+        token
+      );
+      const activeReasons = (data.reasons || []).filter(r => r.is_active);
+      setRejectionReasons(activeReasons);
+      if (activeReasons.length > 0) {
+        setSelectedReason(activeReasons[0].reason);
+      } else {
+        setSelectedReason('Other');
+      }
+    } catch (err) {
+      setRejectionReasons([
+        { id: -1, reason: 'Too Expensive', is_active: true },
+        { id: -2, reason: 'Competitor Chosen', is_active: true },
+        { id: -3, reason: 'Delayed Response', is_active: true },
+        { id: -4, reason: 'Scope of Work Changed', is_active: true },
+        { id: -5, reason: 'Other', is_active: true }
+      ]);
+      setSelectedReason('Too Expensive');
+    } finally {
+      setLoadingReasons(false);
+    }
+  };
+
+  const handleHold = async () => {
+    if (!token || !quotation) return;
+    setActionError(null);
+    try {
+      await postJson(`/quotations/${id}/hold`, {}, token);
+      await fetchQuotation({ silent: true });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to put on hold');
+    }
+  };
+
+  const submitReject = async () => {
+    if (!token || !quotation) return;
+    setActionError(null);
+    try {
+      await postJson(`/quotations/${id}/reject`, {
+        rejection_reason: selectedReason,
+        rejection_notes: rejectionNotes
+      }, token);
+      setRejectModalOpen(false);
+      await fetchQuotation({ silent: true });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to reject');
     }
@@ -240,7 +296,7 @@ export default function QuotationDetailPage() {
 
   const stateOpt = QUOTATION_STATES.find((st) => st.value === quotation.state) ?? QUOTATION_STATES[0];
 
-  const canAcceptReject = quotation.state === 'sent';
+  const canAcceptRejectHold = quotation.state === 'sent';
   const canTransferToInvoice = quotation.state === 'accepted';
   const canConvertToJob = quotation.state === 'accepted' && !quotation.job_id;
   const canOpenLinkedJob = quotation.job_id != null && !quotation.job_is_quotation_visit;
@@ -428,7 +484,7 @@ export default function QuotationDetailPage() {
 
               <div className="h-6 w-px bg-slate-200 mx-1" />
 
-              {canAcceptReject && (
+              {canAcceptRejectHold && (
                 <>
                   <button onClick={handleAccept} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors">
                     <Check className="size-4" />
@@ -437,6 +493,10 @@ export default function QuotationDetailPage() {
                   <button onClick={handleReject} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 transition-colors">
                     <X className="size-4" />
                     Reject
+                  </button>
+                  <button onClick={handleHold} className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors">
+                    <Pause className="size-4" />
+                    On Hold
                   </button>
                 </>
               )}
@@ -662,6 +722,8 @@ export default function QuotationDetailPage() {
                   formatCurrency={formatCurrency}
                   onViewAllNotes={() => setActiveTab('notes')}
                   setQuotation={setQuotation}
+                  rejectionReason={quotation.rejection_reason}
+                  rejectionNotes={quotation.rejection_notes}
                 />
               </div>
             ) : (
@@ -712,6 +774,65 @@ export default function QuotationDetailPage() {
             visitJobId={quotation.job_id}
             workAddressId={quotation.quotation_work_address_id}
           />
+        )}
+
+        {/* Reject Dialog */}
+        {rejectModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-bold text-slate-900">Why was this quote lost?</h3>
+              <p className="mt-1 text-sm text-slate-500">Please select a reason for rejecting quotation <strong>{quotation.quotation_number}</strong>.</p>
+              
+              {loadingReasons ? (
+                <div className="py-6 flex justify-center">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#14B8A6] border-t-transparent" />
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Reason</label>
+                    <select
+                      value={selectedReason}
+                      onChange={(e) => setSelectedReason(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    >
+                      {rejectionReasons.map((r) => (
+                        <option key={r.id} value={r.reason}>{r.reason}</option>
+                      ))}
+                      {!rejectionReasons.some(r => r.reason.toLowerCase() === 'other') && (
+                        <option value="Other">Other</option>
+                      )}
+                    </select>
+                  </div>
+
+                  {(selectedReason.toLowerCase() === 'other') && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Rejection Notes</label>
+                      <textarea
+                        rows={3}
+                        value={rejectionNotes}
+                        onChange={(e) => setRejectionNotes(e.target.value)}
+                        placeholder="Write details about why this job was lost..."
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                        required
+                      />
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button onClick={() => setRejectModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+                <button
+                  disabled={loadingReasons || (selectedReason.toLowerCase() === 'other' && !rejectionNotes.trim())}
+                  onClick={submitReject}
+                  className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  Confirm Reject
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
 
       </div>

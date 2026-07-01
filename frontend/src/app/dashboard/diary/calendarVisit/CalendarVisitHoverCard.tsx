@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { Home } from 'lucide-react';
 import type { CalendarVisit, HoverAnchor } from './calendarVisitTypes';
 import {
-  paletteForJob,
+  paletteForVisit,
   resolveVisitStatus,
   statusIconColor,
   statusLabel,
@@ -20,7 +20,7 @@ type Props = {
 };
 
 export function CalendarVisitHoverCard({ visit, anchor, tools = [], loadingTools }: Props) {
-  const palette = paletteForJob(visit.jobId);
+  const palette = paletteForVisit(visit);
   const status = resolveVisitStatus(visit.eventStatus);
   const start = new Date(visit.startTime);
   const end = new Date(start.getTime() + visit.durationMinutes * 60000);

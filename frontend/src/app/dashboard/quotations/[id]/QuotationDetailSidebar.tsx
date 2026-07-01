@@ -34,6 +34,8 @@ type QuotationDetailSidebarProps = {
   formatCurrency: (amount: number, currency: string) => string;
   onViewAllNotes: () => void;
   setQuotation: Dispatch<SetStateAction<any>>;
+  rejectionReason?: string | null;
+  rejectionNotes?: string | null;
 };
 
 export default function QuotationDetailSidebar({
@@ -50,6 +52,8 @@ export default function QuotationDetailSidebar({
   formatCurrency,
   onViewAllNotes,
   setQuotation,
+  rejectionReason,
+  rejectionNotes,
 }: QuotationDetailSidebarProps) {
   return (
     <div className="no-print space-y-6">
@@ -65,6 +69,21 @@ export default function QuotationDetailSidebar({
               {stateOpt.label}
             </span>
           </div>
+
+          {stateOpt.value === 'rejected' && rejectionReason && (
+            <div className="text-xs bg-rose-50 border border-rose-100 rounded-lg p-3 space-y-2">
+              <div>
+                <span className="font-semibold text-rose-800">Lost reason:</span>{' '}
+                <span className="text-rose-900">{rejectionReason}</span>
+              </div>
+              {rejectionNotes && (
+                <div>
+                  <span className="font-semibold text-rose-800">Notes:</span>{' '}
+                  <p className="mt-1 whitespace-pre-wrap text-rose-900 leading-relaxed">{rejectionNotes}</p>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex justify-between text-sm py-2 border-b border-slate-50">
             <span className="text-slate-500 font-medium">Subtotal</span>
             <span className="font-bold text-slate-900">{formatCurrency(subtotal, currency)}</span>

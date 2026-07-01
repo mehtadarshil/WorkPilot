@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { deleteRequest, getJson, postJson } from '../../../../apiClient';
+import { deleteRequest, getJson, postJson, putJson } from '../../../../apiClient';
 import { ArrowLeft, Plus } from 'lucide-react';
 
 interface PriceBookItem {
@@ -32,6 +32,11 @@ export default function PriceBookConfigPage() {
   const [itemName, setItemName] = useState('');
   const [unitPrice, setUnitPrice] = useState<number>(0);
   const [price, setPrice] = useState<number>(0);
+
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editItemName, setEditItemName] = useState('');
+  const [editUnitPrice, setEditUnitPrice] = useState<number>(0);
+  const [editPrice, setEditPrice] = useState<number>(0);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -67,6 +72,28 @@ export default function PriceBookConfigPage() {
       fetchDetails();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to add item');
+    }
+  };
+
+  const handleStartEdit = (item: PriceBookItem) => {
+    setEditingItemId(item.id);
+    setEditItemName(item.item_name);
+    setEditUnitPrice(item.unit_price);
+    setEditPrice(item.price);
+  };
+
+  const handleSaveEdit = async (itemId: number) => {
+    if (!token || !editItemName.trim()) return;
+    try {
+      await putJson(`/settings/price-books/${pbId}/items/${itemId}`, {
+        item_name: editItemName.trim(),
+        unit_price: editUnitPrice,
+        price: editPrice,
+      }, token);
+      setEditingItemId(null);
+      fetchDetails();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update item');
     }
   };
 
@@ -133,17 +160,42 @@ export default function PriceBookConfigPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {data.items.map((item, idx) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-6 py-4 text-center font-medium text-slate-400">{idx + 1}</td>
-                      <td className="px-6 py-4 font-medium text-slate-900">{item.item_name}</td>
-                      <td className="px-6 py-4 text-slate-600">{Number(item.unit_price).toFixed(2)}</td>
-                      <td className="px-6 py-4 text-slate-600">{Number(item.price).toFixed(2)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleDeleteItem(item.id)} className="text-sm font-semibold text-rose-500 hover:underline opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
-                      </td>
-                    </tr>
-                  ))}
+                   {data.items.map((item, idx) => {
+                     if (editingItemId === item.id) {
+                       return (
+                         <tr key={item.id} className="bg-emerald-50/10">
+                           <td className="px-6 py-3 text-center text-slate-400 font-medium">{idx + 1}</td>
+                           <td className="px-6 py-3">
+                             <input type="text" autoFocus value={editItemName} onChange={(e) => setEditItemName(e.target.value)} className={inputClass} />
+                           </td>
+                           <td className="px-6 py-3">
+                             <input type="number" step="0.01" value={editUnitPrice} onChange={(e) => setEditUnitPrice(Number(e.target.value))} className={inputClass} />
+                           </td>
+                           <td className="px-6 py-3">
+                             <input type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(Number(e.target.value))} className={inputClass} />
+                           </td>
+                           <td className="px-6 py-3 flex items-center justify-end gap-3 mt-1.5">
+                             <button onClick={() => setEditingItemId(null)} className="text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                             <button onClick={() => handleSaveEdit(item.id)} className="text-sm font-semibold text-[#14B8A6] hover:underline">Save</button>
+                           </td>
+                         </tr>
+                       );
+                     }
+                     return (
+                       <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
+                         <td className="px-6 py-4 text-center font-medium text-slate-400">{idx + 1}</td>
+                         <td className="px-6 py-4 font-medium text-slate-900">{item.item_name}</td>
+                         <td className="px-6 py-4 text-slate-600">{Number(item.unit_price).toFixed(2)}</td>
+                         <td className="px-6 py-4 text-slate-600">{Number(item.price).toFixed(2)}</td>
+                         <td className="px-6 py-4 text-right">
+                           <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button onClick={() => handleStartEdit(item)} className="text-xs font-semibold text-[#14B8A6] hover:underline">Edit</button>
+                             <button onClick={() => handleDeleteItem(item.id)} className="text-xs font-semibold text-rose-500 hover:underline">Delete</button>
+                           </div>
+                         </td>
+                       </tr>
+                     );
+                   })}
                   {addingItem && (
                     <tr className="bg-emerald-50/20">
                       <td className="px-6 py-3 text-center text-slate-400 font-medium">{data.items.length + 1}</td>

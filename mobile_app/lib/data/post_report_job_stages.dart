@@ -63,3 +63,33 @@ const List<PostReportJobStage> kPostReportJobStages = [
     description: 'Job is waiting for the delivery of ordered parts.',
   ),
 ];
+
+String? labelForPostReportJobState(String? state) {
+  if (state == null || state.trim().isEmpty) return null;
+  final normalized = state.trim();
+  for (final opt in kPostReportJobStages) {
+    if (opt.state == normalized) return opt.label;
+  }
+  return normalized
+      .split('_')
+      .map(
+        (s) => s.isEmpty
+            ? s
+            : '${s[0].toUpperCase()}${s.length > 1 ? s.substring(1).toLowerCase() : ''}',
+      )
+      .join(' ');
+}
+
+String describeCurrentJobState(String? state) {
+  if (state == null || state.trim().isEmpty) return 'Not set';
+  return describePostReportJobState(state);
+}
+
+String describePostReportJobState(String? state) {
+  if (state == null || state.trim().isEmpty) return 'Not chosen yet';
+  final normalized = state.trim();
+  for (final opt in kPostReportJobStages) {
+    if (opt.state == normalized) return opt.label;
+  }
+  return labelForPostReportJobState(normalized) ?? normalized;
+}

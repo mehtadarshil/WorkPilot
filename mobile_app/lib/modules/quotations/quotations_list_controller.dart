@@ -15,6 +15,7 @@ class QuotationsListController extends GetxController {
     'accepted',
     'rejected',
     'expired',
+    'on_hold',
   ];
 
   final RxList<Map<String, dynamic>> items = <Map<String, dynamic>>[].obs;

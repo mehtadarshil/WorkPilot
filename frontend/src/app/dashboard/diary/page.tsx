@@ -30,10 +30,12 @@ import {
   CalendarVisitHoverCard,
   diaryEventToVisit,
 } from './calendarVisit';
+import { GeneralDiaryEventModal, type GeneralDiaryEventForm } from './GeneralDiaryEventModal';
 
 interface DiaryEvent {
   diary_id: number;
-  job_id: number;
+  job_id: number | null;
+  is_general?: boolean;
   officer_id: number | null;
   officer_full_name: string | null;
   officers?: { id: number; full_name: string; is_primary?: boolean }[];
@@ -166,6 +168,15 @@ export default function DiaryPage() {
   const [highlightedJob, setHighlightedJob] = useState<JobDetails | null>(null);
 
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [generalModalOpen, setGeneralModalOpen] = useState(false);
+  const [generalForm, setGeneralForm] = useState<GeneralDiaryEventForm>({
+    title: '',
+    start_time: '',
+    duration_minutes: 60,
+    officer_ids: [],
+    notes: '',
+    location: '',
+  });
   const [scheduleForm, setScheduleForm] = useState({
     start_time: '',
     duration_minutes: 60,
@@ -305,24 +316,32 @@ export default function DiaryPage() {
 
   // Handle clicking on the grid
   const handleSlotClick = (officer: Officer, hour: number, blockPart: number, dayOverride?: Date) => {
-    if (!highlightedJob) {
-      alert("Please select a job to schedule an event for first. (You can do this from the Jobs directory)");
-      return;
-    }
-
     const targetDate = new Date(dayOverride ?? date);
-    targetDate.setHours(hour, blockPart * 30, 0, 0); // either 0 or 30 mins
-    
+    targetDate.setHours(hour, blockPart * 30, 0, 0);
+
     const tzOffsetMs = targetDate.getTimezoneOffset() * 60000;
     const localISOTime = new Date(targetDate.getTime() - tzOffsetMs).toISOString().slice(0, 16);
 
-    setScheduleForm({
+    if (highlightedJob) {
+      setScheduleForm({
+        start_time: localISOTime,
+        duration_minutes: 60,
+        officer_ids: [officer.id],
+        notes: ''
+      });
+      setScheduleModalOpen(true);
+      return;
+    }
+
+    setGeneralForm({
+      title: '',
       start_time: localISOTime,
       duration_minutes: 60,
       officer_ids: [officer.id],
-      notes: ''
+      notes: '',
+      location: '',
     });
-    setScheduleModalOpen(true);
+    setGeneralModalOpen(true);
   };
 
   const handleSaveEvent = async (e: React.FormEvent) => {
@@ -386,7 +405,27 @@ export default function DiaryPage() {
               `${format(startOfWeek(date, WEEK_OPTIONS), 'MMM d')} – ${format(endOfWeek(date, WEEK_OPTIONS), 'MMM d, yyyy')}`}
             {viewMode === 'monthly' && format(date, 'MMMM yyyy')}
           </h1>
-          <div className="flex bg-slate-100 rounded border border-slate-200 text-slate-600">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                const tzOffsetMs = date.getTimezoneOffset() * 60000;
+                const localISOTime = new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+                setGeneralForm({
+                  title: '',
+                  start_time: localISOTime,
+                  duration_minutes: 60,
+                  officer_ids: officers[0] ? [officers[0].id] : [],
+                  notes: '',
+                  location: '',
+                });
+                setGeneralModalOpen(true);
+              }}
+              className="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-800 hover:bg-violet-100"
+            >
+              Add general event
+            </button>
+            <div className="flex bg-slate-100 rounded border border-slate-200 text-slate-600">
             <button 
               onClick={() => setViewMode('daily')}
               className={`px-4 py-1.5 border-r border-slate-200 ${viewMode === 'daily' ? 'bg-white font-bold shadow-sm' : 'hover:bg-slate-200'}`}
@@ -399,6 +438,7 @@ export default function DiaryPage() {
               onClick={() => setViewMode('monthly')}
               className={`px-4 py-1.5 ${viewMode === 'monthly' ? 'bg-white font-bold shadow-sm' : 'hover:bg-slate-200'}`}
             >Monthly</button>
+          </div>
           </div>
         </div>
 
@@ -431,7 +471,7 @@ export default function DiaryPage() {
                         setDate(d);
                         setActiveMonthDate(d);
                         const firstOfficer = officers[0];
-                        if (highlightedJob && firstOfficer) {
+                        if (firstOfficer) {
                           handleSlotClick(firstOfficer, 9, 0, d);
                         }
                       }}
@@ -869,6 +909,15 @@ export default function DiaryPage() {
           </div>
         </div>
       )}
+
+      <GeneralDiaryEventModal
+        open={generalModalOpen}
+        officers={officers}
+        initialForm={generalForm}
+        token={token}
+        onClose={() => setGeneralModalOpen(false)}
+        onSaved={fetchData}
+      />
 
       {/* Floating Detailed Hover Tooltip */}
       {hoveredEvent && hoveredPos && (

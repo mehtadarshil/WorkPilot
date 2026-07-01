@@ -11,6 +11,7 @@ import 'package:signature/signature.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/job_report_models.dart';
 import '../../data/post_report_job_stages.dart';
+import '../diary_event/job_completion_context_panel.dart';
 import '../site_reports/site_report_page_nav.dart';
 import 'job_report_controller.dart';
 
@@ -786,11 +787,18 @@ class _ChangeJobStageBody extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
             children: [
               Text(
-                'Choose what happens next for this job. Your visit is completed when you confirm.',
+                'Choose what happens next for this job. Your choice is saved when you confirm — the job stage updates only after you complete your visit.',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: AppColors.slate300,
                   height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Obx(
+                () => JobCompletionContextPanel(
+                  context: controller.jobCompletionContext,
+                  selectedNextJobState: controller.selectedNextJobState.value,
                 ),
               ),
               const SizedBox(height: 16),

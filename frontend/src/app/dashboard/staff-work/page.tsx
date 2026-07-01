@@ -595,7 +595,7 @@ export default function StaffWorkPage() {
         const officerLabel = diaryEventOfficerLabel(e);
         return {
           id: `diary-${e.diary_id}`,
-          title: `🔧 ${e.job_number || 'Job'} (${officerLabel})`,
+          title: `🔧 ${e.is_general ? (e.title || 'General event') : (e.job_number || 'Job')} (${officerLabel})`,
           start,
           end,
           backgroundColor: palette.backgroundColor,
@@ -1896,13 +1896,14 @@ export default function StaffWorkPage() {
                         <th className="px-5 py-3">Dates</th>
                         <th className="px-5 py-3">Duration</th>
                         <th className="px-5 py-3">Type</th>
+                        <th className="px-5 py-3">Reason</th>
                         <th className="px-5 py-3">Status</th>
                         <th className="px-5 py-3">Reviewed By</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {processedHolidays.length === 0 ? (
-                        <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No processed requests yet.</td></tr>
+                        <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>No processed requests yet.</td></tr>
                       ) : (
                         processedHolidays.map((r) => (
                           <tr key={r.id} className="hover:bg-slate-50">
@@ -1912,6 +1913,7 @@ export default function StaffWorkPage() {
                             </td>
                             <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count)}</td>
                             <td className="px-5 py-4 capitalize text-slate-700">{r.leave_type}</td>
+                            <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate">{r.reason || '–'}</td>
                             <td className="px-5 py-4">
                               <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor(r.status)}`}>
                                 {r.status}
@@ -2390,22 +2392,28 @@ export default function StaffWorkPage() {
                 </h3>
 
                 <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600">
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Dates</span>
-                    <p className="mt-0.5 text-slate-800">
-                      {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Duration</span>
-                    <p className="mt-0.5 text-slate-800">
-                      {formatHolidayDuration(
-                        selectedEvent.raw.start_date,
-                        selectedEvent.raw.end_date,
-                        selectedEvent.raw.days_count,
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Dates</span>
+                      <p className="mt-0.5 text-slate-800">
+                        {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date)}
+                      </p>
+                      {!holidayRequestLooksAllDay(selectedEvent.raw.start_date, selectedEvent.raw.end_date) && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {format(new Date(selectedEvent.raw.start_date), 'HH:mm')} – {format(new Date(selectedEvent.raw.end_date), 'HH:mm')}
+                        </p>
                       )}
-                    </p>
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Duration</span>
+                      <p className="mt-0.5 text-slate-800">
+                        {formatHolidayDuration(
+                          selectedEvent.raw.start_date,
+                          selectedEvent.raw.end_date,
+                          selectedEvent.raw.days_count,
+                        )}
+                      </p>
+                    </div>
                   </div>
 
                   <div>
@@ -2429,15 +2437,13 @@ export default function StaffWorkPage() {
                 </div>
 
                 <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
-                  {selectedEvent.raw.status === 'pending' && (
-                    <button
-                      type="button"
-                      onClick={() => openEditRequest(selectedEvent.raw as HolidayRequest)}
-                      className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"
-                    >
-                      <Edit2 className="size-4" /> Edit
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => openEditRequest(selectedEvent.raw as HolidayRequest)}
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"
+                  >
+                    <Edit2 className="size-4" /> Edit
+                  </button>
                   <button
                     onClick={() => setShowDetailModal(false)}
                     className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"

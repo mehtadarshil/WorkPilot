@@ -2,7 +2,8 @@
 class DiaryEventRow {
   DiaryEventRow({
     required this.diaryId,
-    required this.jobId,
+    this.jobId,
+    this.isGeneral = false,
     this.officerId,
     required this.startTimeIso,
     this.durationMinutes,
@@ -26,7 +27,8 @@ class DiaryEventRow {
     final start = json['start_time'];
     return DiaryEventRow(
       diaryId: (json['diary_id'] as num?)?.toInt() ?? (json['id'] as num?)?.toInt() ?? 0,
-      jobId: (json['job_id'] as num?)?.toInt() ?? 0,
+      jobId: (json['job_id'] as num?)?.toInt(),
+      isGeneral: json['is_general'] == true || json['job_id'] == null,
       officerId: (json['officer_id'] as num?)?.toInt(),
       startTimeIso: start is String
           ? start
@@ -54,7 +56,8 @@ class DiaryEventRow {
   }
 
   final int diaryId;
-  final int jobId;
+  final int? jobId;
+  final bool isGeneral;
   final int? officerId;
   final String startTimeIso;
   final int? durationMinutes;
@@ -73,6 +76,17 @@ class DiaryEventRow {
   final String? description;
   final String? chargeType;
 
+  String get listTitle {
+    if (isGeneral) {
+      final t = title?.trim();
+      if (t != null && t.isNotEmpty) return t;
+      return 'General event';
+    }
+    final t = title?.trim();
+    if (t != null && t.isNotEmpty) return t;
+    return 'Job';
+  }
+
   String get displayContactName {
     final s = siteContactName?.trim();
     if (s != null && s.isNotEmpty) return s;
@@ -90,7 +104,8 @@ class DiaryEventRow {
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'diary_id': diaryId,
-        'job_id': jobId,
+        if (jobId != null) 'job_id': jobId,
+        'is_general': isGeneral,
         if (officerId != null) 'officer_id': officerId,
         'start_time': startTimeIso,
         if (durationMinutes != null) 'duration_minutes': durationMinutes,
@@ -117,6 +132,7 @@ class DiaryEventRow {
     return DiaryEventRow(
       diaryId: diaryId,
       jobId: jobId,
+      isGeneral: isGeneral,
       officerId: officerId,
       startTimeIso: startTimeIso,
       durationMinutes: durationMinutes,

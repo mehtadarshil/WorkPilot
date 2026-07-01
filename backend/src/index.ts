@@ -77,6 +77,7 @@ import {
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
 import { syncJobDatesFromDiaryEvents } from './jobDiaryDateSync';
+import { buildJobCompletionContext } from './jobCompletionContext';
 import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
@@ -1756,6 +1757,14 @@ async function initDb() {
   await pool.query(
     `ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS engineer_job_sheet_sent_at TIMESTAMPTZ`,
   );
+  await pool.query(`ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS title VARCHAR(255)`);
+  await pool.query(`ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS location TEXT`);
+  await pool.query(
+    `ALTER TABLE diary_events ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL`,
+  );
+  await pool.query(`ALTER TABLE diary_events ALTER COLUMN job_id DROP NOT NULL`).catch((err) => {
+    console.error('Migration error (diary_events job_id nullable):', err);
+  });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_report_questions (
@@ -2215,6 +2224,22 @@ async function initDb() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_rejection_reasons (
+      id SERIAL PRIMARY KEY,
+      reason VARCHAR(255) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(created_by, reason)
+    );
+  `);
+
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS rejection_reason TEXT;`);
+  await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS rejection_notes TEXT;`);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS email_settings (
       id SERIAL PRIMARY KEY,
       created_by INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2250,34 +2275,6 @@ async function initDb() {
       body_html TEXT NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       UNIQUE(created_by, template_key)
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS certifications (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      description TEXT,
-      validity_months INT NOT NULL DEFAULT 12,
-      reminder_days_before INT NOT NULL DEFAULT 30,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS officer_certifications (
-      id SERIAL PRIMARY KEY,
-      officer_id INTEGER NOT NULL REFERENCES officers(id) ON DELETE CASCADE,
-      certification_id INTEGER NOT NULL REFERENCES certifications(id) ON DELETE CASCADE,
-      issued_date DATE NOT NULL,
-      expiry_date DATE NOT NULL,
-      certificate_number VARCHAR(100),
-      issued_by VARCHAR(255),
-      notes TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
   `);
 
@@ -3848,8 +3845,11 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
           `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
               ${sqlDiaryEventStatusForOfficer('$1')} AS event_status,
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description,
+              (d.job_id IS NULL) AS is_general,
+              COALESCE(NULLIF(TRIM(d.title), ''), j.title) AS title,
+              j.description,
               COALESCE(
+                NULLIF(TRIM(d.location), ''),
                 NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
                 j.location
               ) AS location,
@@ -3865,7 +3865,7 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
                 c.full_name
               ) AS site_contact_name
        FROM diary_events d
-       JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
@@ -5752,331 +5752,7 @@ app.delete('/api/officers/:id', authenticate, requireAdmin, requirePermission('f
   }
 });
 
-// ---------- Certifications (Admin only) ----------
-app.get('/api/certifications', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, description, validity_months, reminder_days_before, created_at, updated_at
-       FROM certifications
-       ORDER BY name ASC`,
-    );
-    const certifications = result.rows.map((r: { id: number; name: string; description: string | null; validity_months: number; reminder_days_before: number; created_at: Date; updated_at: Date }) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description ?? null,
-      validity_months: r.validity_months,
-      reminder_days_before: r.reminder_days_before,
-      created_at: (r.created_at as Date).toISOString(),
-      updated_at: (r.updated_at as Date).toISOString(),
-    }));
-    return res.json({ certifications });
-  } catch (error) {
-    console.error('List certifications error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
-app.post('/api/certifications', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const body = req.body as { name?: string; description?: string; validity_months?: number; reminder_days_before?: number };
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return res.status(400).json({ message: 'Certification name is required' });
-  const validityMonths = typeof body.validity_months === 'number' && body.validity_months > 0 ? body.validity_months : 12;
-  const reminderDays = typeof body.reminder_days_before === 'number' && body.reminder_days_before >= 0 ? body.reminder_days_before : 30;
-  const description = typeof body.description === 'string' ? body.description.trim() || null : null;
-  const createdBy = getTenantScopeUserId(req.user!);
-  try {
-    const r = await pool.query(
-      `INSERT INTO certifications (name, description, validity_months, reminder_days_before, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, description, validity_months, reminder_days_before, created_at, updated_at`,
-      [name, description, validityMonths, reminderDays, createdBy],
-    );
-    const row = r.rows[0] as { id: number; name: string; description: string | null; validity_months: number; reminder_days_before: number; created_at: Date; updated_at: Date };
-    return res.status(201).json({
-      certification: {
-        id: row.id,
-        name: row.name,
-        description: row.description ?? null,
-        validity_months: row.validity_months,
-        reminder_days_before: row.reminder_days_before,
-        created_at: (row.created_at as Date).toISOString(),
-        updated_at: (row.updated_at as Date).toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('Create certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.patch('/api/certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(String(idParam), 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid certification id' });
-  const body = req.body as { name?: string; description?: string; validity_months?: number; reminder_days_before?: number };
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-  if (typeof body.name === 'string' && body.name.trim()) {
-    updates.push(`name = $${idx++}`);
-    values.push(body.name.trim());
-  }
-  if (typeof body.description === 'string') {
-    updates.push(`description = $${idx++}`);
-    values.push(body.description.trim() || null);
-  }
-  if (typeof body.validity_months === 'number' && body.validity_months > 0) {
-    updates.push(`validity_months = $${idx++}`);
-    values.push(body.validity_months);
-  }
-  if (typeof body.reminder_days_before === 'number' && body.reminder_days_before >= 0) {
-    updates.push(`reminder_days_before = $${idx++}`);
-    values.push(body.reminder_days_before);
-  }
-  if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
-  updates.push('updated_at = NOW()');
-  values.push(id);
-  try {
-    const r = await pool.query(
-      `UPDATE certifications SET ${updates.join(', ')} WHERE id = $${idx} RETURNING id, name, description, validity_months, reminder_days_before, created_at, updated_at`,
-      values,
-    );
-    if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Certification not found' });
-    const row = r.rows[0] as { id: number; name: string; description: string | null; validity_months: number; reminder_days_before: number; created_at: Date; updated_at: Date };
-    return res.json({
-      certification: {
-        id: row.id,
-        name: row.name,
-        description: row.description ?? null,
-        validity_months: row.validity_months,
-        reminder_days_before: row.reminder_days_before,
-        created_at: (row.created_at as Date).toISOString(),
-        updated_at: (row.updated_at as Date).toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('Update certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.delete('/api/certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(String(idParam), 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid certification id' });
-  try {
-    const result = await pool.query('DELETE FROM certifications WHERE id = $1', [id]);
-    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Certification not found' });
-    return res.status(204).send();
-  } catch (error) {
-    console.error('Delete certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.get('/api/officers/:id/certifications', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
-  const officerId = parseInt(String(req.params.id), 10);
-  if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
-  const userId = getTenantScopeUserId(req.user!);
-  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  try {
-    const officerCheck = await pool.query(
-      `SELECT id FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
-      isSuperAdmin ? [officerId] : [officerId, userId],
-    );
-    if ((officerCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
-    const result = await pool.query(
-      `SELECT oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.issued_by, oc.notes, oc.created_at,
-        c.name AS certification_name, c.validity_months, c.reminder_days_before
-       FROM officer_certifications oc
-       JOIN certifications c ON c.id = oc.certification_id
-       WHERE oc.officer_id = $1
-       ORDER BY oc.expiry_date ASC`,
-      [officerId],
-    );
-    const today = new Date().toISOString().slice(0, 10);
-    const assignments = result.rows.map((row: { id: number; officer_id: number; certification_id: number; issued_date: Date; expiry_date: Date; certificate_number: string | null; issued_by: string | null; notes: string | null; created_at: Date; certification_name: string; validity_months: number; reminder_days_before: number }) => {
-      const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
-      const issued = (row.issued_date as Date).toISOString().slice(0, 10);
-      let status: 'valid' | 'expiring_soon' | 'expired' = 'valid';
-      if (expiry < today) status = 'expired';
-      else {
-        const expDate = new Date(expiry);
-        const reminderDate = new Date(expDate);
-        reminderDate.setDate(reminderDate.getDate() - row.reminder_days_before);
-        if (reminderDate.toISOString().slice(0, 10) <= today) status = 'expiring_soon';
-      }
-      return {
-        id: row.id,
-        officer_id: row.officer_id,
-        certification_id: row.certification_id,
-        certification_name: row.certification_name,
-        issued_date: issued,
-        expiry_date: expiry,
-        certificate_number: row.certificate_number ?? null,
-        issued_by: row.issued_by ?? null,
-        notes: row.notes ?? null,
-        status,
-        created_at: (row.created_at as Date).toISOString(),
-      };
-    });
-    return res.json({ assignments });
-  } catch (error) {
-    console.error('List officer certifications error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.post('/api/officers/:id/certifications', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
-  const officerId = parseInt(String(req.params.id), 10);
-  if (!Number.isFinite(officerId)) return res.status(400).json({ message: 'Invalid officer id' });
-  const body = req.body as { certification_id: number; issued_date?: string; expiry_date?: string; certificate_number?: string; issued_by?: string; notes?: string };
-  const certId = typeof body.certification_id === 'number' && Number.isFinite(body.certification_id) ? body.certification_id : null;
-  if (!certId) return res.status(400).json({ message: 'certification_id is required' });
-  const userId = getTenantScopeUserId(req.user!);
-  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  try {
-    const officerCheck = await pool.query(
-      `SELECT id FROM officers WHERE id = $1${isSuperAdmin ? '' : ' AND created_by = $2'}`,
-      isSuperAdmin ? [officerId] : [officerId, userId],
-    );
-    if ((officerCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Officer not found' });
-    const certCheck = await pool.query('SELECT id, validity_months FROM certifications WHERE id = $1', [certId]);
-    if ((certCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Certification not found' });
-    const validityMonths = (certCheck.rows[0] as { validity_months: number }).validity_months;
-    const issuedDate = typeof body.issued_date === 'string' && body.issued_date ? body.issued_date.slice(0, 10) : new Date().toISOString().slice(0, 10);
-    let expiryDate = typeof body.expiry_date === 'string' ? body.expiry_date.slice(0, 10) : null;
-    if (!expiryDate) {
-      const d = new Date(issuedDate);
-      d.setMonth(d.getMonth() + validityMonths);
-      expiryDate = d.toISOString().slice(0, 10);
-    }
-    const certNumber = typeof body.certificate_number === 'string' ? body.certificate_number.trim() || null : null;
-    const issuedBy = typeof body.issued_by === 'string' ? body.issued_by.trim() || null : null;
-    const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
-    const r = await pool.query(
-      `INSERT INTO officer_certifications (officer_id, certification_id, issued_date, expiry_date, certificate_number, issued_by, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, officer_id, certification_id, issued_date, expiry_date, certificate_number, issued_by, notes, created_at`,
-      [officerId, certId, issuedDate, expiryDate, certNumber, issuedBy, notes, userId],
-    );
-    const row = r.rows[0] as { id: number; officer_id: number; certification_id: number; issued_date: Date; expiry_date: Date; certificate_number: string | null; issued_by: string | null; notes: string | null; created_at: Date };
-    const certName = (certCheck.rows[0] as { name: string }).name;
-    const today = new Date().toISOString().slice(0, 10);
-    const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
-    let status: 'valid' | 'expiring_soon' | 'expired' = 'valid';
-    if (expiry < today) status = 'expired';
-    else {
-      const expDate = new Date(expiry);
-      const reminderDate = new Date(expDate);
-      reminderDate.setDate(reminderDate.getDate() - 30);
-      if (reminderDate.toISOString().slice(0, 10) <= today) status = 'expiring_soon';
-    }
-    return res.status(201).json({
-      assignment: {
-        id: row.id,
-        officer_id: row.officer_id,
-        certification_id: row.certification_id,
-        certification_name: certName,
-        issued_date: (row.issued_date as Date).toISOString().slice(0, 10),
-        expiry_date: expiry,
-        certificate_number: row.certificate_number ?? null,
-        issued_by: row.issued_by ?? null,
-        notes: row.notes ?? null,
-        status,
-        created_at: (row.created_at as Date).toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('Assign certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.patch('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(String(idParam), 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid assignment id' });
-  const body = req.body as { issued_date?: string; expiry_date?: string; certificate_number?: string; issued_by?: string; notes?: string };
-  const updates: string[] = [];
-  const values: unknown[] = [];
-  let idx = 1;
-  if (typeof body.issued_date === 'string' && body.issued_date) {
-    updates.push(`issued_date = $${idx++}`);
-    values.push(body.issued_date.slice(0, 10));
-  }
-  if (typeof body.expiry_date === 'string' && body.expiry_date) {
-    updates.push(`expiry_date = $${idx++}`);
-    values.push(body.expiry_date.slice(0, 10));
-  }
-  if (typeof body.certificate_number === 'string') {
-    updates.push(`certificate_number = $${idx++}`);
-    values.push(body.certificate_number.trim() || null);
-  }
-  if (typeof body.issued_by === 'string') {
-    updates.push(`issued_by = $${idx++}`);
-    values.push(body.issued_by.trim() || null);
-  }
-  if (typeof body.notes === 'string') {
-    updates.push(`notes = $${idx++}`);
-    values.push(body.notes.trim() || null);
-  }
-  if (updates.length === 0) return res.status(400).json({ message: 'No fields to update' });
-  values.push(id);
-  try {
-    const r = await pool.query(
-      `UPDATE officer_certifications oc SET ${updates.join(', ')}
-       FROM certifications c
-       WHERE oc.id = $${idx} AND oc.certification_id = c.id
-       RETURNING oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.issued_by, oc.notes, oc.created_at, c.name AS certification_name, c.reminder_days_before`,
-      values,
-    );
-    if ((r.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Assignment not found' });
-    const row = r.rows[0] as { id: number; officer_id: number; certification_id: number; issued_date: Date; expiry_date: Date; certificate_number: string | null; issued_by: string | null; notes: string | null; created_at: Date; certification_name: string; reminder_days_before: number };
-    const today = new Date().toISOString().slice(0, 10);
-    const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
-    let status: 'valid' | 'expiring_soon' | 'expired' = 'valid';
-    if (expiry < today) status = 'expired';
-    else {
-      const expDate = new Date(expiry);
-      const reminderDate = new Date(expDate);
-      reminderDate.setDate(reminderDate.getDate() - row.reminder_days_before);
-      if (reminderDate.toISOString().slice(0, 10) <= today) status = 'expiring_soon';
-    }
-    return res.json({
-      assignment: {
-        id: row.id,
-        officer_id: row.officer_id,
-        certification_id: row.certification_id,
-        certification_name: row.certification_name,
-        issued_date: (row.issued_date as Date).toISOString().slice(0, 10),
-        expiry_date: expiry,
-        certificate_number: row.certificate_number ?? null,
-        issued_by: row.issued_by ?? null,
-        notes: row.notes ?? null,
-        status,
-        created_at: (row.created_at as Date).toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error('Update officer certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-app.delete('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(String(idParam), 10);
-  if (!Number.isFinite(id)) return res.status(404).json({ message: 'Invalid id' });
-  try {
-    const result = await pool.query('DELETE FROM officer_certifications WHERE id = $1', [id]);
-    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Assignment not found' });
-    return res.status(204).send();
-  } catch (error) {
-    console.error('Delete officer certification error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 app.get('/api/officers/:id/staff-reminders', authenticate, requireAdmin, requirePermission('field_users'), async (req: AuthenticatedRequest, res: Response) => {
   const officerId = parseInt(String(req.params.id), 10);
@@ -6375,227 +6051,7 @@ app.put('/api/officers/:id/signature', authenticate, async (req: AuthenticatedRe
   }
 });
 
-app.get('/api/officer-certifications/:id', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(String(idParam), 10);
-  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
-  const userId = getTenantScopeUserId(req.user!);
-  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-  try {
-    const result = await pool.query(
-      `SELECT oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.issued_by, oc.notes,
-        o.full_name AS officer_name, o.role_position AS officer_role, o.department AS officer_department,
-        c.name AS certification_name, c.description AS certification_description
-       FROM officer_certifications oc
-       JOIN officers o ON o.id = oc.officer_id
-       JOIN certifications c ON c.id = oc.certification_id
-       WHERE oc.id = $1${isSuperAdmin ? '' : ' AND o.created_by = $2'}`,
-      isSuperAdmin ? [id] : [id, userId],
-    );
-    if ((result.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Certificate not found' });
-    const row = result.rows[0] as { id: number; officer_id: number; certification_id: number; issued_date: Date; expiry_date: Date; certificate_number: string | null; issued_by: string | null; notes: string | null; officer_name: string; officer_role: string | null; officer_department: string | null; certification_name: string; certification_description: string | null };
-    const settings = await getInvoiceSettings(userId);
-    return res.json({
-      certificate: {
-        id: row.id,
-        officer_id: row.officer_id,
-        officer_name: row.officer_name,
-        officer_role: row.officer_role ?? null,
-        officer_department: row.officer_department ?? null,
-        certification_id: row.certification_id,
-        certification_name: row.certification_name,
-        certification_description: row.certification_description ?? null,
-        issued_date: (row.issued_date as Date).toISOString().slice(0, 10),
-        expiry_date: (row.expiry_date as Date).toISOString().slice(0, 10),
-        certificate_number: row.certificate_number ?? null,
-        issued_by: row.issued_by ?? null,
-        notes: row.notes ?? null,
-      },
-      company: {
-        company_name: settings.company_name,
-        company_address: settings.company_address ?? null,
-        company_phone: settings.company_phone ?? null,
-        company_email: settings.company_email ?? null,
-        company_logo: settings.company_logo ?? null,
-        company_website: settings.company_website ?? null,
-      },
-    });
-  } catch (error) {
-    console.error('Get certificate error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
-app.get('/api/certifications/compliance', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = getTenantScopeUserId(req.user!);
-    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await pool.query(
-      `SELECT oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number,
-        o.full_name AS officer_name, o.email AS officer_email, o.department,
-        c.name AS certification_name, c.reminder_days_before
-       FROM officer_certifications oc
-       JOIN officers o ON o.id = oc.officer_id
-       JOIN certifications c ON c.id = oc.certification_id
-       ${isSuperAdmin ? '' : 'WHERE o.created_by = $1'}
-       ORDER BY oc.expiry_date ASC`,
-      isSuperAdmin ? [] : [userId],
-    );
-    const expiringSoon: { id: number; officer_name: string; officer_email: string | null; certification_name: string; expiry_date: string; days_remaining: number }[] = [];
-    const expired: { id: number; officer_name: string; officer_email: string | null; certification_name: string; expiry_date: string; days_overdue: number }[] = [];
-    const valid: { id: number; officer_name: string; certification_name: string; expiry_date: string }[] = [];
-    for (const row of result.rows as { id: number; officer_id: number; certification_id: number; issued_date: Date; expiry_date: Date; certificate_number: string | null; officer_name: string; officer_email: string | null; department: string | null; certification_name: string; reminder_days_before: number }[]) {
-      const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
-      const officerName = row.officer_name;
-      const certName = row.certification_name;
-      const officerEmail = row.officer_email ?? null;
-      if (expiry < today) {
-        const expDate = new Date(expiry);
-        const daysOverdue = Math.floor((Date.now() - expDate.getTime()) / (24 * 60 * 60 * 1000));
-        expired.push({ id: row.id, officer_name: officerName, officer_email: officerEmail, certification_name: certName, expiry_date: expiry, days_overdue: daysOverdue });
-      } else {
-        const expDate = new Date(expiry);
-        const daysRemaining = Math.floor((expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-        const reminderDate = new Date(expDate);
-        reminderDate.setDate(reminderDate.getDate() - row.reminder_days_before);
-        if (reminderDate.toISOString().slice(0, 10) <= today) {
-          expiringSoon.push({ id: row.id, officer_name: officerName, officer_email: officerEmail, certification_name: certName, expiry_date: expiry, days_remaining: daysRemaining });
-        } else {
-          valid.push({ id: row.id, officer_name: officerName, certification_name: certName, expiry_date: expiry });
-        }
-      }
-    }
-    return res.json({
-      expiring_soon: expiringSoon,
-      expired,
-      valid,
-      summary: {
-        expiring_soon_count: expiringSoon.length,
-        expired_count: expired.length,
-        valid_count: valid.length,
-      },
-    });
-  } catch (error) {
-    console.error('Compliance report error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-function officerCertStatusForCompliance(
-  expiryYmd: string,
-  reminderDaysBefore: number,
-  todayYmd: string,
-): 'valid' | 'expiring_soon' | 'expired' {
-  if (expiryYmd < todayYmd) return 'expired';
-  const expDate = new Date(expiryYmd);
-  const reminderDate = new Date(expDate);
-  reminderDate.setDate(reminderDate.getDate() - reminderDaysBefore);
-  if (reminderDate.toISOString().slice(0, 10) <= todayYmd) return 'expiring_soon';
-  return 'valid';
-}
-
-app.get('/api/certifications/compliance-hub', authenticate, requireTenantCrmAccess('certifications'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = getTenantScopeUserId(req.user!);
-    const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
-    const today = new Date().toISOString().slice(0, 10);
-
-    const scopedAssignmentsSql = isSuperAdmin
-      ? `SELECT oc.id, oc.certification_id, oc.officer_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at
-         FROM officer_certifications oc
-         INNER JOIN officers o ON o.id = oc.officer_id`
-      : `SELECT oc.id, oc.certification_id, oc.officer_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at
-         FROM officer_certifications oc
-         INNER JOIN officers o ON o.id = oc.officer_id AND o.created_by = $1`;
-
-    const scopeParams = isSuperAdmin ? [] : [userId];
-
-    const reportsResult = await pool.query(
-      `SELECT c.id AS certification_id, c.name, c.description, c.validity_months, c.reminder_days_before,
-        COUNT(sc.id)::int AS submission_count,
-        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date < CURRENT_DATE THEN 1 ELSE 0 END), 0)::int AS expired_count,
-        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date >= CURRENT_DATE
-          AND (sc.expiry_date::date - c.reminder_days_before * INTERVAL '1 day')::date <= CURRENT_DATE THEN 1 ELSE 0 END), 0)::int AS expiring_soon_count,
-        COALESCE(SUM(CASE WHEN sc.id IS NOT NULL AND sc.expiry_date >= CURRENT_DATE
-          AND NOT ((sc.expiry_date::date - c.reminder_days_before * INTERVAL '1 day')::date <= CURRENT_DATE) THEN 1 ELSE 0 END), 0)::int AS valid_count
-       FROM certifications c
-       LEFT JOIN (${scopedAssignmentsSql}) sc ON sc.certification_id = c.id
-       GROUP BY c.id, c.name, c.description, c.validity_months, c.reminder_days_before
-       ORDER BY c.name ASC`,
-      scopeParams,
-    );
-
-    const submissionsResult = await pool.query(
-      `SELECT oc.id, oc.officer_id, oc.certification_id, oc.issued_date, oc.expiry_date, oc.certificate_number, oc.created_at,
-        o.full_name AS officer_name, o.email AS officer_email,
-        c.name AS certification_name, c.reminder_days_before
-       FROM officer_certifications oc
-       INNER JOIN officers o ON o.id = oc.officer_id${isSuperAdmin ? '' : ' AND o.created_by = $1'}
-       INNER JOIN certifications c ON c.id = oc.certification_id
-       ORDER BY oc.created_at DESC, oc.id DESC`,
-      scopeParams,
-    );
-
-    const reports = (reportsResult.rows as {
-      certification_id: number;
-      name: string;
-      description: string | null;
-      validity_months: number;
-      reminder_days_before: number;
-      submission_count: number;
-      expired_count: number;
-      expiring_soon_count: number;
-      valid_count: number;
-    }[]).map((r) => ({
-      certification_id: r.certification_id,
-      name: r.name,
-      description: r.description ?? null,
-      validity_months: r.validity_months,
-      reminder_days_before: r.reminder_days_before,
-      submission_count: Number(r.submission_count) || 0,
-      expired_count: Number(r.expired_count) || 0,
-      expiring_soon_count: Number(r.expiring_soon_count) || 0,
-      valid_count: Number(r.valid_count) || 0,
-    }));
-
-    const submissions = (submissionsResult.rows as {
-      id: number;
-      officer_id: number;
-      certification_id: number;
-      issued_date: Date;
-      expiry_date: Date;
-      certificate_number: string | null;
-      created_at: Date;
-      officer_name: string;
-      officer_email: string | null;
-      certification_name: string;
-      reminder_days_before: number;
-    }[]).map((row) => {
-      const expiry = (row.expiry_date as Date).toISOString().slice(0, 10);
-      const issued = (row.issued_date as Date).toISOString().slice(0, 10);
-      const status = officerCertStatusForCompliance(expiry, row.reminder_days_before, today);
-      return {
-        id: row.id,
-        officer_id: row.officer_id,
-        officer_name: row.officer_name,
-        officer_email: row.officer_email ?? null,
-        certification_id: row.certification_id,
-        certification_name: row.certification_name,
-        issued_date: issued,
-        expiry_date: expiry,
-        certificate_number: row.certificate_number ?? null,
-        status,
-        created_at: (row.created_at as Date).toISOString(),
-      };
-    });
-
-    return res.json({ reports, submissions });
-  } catch (error) {
-    console.error('Compliance hub error:', error);
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 // ---------- Jobs (Admin only) ----------
 const JOB_STATES = ['draft', 'created', 'unscheduled', 'scheduled', 'assigned', 'rescheduled', 'dispatched', 'in_progress', 'paused', 'completed', 'closed', 'need_to_be_rescheduled', 'parts_need_ordering', 'awaiting_parts_delivery'] as const;
@@ -8788,8 +8244,9 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
         nextParam += 1;
       }
     } else if (req.user!.role !== 'SUPER_ADMIN') {
-      officerClause = ` AND j.created_by = $${nextParam}`;
-      params.push(getTenantScopeUserId(req.user!));
+      const tenantId = getTenantScopeUserId(req.user!);
+      officerClause = ` AND (j.created_by = $${nextParam} OR (d.job_id IS NULL AND d.created_by = $${nextParam}))`;
+      params.push(tenantId);
       nextParam += 1;
     }
 
@@ -8802,11 +8259,14 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
         ? `${sqlDiaryEventStatusForOfficer(`$${officerParamIdx}`)} as event_status`
         : 'd.status as event_status';
 
-    // We fetch diary events joined with jobs and customers
+    // Diary events joined with jobs/customers (job_id optional for general events)
     const result = await pool.query(
       `SELECT d.id as diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes, ${statusSelect},
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
-              j.title, j.description, j.location, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
+              (d.job_id IS NULL) AS is_general,
+              COALESCE(NULLIF(TRIM(d.title), ''), j.title) AS title,
+              COALESCE(NULLIF(TRIM(d.location), ''), j.location) AS location,
+              j.description, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
               j.state AS job_state,
               jd.name AS description_name,
               c.full_name as customer_full_name, c.email as customer_email,
@@ -8834,7 +8294,7 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
                 )), '')
               ) AS customer_address
        FROM diary_events d
-       JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        LEFT JOIN job_descriptions jd ON jd.id = j.job_description_id
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
@@ -8883,11 +8343,91 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
     const events = rows.map((r: any) => ({
       ...r,
       is_free_job: r.charge_type === 'free',
+      is_general: r.is_general === true,
       officers: deOfficersByEvent.get(r.diary_id) || [],
     }));
     res.json({ events });
   } catch (error) {
     console.error('get diary events error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/** General calendar event (no linked job). */
+app.post('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const du = req.user!;
+  if (du.role === 'STAFF' && !assertStaffPermissionAny(du, ['jobs', 'scheduling'])) {
+    return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+  }
+  try {
+    const body = req.body as {
+      title?: unknown;
+      start_time?: unknown;
+      duration_minutes?: unknown;
+      notes?: unknown;
+      location?: unknown;
+      officer_id?: unknown;
+      officer_ids?: unknown;
+    };
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (!title) {
+      return res.status(400).json({ message: 'title is required for general diary events' });
+    }
+    const startTime = body.start_time ? new Date(String(body.start_time)) : null;
+    if (!startTime || Number.isNaN(startTime.getTime())) {
+      return res.status(400).json({ message: 'Valid start_time is required' });
+    }
+    const duration =
+      typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes)
+        ? Math.round(body.duration_minutes)
+        : 60;
+    const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null;
+    const location = typeof body.location === 'string' ? body.location.trim() || null : null;
+
+    const deOfficerIds = Array.isArray(body.officer_ids)
+      ? (body.officer_ids as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+      : typeof body.officer_id === 'number' && Number.isFinite(body.officer_id)
+        ? [body.officer_id]
+        : [];
+    const officerIdsToBook = deOfficerIds.length > 0 ? deOfficerIds : [null];
+
+    const holidayConflict = await checkOfficerHolidayConflict(
+      pool,
+      officerIdsToBook.filter((id): id is number => id != null),
+      startTime,
+      duration,
+    );
+    if (holidayConflict) {
+      return res.status(400).json({
+        message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`,
+      });
+    }
+
+    const ures = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.user!.userId]);
+    const creatorName = ures.rows[0]?.full_name || 'System User';
+    const tenantUserId = getTenantScopeUserId(du);
+
+    const createdEvents: Record<string, unknown>[] = [];
+    for (const oid of officerIdsToBook) {
+      const result = await pool.query(
+        `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, location, title, created_by_name, created_by, status)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, 'No status')
+         RETURNING *`,
+        [oid, startTime, duration, notes, location, title, creatorName, tenantUserId],
+      );
+      const diaryEventId = result.rows[0].id;
+      if (oid != null) {
+        await pool.query(
+          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
+          [diaryEventId, oid],
+        );
+      }
+      createdEvents.push({ ...result.rows[0], is_general: true });
+    }
+
+    res.status(201).json({ events: createdEvents, event: createdEvents[0] ?? null });
+  } catch (error) {
+    console.error('create general diary event error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -8916,8 +8456,11 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
     const result = await pool.query(
       `SELECT d.id AS diary_id, d.job_id, d.officer_id, d.start_time, d.duration_minutes,
               ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
-              d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at,
-              j.title, j.description, j.location, j.state AS job_state, j.job_notes, j.customer_id,
+              d.notes, d.abort_reason, d.created_by_name, d.created_at, d.updated_at, d.created_by,
+              (d.job_id IS NULL) AS is_general,
+              COALESCE(NULLIF(TRIM(d.title), ''), j.title) AS title,
+              COALESCE(NULLIF(TRIM(d.location), ''), j.location) AS location,
+              j.description, j.state AS job_state, j.job_notes, j.customer_id,
               j.job_number,
               j.created_by AS job_created_by,
               j.work_address_id AS job_work_address_id,
@@ -8962,7 +8505,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
                 COALESCE(NULLIF(TRIM(c.contact_mobile), ''), NULLIF(TRIM(c.phone), ''))
               ) AS site_contact_phone
        FROM diary_events d
-       INNER JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
@@ -8991,7 +8534,14 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       }
     } else if (role !== 'SUPER_ADMIN') {
       const jcb = row.job_created_by as number | null;
-      if (jcb == null || jcb !== getTenantScopeUserId(req.user!)) {
+      const dcb = row.created_by as number | null;
+      const isGeneral = row.job_id == null;
+      const tenantId = getTenantScopeUserId(req.user!);
+      if (isGeneral) {
+        if (dcb == null || dcb !== tenantId) {
+          return res.status(404).json({ message: 'Event not found' });
+        }
+      } else if (jcb == null || jcb !== tenantId) {
         return res.status(404).json({ message: 'Event not found' });
       }
     }
@@ -9178,10 +8728,27 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       media: n.media,
     }));
 
+    const jobIdRaw = row.job_id;
+    const jobId = jobIdRaw != null ? Number(jobIdRaw) : null;
+    const jobCompletionContext =
+      jobId != null && Number.isFinite(jobId)
+      ? await buildJobCompletionContext(pool, jobId, detailId)
+      : {
+          has_multiple_engineers: false,
+          open_visit_count: 0,
+          siblings: [],
+          has_stage_conflict: false,
+          distinct_chosen_states: [],
+          current_job_state: null,
+          is_last_engineer_to_complete: false,
+          finished_sibling_choices: [],
+        };
+
     return res.json({
       event: {
         diary_id: row.diary_id,
         job_id: row.job_id,
+        is_general: row.is_general === true,
         officer_id: row.officer_id,
         start_time: (row.start_time as Date).toISOString(),
         duration_minutes: row.duration_minutes,
@@ -9231,6 +8798,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
       technical_notes: technicalNotes,
       customer_specific_notes: customerSpecificNotes,
       status_logs: statusLogs,
+      job_completion_context: jobCompletionContext,
     });
   } catch (error) {
     console.error('get diary event by id error:', error);
@@ -9252,18 +8820,19 @@ app.post(
     const role = req.user!.role;
     const tokenOfficerId = req.user!.officerId ?? null;
     const access = await pool.query<{
-      job_id: number;
+      job_id: number | null;
       officer_id: number | null;
       job_officer_id: number | null;
       job_created_by: number | null;
+      event_created_by: number | null;
       is_diary_officer: boolean;
       is_job_officer: boolean;
     }>(
-      `SELECT j.id AS job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by,
+      `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id, j.created_by AS job_created_by, d.created_by AS event_created_by,
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
-       INNER JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
       [diaryEventId, tokenOfficerId],
     );
@@ -9282,8 +8851,12 @@ app.post(
       }
     } else if (role === 'OFFICER') {
       return res.status(403).json({ message: 'Forbidden' });
-    } else if (!isSuperAdmin && acc.job_created_by !== userId) {
-      return res.status(404).json({ message: 'Event not found' });
+    } else if (!isSuperAdmin) {
+      if (acc.job_id == null) {
+        if (acc.event_created_by !== userId) return res.status(404).json({ message: 'Event not found' });
+      } else if (acc.job_created_by !== userId) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
     }
 
     const body = req.body as { notes?: unknown; media?: unknown };
@@ -10766,6 +10339,8 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       questions = qRes.rows as typeof questions;
     }
 
+    const jobCompletionContext = await buildJobCompletionContext(pool, row.job_id, diaryEventId);
+
     return res.json({
       diary_event_id: diaryEventId,
       job_id: row.job_id,
@@ -10778,6 +10353,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       is_quotation_visit: row.is_quotation_visit,
       questions,
       answers,
+      job_completion_context: jobCompletionContext,
     });
   } catch (error) {
     console.error('get diary job report error:', error);
@@ -12352,7 +11928,7 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
   }
 });
 
-// ── Admin-only: reschedule (date/time, duration, notes) ───────────────────────
+// ── Reschedule visit (date/time, duration, notes; engineers when scheduling access) ──
 app.patch(
   '/api/diary-events/:id/reschedule',
   authenticate,
@@ -12405,40 +11981,103 @@ app.patch(
       start_time?: string | null;
       duration_minutes?: number | null;
       notes?: string | null;
+      officer_ids?: unknown;
     };
 
     const updates: string[] = ['updated_at = NOW()'];
     const values: unknown[] = [];
     let idx = 1;
+    let officerIdsUpdated = false;
+    let officerIdsToApply: number[] | null = null;
+
+    const visitBlocksEngineerChange = (status: string | null | undefined): boolean => {
+      const s = String(status ?? '').toLowerCase().trim().replace(/\s+/g, '_');
+      if (s === 'completed') return true;
+      return (
+        s === 'travelling_to_site' ||
+        s === 'travelling' ||
+        s === 'traveling_to_site' ||
+        s === 'traveling' ||
+        s === 'arrived_at_site' ||
+        s === 'arrived' ||
+        s === 'on_site' ||
+        s === 'onsite' ||
+        s === 'in_progress' ||
+        s === 'working_on_site'
+      );
+    };
+
+    let current: {
+      officer_id: number | null;
+      start_time: Date;
+      duration_minutes: number;
+      status: string | null;
+      job_id: number | null;
+    };
 
     try {
-      const currentEventRes = await pool.query<{ officer_id: number | null; start_time: Date; duration_minutes: number }>(
-        `SELECT officer_id, start_time, duration_minutes FROM diary_events WHERE id = $1`,
+      const currentEventRes = await pool.query<{
+        officer_id: number | null;
+        start_time: Date;
+        duration_minutes: number;
+        status: string | null;
+        job_id: number;
+      }>(
+        `SELECT officer_id, start_time, duration_minutes, status, job_id FROM diary_events WHERE id = $1`,
         [id]
       );
       if ((currentEventRes.rowCount ?? 0) === 0) {
         return res.status(404).json({ message: 'Diary event not found' });
       }
-      const current = currentEventRes.rows[0];
+      current = currentEventRes.rows[0];
 
       const newStartTime = body.start_time !== undefined ? (body.start_time ? new Date(body.start_time) : null) : current.start_time;
       const newDuration = body.duration_minutes !== undefined ? (body.duration_minutes || 60) : current.duration_minutes;
 
+      let effectiveOfficerIds: number[] = [];
+      if (body.officer_ids !== undefined) {
+        if (!hasSchedulingAccess) {
+          return res.status(403).json({ message: 'Forbidden: Only schedulers can change assigned engineers' });
+        }
+        if (visitBlocksEngineerChange(current.status)) {
+          return res.status(400).json({
+            message: 'Cannot change engineers after travel has started or the visit is complete.',
+          });
+        }
+        if (!Array.isArray(body.officer_ids)) {
+          return res.status(400).json({ message: 'officer_ids must be an array' });
+        }
+        const parsed = body.officer_ids
+          .filter((oid): oid is number => typeof oid === 'number' && Number.isFinite(oid))
+          .map((oid) => Math.round(oid));
+        const unique = [...new Set(parsed)];
+        if (unique.length === 0) {
+          return res.status(400).json({ message: 'Select at least one engineer' });
+        }
+        effectiveOfficerIds = unique;
+        officerIdsToApply = unique;
+        officerIdsUpdated = true;
+      }
+
       if (newStartTime && !isNaN(newStartTime.getTime())) {
-        const officersRes = await pool.query<{ officer_id: number }>(
-          `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1`,
-          [id]
-        );
-        const officerIds = officersRes.rows.map(o => o.officer_id);
-        if (current.officer_id != null && !officerIds.includes(current.officer_id)) {
-          officerIds.push(current.officer_id);
+        if (effectiveOfficerIds.length === 0) {
+          const officersRes = await pool.query<{ officer_id: number }>(
+            `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1`,
+            [id]
+          );
+          effectiveOfficerIds = officersRes.rows.map(o => o.officer_id);
+          if (current.officer_id != null && !effectiveOfficerIds.includes(current.officer_id)) {
+            effectiveOfficerIds.push(current.officer_id);
+          }
         }
 
-        const holidayConflict = await checkOfficerHolidayConflict(pool, officerIds, newStartTime, newDuration);
-        if (holidayConflict) {
-          return res.status(400).json({
-            message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
-          });
+        if (effectiveOfficerIds.length > 0) {
+          const holidayConflict = await checkOfficerHolidayConflict(pool, effectiveOfficerIds, newStartTime, newDuration);
+          if (holidayConflict) {
+            return res.status(400).json({
+              message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
+            });
+          }
         }
       }
     } catch (err) {
@@ -12468,43 +12107,75 @@ app.patch(
       values.push(n);
     }
 
-    if (updates.length <= 1) {
+    if (updates.length <= 1 && !officerIdsUpdated) {
       return res.status(400).json({ message: 'No fields to update' });
     }
 
     try {
-      values.push(id);
-      const r = await pool.query(
-        `UPDATE diary_events SET ${updates.join(', ')} WHERE id = $${idx} RETURNING
-           id, job_id, officer_id, start_time, duration_minutes, status, notes, updated_at`,
-        values,
-      );
-      if ((r.rowCount ?? 0) === 0) {
-        return res.status(404).json({ message: 'Diary event not found' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        if (officerIdsUpdated && officerIdsToApply != null) {
+          const parsed = officerIdsToApply;
+          const primaryId = parsed[0] ?? null;
+          await client.query(
+            `UPDATE diary_events SET officer_id = $1, updated_at = NOW() WHERE id = $2`,
+            [primaryId, id],
+          );
+          await client.query(`DELETE FROM diary_event_officers WHERE diary_event_id = $1`, [id]);
+          for (let i = 0; i < parsed.length; i++) {
+            await client.query(
+              `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
+               VALUES ($1, $2, $3)`,
+              [id, parsed[i], i === 0],
+            );
+          }
+        }
+
+        values.push(id);
+        const r = await client.query(
+          `UPDATE diary_events SET ${updates.join(', ')} WHERE id = $${idx} RETURNING
+             id, job_id, officer_id, start_time, duration_minutes, status, notes, updated_at`,
+          values,
+        );
+        if ((r.rowCount ?? 0) === 0) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ message: 'Diary event not found' });
+        }
+        await client.query('COMMIT');
+
+        const row = r.rows[0] as {
+          id: number;
+          job_id: number | null;
+          officer_id: number | null;
+          start_time: Date | null;
+          duration_minutes: number | null;
+          status: string | null;
+          notes: string | null;
+          updated_at: Date;
+        };
+        if (row.job_id != null) {
+          await syncJobDatesFromDiaryEvents(pool, row.job_id);
+        }
+        return res.json({
+          event: {
+            id: row.id,
+            job_id: row.job_id,
+            officer_id: row.officer_id,
+            start_time: row.start_time ? row.start_time.toISOString() : null,
+            duration_minutes: row.duration_minutes,
+            status: row.status,
+            notes: row.notes,
+            updated_at: row.updated_at.toISOString(),
+          },
+        });
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
       }
-      const row = r.rows[0] as {
-        id: number;
-        job_id: number;
-        officer_id: number | null;
-        start_time: Date | null;
-        duration_minutes: number | null;
-        status: string | null;
-        notes: string | null;
-        updated_at: Date;
-      };
-      await syncJobDatesFromDiaryEvents(pool, row.job_id);
-      return res.json({
-        event: {
-          id: row.id,
-          job_id: row.job_id,
-          officer_id: row.officer_id,
-          start_time: row.start_time ? row.start_time.toISOString() : null,
-          duration_minutes: row.duration_minutes,
-          status: row.status,
-          notes: row.notes,
-          updated_at: row.updated_at.toISOString(),
-        },
-      });
     } catch (error) {
       console.error('reschedule diary event error:', error);
       return res.status(500).json({ message: 'Internal server error' });
@@ -12668,7 +12339,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
     }
 
     const eventRes = await client.query<{
-      job_id: number;
+      job_id: number | null;
       officer_id: number | null;
       job_officer_id: number | null;
       is_diary_officer: boolean;
@@ -12678,7 +12349,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
               EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id AND deo.officer_id = $2) AS is_diary_officer,
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer
        FROM diary_events d
-       INNER JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
       [targetEventId, tokenOfficerId],
     );
@@ -12708,7 +12379,10 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
 
     const normalizedPre = normalizeDiaryStatusForTimesheet(status);
     if (normalizedPre === 'completed') {
-      const qc = await countJobReportQuestionsForJob(client, row.job_id);
+      const qc =
+        row.job_id != null
+          ? await countJobReportQuestionsForJob(client, row.job_id)
+          : 0;
       if (qc > 0) {
         const reportSubCheck = await client.query(
           `SELECT EXISTS (SELECT 1 FROM job_report_answers WHERE diary_event_id = $1) AS submitted`,
@@ -12764,7 +12438,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
 
     await client.query('COMMIT');
 
-    if (normalized === 'completed') {
+    if (normalized === 'completed' && row.job_id != null) {
       const shouldFinalize = await shouldFinalizeJobAfterVisitComplete(client, row.job_id, targetEventId, false);
       if (shouldFinalize) {
         const eventRowCheck = await pool.query<{ next_job_state: string | null }>(
@@ -12826,17 +12500,26 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermissio
   const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
 
   try {
-    const ev = await pool.query<{ status: string | null; job_created_by: number | null; job_id: number }>(
-      `SELECT d.status, j.created_by AS job_created_by, d.job_id
+    const ev = await pool.query<{
+      status: string | null;
+      job_created_by: number | null;
+      job_id: number | null;
+      created_by: number | null;
+    }>(
+      `SELECT d.status, j.created_by AS job_created_by, d.job_id, d.created_by
        FROM diary_events d
-       INNER JOIN jobs j ON j.id = d.job_id
+       LEFT JOIN jobs j ON j.id = d.job_id
        WHERE d.id = $1`,
       [id],
     );
     if ((ev.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Event not found' });
     const row = ev.rows[0];
-    if (!isSuperAdmin && row.job_created_by !== userId) {
-      return res.status(404).json({ message: 'Event not found' });
+    if (!isSuperAdmin) {
+      if (row.job_id == null) {
+        if (row.created_by !== userId) return res.status(404).json({ message: 'Event not found' });
+      } else if (row.job_created_by !== userId) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
     }
     if (!diaryEventAllowsAdminDelete(row.status)) {
       return res.status(400).json({
@@ -12845,7 +12528,9 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermissio
     }
 
     await pool.query('DELETE FROM diary_events WHERE id = $1', [id]);
-    await syncJobDatesFromDiaryEvents(pool, row.job_id);
+    if (row.job_id != null) {
+      await syncJobDatesFromDiaryEvents(pool, row.job_id);
+    }
     return res.status(204).send();
   } catch (error) {
     console.error('delete diary event error:', error);
@@ -16070,7 +15755,7 @@ app.post('/api/invoices/delete-all', authenticate, requireTenantCrmAccess('invoi
 });
 
 // ---------- Quotations (Admin only) ----------
-const QUOTATION_STATES = ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const;
+const QUOTATION_STATES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'on_hold'] as const;
 
 async function getQuotationSettings(userId: number): Promise<{
   default_currency: string;
@@ -17043,7 +16728,7 @@ app.get('/api/quotations/:id/email-compose', authenticate, requireTenantCrmAcces
       pushToOption(c.email, name);
     }
 
-    const canSend = qRow.state === 'draft' || qRow.state === 'sent';
+    const canSend = qRow.state === 'draft' || qRow.state === 'sent' || qRow.state === 'on_hold';
 
     return res.json({
       subject,
@@ -17115,7 +16800,7 @@ app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess(
   if (!subject) return res.status(400).json({ message: 'Subject is required' });
   if (!bodyHtmlRaw) return res.status(400).json({ message: 'Message body is required' });
 
-  if (qRow.state !== 'draft' && qRow.state !== 'sent') {
+  if (qRow.state !== 'draft' && qRow.state !== 'sent' && qRow.state !== 'on_hold') {
     return res.status(400).json({ message: 'Only draft or sent quotations can be emailed from here.' });
   }
 
@@ -17131,9 +16816,9 @@ app.post('/api/quotations/:id/send-email', authenticate, requireTenantCrmAccess(
   }
 
   try {
-    if (qRow.state === 'draft') {
+    if (qRow.state === 'draft' || qRow.state === 'on_hold') {
       const upd = await pool.query(
-        "UPDATE quotations SET state = 'sent', updated_at = NOW() WHERE id = $1 AND state = 'draft' RETURNING id",
+        "UPDATE quotations SET state = 'sent', updated_at = NOW() WHERE id = $1 AND (state = 'draft' OR state = 'on_hold') RETURNING id",
         [id],
       );
       if ((upd.rowCount ?? 0) === 0) {
@@ -17334,7 +17019,7 @@ app.patch('/api/quotations/:id', authenticate, requireTenantCrmAccess('quotation
   if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
   const q = qCheck.rows[0];
   if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
-  if (q.state !== 'draft' && q.state !== 'sent') return res.status(400).json({ message: 'Cannot edit quotation in this state' });
+  if (q.state !== 'draft' && q.state !== 'sent' && q.state !== 'on_hold') return res.status(400).json({ message: 'Cannot edit quotation in this state' });
 
   const body = req.body as Record<string, unknown>;
   const updates: string[] = [];
@@ -17501,7 +17186,7 @@ app.post('/api/quotations/:id/send', authenticate, requireTenantCrmAccess('quota
   if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
   const q = qCheck.rows[0];
   if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
-  if (q.state !== 'draft') return res.status(400).json({ message: 'Only draft quotations can be sent' });
+  if (q.state !== 'draft' && q.state !== 'on_hold') return res.status(400).json({ message: 'Only draft quotations can be sent' });
 
   try {
     const emailCfg = await loadEmailSettingsPayload(userId);
@@ -17594,14 +17279,45 @@ app.post('/api/quotations/:id/reject', authenticate, requireTenantCrmAccess('quo
   if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
   const q = qCheck.rows[0];
   if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
-  if (q.state !== 'sent') return res.status(400).json({ message: 'Only sent quotations can be rejected' });
+  const { rejection_reason, rejection_notes } = req.body as {
+    rejection_reason?: string;
+    rejection_notes?: string;
+  };
+  const cleanReason = typeof rejection_reason === 'string' ? rejection_reason.trim() : null;
+  const cleanNotes = typeof rejection_notes === 'string' ? rejection_notes.trim() : null;
 
   try {
-    await pool.query("UPDATE quotations SET state = 'rejected', updated_at = NOW() WHERE id = $1", [id]);
-    await logQuotationActivity(id, 'rejected', {}, userId);
-    return res.json({ success: true, state: 'rejected' });
+    await pool.query(
+      "UPDATE quotations SET state = 'rejected', rejection_reason = $1, rejection_notes = $2, updated_at = NOW() WHERE id = $3",
+      [cleanReason, cleanNotes, id]
+    );
+    await logQuotationActivity(id, 'rejected', { reason: cleanReason, notes: cleanNotes }, userId);
+    return res.json({ success: true, state: 'rejected', rejection_reason: cleanReason, rejection_notes: cleanNotes });
   } catch (error) {
     console.error('Reject quotation error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/quotations/:id/hold', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(String(idParam), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid quotation id' });
+  const userId = getTenantScopeUserId(req.user!);
+  const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
+
+  const qCheck = await pool.query<DbQuotation>('SELECT * FROM quotations WHERE id = $1', [id]);
+  if ((qCheck.rowCount ?? 0) === 0) return res.status(404).json({ message: 'Quotation not found' });
+  const q = qCheck.rows[0];
+  if (!canAccessQuotation(q, userId, isSuperAdmin)) return res.status(404).json({ message: 'Quotation not found' });
+  if (q.state !== 'sent') return res.status(400).json({ message: 'Only sent quotations can be put on hold' });
+
+  try {
+    await pool.query("UPDATE quotations SET state = 'on_hold', updated_at = NOW() WHERE id = $1", [id]);
+    await logQuotationActivity(id, 'on_hold', {}, userId);
+    return res.json({ success: true, state: 'on_hold' });
+  } catch (error) {
+    console.error('Hold quotation error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -18101,6 +17817,137 @@ app.delete('/api/settings/quotation-quick-phrases/:id', authenticate, requireAdm
     return res.json({ success: true });
   } catch (error) {
     console.error('Delete quotation quick phrase error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ---------- Quotation Rejection Reasons ----------
+app.get('/api/settings/quotation-rejection-reasons', authenticate, requireTenantCrmAccess('quotations'), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  try {
+    let result = await pool.query(
+      `SELECT id, reason, sort_order, is_active, created_at, updated_at
+       FROM quotation_rejection_reasons
+       WHERE created_by = $1
+       ORDER BY sort_order ASC, reason ASC`,
+      [userId],
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      const defaults = [
+        'Too Expensive',
+        'Competitor Chosen',
+        'Delayed Response',
+        'Scope of Work Changed',
+        'Other'
+      ];
+      for (let i = 0; i < defaults.length; i++) {
+        await pool.query(
+          `INSERT INTO quotation_rejection_reasons (reason, sort_order, is_active, created_by)
+           VALUES ($1, $2, true, $3)
+           ON CONFLICT (created_by, reason) DO NOTHING`,
+          [defaults[i], i * 10, userId]
+        );
+      }
+      result = await pool.query(
+        `SELECT id, reason, sort_order, is_active, created_at, updated_at
+         FROM quotation_rejection_reasons
+         WHERE created_by = $1
+         ORDER BY sort_order ASC, reason ASC`,
+        [userId],
+      );
+    }
+    return res.json({ reasons: result.rows });
+  } catch (error) {
+    console.error('Get quotation rejection reasons error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.post('/api/settings/quotation-rejection-reasons', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const { reason, sort_order, is_active } = req.body as Record<string, unknown>;
+  const cleanReason = typeof reason === 'string' ? reason.trim() : '';
+  if (!cleanReason) {
+    return res.status(400).json({ message: 'Reason is required' });
+  }
+  const order = typeof sort_order === 'number' ? sort_order : 0;
+  const active = typeof is_active === 'boolean' ? is_active : true;
+  try {
+    const result = await pool.query(
+      `INSERT INTO quotation_rejection_reasons (reason, sort_order, is_active, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (created_by, reason) DO UPDATE
+       SET sort_order = EXCLUDED.sort_order, is_active = EXCLUDED.is_active, updated_at = NOW()
+       RETURNING id, reason, sort_order, is_active, created_at, updated_at`,
+      [cleanReason, order, active, userId],
+    );
+    return res.status(201).json({ reason: result.rows[0] });
+  } catch (error) {
+    console.error('Create quotation rejection reason error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.patch('/api/settings/quotation-rejection-reasons/:id', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid reason id' });
+  }
+  const { reason, sort_order, is_active } = req.body as Record<string, unknown>;
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  if (reason !== undefined) {
+    const cleanReason = typeof reason === 'string' ? reason.trim() : '';
+    if (!cleanReason) return res.status(400).json({ message: 'Reason cannot be empty' });
+    updates.push(`reason = $${idx++}`);
+    values.push(cleanReason);
+  }
+  if (sort_order !== undefined) {
+    updates.push(`sort_order = $${idx++}`);
+    values.push(typeof sort_order === 'number' ? sort_order : 0);
+  }
+  if (is_active !== undefined) {
+    updates.push(`is_active = $${idx++}`);
+    values.push(!!is_active);
+  }
+  if (updates.length === 0) {
+    return res.status(400).json({ message: 'No fields to update' });
+  }
+  updates.push('updated_at = NOW()');
+  values.push(id, userId);
+  try {
+    const result = await pool.query(
+      `UPDATE quotation_rejection_reasons SET ${updates.join(', ')} WHERE id = $${idx++} AND created_by = $${idx++} RETURNING id, reason, sort_order, is_active, created_at, updated_at`,
+      values,
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Reason not found' });
+    }
+    return res.json({ reason: result.rows[0] });
+  } catch (error) {
+    console.error('Update quotation rejection reason error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.delete('/api/settings/quotation-rejection-reasons/:id', authenticate, requireAdmin, requireAnyPermission(['settings_company', 'settings_quotation']), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = getTenantScopeUserId(req.user!);
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ message: 'Invalid reason id' });
+  }
+  try {
+    const result = await pool.query('DELETE FROM quotation_rejection_reasons WHERE id = $1 AND created_by = $2', [id, userId]);
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Reason not found' });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Delete quotation rejection reason error:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });

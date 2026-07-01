@@ -22,6 +22,7 @@ import AbortReasonsSettings from './AbortReasonsSettings';
 import CertificateNumberingSettings from './CertificateNumberingSettings';
 import PatTestEquipmentSettings from './PatTestEquipmentSettings';
 import QuotationQuickPhrasesSettings from './QuotationQuickPhrasesSettings';
+import QuotationRejectionReasonsSettings from './QuotationRejectionReasonsSettings';
 import { BookOpen, Wrench, Briefcase, Users2, Database, UserCog, Ban } from 'lucide-react';
 
 interface InvoiceSettings {
@@ -214,7 +215,7 @@ export default function SettingsPage() {
   // Sub-tabs for Company, Invoice, Quotation
   const [companySubTab, setCompanySubTab] = useState<'details' | 'preview'>('details');
   const [invoiceSubTab, setInvoiceSubTab] = useState<'details' | 'preview'>('details');
-  const [quotationSubTab, setQuotationSubTab] = useState<'details' | 'quick-phrases' | 'preview'>('details');
+  const [quotationSubTab, setQuotationSubTab] = useState<'details' | 'quick-phrases' | 'rejection-reasons' | 'preview'>('details');
 
   const DUMMY_INVOICE = {
     invoice_number: `${formPrefix}-000001`,
@@ -1293,6 +1294,13 @@ export default function SettingsPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setQuotationSubTab('rejection-reasons')}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold transition ${quotationSubTab === 'rejection-reasons' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Rejection Reasons
+              </button>
+              <button
+                type="button"
                 onClick={() => setQuotationSubTab('preview')}
                 className={`rounded-md px-4 py-1.5 text-xs font-bold transition ${quotationSubTab === 'preview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
@@ -1306,6 +1314,15 @@ export default function SettingsPage() {
                 animate={{ opacity: 1, y: 0 }}
               >
                 <QuotationQuickPhrasesSettings />
+              </motion.div>
+            )}
+
+            {quotationSubTab === 'rejection-reasons' && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <QuotationRejectionReasonsSettings />
               </motion.div>
             )}
 

@@ -282,13 +282,14 @@ class MobileRepository extends BaseRepository {
     );
   }
 
-  /// Admin/scheduling-only: update visit date/time, duration, and notes.
+  /// Admin/scheduling-only: update visit date/time, duration, notes, and optionally engineers.
   /// Calls `PATCH /api/diary-events/:id/reschedule`.
   Future<void> rescheduleDiaryEvent({
     required int diaryEventId,
     DateTime? startTime,
     int? durationMinutes,
     String? notes,
+    List<int>? officerIds,
   }) async {
     final data = <String, dynamic>{};
     if (startTime != null) {
@@ -299,6 +300,9 @@ class MobileRepository extends BaseRepository {
     }
     if (notes != null) {
       data['notes'] = notes.trim().isEmpty ? null : notes.trim();
+    }
+    if (officerIds != null) {
+      data['officer_ids'] = officerIds;
     }
     await api.patch<Map<String, dynamic>>(
       '/diary-events/$diaryEventId/reschedule',

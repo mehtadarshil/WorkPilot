@@ -1,11 +1,12 @@
 export type { CalendarVisit, HoverAnchor } from './calendarVisitTypes';
 export { CalendarVisitBlock } from './CalendarVisitBlock';
 export { CalendarVisitHoverCard } from './CalendarVisitHoverCard';
-export { paletteForJob, resolveVisitStatus } from './calendarVisitTheme';
+export { paletteForJob, paletteForVisit, GENERAL_VISIT_PALETTE, resolveVisitStatus } from './calendarVisitTheme';
 
 export function diaryEventToVisit(evt: {
   diary_id: number;
-  job_id: number;
+  job_id: number | null;
+  is_general?: boolean;
   start_time: string;
   duration_minutes: number;
   title: string;
@@ -22,10 +23,12 @@ export function diaryEventToVisit(evt: {
   officer_full_name?: string | null;
   officers?: { full_name: string }[];
 }): import('./calendarVisitTypes').CalendarVisit {
-  const worksCategory =
-    evt.description_name?.trim() ||
-    evt.title?.trim() ||
-    null;
+  const isGeneral = evt.is_general === true || evt.job_id == null;
+  const worksCategory = isGeneral
+    ? evt.title?.trim() || 'General event'
+    : evt.description_name?.trim() ||
+      evt.title?.trim() ||
+      null;
   const addressLine1 =
     evt.address_line_1?.trim() ||
     evt.customer_address?.split(',')[0]?.trim() ||
@@ -34,6 +37,7 @@ export function diaryEventToVisit(evt: {
   return {
     id: evt.diary_id,
     jobId: evt.job_id,
+    isGeneral,
     startTime: evt.start_time,
     durationMinutes: evt.duration_minutes,
     title: evt.title,

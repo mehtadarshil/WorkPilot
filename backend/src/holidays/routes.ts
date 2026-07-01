@@ -395,9 +395,6 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
       const existing = current.rows[0]!;
 
       if (hasFieldUpdate) {
-        if (existing.status !== 'pending') {
-          return res.status(400).json({ message: 'Only pending requests can be edited' });
-        }
         const nextStart = startDate ?? existing.start_date.toISOString();
         const nextEnd = endDate ?? existing.end_date.toISOString();
         if (new Date(nextStart).getTime() > new Date(nextEnd).getTime()) {

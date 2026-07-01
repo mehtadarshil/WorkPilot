@@ -1694,7 +1694,7 @@ class _DiaryTab extends GetView<HomeController> {
                           children: [
                             Expanded(
                               child: Text(
-                                e.title ?? 'Job',
+                                e.listTitle,
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -1703,7 +1703,7 @@ class _DiaryTab extends GetView<HomeController> {
                                 ),
                               ),
                             ),
-                            if ((e.jobNumber ?? '').trim().isNotEmpty) ...[
+                            if (!e.isGeneral && (e.jobNumber ?? '').trim().isNotEmpty) ...[
                               const SizedBox(width: 8),
                               Text(
                                 '#${e.jobNumber!.trim()}',
@@ -1734,7 +1734,7 @@ class _DiaryTab extends GetView<HomeController> {
                             ),
                           ),
                         ],
-                        if (e.displayContactName.isNotEmpty) ...[
+                        if (!e.isGeneral && e.displayContactName.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
                             e.displayContactName,

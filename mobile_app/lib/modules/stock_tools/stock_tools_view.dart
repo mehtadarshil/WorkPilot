@@ -207,7 +207,8 @@ class StockToolsView extends GetView<StockToolsController> {
                                     style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.bold),
                                   ),
                                   const SizedBox(height: 4),
-                                  ...placements.map((p) {
+                                  ...placements.asMap().entries.map((entry) {
+                                    final p = entry.value;
                                     final label = formatPlacementLabel(p);
                                     final pq = (p['quantity'] as num?)?.toInt() ?? 0;
                                     return Padding(
@@ -227,6 +228,16 @@ class StockToolsView extends GetView<StockToolsController> {
                                           Text(
                                             '×$pq',
                                             style: GoogleFonts.outfit(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                          IconButton(
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                            icon: const Icon(Icons.copy, size: 14, color: AppColors.slate400),
+                                            tooltip: 'Copy location',
+                                            onPressed: () async {
+                                              await Clipboard.setData(ClipboardData(text: label));
+                                              Get.snackbar('Copied', label, snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+                                            },
                                           ),
                                         ],
                                       ),
@@ -1081,6 +1092,16 @@ class StockToolsView extends GetView<StockToolsController> {
                       ),
                     ],
                   ),
+                  Obx(() {
+                    if (controller.requireBinLocations.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Box or storage code required for: ${controller.requireBinLocations.join(', ')}',
+                        style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11),
+                      ),
+                    );
+                  }),
                   Obx(() => ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -1150,6 +1171,8 @@ class StockToolsView extends GetView<StockToolsController> {
                             ),
                             const SizedBox(height: 8),
                             _buildPlacementMiniField('Storage code', l['storage_code'] ?? '', (v) => formLocs[idx] = {...l, 'storage_code': v}),
+                            const SizedBox(height: 8),
+                            _buildPlacementMiniField('Notes', l['notes'] ?? '', (v) => formLocs[idx] = {...l, 'notes': v}),
                           ],
                         ),
                       );

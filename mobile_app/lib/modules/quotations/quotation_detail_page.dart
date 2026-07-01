@@ -92,7 +92,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
 
   String get _state => (_q?['state'] as String?) ?? '';
 
-  bool get _canEdit => _state == 'draft' || _state == 'sent';
+  bool get _canEdit => _state == 'draft' || _state == 'sent' || _state == 'on_hold';
 
   bool get _canDelete => _state != 'accepted';
 
@@ -152,7 +152,107 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
 
   Future<void> _reject() async {
     try {
-      await _repo.rejectQuotation(_id);
+      final reasons = await _repo.getRejectionReasons();
+      String selectedReason = reasons.isNotEmpty ? reasons.first : 'Other';
+      final notesController = TextEditingController();
+
+      if (!mounted) return;
+      final result = await showDialog<Map<String, String>?>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setState) {
+              final isOther = selectedReason.toLowerCase() == 'other';
+              return AlertDialog(
+                title: const Text('Why was this quote lost?'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Select a reason for rejecting this quotation.',
+                        style: TextStyle(fontSize: 13, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedReason,
+                        decoration: const InputDecoration(
+                          labelText: 'Reason',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          ...reasons.map((r) => DropdownMenuItem(value: r, child: Text(r))),
+                          if (!reasons.any((r) => r.toLowerCase() == 'other'))
+                            const DropdownMenuItem(value: 'Other', child: Text('Other')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              selectedReason = val;
+                            });
+                          }
+                        },
+                      ),
+                      if (isOther) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: notesController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Rejection Notes',
+                            hintText: 'Explain why this job was lost...',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, null),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                    onPressed: () {
+                      if (isOther && notesController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Please write rejection notes.')),
+                        );
+                        return;
+                      }
+                      Navigator.pop(ctx, {
+                        'reason': selectedReason,
+                        'notes': notesController.text.trim(),
+                      });
+                    },
+                    child: const Text('Reject'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (result == null) return;
+
+      await _repo.rejectQuotation(
+        _id,
+        reason: result['reason'],
+        notes: result['notes'],
+      );
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _hold() async {
+    try {
+      await _repo.holdQuotation(_id);
       await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -352,11 +452,12 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                   ActionChip(
                     avatar: const Icon(Icons.email_rounded, size: 18),
                     label: const Text('Send'),
-                    onPressed: (_state == 'draft' || _state == 'sent') ? _sendEmailSheet : null,
+                    onPressed: (_state == 'draft' || _state == 'sent' || _state == 'on_hold') ? _sendEmailSheet : null,
                   ),
                   if (_state == 'sent') ...[
                     ActionChip(label: const Text('Accept'), onPressed: _accept),
                     ActionChip(label: const Text('Reject'), onPressed: _reject),
+                    ActionChip(label: const Text('On Hold'), onPressed: _hold),
                   ],
                   if (custId > 0)
                     ActionChip(
@@ -411,6 +512,12 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
               const SizedBox(height: 16),
               _kv('Quotation date', QuotationHelpers.formatDateIso(q['quotation_date'] as String?)),
               _kv('Valid until', QuotationHelpers.formatDateIso(q['valid_until'] as String?)),
+              if (_state == 'rejected') ...[
+                if (q['rejection_reason'] != null)
+                  _kv('Lost reason', q['rejection_reason'] as String),
+                if (q['rejection_notes'] != null && (q['rejection_notes'] as String).trim().isNotEmpty)
+                  _kv('Rejection notes', q['rejection_notes'] as String),
+              ],
               if ((q['work_site_name'] as String?)?.trim().isNotEmpty == true)
                 _kv('Work site', '${q['work_site_name']}\n${q['work_site_address'] ?? ''}'),
               if ((q['description'] as String?)?.trim().isNotEmpty == true)

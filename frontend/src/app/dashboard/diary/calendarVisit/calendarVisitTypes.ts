@@ -1,6 +1,7 @@
 export type CalendarVisit = {
   id: number;
-  jobId: number;
+  jobId: number | null;
+  isGeneral?: boolean;
   startTime: string;
   durationMinutes: number;
   title: string;

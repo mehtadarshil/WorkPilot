@@ -252,30 +252,17 @@ export default function DashboardLayout({
               </Link>
             )}
             {hasNavPermission(user, 'certifications') && (
-              <>
-                <Link
-                  href="/dashboard/certificates"
-                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                    pathname.startsWith('/dashboard/certificates')
-                      ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <FileCheck2 className="size-4" />
-                  Certificates
-                </Link>
-                <Link
-                  href="/dashboard/staff-certifications"
-                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                    pathname.startsWith('/dashboard/staff-certifications')
-                      ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Award className="size-4" />
-                  Staff certs
-                </Link>
-              </>
+              <Link
+                href="/dashboard/certificates"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/certificates')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <FileCheck2 className="size-4" />
+                Certificates
+              </Link>
             )}
             {hasNavPermission(user, 'jobs') && (
               <Link

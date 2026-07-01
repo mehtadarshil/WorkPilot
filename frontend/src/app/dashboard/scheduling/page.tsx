@@ -43,10 +43,12 @@ import {
   type CalendarVisit,
   type HoverAnchor,
 } from '../diary/calendarVisit';
+import { GeneralDiaryEventModal, type GeneralDiaryEventForm } from '../diary/GeneralDiaryEventModal';
 
 interface ScheduledJob {
   id: number;
-  job_id: number;
+  job_id: number | null;
+  is_general?: boolean;
   title: string;
   description: string | null;
   priority: string;
@@ -137,9 +139,10 @@ function jobToEvent(j: ScheduledJob): { id: number; title: string; start: Date; 
   const officerLabel = j.officers && j.officers.length > 0
     ? j.officers.map((o) => o.full_name).join(', ')
     : j.officer_full_name;
+  const baseTitle = j.is_general ? (j.title || 'General event') : j.title;
   return {
     id: j.id,
-    title: `${j.title}${officerLabel ? ` • ${officerLabel}` : ''}`,
+    title: `${baseTitle}${officerLabel ? ` • ${officerLabel}` : ''}`,
     start,
     end,
     job: j,
@@ -185,6 +188,15 @@ export default function SchedulingPage() {
   const diaryTimelineScrollRef = useRef<HTMLDivElement>(null);
   const [diaryTimelineScrollHints, setDiaryTimelineScrollHints] = useState({ left: false, right: false });
   const [diaryTimelineHasOverflow, setDiaryTimelineHasOverflow] = useState(false);
+  const [generalModalOpen, setGeneralModalOpen] = useState(false);
+  const [generalForm, setGeneralForm] = useState<GeneralDiaryEventForm>({
+    title: '',
+    start_time: '',
+    duration_minutes: 60,
+    officer_ids: [],
+    notes: '',
+    location: '',
+  });
   const [hoveredVisit, setHoveredVisit] = useState<CalendarVisit | null>(null);
   const [hoveredAnchor, setHoveredAnchor] = useState<HoverAnchor | null>(null);
 
@@ -193,6 +205,7 @@ export default function SchedulingPage() {
   const scheduledJobToVisit = (job: ScheduledJob): CalendarVisit => ({
     id: job.id,
     jobId: job.job_id,
+    isGeneral: job.is_general === true || job.job_id == null,
     startTime: job.schedule_start!,
     durationMinutes: job.duration_minutes || 60,
     title: job.title,
@@ -301,7 +314,8 @@ export default function SchedulingPage() {
       const data = await getJson<{ events: any[] }>(`/diary-events?${params.toString()}`, token);
       const mappedEvents = (data.events || []).map(e => ({
         id: e.diary_id,
-        job_id: e.job_id,
+        job_id: e.job_id ?? null,
+        is_general: e.is_general === true,
         title: e.title || 'Untitled Job',
         description: e.description,
         officer_id: e.officer_id,
@@ -428,7 +442,6 @@ export default function SchedulingPage() {
   };
 
   const handleTimelineClick = (officer: Officer, e: React.MouseEvent<HTMLDivElement>) => {
-    if (!highlightedJob) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
@@ -448,6 +461,22 @@ export default function SchedulingPage() {
       0,
       0,
     );
+
+    const tzOffsetMs = clickedDate.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(clickedDate.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+
+    if (!highlightedJob) {
+      setGeneralForm({
+        title: '',
+        start_time: localISOTime,
+        duration_minutes: 60,
+        officer_ids: [officer.id],
+        notes: '',
+        location: '',
+      });
+      setGeneralModalOpen(true);
+      return;
+    }
 
     setSelectedJob(highlightedJob);
     // Use local formatting that works for inputs
@@ -613,7 +642,30 @@ export default function SchedulingPage() {
               <h1 className="text-3xl font-black tracking-tight text-slate-900">Scheduling & Dispatch</h1>
               <p className="mt-1 text-slate-500">Plan, organize, and assign jobs to the right people at the right time.</p>
             </div>
-            <motion.button
+            <div className="flex flex-wrap items-center gap-2">
+              <motion.button
+                type="button"
+                onClick={() => {
+                  const tzOffsetMs = calendarDate.getTimezoneOffset() * 60000;
+                  const localISOTime = new Date(calendarDate.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+                  setGeneralForm({
+                    title: '',
+                    start_time: localISOTime,
+                    duration_minutes: 60,
+                    officer_ids: officers[0] ? [officers[0].id] : [],
+                    notes: '',
+                    location: '',
+                  });
+                  setGeneralModalOpen(true);
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-5 py-2.5 font-bold text-violet-900 shadow-sm transition hover:bg-violet-100"
+              >
+                <CalendarPlus className="size-5" />
+                Add general event
+              </motion.button>
+              <motion.button
               type="button"
               onClick={() => {
                 setCreateError(null);
@@ -627,6 +679,7 @@ export default function SchedulingPage() {
               <Plus className="size-5" />
               Create New Job
             </motion.button>
+            </div>
           </div>
 
           {viewMode === 'calendar' && (
@@ -668,7 +721,7 @@ export default function SchedulingPage() {
                   onNavigate={(d) => setCalendarDate(d)}
                   onSelectEvent={(evt) => {
                     const j = (evt as { job?: ScheduledJob }).job;
-                    if (j) openScheduleModal(j);
+                    if (j && !j.is_general) openScheduleModal(j);
                   }}
                   eventPropGetter={() => ({
                     style: {
@@ -739,7 +792,7 @@ export default function SchedulingPage() {
                                        className="group relative flex min-h-[60px] border-b border-slate-100 hover:bg-slate-50"
                                     >
                                        <div
-                                          className={`relative min-h-[60px] w-full cursor-pointer ${highlightedJob ? 'hover:bg-[#14B8A6]/5' : ''}`}
+                                          className="relative min-h-[60px] w-full cursor-pointer hover:bg-[#14B8A6]/5"
                                           onClick={(e) => handleTimelineClick(officer, e)}
                                        >
                                           <div className="pointer-events-none absolute inset-0 flex">
@@ -1309,6 +1362,15 @@ export default function SchedulingPage() {
           </motion.div>
         </div>
       )}
+
+      <GeneralDiaryEventModal
+        open={generalModalOpen}
+        officers={officers}
+        initialForm={generalForm}
+        token={token}
+        onClose={() => setGeneralModalOpen(false)}
+        onSaved={fetchScheduling}
+      />
 
       {hoveredVisit && hoveredAnchor && (
         <CalendarVisitHoverCard visit={hoveredVisit} anchor={hoveredAnchor} />

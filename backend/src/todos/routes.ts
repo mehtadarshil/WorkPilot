@@ -28,6 +28,7 @@ export async function ensureTodoSchema(pool: Pool): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos(due_date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_todos_completed ON todos(completed)`);
+  await pool.query(`ALTER TABLE todos ADD COLUMN IF NOT EXISTS assigned_officer VARCHAR(255)`);
 }
 
 function todoRow(row: Record<string, unknown>) {
@@ -45,6 +46,7 @@ function todoRow(row: Record<string, unknown>) {
     completed_at: row.completed_at instanceof Date ? row.completed_at.toISOString() : null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
     updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : null,
+    assigned_officer: (row.assigned_officer as string | null) ?? null,
   };
 }
 
@@ -105,7 +107,7 @@ export function mountTodoRoutes(app: Application, deps: TodoRouteDeps): void {
 
       const result = await pool.query(
         `SELECT t.id, t.user_id, u.full_name AS user_name, t.title, t.description,
-                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at
+                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at, t.assigned_officer
          FROM todos t
          LEFT JOIN users u ON u.id = t.user_id
          ${whereClause}
@@ -148,17 +150,17 @@ export function mountTodoRoutes(app: Application, deps: TodoRouteDeps): void {
 
     try {
       const result = await pool.query(
-        `INSERT INTO todos (user_id, title, description, due_date, due_time)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO todos (user_id, title, description, due_date, due_time, assigned_officer)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [assignedUserId, title, description, dueDate || null, dueTime || null],
+        [assignedUserId, title, description, dueDate || null, dueTime || null, typeof body.assigned_officer === 'string' ? body.assigned_officer.trim() || null : null],
       );
 
       const todoId = result.rows[0].id;
 
       const row = await pool.query(
         `SELECT t.id, t.user_id, u.full_name AS user_name, t.title, t.description,
-                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at
+                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at, t.assigned_officer
          FROM todos t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.id = $1`,
@@ -228,6 +230,10 @@ export function mountTodoRoutes(app: Application, deps: TodoRouteDeps): void {
           updates.push(`completed_at = NULL`);
         }
       }
+      if (body.assigned_officer !== undefined) {
+        updates.push(`assigned_officer = $${paramIdx++}`);
+        params.push(typeof body.assigned_officer === 'string' ? body.assigned_officer.trim() || null : null);
+      }
       if (isAdmin && typeof body.user_id === 'string') {
         const parsed = parseInt(body.user_id.trim(), 10);
         if (Number.isFinite(parsed)) {
@@ -255,7 +261,7 @@ export function mountTodoRoutes(app: Application, deps: TodoRouteDeps): void {
 
       const row = await pool.query(
         `SELECT t.id, t.user_id, u.full_name AS user_name, t.title, t.description,
-                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at
+                t.due_date, t.due_time, t.completed, t.completed_at, t.created_at, t.updated_at, t.assigned_officer
          FROM todos t
          LEFT JOIN users u ON u.id = t.user_id
          WHERE t.id = $1`,

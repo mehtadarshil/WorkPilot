@@ -1,5 +1,6 @@
 import 'customer_specific_note.dart';
 import 'diary_extra_submission.dart';
+import 'job_completion_context.dart';
 
 List<Map<String, dynamic>> _parseOfficers(dynamic raw) {
   final list = <Map<String, dynamic>>[];
@@ -17,7 +18,8 @@ List<Map<String, dynamic>> _parseOfficers(dynamic raw) {
 class DiaryEventDetail {
   DiaryEventDetail({
     required this.diaryId,
-    required this.jobId,
+    this.jobId,
+    this.isGeneral = false,
     this.officerId,
     required this.startTimeIso,
     required this.durationMinutes,
@@ -64,7 +66,8 @@ class DiaryEventDetail {
     this.siteImages = const [],
     this.jobReportSubmitted = false,
     this.statusLogs = const [],
-  });
+    JobCompletionContext? jobCompletionContext,
+  }) : jobCompletionContext = jobCompletionContext ?? JobCompletionContext.empty();
 
   factory DiaryEventDetail.fromJson(Map<String, dynamic> json) {
     final e = json['event'];
@@ -121,7 +124,8 @@ class DiaryEventDetail {
     }
     return DiaryEventDetail(
       diaryId: (m['diary_id'] as num).toInt(),
-      jobId: (m['job_id'] as num).toInt(),
+      jobId: (m['job_id'] as num?)?.toInt(),
+      isGeneral: m['is_general'] == true || m['job_id'] == null,
       officerId: (m['officer_id'] as num?)?.toInt(),
       startTimeIso: m['start_time'] as String,
       durationMinutes: (m['duration_minutes'] as num?)?.toInt() ?? 60,
@@ -179,11 +183,17 @@ class DiaryEventDetail {
           : (m['status_logs'] is List
               ? (m['status_logs'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
               : const []),
+      jobCompletionContext: JobCompletionContext.fromJson(
+        json['job_completion_context'] is Map
+            ? Map<String, dynamic>.from(json['job_completion_context'] as Map)
+            : null,
+      ),
     );
   }
 
   final int diaryId;
-  final int jobId;
+  final int? jobId;
+  final bool isGeneral;
   final int? officerId;
   final String startTimeIso;
   final int durationMinutes;
@@ -230,6 +240,18 @@ class DiaryEventDetail {
   final List<DiarySiteImage> siteImages;
   final bool jobReportSubmitted;
   final List<Map<String, dynamic>> statusLogs;
+  final JobCompletionContext jobCompletionContext;
+
+  String get headerTitle {
+    if (isGeneral) {
+      final t = title?.trim();
+      if (t != null && t.isNotEmpty) return t;
+      return 'General event';
+    }
+    if (isQuotationVisit) return 'Quotation visit';
+    if (jobId != null) return 'Job #$jobId';
+    return 'Visit';
+  }
 
   String? get primaryOfficerName {
     for (final o in officers) {
@@ -281,6 +303,7 @@ class DiaryEventDetail {
     return DiaryEventDetail(
       diaryId: diaryId,
       jobId: jobId,
+      isGeneral: isGeneral,
       officerId: officerId,
       startTimeIso: startTimeIso,
       durationMinutes: durationMinutes,
@@ -327,6 +350,7 @@ class DiaryEventDetail {
       siteImages: siteImages ?? this.siteImages,
       jobReportSubmitted: jobReportSubmitted ?? this.jobReportSubmitted,
       statusLogs: statusLogs ?? this.statusLogs,
+      jobCompletionContext: this.jobCompletionContext,
     );
   }
 }

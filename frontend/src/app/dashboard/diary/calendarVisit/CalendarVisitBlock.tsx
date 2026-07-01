@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { Ban, Check, Clock, Home, Navigation } from 'lucide-react';
 import type { CalendarVisit } from './calendarVisitTypes';
 import { formatJobStateLabel } from './jobStateLabel';
-import { paletteForJob, resolveVisitStatus, statusIconColor } from './calendarVisitTheme';
+import { paletteForVisit, resolveVisitStatus, statusIconColor } from './calendarVisitTheme';
 
 type Props = {
   visit: CalendarVisit;
@@ -34,6 +34,9 @@ function StatusCornerIcon({ status }: { status: ReturnType<typeof resolveVisitSt
 }
 
 function visitJobNumber(visit: CalendarVisit): string {
+  if (visit.isGeneral || visit.jobId == null) {
+    return visit.title?.trim() || visit.worksCategory?.trim() || 'General event';
+  }
   const n = visit.jobNumber?.trim();
   if (n) return n;
   return `JOB-${String(visit.jobId).padStart(4, '0')}`;
@@ -58,9 +61,9 @@ function VisitSummaryLines({
 }) {
   const start = new Date(visit.startTime);
   const jobNo = visitJobNumber(visit);
-  const address = visitAddressLine(visit);
+  const address = visit.isGeneral ? visit.addressLine1?.trim() || visit.address?.trim() || '' : visitAddressLine(visit);
   const category = visitWorksCategory(visit);
-  const status = formatJobStateLabel(visit.jobState);
+  const status = visit.isGeneral ? null : formatJobStateLabel(visit.jobState);
   const textSize = compact ? 'text-[9px]' : 'text-[10px]';
 
   return (
@@ -75,7 +78,9 @@ function VisitSummaryLines({
         {address ? <span className="font-medium text-slate-600"> · {address}</span> : null}
       </div>
       <div className="truncate font-medium text-slate-700">{category}</div>
-      <div className="truncate font-semibold uppercase tracking-wide text-slate-500">{status}</div>
+      {status ? (
+        <div className="truncate font-semibold uppercase tracking-wide text-slate-500">{status}</div>
+      ) : null}
     </div>
   );
 }
@@ -89,7 +94,7 @@ export function CalendarVisitBlock({
   onMouseLeave,
   onClick,
 }: Props) {
-  const palette = paletteForJob(visit.jobId);
+  const palette = paletteForVisit(visit);
   const status = resolveVisitStatus(visit.eventStatus);
   const start = new Date(visit.startTime);
   const end = new Date(start.getTime() + visit.durationMinutes * 60000);
@@ -130,7 +135,7 @@ export function CalendarVisitBlock({
             className="flex size-4 shrink-0 items-center justify-center rounded text-[9px] font-extrabold text-white"
             style={{ backgroundColor: palette.badgeBg }}
           >
-            J
+            {visit.isGeneral ? 'G' : 'J'}
           </span>
           <span className="truncate font-bold text-slate-800">{timeLabel}</span>
         </div>

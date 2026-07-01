@@ -81,8 +81,47 @@ class QuotationsRepository extends GetxService {
     await _api.post<void>('/quotations/$id/accept', data: <String, dynamic>{});
   }
 
-  Future<void> rejectQuotation(int id) async {
-    await _api.post<void>('/quotations/$id/reject', data: <String, dynamic>{});
+  Future<void> rejectQuotation(int id, {String? reason, String? notes}) async {
+    await _api.post<void>(
+      '/quotations/$id/reject',
+      data: <String, dynamic>{
+        if (reason != null) 'rejection_reason': reason,
+        if (notes != null) 'rejection_notes': notes,
+      },
+    );
+  }
+
+  Future<void> holdQuotation(int id) async {
+    await _api.post<void>('/quotations/$id/hold', data: <String, dynamic>{});
+  }
+
+  Future<List<String>> getRejectionReasons() async {
+    try {
+      final res = await _api.get<Map<String, dynamic>>('/settings/quotation-rejection-reasons');
+      final list = res.data?['reasons'];
+      if (list is List) {
+        final List<String> reasons = [];
+        for (final item in list) {
+          if (item is Map) {
+            final reason = item['reason'];
+            final isActive = item['is_active'];
+            if (reason is String && isActive == true) {
+              reasons.add(reason);
+            }
+          }
+        }
+        return reasons;
+      }
+    } catch (_) {
+      // fallback
+    }
+    return <String>[
+      'Too Expensive',
+      'Competitor Chosen',
+      'Delayed Response',
+      'Scope of Work Changed',
+      'Other',
+    ];
   }
 
   Future<Map<String, dynamic>> transferToInvoice(int id) async {

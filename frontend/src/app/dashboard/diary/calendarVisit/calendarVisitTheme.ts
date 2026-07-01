@@ -17,8 +17,22 @@ export const VISIT_PALETTES: VisitPalette[] = [
   { bg: '#F4ECF7', border: '#C39BD3', badgeBg: '#8E44AD', headerBg: '#EBDEF0', headerBorder: '#6C3483' },
 ];
 
+/** Fixed palette for general (non-job) diary events. */
+export const GENERAL_VISIT_PALETTE: VisitPalette = {
+  bg: '#F4ECF7',
+  border: '#C39BD3',
+  badgeBg: '#8E44AD',
+  headerBg: '#EBDEF0',
+  headerBorder: '#6C3483',
+};
+
 export function paletteForJob(jobId: number): VisitPalette {
   return VISIT_PALETTES[Math.abs(jobId) % VISIT_PALETTES.length];
+}
+
+export function paletteForVisit(visit: { isGeneral?: boolean; jobId: number | null; id: number }): VisitPalette {
+  if (visit.isGeneral || visit.jobId == null) return GENERAL_VISIT_PALETTE;
+  return paletteForJob(visit.jobId);
 }
 
 export function resolveVisitStatus(status?: string | null): VisitStatusKey {

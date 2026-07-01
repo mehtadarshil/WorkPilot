@@ -14,6 +14,8 @@ abstract class QuotationHelpers {
         return 'Rejected';
       case 'expired':
         return 'Expired';
+      case 'on_hold':
+        return 'On Hold';
       default:
         return state.isEmpty ? '—' : state;
     }
@@ -31,6 +33,8 @@ abstract class QuotationHelpers {
         return const Color(0xFFF87171);
       case 'expired':
         return const Color(0xFF64748B);
+      case 'on_hold':
+        return const Color(0xFFFBBF24);
       default:
         return const Color(0xFF94A3B8);
     }

@@ -62,7 +62,7 @@ class DiaryExtraSubmissionsPanel extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Add notes and/or media (compressed on send). Videos max $kMaxExtraVideoDurationSeconds s from Photos.',
+              'Add notes and/or media (compressed on send). Videos max $kMaxExtraVideoDurationSeconds s — record or upload.',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 height: 1.35,
@@ -164,13 +164,64 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
     setState(() => _imagePaths.add(f.path));
   }
 
-  Future<void> _addVideoFromPhotos() async {
+  Future<void> _showVideoSourcePicker() async {
+    if (_totalPicks >= _kMaxItemsPerSubmission) {
+      _toast('At most $_kMaxItemsPerSubmission files per submission.');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xF21E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.videocam_rounded, color: Colors.white),
+              title: Text(
+                'Record video',
+                style: GoogleFonts.inter(color: Colors.white),
+              ),
+              subtitle: Text(
+                'Max $kMaxExtraVideoDurationSeconds seconds',
+                style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickVideo(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined, color: Colors.white),
+              title: Text(
+                'Choose from library',
+                style: GoogleFonts.inter(color: Colors.white),
+              ),
+              subtitle: Text(
+                'Max $kMaxExtraVideoDurationSeconds seconds',
+                style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickVideo(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickVideo(ImageSource source) async {
     if (_totalPicks >= _kMaxItemsPerSubmission) {
       _toast('At most $_kMaxItemsPerSubmission files per submission.');
       return;
     }
     final f = await _picker.pickVideo(
-      source: ImageSource.gallery,
+      source: source,
       maxDuration: const Duration(seconds: kMaxExtraVideoDurationSeconds),
     );
     if (f == null) return;
@@ -298,10 +349,10 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
                         ),
                       ),
                       OutlinedButton.icon(
-                        onPressed: busy ? null : _addVideoFromPhotos,
+                        onPressed: busy ? null : _showVideoSourcePicker,
                         icon: const Icon(Icons.videocam_outlined, size: 18),
                         label: Text(
-                          'Video · Photos (max ${kMaxExtraVideoDurationSeconds}s)',
+                          'Video (max ${kMaxExtraVideoDurationSeconds}s)',
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.slate300,

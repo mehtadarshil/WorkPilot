@@ -55,6 +55,7 @@ const QUOTATION_STATES = [
   { value: 'accepted', label: 'Accepted', color: 'bg-emerald-100 text-emerald-800' },
   { value: 'rejected', label: 'Rejected', color: 'bg-rose-100 text-rose-800' },
   { value: 'expired', label: 'Expired', color: 'bg-slate-200 text-slate-500' },
+  { value: 'on_hold', label: 'On Hold', color: 'bg-amber-100 text-amber-800' },
 ] as const;
 
 function formatDate(iso: string | null): string {
@@ -315,7 +316,7 @@ export default function QuotationsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {QUOTATION_STATES.map((s) => (
               <motion.div
                 key={s.value}

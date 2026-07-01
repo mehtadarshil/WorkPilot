@@ -11,10 +11,12 @@ import '../../core/services/storage_service.dart';
 import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
 import '../../data/models/diary_event_detail.dart';
+import '../../data/models/job_completion_context.dart';
 import '../certificates/certificate_catalog.dart';
 import '../home/controllers/home_controller.dart';
 import 'diary_event_detail_controller.dart';
 import 'diary_extra_submissions_panel.dart';
+import 'job_completion_context_panel.dart';
 import 'diary_job_expenses_panel.dart';
 import 'diary_technical_notes_panel.dart';
 import '../customers/customer_tabs/image_viewer_helper.dart';
@@ -119,7 +121,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
             final d = controller.detail.value;
             if (d == null) return const Text('Visit');
             if (d.isQuotationVisit) return const Text('Quotation visit');
-            return Text('Job #${d.jobId}');
+            return Text(d.headerTitle);
           }),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded),
@@ -210,7 +212,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               );
                             }),
                             _StatusBanner(d: d, phase: controller.phase),
-                            if (controller.phase == DiaryVisitUiPhase.completed || d.jobReportSubmitted) ...[
+                            if (!d.isGeneral &&
+                                (controller.phase == DiaryVisitUiPhase.completed || d.jobReportSubmitted)) ...[
                               const SizedBox(height: 12),
                               _SubmittedJobReportBanner(
                                 onOpen: () async {
@@ -224,7 +227,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 },
                               ),
                             ],
-                            if (controller.phase == DiaryVisitUiPhase.completed) ...[
+                            if (!d.isGeneral && controller.phase == DiaryVisitUiPhase.completed) ...[
                               if (!d.isQuotationVisit) ...[
                                 const SizedBox(height: 12),
                                 _JobCompletionDocumentsPanel(controller: controller),
@@ -250,7 +253,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 ),
                               ],
                             ],
-                            if (controller.phase == DiaryVisitUiPhase.onSite &&
+                            if (!d.isGeneral &&
+                                controller.phase == DiaryVisitUiPhase.onSite &&
                                 controller.effectiveJobReportQuestionCount >
                                     0) ...[
                               const SizedBox(height: 12),
@@ -264,7 +268,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                 },
                               ),
                             ],
-                            if (controller.phase == DiaryVisitUiPhase.onSite &&
+                            if (!d.isGeneral &&
+                                controller.phase == DiaryVisitUiPhase.onSite &&
                                 d.isQuotationVisit) ...[
                               const SizedBox(height: 12),
                               _CreateQuotationBanner(
@@ -342,9 +347,13 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  _accentTitle('Site information'),
+                                  _accentTitle(d.isGeneral ? 'Location' : 'Site information'),
                                   const SizedBox(height: 12),
-                                  _NavigableAddress(address: d.fullSiteAddress, lat: d.siteLatitude, lon: d.siteLongitude),
+                                  if (d.fullSiteAddress.trim() != '—')
+                                    _NavigableAddress(address: d.fullSiteAddress, lat: d.siteLatitude, lon: d.siteLongitude)
+                                  else if (d.isGeneral)
+                                    _kv('Location', '—'),
+                                  if (!d.isGeneral) ...[
                                   if (d.siteNotes != null && d.siteNotes!.trim().isNotEmpty) ...[
                                     const SizedBox(height: 14),
                                     Container(
@@ -519,9 +528,11 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                       ),
                                     ],
                                   ],
+                                  ],
                                 ],
                               ),
                             ),
+                            if (!d.isGeneral) ...[
                             const SizedBox(height: 12),
                             _DetailGlassPanel(
                               child: Column(
@@ -677,6 +688,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               controller: controller,
                               isQuotationVisit: d.isQuotationVisit,
                             ),
+                            ],
                             const SizedBox(height: 12),
                             DiaryExtraSubmissionsPanel(controller: controller),
                             const SizedBox(height: 12),
@@ -692,7 +704,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                     final loaded = controller.jobReportHistoryLoaded.value;
                     final err = controller.jobReportHistoryError.value;
                     final count = controller.jobReportHistory.length;
-                    if ((p != DiaryVisitUiPhase.onSite &&
+                    if (d.isGeneral ||
+                        (p != DiaryVisitUiPhase.onSite &&
                             p != DiaryVisitUiPhase.completed) ||
                         !loaded ||
                         err.isNotEmpty ||
@@ -2276,7 +2289,12 @@ class _BottomActions extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: busy
                       ? null
-                      : () => _showEditVisitSheet(context, controller, d),
+                      : () => _showEditVisitSheet(
+                            context,
+                            controller,
+                            d,
+                            canChangeOfficers: isAdminOrScheduler,
+                          ),
                   icon: const Icon(Icons.edit_calendar_rounded, size: 18),
                   label: Text(
                     'Edit visit',
@@ -2487,6 +2505,49 @@ class _AbortVisitDialogState extends State<_AbortVisitDialog> {
 }
 
 Future<void> _confirmComplete(DiaryEventDetailController c) async {
+  final d = c.detail.value;
+  if (d?.isGeneral == true) {
+    final ok = await Get.dialog<bool>(
+      AlertDialog(
+        backgroundColor: const Color(0xF21E293B),
+        surfaceTintColor: Colors.transparent,
+        title: Text(
+          'Complete visit?',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+        content: Text(
+          'Mark this general event as complete?',
+          style: GoogleFonts.inter(color: AppColors.slate300),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(result: false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.slate300),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Get.back(result: true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Complete'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await c.applyStatus('completed');
+    return;
+  }
+
+  final ctx = d?.jobCompletionContext ?? JobCompletionContext.empty();
+  final myStage = currentVisitNextJobState(ctx) ?? 'completed';
+
   final ok = await Get.dialog<bool>(
     AlertDialog(
       backgroundColor: const Color(0xF21E293B),
@@ -2498,9 +2559,15 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
           color: Colors.white,
         ),
       ),
-      content: Text(
-        'This marks the visit complete, closes site time on your timesheet, and may complete the job for invoicing.',
-        style: GoogleFonts.inter(color: AppColors.slate300, height: 1.4),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: buildCompleteVisitContextContent(
+            context: ctx,
+            myChosenJobState: myStage,
+          ),
+        ),
       ),
       actions: [
         TextButton(
@@ -2709,13 +2776,18 @@ class _VisitTimelinePanel extends StatelessWidget {
 void _showEditVisitSheet(
   BuildContext context,
   DiaryEventDetailController controller,
-  DiaryEventDetail detail,
-) {
+  DiaryEventDetail detail, {
+  required bool canChangeOfficers,
+}) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _EditVisitSheet(controller: controller, detail: detail),
+    builder: (_) => _EditVisitSheet(
+      controller: controller,
+      detail: detail,
+      canChangeOfficers: canChangeOfficers,
+    ),
   );
 }
 
@@ -2723,10 +2795,12 @@ class _EditVisitSheet extends StatefulWidget {
   const _EditVisitSheet({
     required this.controller,
     required this.detail,
+    required this.canChangeOfficers,
   });
 
   final DiaryEventDetailController controller;
   final DiaryEventDetail detail;
+  final bool canChangeOfficers;
 
   @override
   State<_EditVisitSheet> createState() => _EditVisitSheetState();
@@ -2737,6 +2811,10 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
   late TimeOfDay _selectedTime;
   late int _durationMinutes;
   late TextEditingController _notesCtrl;
+  final Set<int> _selectedOfficerIds = {};
+  List<Map<String, dynamic>> _availableOfficers = [];
+  bool _loadingOfficers = false;
+  String? _officerLoadError;
 
   static const _durations = [
     15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 420, 480,
@@ -2759,6 +2837,42 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
     _notesCtrl = TextEditingController(
       text: widget.detail.notes?.trim() ?? '',
     );
+    for (final o in widget.detail.officers) {
+      if (o['is_primary'] != true) continue;
+      final id = (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
+      if (id != null) _selectedOfficerIds.add(id);
+    }
+    for (final o in widget.detail.officers) {
+      final id = (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
+      if (id != null) _selectedOfficerIds.add(id);
+    }
+    if (_selectedOfficerIds.isEmpty && widget.detail.officerId != null) {
+      _selectedOfficerIds.add(widget.detail.officerId!);
+    }
+    if (widget.canChangeOfficers) {
+      _loadOfficers();
+    }
+  }
+
+  Future<void> _loadOfficers() async {
+    setState(() {
+      _loadingOfficers = true;
+      _officerLoadError = null;
+    });
+    try {
+      final list = await widget.controller.fetchAssignableOfficers();
+      if (!mounted) return;
+      setState(() {
+        _availableOfficers = list;
+        _loadingOfficers = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingOfficers = false;
+        _officerLoadError = '$e';
+      });
+    }
   }
 
   @override
@@ -2884,7 +2998,9 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Update the appointment date, time, duration, or notes.',
+                  widget.canChangeOfficers
+                      ? 'Update the appointment date, time, duration, engineers, or notes.'
+                      : 'Update the appointment date, time, duration, or notes.',
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     color: AppColors.slate300,
@@ -2892,6 +3008,104 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                if (widget.canChangeOfficers) ...[
+                  Text(
+                    'ENGINEERS',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.slate400,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_loadingOfficers)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    )
+                  else if (_officerLoadError != null)
+                    Text(
+                      'Could not load engineers. ${_officerLoadError!}',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFFFFA8A8),
+                      ),
+                    )
+                  else if (_availableOfficers.isEmpty)
+                    Text(
+                      'No engineers available',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.slate400,
+                      ),
+                    )
+                  else
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.whiteOverlay(0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.whiteOverlay(0.14),
+                        ),
+                      ),
+                      child: Column(
+                        children: _availableOfficers.map((o) {
+                          final id = (o['id'] as num?)?.toInt() ?? 0;
+                          if (id <= 0) return const SizedBox.shrink();
+                          final name = (o['full_name'] as String?)?.trim().isNotEmpty == true
+                              ? (o['full_name'] as String).trim()
+                              : 'Engineer #$id';
+                          final selected = _selectedOfficerIds.contains(id);
+                          final ordered = _selectedOfficerIds.toList();
+                          final isPrimary =
+                              selected && ordered.isNotEmpty && ordered.first == id;
+                          return CheckboxListTile(
+                            value: selected,
+                            onChanged: (v) {
+                              setState(() {
+                                if (v == true) {
+                                  _selectedOfficerIds.add(id);
+                                } else {
+                                  _selectedOfficerIds.remove(id);
+                                }
+                              });
+                            },
+                            title: Text(
+                              isPrimary ? '$name (Primary)' : name,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                color: Colors.white,
+                                fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w500,
+                              ),
+                            ),
+                            activeColor: AppColors.primary,
+                            checkColor: Colors.white,
+                            dense: true,
+                            visualDensity: VisualDensity.compact,
+                            controlAffinity: ListTileControlAffinity.leading,
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'First selected engineer is marked as primary.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.slate400,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Date & Time row ──────────────────────────────────────────
                 Text(
@@ -3038,6 +3252,20 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                         onPressed: busy
                             ? null
                             : () async {
+                                if (widget.canChangeOfficers &&
+                                    _selectedOfficerIds.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Select at least one engineer',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final officerIds = widget.canChangeOfficers
+                                    ? _selectedOfficerIds.toList()
+                                    : null;
                                 Navigator.pop(context);
                                 await widget.controller.rescheduleVisit(
                                   startTime: _combinedStart,
@@ -3045,6 +3273,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                                   notes: _notesCtrl.text.trim().isEmpty
                                       ? null
                                       : _notesCtrl.text.trim(),
+                                  officerIds: officerIds,
                                 );
                               },
                         style: ElevatedButton.styleFrom(

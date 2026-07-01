@@ -148,7 +148,8 @@ class DiaryEventDetailController extends GetxController {
         n,
       );
       final p = visitPhaseFromStatus(detail.value?.eventStatus);
-      if (p == DiaryVisitUiPhase.onSite || p == DiaryVisitUiPhase.completed) {
+      if ((p == DiaryVisitUiPhase.onSite || p == DiaryVisitUiPhase.completed) &&
+          detail.value?.isGeneral != true) {
         jobReportHistoryLoaded.value = false;
         await _loadJobReportHistory();
       } else {
@@ -320,11 +321,15 @@ class DiaryEventDetailController extends GetxController {
     }
   }
 
-  /// Admin-only: update visit date/time, duration, and appointment notes.
+  Future<List<Map<String, dynamic>>> fetchAssignableOfficers() =>
+      _jobs.getOfficers(limit: 200);
+
+  /// Admin/scheduling: update visit date/time, duration, notes, and optionally engineers.
   Future<void> rescheduleVisit({
     required DateTime startTime,
     required int durationMinutes,
     String? notes,
+    List<int>? officerIds,
   }) async {
     if (saving.value) return;
     saving.value = true;
@@ -334,6 +339,7 @@ class DiaryEventDetailController extends GetxController {
         startTime: startTime,
         durationMinutes: durationMinutes,
         notes: notes,
+        officerIds: officerIds,
       );
       // Reload full detail so all derived fields (endTime, statusLogs, etc.) refresh.
       await load(silent: true);
@@ -594,7 +600,8 @@ class DiaryEventDetailController extends GetxController {
       expenses.clear();
       return;
     }
-    final jobId = detail.value!.jobId;
+    final jobId = detail.value?.jobId;
+    if (jobId == null || jobId <= 0) return;
     expensesLoading.value = true;
     try {
       final list = await _jobs.getJobExpenses(jobId);

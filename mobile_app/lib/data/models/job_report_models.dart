@@ -1,3 +1,5 @@
+import 'job_completion_context.dart';
+
 class JobReportQuestion {
   JobReportQuestion({
     required this.id,
@@ -39,7 +41,8 @@ class JobReportBundle {
     this.isQuotationVisit = false,
     required this.questions,
     required this.answersByQuestionId,
-  });
+    JobCompletionContext? jobCompletionContext,
+  }) : jobCompletionContext = jobCompletionContext ?? JobCompletionContext.empty();
 
   factory JobReportBundle.fromJson(Map<String, dynamic> json) {
     final qraw = json['questions'];
@@ -73,6 +76,11 @@ class JobReportBundle {
       isQuotationVisit: json['is_quotation_visit'] == true,
       questions: questions,
       answersByQuestionId: answers,
+      jobCompletionContext: JobCompletionContext.fromJson(
+        json['job_completion_context'] is Map
+            ? Map<String, dynamic>.from(json['job_completion_context'] as Map)
+            : null,
+      ),
     );
   }
 
@@ -87,4 +95,5 @@ class JobReportBundle {
   final bool isQuotationVisit;
   final List<JobReportQuestion> questions;
   final Map<int, String> answersByQuestionId;
+  final JobCompletionContext jobCompletionContext;
 }

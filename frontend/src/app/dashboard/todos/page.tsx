@@ -26,6 +26,7 @@ type Todo = {
   completed_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  assigned_officer: string | null;
 };
 
 type User = {
@@ -46,6 +47,7 @@ export default function TodosPage() {
   const [filterCompleted, setFilterCompleted] = useState<'all' | 'pending' | 'done'>('pending');
   const [users, setUsers] = useState<User[]>([]);
   const [userFilter, setUserFilter] = useState<string>('');
+  const [officers, setOfficers] = useState<{ id: number; full_name: string }[]>([]);
 
   const [form, setForm] = useState({
     title: '',
@@ -53,6 +55,7 @@ export default function TodosPage() {
     due_date: '',
     due_time: '',
     user_id: '',
+    assigned_officer: '',
   });
 
   const isAdmin = (() => {
@@ -101,6 +104,16 @@ export default function TodosPage() {
     }
   }, [token, isAdmin]);
 
+  const fetchOfficers = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await getJson<{ officers: { id: number; full_name: string }[] }>('/officers/list', token);
+      setOfficers(res.officers || []);
+    } catch {
+      // non-critical
+    }
+  }, [token]);
+
   useEffect(() => {
     void fetchTodos();
   }, [fetchTodos]);
@@ -109,8 +122,12 @@ export default function TodosPage() {
     void fetchUsers();
   }, [fetchUsers]);
 
+  useEffect(() => {
+    void fetchOfficers();
+  }, [fetchOfficers]);
+
   const resetForm = () => {
-    setForm({ title: '', description: '', due_date: '', due_time: '', user_id: '' });
+    setForm({ title: '', description: '', due_date: '', due_time: '', user_id: '', assigned_officer: '' });
     setEditingId(null);
     setShowAdd(false);
   };
@@ -124,6 +141,7 @@ export default function TodosPage() {
         description: form.description.trim() || null,
         due_date: form.due_date || null,
         due_time: form.due_time || null,
+        assigned_officer: form.assigned_officer || null,
       };
       if (isAdmin && form.user_id) payload.user_id = form.user_id;
 
@@ -166,6 +184,7 @@ export default function TodosPage() {
       due_date: todo.due_date || '',
       due_time: todo.due_time || '',
       user_id: String(todo.user_id),
+      assigned_officer: todo.assigned_officer || '',
     });
     setEditingId(todo.id);
     setShowAdd(true);
@@ -308,6 +327,11 @@ export default function TodosPage() {
                       {todo.user_name}
                     </span>
                   )}
+                  {todo.assigned_officer && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-0.5 text-[10px] font-bold text-teal-700 border border-teal-100">
+                      {todo.assigned_officer}
+                    </span>
+                  )}
                   {todo.completed && todo.completed_at && (
                     <span className="inline-flex items-center gap-1 text-[#14B8A6]">
                       <CheckCircle className="size-3" />
@@ -375,6 +399,20 @@ export default function TodosPage() {
                     className={`${inputClass} mt-1`}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500">Officer name</label>
+                <select
+                  value={form.assigned_officer}
+                  onChange={(e) => setForm((f) => ({ ...f, assigned_officer: e.target.value }))}
+                  className={`${inputClass} mt-1`}
+                >
+                  <option value="">Select Officer/Office</option>
+                  <option value="Office">Office</option>
+                  {officers.map((o) => (
+                    <option key={o.id} value={o.full_name}>{o.full_name}</option>
+                  ))}
+                </select>
               </div>
               {isAdmin && !editingId && users.length > 0 && (
                 <div>

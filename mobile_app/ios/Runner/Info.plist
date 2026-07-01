@@ -51,7 +51,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Take photos for job reports (before/after).</string>
+	<string>Take photos and record videos for job reports and visit submissions.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record audio when capturing videos for job reports and visit submissions.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Select photos and videos for job reports and visit submissions.</string>
 	<key>NSFaceIDUsageDescription</key>

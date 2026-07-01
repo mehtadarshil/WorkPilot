@@ -9,6 +9,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
+import '../../data/models/job_completion_context.dart';
 import '../../data/models/job_report_models.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../diary_event/diary_event_detail_controller.dart';
@@ -35,6 +36,9 @@ class JobReportController extends GetxController {
   final RxBool submittedOffline = false.obs;
   final RxInt currentPage = 0.obs;
   final Rxn<JobReportBundle> reportBundle = Rxn<JobReportBundle>();
+
+  JobCompletionContext get jobCompletionContext =>
+      reportBundle.value?.jobCompletionContext ?? JobCompletionContext.empty();
   final RxBool loadingSiteReportTemplates = false.obs;
   final RxMap<int, String> textByQuestionId = <int, String>{}.obs;
   final RxMap<int, String> imageByQuestionId = <int, String>{}.obs;
@@ -296,7 +300,9 @@ class JobReportController extends GetxController {
           flowStep.value = 2;
           Get.snackbar(
             'Visit',
-            'Job report submitted and job stage updated.',
+            jobCompletionContext.hasMultipleEngineers
+                ? 'Job report saved. Complete your visit when ready — the job stage applies after all engineers finish.'
+                : 'Job report saved. Complete your visit when ready.',
             snackPosition: SnackPosition.BOTTOM,
             margin: const EdgeInsets.all(16),
             borderRadius: 12,
@@ -305,7 +311,9 @@ class JobReportController extends GetxController {
           Get.back();
           Get.snackbar(
             'Visit',
-            'Job report submitted and job stage updated.',
+            jobCompletionContext.hasMultipleEngineers
+                ? 'Job report saved. The job stage applies after all engineers complete their visits.'
+                : 'Job report saved.',
             snackPosition: SnackPosition.BOTTOM,
             margin: const EdgeInsets.all(16),
             borderRadius: 12,

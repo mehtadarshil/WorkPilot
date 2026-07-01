@@ -94,3 +94,41 @@ String? validatePlacementsRequireBin(List<Map<String, dynamic>> placements, List
   }
   return null;
 }
+
+int pickDefaultPlacementIndex(List<Map<String, dynamic>> placements) {
+  if (placements.isEmpty) return 0;
+  var bestIdx = 0;
+  var bestQty = (placements[0]['quantity'] as num?)?.toInt() ?? 0;
+  for (var i = 1; i < placements.length; i++) {
+    final q = (placements[i]['quantity'] as num?)?.toInt() ?? 0;
+    if (q > bestQty) {
+      bestQty = q;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+const jobPartStatuses = <String>[
+  'requested',
+  'on_order',
+  'available',
+  'picked_up',
+  'installed',
+  'cancelled',
+  'returned',
+];
+
+String jobPartStatusLabel(String status) {
+  switch (status) {
+    case 'on_order':
+      return 'On order';
+    case 'picked_up':
+      return 'Picked up';
+    default:
+      return status.replaceAll('_', ' ').split(' ').map((w) {
+        if (w.isEmpty) return w;
+        return '${w[0].toUpperCase()}${w.substring(1)}';
+      }).join(' ');
+  }
+}
