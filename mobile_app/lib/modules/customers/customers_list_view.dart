@@ -37,26 +37,26 @@ class CustomersListView extends GetView<CustomersListController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Customers',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
             IconButton(
               tooltip: 'New customer',
-              icon: const Icon(Icons.person_add_alt_1_rounded),
+              icon: Icon(Icons.person_add_alt_1_rounded),
               onPressed: () async {
                 final r = await Get.toNamed(AppRoutes.customerForm);
                 if (r == true) await controller.load(reset: true);
@@ -70,11 +70,11 @@ class CustomersListView extends GetView<CustomersListController> {
             if (r == true) await controller.load(reset: true);
           },
           backgroundColor: AppColors.primary,
-          icon: const Icon(Icons.add_rounded),
+          icon: Icon(Icons.add_rounded),
           label: Text('New', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -91,24 +91,24 @@ class CustomersListView extends GetView<CustomersListController> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: TextField(
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search name, email, company…',
-                    hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
                     prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.5)),
                     filled: true,
                     fillColor: AppColors.whiteOverlay(0.08),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                      borderSide: BorderSide(color: AppColors.primary, width: 1.2),
                     ),
                   ),
                   onChanged: (v) {
@@ -146,7 +146,7 @@ class CustomersListView extends GetView<CustomersListController> {
                             onSelected: (_) => controller.setStatus(s),
                             selectedColor: AppColors.primary,
                             backgroundColor: AppColors.whiteOverlay(0.1),
-                            side: BorderSide(color: AppColors.whiteOverlay(0.2)),
+                            side: BorderSide(color: AppColors.slate300),
                           ),
                         ],
                       ],
@@ -166,7 +166,7 @@ class CustomersListView extends GetView<CustomersListController> {
                     '${controller.total} records · ${controller.totalActive} active · ${controller.totalLeads} leads',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: AppColors.whiteOverlay(0.55),
+                      color: AppColors.slate500,
                     ),
                   );
                 }),
@@ -258,7 +258,7 @@ class CustomersListView extends GetView<CustomersListController> {
                                             Text(
                                               email,
                                               style: GoogleFonts.inter(
-                                                color: AppColors.whiteOverlay(0.55),
+                                                color: AppColors.slate500,
                                                 fontSize: 13,
                                               ),
                                             ),
@@ -282,7 +282,7 @@ class CustomersListView extends GetView<CustomersListController> {
                                     ),
                                     Icon(
                                       Icons.chevron_right_rounded,
-                                      color: AppColors.whiteOverlay(0.35),
+                                      color: AppColors.slate400,
                                     ),
                                   ],
                                 ),
@@ -307,18 +307,18 @@ class CustomersListView extends GetView<CustomersListController> {
                     children: [
                       IconButton.filledTonal(
                         onPressed: page > 1 && !loading ? controller.prevPage : null,
-                        icon: const Icon(Icons.chevron_left_rounded),
+                        icon: Icon(Icons.chevron_left_rounded),
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'Page $page / $totalPages',
-                          style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75)),
+                          style: GoogleFonts.inter(color: AppColors.slate600),
                         ),
                       ),
                       IconButton.filledTonal(
                         onPressed: page < totalPages && !loading ? controller.nextPage : null,
-                        icon: const Icon(Icons.chevron_right_rounded),
+                        icon: Icon(Icons.chevron_right_rounded),
                       ),
                     ],
                   ),

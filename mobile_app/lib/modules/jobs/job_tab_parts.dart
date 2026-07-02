@@ -129,12 +129,12 @@ class _JobTabPartsState extends State<JobTabParts> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Add part', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text('Add part', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900)),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int>(
                       value: catId,
                       dropdownColor: AppColors.slate900,
-                      style: GoogleFonts.outfit(color: Colors.white),
+                      style: GoogleFonts.outfit(color: AppColors.slate900),
                       decoration: _sheetInputDecoration('Catalogue part'),
                       items: [
                         for (final p in items)
@@ -150,7 +150,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: qtyC,
-                      style: GoogleFonts.outfit(color: Colors.white),
+                      style: GoogleFonts.outfit(color: AppColors.slate900),
                       decoration: _sheetInputDecoration('Quantity'),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
@@ -158,7 +158,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                     DropdownButtonFormField<int?>(
                       value: stockId,
                       dropdownColor: AppColors.slate900,
-                      style: GoogleFonts.outfit(color: Colors.white),
+                      style: GoogleFonts.outfit(color: AppColors.slate900),
                       decoration: _sheetInputDecoration('Link to stock (optional)'),
                       items: [
                         const DropdownMenuItem<int?>(value: null, child: Text('Not linked to stock')),
@@ -192,7 +192,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.place_outlined, size: 16, color: AppColors.primary),
+                                Icon(Icons.place_outlined, size: 16, color: AppColors.primary),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Pick from placement',
@@ -328,13 +328,13 @@ class _JobTabPartsState extends State<JobTabParts> {
                 children: [
                   Text(
                     part['part_name'] as String? ?? 'Edit part',
-                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: status,
                     dropdownColor: AppColors.slate900,
-                    style: GoogleFonts.outfit(color: Colors.white),
+                    style: GoogleFonts.outfit(color: AppColors.slate900),
                     decoration: _sheetInputDecoration('Status'),
                     items: [
                       for (final s in jobPartStatuses)
@@ -347,7 +347,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: qtyC,
-                    style: GoogleFonts.outfit(color: Colors.white),
+                    style: GoogleFonts.outfit(color: AppColors.slate900),
                     decoration: _sheetInputDecoration('Quantity'),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
@@ -355,7 +355,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                   DropdownButtonFormField<int?>(
                     value: stockId,
                     dropdownColor: AppColors.slate900,
-                    style: GoogleFonts.outfit(color: Colors.white),
+                    style: GoogleFonts.outfit(color: AppColors.slate900),
                     decoration: _sheetInputDecoration('Link to stock'),
                     items: [
                       const DropdownMenuItem<int?>(value: null, child: Text('Not linked')),
@@ -435,7 +435,7 @@ class _JobTabPartsState extends State<JobTabParts> {
   InputDecoration _sheetInputDecoration(String label) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: AppColors.slate400),
+      labelStyle: TextStyle(color: AppColors.slate400),
       filled: true,
       fillColor: AppColors.slate500.withOpacity(0.08),
       border: OutlineInputBorder(
@@ -580,7 +580,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                               ),
                               if (id != null)
                                 IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                  icon: Icon(Icons.delete_outline, color: Colors.redAccent),
                                   onPressed: () async {
                                     final ok = await Get.dialog<bool>(
                                       AlertDialog(
@@ -616,7 +616,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.primary),
+                                  Icon(Icons.inventory_2_outlined, size: 14, color: AppColors.primary),
                                   const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(

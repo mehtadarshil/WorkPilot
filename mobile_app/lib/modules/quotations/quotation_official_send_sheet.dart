@@ -84,7 +84,7 @@ Future<void> showQuotationOfficialSendSheet(
     enableDrag: true,
     showDragHandle: true,
     useSafeArea: true,
-    backgroundColor: const Color(0xFF0f172a),
+    backgroundColor: Colors.white,
     builder: (ctx) {
       return StatefulBuilder(
         builder: (ctx, setS) {
@@ -112,7 +112,7 @@ Future<void> showQuotationOfficialSendSheet(
                         tooltip: 'Close',
                         visualDensity: VisualDensity.compact,
                         onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        icon: Icon(Icons.close_rounded, color: Colors.white70),
                       ),
                     ],
                   ),
@@ -127,7 +127,7 @@ Future<void> showQuotationOfficialSendSheet(
                     ),
                   if (toOptions.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('Quick pick', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 12)),
+                    Text('Quick pick', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
@@ -144,8 +144,8 @@ Future<void> showQuotationOfficialSendSheet(
                   const SizedBox(height: 16),
                   TextField(
                     controller: toC,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: const InputDecoration(
+                    style: GoogleFonts.inter(color: AppColors.slate900),
+                    decoration: InputDecoration(
                       labelText: 'To',
                       labelStyle: TextStyle(color: Colors.white70),
                     ),
@@ -160,8 +160,8 @@ Future<void> showQuotationOfficialSendSheet(
                     const SizedBox(height: 8),
                     TextField(
                       controller: ccC,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70)),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70)),
                     ),
                   ],
                   const SizedBox(height: 4),
@@ -174,22 +174,22 @@ Future<void> showQuotationOfficialSendSheet(
                     const SizedBox(height: 8),
                     TextField(
                       controller: bccC,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70)),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70)),
                     ),
                   ],
                   const SizedBox(height: 16),
                   TextField(
                     controller: subC,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70)),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
+                    decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70)),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: bodyC,
                     maxLines: 8,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: const InputDecoration(
+                    style: GoogleFonts.inter(color: AppColors.slate900),
+                    decoration: InputDecoration(
                       labelText: 'Message',
                       labelStyle: TextStyle(color: Colors.white70),
                     ),
@@ -198,7 +198,7 @@ Future<void> showQuotationOfficialSendSheet(
                   SwitchListTile(
                     value: appendSig,
                     onChanged: (v) => setS(() => appendSig = v),
-                    title: Text('Include email signature', style: GoogleFonts.inter(color: Colors.white)),
+                    title: Text('Include email signature', style: GoogleFonts.inter(color: AppColors.slate900)),
                     activeThumbColor: AppColors.primary,
                   ),
                   const SizedBox(height: 4),
@@ -233,7 +233,7 @@ Future<void> showQuotationOfficialSendSheet(
                           });
                         });
                       },
-                      icon: const Icon(Icons.attach_file_rounded, color: AppColors.primary),
+                      icon: Icon(Icons.attach_file_rounded, color: AppColors.primary),
                       label: Text('Add attachment', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                   ),
@@ -250,7 +250,7 @@ Future<void> showQuotationOfficialSendSheet(
                             style: GoogleFonts.inter(color: Colors.white70, fontSize: 13),
                           ),
                           trailing: IconButton(
-                            icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
+                            icon: Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
                             onPressed: () => setS(() => attachments.removeAt(e.key)),
                           ),
                         ),

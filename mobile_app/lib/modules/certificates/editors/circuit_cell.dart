@@ -98,15 +98,15 @@ class _CircuitCellState extends State<CircuitCell> {
     final cellDecoration = InputDecoration(
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       isDense: true,
@@ -232,7 +232,7 @@ class _CircuitCellState extends State<CircuitCell> {
           ),
           if (hasOptions && !widget.readOnly)
             IconButton(
-              icon: const Icon(Icons.arrow_drop_down, color: AppColors.slate400, size: 16),
+              icon: Icon(Icons.arrow_drop_down, color: AppColors.slate400, size: 16),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               onPressed: () {
@@ -248,7 +248,7 @@ class _CircuitCellState extends State<CircuitCell> {
             ),
           if (widget.isCalc && widget.overridden && widget.onResetOverride != null && !widget.readOnly)
             IconButton(
-              icon: const Icon(Icons.refresh, color: AppColors.primary, size: 14),
+              icon: Icon(Icons.refresh, color: AppColors.primary, size: 14),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
               onPressed: widget.onResetOverride,

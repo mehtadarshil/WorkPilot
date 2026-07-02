@@ -69,10 +69,6 @@ class UserProfileCache extends GetxService {
 
   Future<Uint8List?> _fetchPhotoBytes(MobileProfile p) async {
     if (!p.hasProfilePhoto) {
-      try {
-        final b = await _repo.fetchPhotoBytes();
-        if (b.isNotEmpty) return Uint8List.fromList(b);
-      } catch (_) {}
       return null;
     }
     try {

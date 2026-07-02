@@ -90,7 +90,7 @@ class SiteReportPageNav extends StatelessWidget {
                 FilledButton(
                   onPressed: saving ? null : onDone,
                   child: saving
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                       : Text('Done', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
                 )
               else

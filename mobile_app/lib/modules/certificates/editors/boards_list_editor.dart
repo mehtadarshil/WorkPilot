@@ -33,7 +33,7 @@ class BoardsListEditor extends StatelessWidget {
                 children: [
                   ElevatedButton.icon(
                     onPressed: () => _addBoard(boards),
-                    icon: const Icon(Icons.add_rounded, color: Colors.white),
+                    icon: Icon(Icons.add_rounded, color: AppColors.slate900),
                     label: Text(
                       'Add Board',
                       style: GoogleFonts.inter(fontWeight: FontWeight.bold),
@@ -46,7 +46,7 @@ class BoardsListEditor extends StatelessWidget {
                   ),
                   TextButton.icon(
                     onPressed: () => _recalculateAllBoards(boards),
-                    icon: const Icon(Icons.calculate_outlined, color: AppColors.primary, size: 18),
+                    icon: Icon(Icons.calculate_outlined, color: AppColors.primary, size: 18),
                     label: Text(
                       'Recalculate All',
                       style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold),
@@ -79,7 +79,7 @@ class BoardsListEditor extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         color: AppColors.whiteOverlay(0.04),
-                        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                        border: Border.all(color: AppColors.slate200),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -115,15 +115,15 @@ class BoardsListEditor extends StatelessWidget {
                                 Row(
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.arrow_upward_rounded, size: 18, color: Colors.white),
+                                      icon: Icon(Icons.arrow_upward_rounded, size: 18, color: AppColors.slate900),
                                       onPressed: idx > 0 ? () => _moveBoard(idx, -1, boards) : null,
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.arrow_downward_rounded, size: 18, color: Colors.white),
+                                      icon: Icon(Icons.arrow_downward_rounded, size: 18, color: AppColors.slate900),
                                       onPressed: idx < boards.length - 1 ? () => _moveBoard(idx, 1, boards) : null,
                                     ),
                                     PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                                      icon: Icon(Icons.more_vert_rounded, color: AppColors.slate900),
                                       onSelected: (val) {
                                         if (val == 'print') {
                                           _printBoardSchedule(board);
@@ -136,11 +136,11 @@ class BoardsListEditor extends StatelessWidget {
                                       itemBuilder: (context) => [
                                         PopupMenuItem(
                                           value: 'print',
-                                          child: Text('Print schedule', style: GoogleFonts.inter(color: Colors.white)),
+                                          child: Text('Print schedule', style: GoogleFonts.inter(color: AppColors.slate900)),
                                         ),
                                         PopupMenuItem(
                                           value: 'duplicate',
-                                          child: Text('Duplicate', style: GoogleFonts.inter(color: Colors.white)),
+                                          child: Text('Duplicate', style: GoogleFonts.inter(color: AppColors.slate900)),
                                         ),
                                         PopupMenuItem(
                                           value: 'delete',
@@ -157,7 +157,7 @@ class BoardsListEditor extends StatelessWidget {
                               onPressed: () {
                                 Get.to(() => BoardCircuitsEditorView(controller: controller, boardIndex: idx));
                               },
-                              icon: const Icon(Icons.edit_note_rounded, size: 18),
+                              icon: Icon(Icons.edit_note_rounded, size: 18),
                               label: const Text('Edit Board & Circuits'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.primary.withValues(alpha: 0.15),
@@ -165,7 +165,7 @@ class BoardsListEditor extends StatelessWidget {
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
-                                  side: const BorderSide(color: AppColors.primary, width: 1),
+                                  side: BorderSide(color: AppColors.primary, width: 1),
                                 ),
                               ),
                             ),

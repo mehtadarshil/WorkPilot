@@ -137,8 +137,8 @@ Future<void> showCopyConvertCertificateOptionsSheet({
 
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F172A),
+          decoration: BoxDecoration(
+            color: AppColors.slate50,
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
           child: Column(
@@ -173,9 +173,9 @@ Future<void> showCopyConvertCertificateOptionsSheet({
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedSlug,
-                  dropdownColor: const Color(0xFF0F172A),
-                  style: GoogleFonts.inter(color: Colors.white),
-                  decoration: const InputDecoration(
+                  dropdownColor: AppColors.slate50,
+                  style: GoogleFonts.inter(color: AppColors.slate900),
+                  decoration: InputDecoration(
                     labelText: 'Target certificate type',
                     labelStyle: TextStyle(color: Colors.white70),
                   ),
@@ -235,8 +235,8 @@ Future<void> showCopyConvertCertificateOptionsSheet({
                   DropdownButtonFormField<int?>(
                     isExpanded: true,
                     value: selectedWorkAddressId,
-                    dropdownColor: const Color(0xFF0F172A),
-                    style: GoogleFonts.inter(color: Colors.white),
+                    dropdownColor: AppColors.slate50,
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: inputDeco('').copyWith(
                       labelText: 'Work / site (optional)',
                       floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -244,7 +244,7 @@ Future<void> showCopyConvertCertificateOptionsSheet({
                     items: [
                       DropdownMenuItem<int?>(
                         value: null,
-                        child: Text('None', style: GoogleFonts.inter(color: Colors.white)),
+                        child: Text('None', style: GoogleFonts.inter(color: AppColors.slate900)),
                       ),
                       for (final w in workAddresses)
                         DropdownMenuItem<int?>(
@@ -281,7 +281,7 @@ Future<void> showCopyConvertCertificateOptionsSheet({
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900),
                       )
                     : Text(mode == 'copy' ? 'Create copy' : 'Convert & create'),
               ),

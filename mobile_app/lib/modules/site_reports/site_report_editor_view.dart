@@ -18,25 +18,25 @@ class SiteReportEditorView extends StatelessWidget {
     final reportId = args?['report_id'] as int?;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Site Report',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,

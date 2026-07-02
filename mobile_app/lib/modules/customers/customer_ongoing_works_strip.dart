@@ -92,7 +92,7 @@ class _CustomerOngoingWorksStripState extends State<CustomerOngoingWorksStrip> {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF0F172A),
+      color: AppColors.slate50,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Column(
@@ -106,13 +106,13 @@ class _CustomerOngoingWorksStripState extends State<CustomerOngoingWorksStrip> {
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.1,
-                    color: AppColors.whiteOverlay(0.55),
+                    color: AppColors.slate500,
                   ),
                 ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _loading ? null : _addJob,
-                  icon: const Icon(Icons.add_rounded, size: 18),
+                  icon: Icon(Icons.add_rounded, size: 18),
                   label: Text('Add job', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
                 ),
               ],
@@ -127,7 +127,7 @@ class _CustomerOngoingWorksStripState extends State<CustomerOngoingWorksStrip> {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   'No ongoing works at this site.',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.55)),
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
                 ),
               )
             else

@@ -60,7 +60,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                   nextObs['items'] = nextItems;
                   controller.updatePath('observations', nextObs);
                 },
-                icon: const Icon(Icons.add_rounded, color: Colors.white),
+                icon: Icon(Icons.add_rounded, color: AppColors.slate900),
                 label: Text(
                   'Add observation',
                   style: GoogleFonts.inter(fontWeight: FontWeight.bold),
@@ -81,7 +81,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                       nextObs['items'] = sortObservationsByCodeAndLocation(items);
                       controller.updatePath('observations', nextObs);
                     },
-                    icon: const Icon(Icons.sort_rounded, color: AppColors.primary, size: 18),
+                    icon: Icon(Icons.sort_rounded, color: AppColors.primary, size: 18),
                     label: Text(
                       'Sort by code & location',
                       style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12),
@@ -113,7 +113,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         color: AppColors.whiteOverlay(0.04),
-                        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                        border: Border.all(color: AppColors.slate200),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -136,7 +136,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFE11D48)),
+                                icon: Icon(Icons.delete_outline_rounded, color: Color(0xFFE11D48)),
                                 onPressed: () {
                                   _removeItem(idx, obs, items);
                                 },
@@ -238,12 +238,12 @@ class AppendixSectionEditor extends StatelessWidget {
                     children: [
                       TextButton.icon(
                         onPressed: () => _pickImage(ImageSource.gallery, appendix, photos),
-                        icon: const Icon(Icons.photo_library_outlined, color: AppColors.primary, size: 18),
+                        icon: Icon(Icons.photo_library_outlined, color: AppColors.primary, size: 18),
                         label: Text('Gallery', style: GoogleFonts.inter(color: AppColors.primary)),
                       ),
                       TextButton.icon(
                         onPressed: () => _pickImage(ImageSource.camera, appendix, photos),
-                        icon: const Icon(Icons.photo_camera_outlined, color: AppColors.primary, size: 18),
+                        icon: Icon(Icons.photo_camera_outlined, color: AppColors.primary, size: 18),
                         label: Text('Camera', style: GoogleFonts.inter(color: AppColors.primary)),
                       ),
                     ],
@@ -256,7 +256,7 @@ class AppendixSectionEditor extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                    border: Border.all(color: AppColors.slate200),
                   ),
                   child: Center(
                     child: Text(
@@ -294,7 +294,7 @@ class AppendixSectionEditor extends StatelessWidget {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         color: AppColors.whiteOverlay(0.04),
-                        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                        border: Border.all(color: AppColors.slate200),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -320,7 +320,7 @@ class AppendixSectionEditor extends StatelessWidget {
                                       backgroundColor: Colors.black54,
                                       radius: 16,
                                       child: IconButton(
-                                        icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFE11D48)),
+                                        icon: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFE11D48)),
                                         padding: EdgeInsets.zero,
                                         onPressed: () {
                                           _removePhoto(idx, appendix, photos);
@@ -345,7 +345,7 @@ class AppendixSectionEditor extends StatelessWidget {
                                 isDense: true,
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
-                                  borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                                  borderSide: const BorderSide(color: AppColors.slate200),
                                 ),
                               ),
                               onChanged: (val) {

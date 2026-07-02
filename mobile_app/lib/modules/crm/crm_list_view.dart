@@ -163,20 +163,20 @@ class CrmListView extends GetView<CrmListController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             controller.title,
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
@@ -190,11 +190,11 @@ class CrmListView extends GetView<CrmListController> {
                 }
               },
               backgroundColor: AppColors.primary,
-              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              icon: Icon(Icons.add_rounded, color: AppColors.slate900),
               label: Text(
                 'New Job',
                 style: GoogleFonts.inter(
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -206,11 +206,11 @@ class CrmListView extends GetView<CrmListController> {
                 controller.reloadFromStart();
               },
               backgroundColor: AppColors.primary,
-              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              icon: Icon(Icons.add_rounded, color: AppColors.slate900),
               label: Text(
                 'New Certificate',
                 style: GoogleFonts.inter(
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -219,7 +219,7 @@ class CrmListView extends GetView<CrmListController> {
           return null;
         }(),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -296,13 +296,13 @@ class CrmListView extends GetView<CrmListController> {
                     child: TextField(
                       controller: controller.searchController,
                       onChanged: controller.setSearch,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         hintText: controller.module == 'quotation_visits'
                             ? 'Search quotation visits by title, customer...'
                             : 'Search jobs by number, title, customer...',
                         hintStyle: GoogleFonts.inter(color: AppColors.slate500),
-                        prefixIcon: const Icon(
+                        prefixIcon: Icon(
                           Icons.search_rounded,
                           color: AppColors.slate400,
                         ),
@@ -310,15 +310,15 @@ class CrmListView extends GetView<CrmListController> {
                         fillColor: AppColors.whiteOverlay(0.08),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                          borderSide: const BorderSide(color: AppColors.slate200),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                          borderSide: const BorderSide(color: AppColors.slate200),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: AppColors.primary),
+                          borderSide: BorderSide(color: AppColors.primary),
                         ),
                       ),
                     ),
@@ -385,11 +385,11 @@ class CrmListView extends GetView<CrmListController> {
                                   child: Ink(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(18),
-                                      color: const Color(0xB30F172A),
-                                      border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                                      color: Colors.white,
+                                      border: Border.all(color: AppColors.slate200),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: AppColors.blackOverlay(0.25),
+                                          color: Colors.black.withValues(alpha: 0.05),
                                           blurRadius: 16,
                                           offset: const Offset(0, 6),
                                         ),
@@ -446,7 +446,7 @@ class CrmListView extends GetView<CrmListController> {
                                                       style: GoogleFonts.inter(
                                                         fontSize: 16,
                                                         fontWeight: FontWeight.w700,
-                                                        color: Colors.white,
+                                                        color: AppColors.slate900,
                                                         height: 1.25,
                                                       ),
                                                     ),
@@ -504,7 +504,7 @@ class CrmListView extends GetView<CrmListController> {
                                                   schedule,
                                                   style: GoogleFonts.inter(
                                                     fontSize: 13,
-                                                    color: AppColors.slate300,
+                                                    color: AppColors.slate500,
                                                   ),
                                                 ),
                                               ),
@@ -525,7 +525,7 @@ class CrmListView extends GetView<CrmListController> {
                                                     customer,
                                                     style: GoogleFonts.inter(
                                                       fontSize: 13,
-                                                      color: AppColors.slate300,
+                                                      color: AppColors.slate500,
                                                     ),
                                                   ),
                                                 ),
@@ -611,13 +611,13 @@ class CrmListView extends GetView<CrmListController> {
                                 title: Text(
                                   _titleLine(row),
                                   style: GoogleFonts.inter(
-                                    color: Colors.white,
+                                    color: AppColors.slate900,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 trailing: controller.module == 'certifications'
                                     ? PopupMenuButton<String>(
-                                        icon: const Icon(Icons.more_vert_rounded, color: AppColors.slate400),
+                                        icon: Icon(Icons.more_vert_rounded, color: AppColors.slate400),
                                         color: const Color(0xFF1E293B),
                                         onSelected: (value) async {
                                           final raw = row['id'];
@@ -646,14 +646,14 @@ class CrmListView extends GetView<CrmListController> {
                                             value: 'open',
                                             child: Text(
                                               'Open',
-                                              style: GoogleFonts.inter(color: Colors.white),
+                                              style: GoogleFonts.inter(color: AppColors.slate900),
                                             ),
                                           ),
                                           PopupMenuItem(
                                             value: 'copy',
                                             child: Text(
                                               'Copy / convert…',
-                                              style: GoogleFonts.inter(color: Colors.white),
+                                              style: GoogleFonts.inter(color: AppColors.slate900),
                                             ),
                                           ),
                                         ],
@@ -673,7 +673,7 @@ class CrmListView extends GetView<CrmListController> {
                                           Text(
                                             sub,
                                             style: GoogleFonts.inter(
-                                              color: AppColors.slate300,
+                                              color: AppColors.slate500,
                                               fontSize: 13,
                                             ),
                                           ),

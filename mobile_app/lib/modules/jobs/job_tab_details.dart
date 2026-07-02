@@ -92,7 +92,7 @@ Widget _ppmBanner(Map<String, dynamic> ppm) {
               Expanded(
                 child: Text(
                   'PPM: $title${task != null ? ' — $task' : ''}',
-                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.slate900),
                 ),
               ),
             ],
@@ -133,13 +133,13 @@ class JobTabDetails extends StatelessWidget {
                 final cid = (j['customer_id'] as num?)?.toInt();
                 if (cid != null) Get.toNamed(AppRoutes.customerDetail, arguments: cid);
               },
-              icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primary, size: 20),
+              icon: Icon(Icons.open_in_new_rounded, color: AppColors.primary, size: 20),
               label: Text('Customer workspace', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
             ),
           ),
           Text(
             _nonEmpty(_str(j, 'title')) ?? 'Job',
-            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white),
+            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.slate900),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -160,8 +160,8 @@ class JobTabDetails extends StatelessWidget {
               isExpanded: true,
               initialValue: _str(j, 'state').isEmpty ? 'draft' : _str(j, 'state'),
               dropdownColor: const Color(0xFF1e293b),
-              style: GoogleFonts.inter(color: Colors.white),
-              decoration: const InputDecoration(
+              style: GoogleFonts.inter(color: AppColors.slate900),
+              decoration: InputDecoration(
                 labelText: 'Status',
                 labelStyle: TextStyle(color: Colors.white70),
               ),
@@ -281,7 +281,7 @@ class JobTabDetails extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
                         children: [
-                          const Icon(Icons.build_rounded, size: 16, color: AppColors.primary),
+                          Icon(Icons.build_rounded, size: 16, color: AppColors.primary),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -321,7 +321,7 @@ class JobTabDetails extends StatelessWidget {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.receipt_long, size: 18, color: AppColors.slate400),
+                            Icon(Icons.receipt_long, size: 18, color: AppColors.slate400),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Column(
@@ -343,7 +343,7 @@ class JobTabDetails extends StatelessWidget {
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
                     onPressed: () => _showAddExpense(context, c),
-                    icon: const Icon(Icons.add_card),
+                    icon: Icon(Icons.add_card),
                     label: const Text('Add expense'),
                   ),
                 ],
@@ -355,7 +355,7 @@ class JobTabDetails extends StatelessWidget {
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: () => _showAddVisit(context, c),
-            icon: const Icon(Icons.add),
+            icon: Icon(Icons.add),
             label: const Text('Add diary visit'),
           ),
           const SizedBox(height: 12),
@@ -448,7 +448,7 @@ class JobTabDetails extends StatelessWidget {
                     ),
                     TextField(
                       controller: durationC,
-                      decoration: const InputDecoration(labelText: 'Duration (minutes)'),
+                      decoration: InputDecoration(labelText: 'Duration (minutes)'),
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 8),
@@ -477,13 +477,13 @@ class JobTabDetails extends StatelessWidget {
                               selectedOfficerIds.remove(id);
                             }
                           }),
-                          title: Text(name, style: GoogleFonts.inter(fontSize: 14, color: Colors.white)),
+                          title: Text(name, style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate900)),
                           activeColor: AppColors.primary,
                           dense: true,
                           visualDensity: VisualDensity.compact,
                         );
                       }),
-                    TextField(controller: notesC, decoration: const InputDecoration(labelText: 'Notes')),
+                    TextField(controller: notesC, decoration: InputDecoration(labelText: 'Notes')),
                   ],
                 ),
               );
@@ -577,7 +577,7 @@ class JobTabDetails extends StatelessWidget {
             children: [
               if (id != null && diaryVisitAllowsDelete(status))
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                  icon: Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                   onPressed: () async {
                     final ok = await Get.dialog<bool>(
                       AlertDialog(

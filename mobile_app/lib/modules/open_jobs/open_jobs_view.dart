@@ -15,20 +15,20 @@ class OpenJobsView extends GetView<OpenJobsController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: AppColors.gradientStart,
-        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.slate50,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Open jobs',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
@@ -40,11 +40,11 @@ class OpenJobsView extends GetView<OpenJobsController> {
             }
           },
           backgroundColor: AppColors.primary,
-          icon: const Icon(Icons.add_rounded),
+          icon: Icon(Icons.add_rounded),
           label: Text('New Job', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -91,24 +91,24 @@ class OpenJobsView extends GetView<OpenJobsController> {
                     child: TextField(
                       controller: controller.searchController,
                       onChanged: controller.setSearch,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         hintText: 'Search jobs by number, title, customer...',
                         hintStyle: GoogleFonts.inter(color: AppColors.slate500),
-                        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.slate400),
+                        prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                         filled: true,
-                        fillColor: AppColors.whiteOverlay(0.08),
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                          borderSide: const BorderSide(color: AppColors.slate200),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                          borderSide: const BorderSide(color: AppColors.slate200),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: AppColors.primary),
+                          borderSide: BorderSide(color: AppColors.primary),
                         ),
                       ),
                     ),
@@ -130,7 +130,7 @@ class OpenJobsView extends GetView<OpenJobsController> {
                                     Icon(
                                       controller.hasSearch ? Icons.search_off_rounded : Icons.work_outline_rounded,
                                       size: 56,
-                                      color: AppColors.whiteOverlay(0.25),
+                                      color: AppColors.slate500,
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
@@ -138,7 +138,7 @@ class OpenJobsView extends GetView<OpenJobsController> {
                                       style: GoogleFonts.inter(
                                         fontSize: 17,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.white,
+                                        color: AppColors.slate900,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -210,11 +210,11 @@ class _OpenJobListTile extends StatelessWidget {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            color: const Color(0xB30F172A),
-            border: Border.all(color: AppColors.whiteOverlay(0.12)),
+            color: Colors.white,
+            border: Border.all(color: AppColors.slate200),
             boxShadow: [
               BoxShadow(
-                color: AppColors.blackOverlay(0.25),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -248,7 +248,7 @@ class _OpenJobListTile extends StatelessWidget {
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: AppColors.slate900,
                               height: 1.25,
                             ),
                           ),
@@ -365,7 +365,7 @@ class _OpenJobListTile extends StatelessWidget {
                         schedule,
                         style: GoogleFonts.inter(
                           fontSize: 13,
-                          color: AppColors.slate300,
+                          color: AppColors.slate500,
                         ),
                       ),
                     ),
@@ -387,7 +387,7 @@ class _OpenJobListTile extends StatelessWidget {
                           job.customerFullName!,
                           style: GoogleFonts.inter(
                             fontSize: 13,
-                            color: AppColors.slate300,
+                            color: AppColors.slate500,
                           ),
                         ),
                       ),

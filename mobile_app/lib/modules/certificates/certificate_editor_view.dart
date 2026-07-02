@@ -26,7 +26,7 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
@@ -38,12 +38,12 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded),
+              icon: Icon(Icons.more_vert_rounded),
               onSelected: (value) async {
                 switch (value) {
                   case 'print':
@@ -77,7 +77,7 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.picture_as_pdf_rounded),
+                    : Icon(Icons.picture_as_pdf_rounded),
               ),
             ),
           ],
@@ -237,8 +237,8 @@ class _Header extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          color: const Color(0xB30F172A),
-          border: Border.all(color: AppColors.whiteOverlay(0.12)),
+          color: Colors.white,
+          border: Border.all(color: AppColors.slate200),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -318,7 +318,7 @@ class _ActionBar extends StatelessWidget {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.rule_rounded),
+                    : Icon(Icons.rule_rounded),
                 label: const Text('Validate'),
               ),
             ),
@@ -343,7 +343,7 @@ class _ActionBar extends StatelessWidget {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.save_rounded),
+                    : Icon(Icons.save_rounded),
                 label: Text(
                   'Save',
                   style: GoogleFonts.inter(fontWeight: FontWeight.w800),

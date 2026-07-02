@@ -97,24 +97,24 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
     final topContentPad = mq.padding.top + kToolbarHeight + 8;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
-        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         extendBodyBehindAppBar: true,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          iconTheme: const IconThemeData(color: Colors.white),
+          foregroundColor: AppColors.slate900,
+          iconTheme: const IconThemeData(color: AppColors.slate700),
           titleTextStyle: GoogleFonts.inter(
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: AppColors.slate900,
             fontSize: 17,
           ),
           title: Obx(() {
@@ -124,7 +124,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
             return Text(d.headerTitle);
           }),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
@@ -382,7 +382,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                             style: GoogleFonts.inter(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w500,
-                                              color: AppColors.slate50,
+                                              color: AppColors.slate700,
                                             ),
                                           ),
                                         ],
@@ -417,7 +417,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                             style: GoogleFonts.inter(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w500,
-                                              color: AppColors.slate50,
+                                              color: AppColors.slate700,
                                             ),
                                           ),
                                         ],
@@ -465,7 +465,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                                     errorBuilder: (_, __, ___) => Container(
                                                       color: AppColors.whiteOverlay(0.08),
-                                                      child: const Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
                                                     ),
                                                   ),
                                                 ),
@@ -495,7 +495,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                       style: GoogleFonts.inter(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
-                                        color: AppColors.slate50,
+                                        color: AppColors.slate700,
                                       ),
                                     ),
                                     if (_siteContactPhone(
@@ -584,7 +584,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                         style: GoogleFonts.inter(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.slate50,
+                                          color: AppColors.slate700,
                                         ),
                                       ),
                                       if (n.description.trim().isNotEmpty) ...[
@@ -725,7 +725,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               },
                             );
                           },
-                          icon: const Icon(Icons.history_rounded, size: 22),
+                          icon: Icon(Icons.history_rounded, size: 22),
                           label: Text(
                             'View job history',
                             style: GoogleFonts.inter(
@@ -737,7 +737,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                             elevation: 8,
                             shadowColor: Colors.black.withValues(alpha: 0.35),
                             backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
+                            foregroundColor: AppColors.slate900,
                             padding: const EdgeInsets.symmetric(
                               vertical: 16,
                               horizontal: 18,
@@ -766,7 +766,7 @@ class _DetailShellGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -839,7 +839,7 @@ class _DetailOrb extends StatelessWidget {
   }
 }
 
-/// Frosted stack card: backdrop blur + rim gradient (login / home tab style).
+/// White card panel matching web dashboard surfaces.
 class _DetailGlassPanel extends StatelessWidget {
   const _DetailGlassPanel({required this.child});
 
@@ -849,47 +849,20 @@ class _DetailGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.whiteOverlay(0.45), AppColors.whiteOverlay(0.06)],
-        ),
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200, width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.4),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.15),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.85),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20.85),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.whiteOverlay(0.1),
-                    const Color(0x661e293b),
-                    const Color(0x990f172a),
-                  ],
-                ),
-                border: Border.all(color: AppColors.whiteOverlay(0.14)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-                child: child,
-              ),
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: child,
       ),
     );
   }
@@ -1052,7 +1025,7 @@ class _StatusBanner extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -1088,73 +1061,48 @@ class _SubmittedJobReportBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.whiteOverlay(0.35), AppColors.whiteOverlay(0.05)],
-        ),
+        borderRadius: BorderRadius.circular(16),
+        color: AppColors.primarySurface,
+        border: Border.all(color: AppColors.primaryBorder),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.0),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(17),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [const Color(0xCC0F766E), const Color(0x990f172a)],
-                ),
-                border: Border.all(color: AppColors.whiteOverlay(0.18)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.fact_check_outlined,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'View submitted job report',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => onOpen(),
-                      child: Text(
-                        'Open',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.fact_check_outlined,
+              color: AppColors.primaryDark,
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'View submitted job report',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.slate900,
                 ),
               ),
             ),
-          ),
+            TextButton(
+              onPressed: () => onOpen(),
+              child: Text(
+                'Open',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1197,7 +1145,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
               'Job documents',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: AppColors.slate900,
                 fontSize: 15,
               ),
             ),
@@ -1216,7 +1164,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
-                  leading: const Icon(Icons.verified_outlined, color: AppColors.primary, size: 20),
+                  leading: Icon(Icons.verified_outlined, color: AppColors.primary, size: 20),
                   title: Text(
                     cert.certificateNumber,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
@@ -1225,7 +1173,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                     certificateTypeForSlug(cert.typeSlug).shortLabel,
                     style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
                   ),
-                  trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                  trailing: Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
                   onTap: () => Get.toNamed(
                     AppRoutes.certificateEditor,
                     arguments: {'id': cert.id},
@@ -1247,7 +1195,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
-                  leading: const Icon(Icons.description_outlined, color: AppColors.primary, size: 20),
+                  leading: Icon(Icons.description_outlined, color: AppColors.primary, size: 20),
                   title: Text(
                     report.reportTitle?.trim().isNotEmpty == true
                         ? report.reportTitle!
@@ -1260,7 +1208,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                           style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
                         )
                       : null,
-                  trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                  trailing: Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
                   onTap: () {
                     final customerId = docs.customerId ?? controller.detail.value?.customerId;
                     if (customerId == null) return;
@@ -1317,7 +1265,7 @@ class _CreateQuotationBanner extends StatelessWidget {
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [AppColors.primary, Color(0x990f172a)],
@@ -1334,9 +1282,9 @@ class _CreateQuotationBanner extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.request_quote_outlined,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                           size: 22,
                         ),
                         const SizedBox(width: 10),
@@ -1346,7 +1294,7 @@ class _CreateQuotationBanner extends StatelessWidget {
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: AppColors.slate900,
                             ),
                           ),
                         ),
@@ -1359,8 +1307,8 @@ class _CreateQuotationBanner extends StatelessWidget {
                           child: OutlinedButton(
                             onPressed: () => onAddNotes(),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: Color(0x66FFFFFF)),
+                              foregroundColor: AppColors.slate900,
+                              side: const BorderSide(color: AppColors.slate200),
                               padding: const EdgeInsets.symmetric(vertical: 11),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -1453,9 +1401,9 @@ class _JobReportBanner extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.assignment_outlined,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                       size: 22,
                     ),
                     const SizedBox(width: 10),
@@ -1465,7 +1413,7 @@ class _JobReportBanner extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ),
@@ -1475,7 +1423,7 @@ class _JobReportBanner extends StatelessWidget {
                         'Start',
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ),
@@ -1496,7 +1444,7 @@ Widget _sectionTitle(String t) {
     style: GoogleFonts.inter(
       fontSize: 15,
       fontWeight: FontWeight.w800,
-      color: Colors.white,
+      color: AppColors.slate900,
     ),
   );
 }
@@ -1527,7 +1475,7 @@ Widget _customerPhoneRow(DiaryEventDetail d) {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.4,
-                  color: AppColors.slate50,
+                  color: AppColors.slate700,
                 ),
               ),
             ),
@@ -1570,7 +1518,7 @@ Widget _jobContactPhoneRow(DiaryEventDetail d) {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.4,
-                  color: AppColors.slate50,
+                  color: AppColors.slate700,
                 ),
               ),
             ),
@@ -1610,7 +1558,7 @@ Widget _accentTitle(String t) {
         style: GoogleFonts.inter(
           fontSize: 15,
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: AppColors.slate900,
         ),
       ),
     ],
@@ -1638,7 +1586,7 @@ Widget _kv(String k, String v) {
           style: GoogleFonts.inter(
             fontSize: 14,
             height: 1.4,
-            color: AppColors.slate50,
+            color: AppColors.slate700,
           ),
         ),
       ],
@@ -1653,7 +1601,7 @@ void _showNavigationSheet(BuildContext context, String address, {double? lat, do
 
   showModalBottomSheet(
     context: context,
-    backgroundColor: AppColors.gradientStart,
+    backgroundColor: AppColors.slate50,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1753,7 +1701,7 @@ class _NavigationAppSheetState extends State<_NavigationAppSheet> {
               style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: AppColors.slate900,
               ),
             ),
             const SizedBox(height: 4),
@@ -1840,7 +1788,7 @@ class _NavigableAddress extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 14,
               height: 1.45,
-              color: AppColors.slate50,
+              color: AppColors.slate700,
             ),
           ),
         ),
@@ -1881,7 +1829,7 @@ Widget _navigableKv(String k, String v) {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.4,
-                  color: AppColors.slate50,
+                  color: AppColors.slate700,
                 ),
               ),
             ),
@@ -1928,7 +1876,7 @@ Widget _callableKv(String k, String v, {String? phone}) {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.4,
-                  color: AppColors.slate50,
+                  color: AppColors.slate700,
                 ),
               ),
             ),
@@ -1966,7 +1914,7 @@ class _OfficerRows extends StatelessWidget {
               fallbackName ?? '—',
               style: GoogleFonts.inter(
                 fontSize: 14,
-                color: AppColors.slate50,
+                color: AppColors.slate700,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1993,7 +1941,7 @@ class _OfficerRows extends StatelessWidget {
                     '${o['full_name'] ?? ''}${o['is_primary'] == true ? ' (Primary)' : ''}',
                     style: GoogleFonts.inter(
                       fontSize: 14,
-                      color: AppColors.slate50,
+                      color: AppColors.slate700,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -2052,7 +2000,7 @@ class _BottomActions extends StatelessWidget {
                                   controller,
                                 ),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
+                          foregroundColor: AppColors.slate900,
                           side: _outlineOnGlass,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -2084,7 +2032,7 @@ class _BottomActions extends StatelessWidget {
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: AppColors.slate900,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -2112,7 +2060,7 @@ class _BottomActions extends StatelessWidget {
             child: OutlinedButton(
               onPressed: busy ? null : Get.back,
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.slate900,
                 side: _outlineOnGlass,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -2135,7 +2083,7 @@ class _BottomActions extends StatelessWidget {
               : () => controller.applyStatus('arrived_at_site'),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.slate900,
             padding: const EdgeInsets.symmetric(vertical: 14),
             elevation: 0,
             shadowColor: AppColors.primary.withValues(alpha: 0.4),
@@ -2152,7 +2100,7 @@ class _BottomActions extends StatelessWidget {
           onPressed: busy ? null : () => _confirmAbort(controller),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFFFA8A8),
-            side: const BorderSide(color: Color(0x66FECACA)),
+            side: BorderSide(color: Color(0x66FECACA)),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -2181,7 +2129,7 @@ class _BottomActions extends StatelessWidget {
                   },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.slate900,
               padding: const EdgeInsets.symmetric(vertical: 14),
               elevation: 0,
               shadowColor: AppColors.primary.withValues(alpha: 0.4),
@@ -2202,7 +2150,7 @@ class _BottomActions extends StatelessWidget {
             onPressed: busy ? null : () => _confirmComplete(controller),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.slate900,
               padding: const EdgeInsets.symmetric(vertical: 14),
               elevation: 0,
               shadowColor: AppColors.primary.withValues(alpha: 0.4),
@@ -2223,7 +2171,7 @@ class _BottomActions extends StatelessWidget {
           onPressed: busy ? null : () => _confirmAbort(controller),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFFFA8A8),
-            side: const BorderSide(color: Color(0x66FECACA)),
+            side: BorderSide(color: Color(0x66FECACA)),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -2268,7 +2216,7 @@ class _BottomActions extends StatelessWidget {
                     : () => controller.applyStatus('travelling_to_site'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
+                  foregroundColor: AppColors.slate900,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   elevation: 0,
                   shadowColor: AppColors.primary.withValues(alpha: 0.4),
@@ -2295,7 +2243,7 @@ class _BottomActions extends StatelessWidget {
                             d,
                             canChangeOfficers: isAdminOrScheduler,
                           ),
-                  icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                  icon: Icon(Icons.edit_calendar_rounded, size: 18),
                   label: Text(
                     'Edit visit',
                     style: GoogleFonts.inter(
@@ -2304,7 +2252,7 @@ class _BottomActions extends StatelessWidget {
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.slate900,
                     side: _outlineOnGlass,
                     padding: const EdgeInsets.symmetric(vertical: 11),
                     shape: RoundedRectangleBorder(
@@ -2342,34 +2290,23 @@ class _BottomGlassDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [AppColors.whiteOverlay(0.14), const Color(0xCC0F172A)],
-            ),
-            border: Border(
-              top: BorderSide(color: AppColors.whiteOverlay(0.12)),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.blackOverlay(0.35),
-                blurRadius: 24,
-                offset: const Offset(0, -6),
-              ),
-            ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.slate200)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
-              child: child,
-            ),
-          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+          child: child,
         ),
       ),
     );
@@ -2431,13 +2368,13 @@ class _AbortVisitDialogState extends State<_AbortVisitDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xF21E293B),
+      backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       title: Text(
         'Abort visit?',
         style: GoogleFonts.inter(
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: AppColors.slate900,
         ),
       ),
       content: SingleChildScrollView(
@@ -2455,14 +2392,14 @@ class _AbortVisitDialogState extends State<_AbortVisitDialog> {
               decoration: BoxDecoration(
                 color: AppColors.whiteOverlay(0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.whiteOverlay(0.15)),
+                border: Border.all(color: AppColors.slate200),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selected,
                   dropdownColor: const Color(0xFF1e293b),
                   style: GoogleFonts.inter(
-                    color: AppColors.slate50,
+                    color: AppColors.slate700,
                     fontSize: 14,
                   ),
                   isExpanded: true,
@@ -2495,7 +2432,7 @@ class _AbortVisitDialogState extends State<_AbortVisitDialog> {
           onPressed: () => Get.back(result: _selected),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.slate900,
           ),
           child: const Text('Abort'),
         ),
@@ -2509,13 +2446,13 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
   if (d?.isGeneral == true) {
     final ok = await Get.dialog<bool>(
       AlertDialog(
-        backgroundColor: const Color(0xF21E293B),
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         title: Text(
           'Complete visit?',
           style: GoogleFonts.inter(
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: AppColors.slate900,
           ),
         ),
         content: Text(
@@ -2534,7 +2471,7 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
             onPressed: () => Get.back(result: true),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+              foregroundColor: AppColors.slate900,
             ),
             child: const Text('Complete'),
           ),
@@ -2550,13 +2487,13 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
 
   final ok = await Get.dialog<bool>(
     AlertDialog(
-      backgroundColor: const Color(0xF21E293B),
+      backgroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       title: Text(
         'Complete visit?',
         style: GoogleFonts.inter(
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: AppColors.slate900,
         ),
       ),
       content: SingleChildScrollView(
@@ -2581,7 +2518,7 @@ Future<void> _confirmComplete(DiaryEventDetailController c) async {
           onPressed: () => Get.back(result: true),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.slate900,
           ),
           child: const Text('Complete'),
         ),
@@ -2639,9 +2576,9 @@ class _VisitTimelinePanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.timeline_rounded,
-                color: Colors.white,
+                color: AppColors.slate900,
                 size: 20,
               ),
               const SizedBox(width: 8),
@@ -2650,7 +2587,7 @@ class _VisitTimelinePanel extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                 ),
               ),
             ],
@@ -2719,7 +2656,7 @@ class _VisitTimelinePanel extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -2980,7 +2917,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                 // Title
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.edit_calendar_rounded,
                       color: AppColors.primary,
                       size: 22,
@@ -2991,7 +2928,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w800,
                         fontSize: 18,
-                        color: Colors.white,
+                        color: AppColors.slate900,
                       ),
                     ),
                   ],
@@ -3082,7 +3019,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                               isPrimary ? '$name (Primary)' : name,
                               style: GoogleFonts.inter(
                                 fontSize: 14,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                                 fontWeight: isPrimary ? FontWeight.w700 : FontWeight.w500,
                               ),
                             ),
@@ -3225,7 +3162,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                     maxLines: 4,
                     style: GoogleFonts.inter(
                       fontSize: 14,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                       height: 1.5,
                     ),
                     cursorColor: AppColors.primary,
@@ -3278,7 +3215,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
+                          foregroundColor: AppColors.slate900,
                           padding: const EdgeInsets.symmetric(vertical: 15),
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -3291,7 +3228,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                                 height: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: AppColors.slate900,
                                 ),
                               )
                             : Text(
@@ -3356,7 +3293,7 @@ class _SheetPickerTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.whiteOverlay(0.07),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.whiteOverlay(0.14)),
+          border: Border.all(color: AppColors.slate200),
         ),
         child: Row(
           children: [
@@ -3368,12 +3305,12 @@ class _SheetPickerTile extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Icon(Icons.arrow_drop_down_rounded,
+            Icon(Icons.arrow_drop_down_rounded,
                 size: 20, color: AppColors.slate400),
           ],
         ),

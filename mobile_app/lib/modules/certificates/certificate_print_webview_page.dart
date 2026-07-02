@@ -86,7 +86,7 @@ class _CertificatePrintWebViewPageState extends State<CertificatePrintWebViewPag
           if (_printUrl != null)
             IconButton(
               tooltip: 'Open in browser',
-              icon: const Icon(Icons.open_in_new_rounded),
+              icon: Icon(Icons.open_in_new_rounded),
               onPressed: _openExternal,
             ),
         ],

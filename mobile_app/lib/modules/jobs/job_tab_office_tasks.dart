@@ -48,10 +48,10 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
                 children: [
                   TextField(
                     controller: _newDesc,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'New reminder',
-                      labelStyle: TextStyle(color: AppColors.whiteOverlay(0.65)),
+                      labelStyle: TextStyle(color: AppColors.slate500),
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -60,10 +60,10 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
                     isExpanded: true,
                     initialValue: _assigneeId,
                     dropdownColor: const Color(0xFF1e293b),
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'Assignee (optional)',
-                      labelStyle: TextStyle(color: AppColors.whiteOverlay(0.65)),
+                      labelStyle: TextStyle(color: AppColors.slate500),
                       border: const OutlineInputBorder(),
                     ),
                     items: [

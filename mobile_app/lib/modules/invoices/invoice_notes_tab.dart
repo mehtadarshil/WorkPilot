@@ -125,7 +125,7 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Add note'),
-        content: TextField(controller: c, maxLines: 5, decoration: const InputDecoration(hintText: 'Note text')),
+        content: TextField(controller: c, maxLines: 5, decoration: InputDecoration(hintText: 'Note text')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
@@ -151,14 +151,14 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextField(controller: toC, decoration: const InputDecoration(labelText: 'To')),
-                TextField(controller: subC, decoration: const InputDecoration(labelText: 'Subject')),
-                TextField(controller: bodyC, maxLines: 4, decoration: const InputDecoration(labelText: 'Message')),
-                TextField(controller: attachC, decoration: const InputDecoration(labelText: 'Attachment name (reference)')),
+                TextField(controller: toC, decoration: InputDecoration(labelText: 'To')),
+                TextField(controller: subC, decoration: InputDecoration(labelText: 'Subject')),
+                TextField(controller: bodyC, maxLines: 4, decoration: InputDecoration(labelText: 'Message')),
+                TextField(controller: attachC, decoration: InputDecoration(labelText: 'Attachment name (reference)')),
                 DropdownButtonFormField<String>(
                   key: ValueKey<String>(status),
                   initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Delivery status'),
+                  decoration: InputDecoration(labelText: 'Delivery status'),
                   items: const [
                     DropdownMenuItem(value: 'sent', child: Text('Sent')),
                     DropdownMenuItem(value: 'delivered', child: Text('Delivered')),
@@ -203,8 +203,8 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: toC, decoration: const InputDecoration(labelText: 'To (phone)')),
-            TextField(controller: bodyC, maxLines: 4, decoration: const InputDecoration(labelText: 'Message')),
+            TextField(controller: toC, decoration: InputDecoration(labelText: 'To (phone)')),
+            TextField(controller: bodyC, maxLines: 4, decoration: InputDecoration(labelText: 'Message')),
           ],
         ),
         actions: [
@@ -227,11 +227,11 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: sumC, maxLines: 4, decoration: const InputDecoration(labelText: 'Summary')),
+            TextField(controller: sumC, maxLines: 4, decoration: InputDecoration(labelText: 'Summary')),
             TextField(
               controller: durC,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Duration (minutes, optional)'),
+              decoration: InputDecoration(labelText: 'Duration (minutes, optional)'),
             ),
           ],
         ),
@@ -308,11 +308,11 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
         TextField(
           controller: _searchC,
           onChanged: (_) => setState(() {}),
-          style: GoogleFonts.inter(color: Colors.white),
+          style: GoogleFonts.inter(color: AppColors.slate900),
           decoration: InputDecoration(
             hintText: 'Search notes and communications',
-            hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
-            prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.55)),
+            hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+            prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
             filled: true,
             fillColor: AppColors.whiteOverlay(0.08),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -344,7 +344,7 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
                   ),
                   child: Text(
                     _dateFilter.isEmpty ? 'Any date' : _dateFilter,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                   ),
                 ),
               ),
@@ -352,7 +352,7 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
             if (_dateFilter.isNotEmpty)
               IconButton(
                 onPressed: () => setState(() => _dateFilter = ''),
-                icon: const Icon(Icons.clear_rounded, color: Colors.white70),
+                icon: Icon(Icons.clear_rounded, color: Colors.white70),
               ),
             FilterChip(
               label: const Text('Timeline'),
@@ -362,7 +362,7 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
           ],
         ),
         const SizedBox(height: 12),
-        Text('Filter by type', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 11, fontWeight: FontWeight.w700)),
+        Text('Filter by type', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
@@ -391,8 +391,8 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
             FilledButton.tonal(onPressed: _dialogLogEmail, child: const Text('Log email')),
             FilledButton.tonal(onPressed: _dialogSms, child: const Text('Log SMS')),
             FilledButton.tonal(onPressed: _dialogPhone, child: const Text('Log phone call')),
-            IconButton.filledTonal(onPressed: _logPrint, tooltip: 'Print layout', icon: const Icon(Icons.print_outlined)),
-            IconButton.filledTonal(onPressed: _exportJson, tooltip: 'Copy communications JSON', icon: const Icon(Icons.ios_share_rounded)),
+            IconButton.filledTonal(onPressed: _logPrint, tooltip: 'Print layout', icon: Icon(Icons.print_outlined)),
+            IconButton.filledTonal(onPressed: _exportJson, tooltip: 'Copy communications JSON', icon: Icon(Icons.ios_share_rounded)),
           ],
         ),
         const SizedBox(height: 20),
@@ -454,19 +454,19 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (e.kind == InvoiceCommKind.email) ...[
-                      Text('From: ${e.fromLabel ?? 'Office'}', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 12)),
+                      Text('From: ${e.fromLabel ?? 'Office'}', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
                       if ((e.toLabel ?? '').isNotEmpty)
-                        Text('To: ${e.toLabel}', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 12)),
+                        Text('To: ${e.toLabel}', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
                     ],
                     if (e.kind == InvoiceCommKind.sms && (e.toLabel ?? '').isNotEmpty)
-                      Text('To: ${e.toLabel}', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 12)),
+                      Text('To: ${e.toLabel}', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
                     Text(e.title, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
                     if (e.body.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: SelectableText(
                           e.isHtmlBody ? InvoiceHelpers.stripHtmlToPlain(e.body) : e.body,
-                          style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.85), fontSize: 13),
+                          style: GoogleFonts.inter(color: AppColors.slate700, fontSize: 13),
                         ),
                       ),
                     if ((e.attachment ?? '').isNotEmpty)
@@ -498,7 +498,7 @@ class _InvoiceNotesTabState extends State<InvoiceNotesTab> {
               if (e.body.isNotEmpty)
                 Text(
                   e.isHtmlBody ? InvoiceHelpers.stripHtmlToPlain(e.body) : e.body,
-                  style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 12),
+                  style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12),
                 ),
               Text(e.createdAt, style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.4), fontSize: 11)),
             ],

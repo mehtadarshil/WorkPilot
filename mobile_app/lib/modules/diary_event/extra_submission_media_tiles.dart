@@ -176,7 +176,7 @@ class _ExtraSubmissionVideoDialogState extends State<ExtraSubmissionVideoDialog>
   Widget build(BuildContext context) {
     final w = MediaQuery.sizeOf(context).width * 0.92;
     return AlertDialog(
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       contentPadding: const EdgeInsets.all(8),
       content: SizedBox(
         width: w,

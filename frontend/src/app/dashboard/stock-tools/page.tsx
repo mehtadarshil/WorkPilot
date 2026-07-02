@@ -93,6 +93,12 @@ interface Tool {
   quantity: number;
   status: 'available' | 'in_use' | 'missing' | 'damaged';
   location: string;
+  zone?: string | null;
+  aisle?: string | null;
+  shelf?: string | null;
+  box?: string | null;
+  storage_code?: string | null;
+  location_notes?: string | null;
   assigned_officer_id: number | null;
   image_url: string | null;
   created_by: number;
@@ -219,6 +225,12 @@ export default function StockToolsPage() {
     quantity: '1',
     status: 'available' as 'available' | 'in_use' | 'missing' | 'damaged',
     location: 'Store',
+    zone: '',
+    aisle: '',
+    shelf: '',
+    box: '',
+    storage_code: '',
+    location_notes: '',
     assigned_officer_id: '',
     image_base64: '',
     original_filename: '',
@@ -558,6 +570,12 @@ export default function StockToolsPage() {
       quantity: '1',
       status: 'available',
       location: 'Store',
+      zone: '',
+      aisle: '',
+      shelf: '',
+      box: '',
+      storage_code: '',
+      location_notes: '',
       assigned_officer_id: '',
       image_base64: '',
       original_filename: '',
@@ -575,6 +593,12 @@ export default function StockToolsPage() {
       quantity: String(tool.quantity ?? 1),
       status: tool.status,
       location: tool.location,
+      zone: tool.zone ?? '',
+      aisle: tool.aisle ?? '',
+      shelf: tool.shelf ?? '',
+      box: tool.box ?? '',
+      storage_code: tool.storage_code ?? '',
+      location_notes: tool.location_notes ?? '',
       assigned_officer_id: tool.assigned_officer_id ? String(tool.assigned_officer_id) : '',
       image_base64: '',
       original_filename: '',
@@ -612,6 +636,12 @@ export default function StockToolsPage() {
       quantity: qty,
       status: toolForm.status,
       location: toolForm.location,
+      zone: toolForm.zone.trim() || null,
+      aisle: toolForm.aisle.trim() || null,
+      shelf: toolForm.shelf.trim() || null,
+      box: toolForm.box.trim() || null,
+      storage_code: toolForm.storage_code.trim() || null,
+      location_notes: toolForm.location_notes.trim() || null,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
       ...(toolForm.image_base64
         ? imageUploadFields(toolForm.image_base64, toolForm.original_filename, toolForm.content_type)
@@ -1259,6 +1289,25 @@ export default function StockToolsPage() {
                           <p className="font-bold text-slate-700 truncate">{statusLabel}</p>
                         </div>
                       </div>
+
+                      {(() => {
+                        const placementLabel = formatPlacementLabel({
+                          location: tool.location,
+                          quantity: tool.quantity ?? 0,
+                          zone: tool.zone ?? undefined,
+                          aisle: tool.aisle ?? undefined,
+                          shelf: tool.shelf ?? undefined,
+                          box: tool.box ?? undefined,
+                          storage_code: tool.storage_code ?? undefined,
+                        } as StockPlacement);
+                        if (placementLabel === tool.location) return null;
+                        return (
+                          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs text-teal-800 border border-teal-100">
+                            <MapPin className="size-3.5 shrink-0" />
+                            <span className="truncate" title={placementLabel}>{placementLabel}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center justify-between border-t border-slate-100 mt-4 pt-3">
@@ -1870,6 +1919,62 @@ export default function StockToolsPage() {
                     <option value="damaged">Damaged</option>
                     <option value="missing">Missing</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+                <p className="text-[11px] text-slate-500">
+                  Record zone, aisle, shelf, and box/cell so staff can quickly find this tool.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Zone</label>
+                    <input
+                      value={toolForm.zone}
+                      onChange={(e) => setToolForm((prev) => ({ ...prev, zone: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Aisle</label>
+                    <input
+                      value={toolForm.aisle}
+                      onChange={(e) => setToolForm((prev) => ({ ...prev, aisle: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Shelf</label>
+                    <input
+                      value={toolForm.shelf}
+                      onChange={(e) => setToolForm((prev) => ({ ...prev, shelf: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Box / Cell</label>
+                    <input
+                      value={toolForm.box}
+                      onChange={(e) => setToolForm((prev) => ({ ...prev, box: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Storage code</label>
+                  <input
+                    value={toolForm.storage_code}
+                    onChange={(e) => setToolForm((prev) => ({ ...prev, storage_code: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location notes</label>
+                  <input
+                    value={toolForm.location_notes}
+                    onChange={(e) => setToolForm((prev) => ({ ...prev, location_notes: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                  />
                 </div>
               </div>
 

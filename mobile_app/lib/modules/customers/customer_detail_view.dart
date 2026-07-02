@@ -133,13 +133,13 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
       final preview = _c.workAddressPreview.value;
 
       return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light.copyWith(
+        value: SystemUiOverlayStyle.dark.copyWith(
           statusBarColor: Colors.transparent,
           systemNavigationBarColor: AppColors.gradientStart,
           systemNavigationBarIconBrightness: Brightness.light,
         ),
         child: Scaffold(
-          backgroundColor: AppColors.gradientStart,
+          backgroundColor: AppColors.slate50,
           appBar: AppBar(
             title: Obx(() {
               final n = _c.customer.value?['full_name'];
@@ -150,13 +150,13 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
               );
             }),
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded),
+              icon: Icon(Icons.arrow_back_ios_new_rounded),
               onPressed: Get.back,
             ),
             actions: [
               IconButton(
                 tooltip: 'Edit',
-                icon: const Icon(Icons.edit_outlined),
+                icon: Icon(Icons.edit_outlined),
                 onPressed: () async {
                   final id = _c.customerId;
                   final r = await Get.toNamed(AppRoutes.customerForm, arguments: id);
@@ -231,7 +231,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
       return const Center(child: Text('No tabs'));
     }
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -268,7 +268,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                     const SizedBox(height: 4),
                     Text(
                       behavNotes,
-                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.85), height: 1.4),
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate700, height: 1.4),
                     ),
                   ],
                 ),
@@ -311,7 +311,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                     errorBuilder: (_, __, ___) => Container(
                                       color: AppColors.whiteOverlay(0.08),
-                                      child: const Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
                                     ),
                                   ),
                                 ),
@@ -356,7 +356,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                 decoration: BoxDecoration(
                                   color: AppColors.whiteOverlay(0.08),
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                                  border: Border.all(color: AppColors.slate200),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,7 +373,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     const SizedBox(height: 3),
                                     Text(
                                       ctStr(preview, 'key_info'),
-                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.82), height: 1.35),
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate700, height: 1.35),
                                     ),
                                   ],
                                 ),
@@ -404,7 +404,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     const SizedBox(height: 3),
                                     Text(
                                       ctStr(preview, 'site_notes'),
-                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.82), height: 1.35),
+                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate700, height: 1.35),
                                     ),
                                   ],
                                 ),

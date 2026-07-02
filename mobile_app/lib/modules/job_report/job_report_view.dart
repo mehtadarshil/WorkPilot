@@ -61,7 +61,7 @@ class JobReportView extends GetView<JobReportController> {
   Future<void> _pickSource(BuildContext context, int questionId) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xF21E293B),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -70,16 +70,16 @@ class JobReportView extends GetView<JobReportController> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library_rounded, color: Colors.white),
-              title: Text('Gallery', style: GoogleFonts.inter(color: Colors.white)),
+              leading: Icon(Icons.photo_library_rounded, color: AppColors.slate900),
+              title: Text('Gallery', style: GoogleFonts.inter(color: AppColors.slate900)),
               onTap: () {
                 Navigator.pop(ctx);
                 controller.pickPhoto(questionId, ImageSource.gallery);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera_rounded, color: Colors.white),
-              title: Text('Camera', style: GoogleFonts.inter(color: Colors.white)),
+              leading: Icon(Icons.photo_camera_rounded, color: AppColors.slate900),
+              title: Text('Camera', style: GoogleFonts.inter(color: AppColors.slate900)),
               onTap: () {
                 Navigator.pop(ctx);
                 controller.pickPhoto(questionId, ImageSource.camera);
@@ -94,17 +94,17 @@ class JobReportView extends GetView<JobReportController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.slate900,
           title: Obx(
             () => Text(
               controller.readonlyMode.value
@@ -116,7 +116,7 @@ class JobReportView extends GetView<JobReportController> {
             ),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () {
               if (controller.readonlyMode.value) {
                 Get.back();
@@ -135,7 +135,7 @@ class JobReportView extends GetView<JobReportController> {
         body: Container(
           width: double.infinity,
           height: double.infinity,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -290,8 +290,8 @@ class _QuestionCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: const Color(0xB30F172A),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -336,7 +336,7 @@ class _QuestionCard extends StatelessWidget {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
     );
   }
@@ -405,7 +405,7 @@ class _QuestionCard extends StatelessWidget {
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: onPickImage,
-                icon: const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 20),
+                icon: Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 20),
                 label: Text(
                   bytes == null ? 'Add photo' : 'Replace photo',
                   style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
@@ -465,7 +465,7 @@ class _QuestionCard extends StatelessWidget {
         if (text.trim().isEmpty) {
           return Text('—', style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 14));
         }
-        return Text(text, style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 14));
+        return Text(text, style: GoogleFonts.inter(color: AppColors.slate700, fontSize: 14));
     }
   }
 }
@@ -479,50 +479,20 @@ class _JobReportGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.45),
-            AppColors.whiteOverlay(0.06),
-          ],
-        ),
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200, width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.4),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.15),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.85),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20.85),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.whiteOverlay(0.1),
-                    const Color(0x661e293b),
-                    const Color(0x990f172a),
-                  ],
-                ),
-                border: Border.all(color: AppColors.whiteOverlay(0.14)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-                child: child,
-              ),
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+        child: child,
       ),
     );
   }
@@ -549,7 +519,7 @@ class _CompletionActionsBody extends StatelessWidget {
     int? selectedId = (templates.first['id'] as num?)?.toInt();
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xF21E293B),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -575,7 +545,7 @@ class _CompletionActionsBody extends StatelessWidget {
                     DropdownButtonFormField<int>(
                       value: selectedId,
                       dropdownColor: const Color(0xFF1E293B),
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: AppColors.whiteOverlay(0.08),
@@ -763,7 +733,7 @@ class _CompletionActionCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
               ],
             ),
           ),

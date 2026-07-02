@@ -103,7 +103,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                         style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
                         decoration: customerInputDecoration('Search').copyWith(
                           isDense: true,
-                          prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.45), size: 22),
+                          prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400, size: 22),
                         ),
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) => _load(),
@@ -148,7 +148,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                       child: FilledButton.icon(
                         onPressed: _loading ? null : () => _openWorkAddressForm(),
                         style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                        icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                        icon: Icon(Icons.add_location_alt_outlined, size: 18),
                         label: Text(
                           'Add work address',
                           maxLines: 1,
@@ -203,7 +203,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                                           children: [
                                             Text(ctStr(r, 'name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                                             const SizedBox(height: 6),
-                                            Text(sub, style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65), height: 1.3)),
+                                            Text(sub, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500, height: 1.3)),
                                             if (ctStr(r, 'site_notes').isNotEmpty) ...[
                                               const SizedBox(height: 8),
                                               Container(
@@ -249,12 +249,12 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                                       child: Text('View', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.edit_outlined, size: 20),
+                                      icon: Icon(Icons.edit_outlined, size: 20),
                                       color: AppColors.primary,
                                       onPressed: () => _openWorkAddressForm(existing: r),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                                      icon: Icon(Icons.delete_outline_rounded, size: 20),
                                       color: const Color(0xFFFCA5A5),
                                       onPressed: () async {
                                         final go = await showDialog<bool>(
@@ -383,9 +383,9 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: sub, decoration: const InputDecoration(labelText: 'Subject')),
+              TextField(controller: sub, decoration: InputDecoration(labelText: 'Subject')),
               const SizedBox(height: 12),
-              TextField(controller: msg, decoration: const InputDecoration(labelText: 'Message *'), maxLines: 5),
+              TextField(controller: msg, decoration: InputDecoration(labelText: 'Message *'), maxLines: 5),
             ],
           ),
         ),
@@ -426,11 +426,11 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
               children: [
                 TextField(
                   controller: _search,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search communications…',
-                    hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.35)),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.45)),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                     border: InputBorder.none,
                     isDense: true,
                   ),
@@ -458,7 +458,7 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _composer(recordType: 'note', title: 'Add note'),
-                        icon: const Icon(Icons.note_add_outlined, size: 18),
+                        icon: Icon(Icons.note_add_outlined, size: 18),
                         label: const Text('Note'),
                       ),
                     ),
@@ -466,7 +466,7 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
                     Expanded(
                       child: FilledButton.tonalIcon(
                         onPressed: () => _composer(recordType: 'phone', title: 'Log phone call'),
-                        icon: const Icon(Icons.phone_callback_outlined, size: 18),
+                        icon: Icon(Icons.phone_callback_outlined, size: 18),
                         label: const Text('Call'),
                       ),
                     ),
@@ -518,7 +518,7 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: 0.8,
-                                      color: AppColors.whiteOverlay(0.45),
+                                      color: AppColors.slate400,
                                     ),
                                   ),
                                 ),
@@ -554,7 +554,7 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
                                             const SizedBox(height: 8),
                                             Text(
                                               ctStr(r, 'message'),
-                                              style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.82), height: 1.4),
+                                              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate700, height: 1.4),
                                             ),
                                           ],
                                         ],

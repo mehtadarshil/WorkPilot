@@ -177,7 +177,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                       const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
                         initialValue: selectedReason,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Reason',
                           border: OutlineInputBorder(),
                         ),
@@ -199,7 +199,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                         TextField(
                           controller: notesController,
                           maxLines: 3,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Rejection Notes',
                             hintText: 'Explain why this job was lost...',
                             border: OutlineInputBorder(),
@@ -394,7 +394,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
     final activitiesList = activities is List ? activities : <dynamic>[];
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       appBar: AppBar(
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,12 +445,12 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                     backgroundColor: QuotationHelpers.stateColor(_state).withValues(alpha: 0.25),
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.article_outlined, size: 18),
+                    avatar: Icon(Icons.article_outlined, size: 18),
                     label: const Text('Print layout'),
                     onPressed: _openPrintLayout,
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.email_rounded, size: 18),
+                    avatar: Icon(Icons.email_rounded, size: 18),
                     label: const Text('Send'),
                     onPressed: (_state == 'draft' || _state == 'sent' || _state == 'on_hold') ? _sendEmailSheet : null,
                   ),
@@ -461,19 +461,19 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                   ],
                   if (custId > 0)
                     ActionChip(
-                      avatar: const Icon(Icons.person_outline_rounded, size: 18),
+                      avatar: Icon(Icons.person_outline_rounded, size: 18),
                       label: const Text('Customer'),
                       onPressed: () => Get.toNamed(AppRoutes.customerDetail, arguments: custId),
                     ),
                   if (_state == 'accepted') ...[
                     ActionChip(
-                      avatar: const Icon(Icons.receipt_long_rounded, size: 18),
+                      avatar: Icon(Icons.receipt_long_rounded, size: 18),
                       label: const Text('To invoice'),
                       onPressed: _transferInvoice,
                     ),
                     if (jobId == null && !jobIsQuotationVisit)
                       ActionChip(
-                        avatar: const Icon(Icons.work_rounded, size: 18),
+                        avatar: Icon(Icons.work_rounded, size: 18),
                         label: const Text('Create job'),
                         onPressed: custId > 0
                             ? () async {
@@ -492,13 +492,13 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                       ),
                     if (_state == 'accepted' && jobIsQuotationVisit && jobId != null)
                       ActionChip(
-                        avatar: const Icon(Icons.work_outline_rounded, size: 18),
+                        avatar: Icon(Icons.work_outline_rounded, size: 18),
                         label: const Text('Set up work job'),
                         onPressed: custId > 0 ? () => _showWorkJobChoiceFromVisit(q) : null,
                       ),
                     if (jobId != null && !jobIsQuotationVisit)
                       ActionChip(
-                        avatar: const Icon(Icons.work_rounded, size: 18),
+                        avatar: Icon(Icons.work_rounded, size: 18),
                         label: const Text('Open job'),
                         onPressed: () => Get.toNamed(AppRoutes.jobDetail, arguments: jobId),
                       ),
@@ -523,7 +523,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
               if ((q['description'] as String?)?.trim().isNotEmpty == true)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Text(q['description'] as String, style: GoogleFonts.inter(color: Colors.white)),
+                  child: Text(q['description'] as String, style: GoogleFonts.inter(color: AppColors.slate900)),
                 ),
               const SizedBox(height: 16),
               Text('Line items', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
@@ -559,7 +559,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                       ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
-                        title: Text(desc, style: GoogleFonts.inter(color: Colors.white)),
+                        title: Text(desc, style: GoogleFonts.inter(color: AppColors.slate900)),
                         subtitle: Text('$qty × ${QuotationHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
                         trailing: Text(QuotationHelpers.formatMoney(am, cur), style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
                       ),
@@ -591,7 +591,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                     ],
                   );
                 }),
-              const Divider(color: Colors.white24),
+              Divider(color: Colors.white24),
               _kv('Subtotal', QuotationHelpers.formatMoney(sub, cur)),
               _kv(taxLabel, QuotationHelpers.formatMoney(tax, cur)),
               _kv('Total', QuotationHelpers.formatMoney(tot, cur), bold: true),
@@ -612,11 +612,11 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                     children: [
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(body, style: GoogleFonts.inter(color: Colors.white)),
+                        title: Text(body, style: GoogleFonts.inter(color: AppColors.slate900)),
                         trailing: nid == null
                             ? null
                             : IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                icon: Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                                 onPressed: () async {
                                   try {
                                     await _repo.deleteInternalNote(_id, nid);
@@ -653,7 +653,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                                           width: 80,
                                           height: 60,
                                           color: Colors.white12,
-                                          child: const Icon(Icons.image_outlined, color: Colors.white38),
+                                          child: Icon(Icons.image_outlined, color: Colors.white38),
                                         );
                                       }
                                       return Image.memory(
@@ -677,8 +677,8 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
               TextField(
                 controller: _internalDraft,
                 maxLines: 2,
-                style: GoogleFonts.inter(color: Colors.white),
-                decoration: const InputDecoration(hintText: 'New internal note…', hintStyle: TextStyle(color: Colors.white38)),
+                style: GoogleFonts.inter(color: AppColors.slate900),
+                decoration: InputDecoration(hintText: 'New internal note…', hintStyle: TextStyle(color: Colors.white38)),
               ),
               if (_noteImagePaths.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -709,11 +709,11 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                                 onTap: () => setState(() => _noteImagePaths.removeAt(idx)),
                                 child: Container(
                                   padding: const EdgeInsets.all(2),
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     color: Colors.black54,
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+                                  child: Icon(Icons.close_rounded, size: 12, color: AppColors.slate900),
                                 ),
                               ),
                             ),
@@ -728,13 +728,13 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
               Row(
                 children: [
                   ActionChip(
-                    avatar: const Icon(Icons.camera_alt_outlined, size: 16),
+                    avatar: Icon(Icons.camera_alt_outlined, size: 16),
                     label: const Text('Camera'),
                     onPressed: _savingNote ? null : _addNotePhotoCamera,
                   ),
                   const SizedBox(width: 8),
                   ActionChip(
-                    avatar: const Icon(Icons.photo_library_outlined, size: 16),
+                    avatar: Icon(Icons.photo_library_outlined, size: 16),
                     label: const Text('Gallery'),
                     onPressed: _savingNote ? null : _addNotePhotoGallery,
                   ),

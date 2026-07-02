@@ -12,8 +12,8 @@ Future<void> showValidateIssuesSheet(CertificateEditorController controller) asy
       final issues = controller.validationIssues;
       return Container(
         constraints: BoxConstraints(maxHeight: Get.height * 0.7),
-        decoration: const BoxDecoration(
-          color: Color(0xFF0F172A),
+        decoration: BoxDecoration(
+          color: AppColors.slate50,
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: Column(
@@ -30,7 +30,7 @@ Future<void> showValidateIssuesSheet(CertificateEditorController controller) asy
                   ),
                   IconButton(
                     onPressed: Get.back,
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    icon: Icon(Icons.close_rounded, color: AppColors.slate900),
                   ),
                 ],
               ),

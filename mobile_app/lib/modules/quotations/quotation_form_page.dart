@@ -410,12 +410,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             _editId == null
@@ -424,20 +424,20 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),
           ),
           actions: [
             TextButton(
               onPressed: _saving || _loading ? null : _save,
-              child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: Colors.white)),
+              child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: AppColors.slate900)),
             ),
           ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
             : Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -461,7 +461,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         enabled: !_saving,
                         decoration: _inputDeco('').copyWith(
                           labelText: 'Customer *',
-                          labelStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.65)),
+                          labelStyle: GoogleFonts.inter(color: AppColors.slate500),
                           floatingLabelBehavior: FloatingLabelBehavior.always,
                         ),
                         options: [
@@ -493,16 +493,16 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           isExpanded: true,
                           initialValue: _workAddressId,
                           dropdownColor: const Color(0xFF1e293b),
-                          style: GoogleFonts.inter(color: Colors.white),
+                          style: GoogleFonts.inter(color: AppColors.slate900),
                           decoration: _inputDeco('').copyWith(
                             labelText: 'Work / site (optional)',
-                            labelStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.65)),
+                            labelStyle: GoogleFonts.inter(color: AppColors.slate500),
                             floatingLabelBehavior: FloatingLabelBehavior.always,
                           ),
                           items: [
                             DropdownMenuItem<int?>(
                               value: null,
-                              child: Text('None', style: GoogleFonts.inter(color: Colors.white)),
+                              child: Text('None', style: GoogleFonts.inter(color: AppColors.slate900)),
                             ),
                             for (final w in _workAddresses)
                               DropdownMenuItem<int?>(
@@ -524,12 +524,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         Expanded(
                           child: _panel(
                             child: ListTile(
-                              title: Text('Quotation date', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 12)),
+                              title: Text('Quotation date', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                               subtitle: Text(
                                 QuotationHelpers.formatDateIso(_quotationDate.toIso8601String()),
                                 style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
                               ),
-                              trailing: const Icon(Icons.calendar_today_rounded, color: Colors.white70, size: 20),
+                              trailing: Icon(Icons.calendar_today_rounded, color: Colors.white70, size: 20),
                               onTap: _saving
                                   ? null
                                   : () async {
@@ -548,12 +548,12 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         Expanded(
                           child: _panel(
                             child: ListTile(
-                              title: Text('Valid until', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 12)),
+                              title: Text('Valid until', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                               subtitle: Text(
                                 QuotationHelpers.formatDateIso(_validUntil.toIso8601String()),
                                 style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
                               ),
-                              trailing: const Icon(Icons.event_rounded, color: Colors.white70, size: 20),
+                              trailing: Icon(Icons.event_rounded, color: Colors.white70, size: 20),
                               onTap: _saving
                                   ? null
                                   : () async {
@@ -577,7 +577,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         initialValue: _currency,
                         decoration: _inputDeco('Currency'),
                         dropdownColor: const Color(0xFF1e293b),
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                         items: [for (final c in _currencies) DropdownMenuItem(value: c, child: Text(c))],
                         onChanged: _saving ? null : (v) => setState(() => _currency = v ?? 'USD'),
                       ),
@@ -590,7 +590,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           initialValue: _state,
                           decoration: _inputDeco('Status'),
                           dropdownColor: const Color(0xFF1e293b),
-                          style: GoogleFonts.inter(color: Colors.white),
+                          style: GoogleFonts.inter(color: AppColors.slate900),
                           items: [
                             for (final s in QuotationsListController.states)
                               DropdownMenuItem(value: s, child: Text(QuotationHelpers.stateLabel(s))),
@@ -605,7 +605,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         controller: _descriptionC,
                         enabled: !_saving,
                         maxLines: 3,
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                         decoration: _inputDeco('Project description'),
                       ),
                     ),
@@ -620,7 +620,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: _saving ? null : () => setState(() => _lines.add(_LineRow())),
-                        icon: const Icon(Icons.add_rounded, color: AppColors.primary),
+                        icon: Icon(Icons.add_rounded, color: AppColors.primary),
                         label: Text('Add item', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
                       ),
                     ),
@@ -630,7 +630,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         controller: _taxC,
                         enabled: !_saving,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                         decoration: _inputDeco('Tax %'),
                       ),
                     ),
@@ -648,7 +648,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           Text(
                             'Service notes',
                             style: GoogleFonts.inter(
-                              color: AppColors.whiteOverlay(0.65),
+                              color: AppColors.slate500,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -657,7 +657,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           Text(
                             'Notes shown on the quotation, PDF, and customer link.',
                             style: GoogleFonts.inter(
-                              color: AppColors.whiteOverlay(0.45),
+                              color: AppColors.slate400,
                               fontSize: 11,
                             ),
                           ),
@@ -666,7 +666,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                             controller: _notesC,
                             enabled: !_saving,
                             maxLines: 4,
-                            style: GoogleFonts.inter(color: Colors.white),
+                            style: GoogleFonts.inter(color: AppColors.slate900),
                             decoration: _inputDeco('Add service notes...'),
                           ),
                         ],
@@ -680,7 +680,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: _saving
-                          ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                           : Text(
                               _editId == null
                                   ? (_diaryEventId != null ? 'Submit quotation' : 'Create quotation')
@@ -706,7 +706,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
   InputDecoration _inputDeco(String hint) {
     return InputDecoration(
       hintText: hint.isEmpty ? null : hint,
-      hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
+      hintStyle: GoogleFonts.inter(color: AppColors.slate400),
       border: InputBorder.none,
     );
   }
@@ -720,7 +720,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
           TextField(
             controller: l.descC,
             enabled: !_saving,
-            style: GoogleFonts.inter(color: Colors.white),
+            style: GoogleFonts.inter(color: AppColors.slate900),
             decoration: _inputDeco('Description'),
           ),
           const SizedBox(height: 12),
@@ -731,7 +731,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                   controller: l.qtyC,
                   enabled: !_saving,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: _inputDeco('Qty'),
                 ),
               ),
@@ -741,7 +741,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                   controller: l.priceC,
                   enabled: !_saving,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: _inputDeco('Unit price'),
                 ),
               ),
@@ -754,7 +754,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           _lines.removeAt(i);
                         });
                       },
-                icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171)),
+                icon: Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171)),
               ),
             ],
           ),
@@ -789,7 +789,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         width: 80,
                         height: 60,
                         color: Colors.white12,
-                        child: const Icon(Icons.image_outlined, color: Colors.white38),
+                        child: Icon(Icons.image_outlined, color: Colors.white38),
                       );
                     }
                   }
@@ -808,11 +808,11 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                             onTap: () => setState(() => l.images.removeAt(idx)),
                             child: Container(
                               padding: const EdgeInsets.all(2),
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 color: Colors.black54,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.close_rounded, size: 12, color: Colors.white),
+                              child: Icon(Icons.close_rounded, size: 12, color: AppColors.slate900),
                             ),
                           ),
                         ),
@@ -828,13 +828,13 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
             children: [
               TextButton.icon(
                 onPressed: _saving ? null : () => _addLinePhotoCamera(i),
-                icon: const Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white70),
+                icon: Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white70),
                 label: Text('Camera', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
               ),
               const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: _saving ? null : () => _addLinePhotoGallery(i),
-                icon: const Icon(Icons.photo_library_outlined, size: 16, color: Colors.white70),
+                icon: Icon(Icons.photo_library_outlined, size: 16, color: Colors.white70),
                 label: Text('Gallery', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
               ),
             ],

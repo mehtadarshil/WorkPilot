@@ -40,7 +40,7 @@ class DiaryJobExpensesPanel extends StatelessWidget {
       final d = controller.detail.value;
       if (d == null) return const SizedBox.shrink();
       final phase = controller.phase;
-      if (!_showForPhase(phase, d.jobId)) return const SizedBox.shrink();
+      if (!_showForPhase(phase, d.jobId ?? 0)) return const SizedBox.shrink();
 
       final expenses = controller.expenses;
       final loading = controller.expensesLoading.value;
@@ -140,7 +140,7 @@ class _ExpenseRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.receipt_long, size: 18, color: AppColors.slate400),
+          Icon(Icons.receipt_long, size: 18, color: AppColors.slate400),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -230,47 +230,20 @@ class _DetailGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.whiteOverlay(0.45), AppColors.whiteOverlay(0.06)],
-        ),
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200, width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.4),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.15),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.85),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20.85),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.whiteOverlay(0.1),
-                    const Color(0x661e293b),
-                    const Color(0x990f172a),
-                  ],
-                ),
-                border: Border.all(color: AppColors.whiteOverlay(0.14)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-                child: child,
-              ),
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: child,
       ),
     );
   }

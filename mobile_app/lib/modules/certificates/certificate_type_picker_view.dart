@@ -16,7 +16,7 @@ class CertificateTypePickerView
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
@@ -28,7 +28,7 @@ class CertificateTypePickerView
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
@@ -111,7 +111,7 @@ class CertificateTypePickerView
                                 borderRadius: BorderRadius.circular(18),
                                 color: selected
                                     ? AppColors.primary.withValues(alpha: 0.2)
-                                    : const Color(0xB30F172A),
+                                    : Colors.white,
                                 border: Border.all(
                                   color: selected
                                       ? AppColors.primary
@@ -160,7 +160,7 @@ class CertificateTypePickerView
                                       ),
                                     ),
                                     if (selected)
-                                      const Icon(
+                                      Icon(
                                         Icons.check_circle_rounded,
                                         color: AppColors.primary,
                                       ),
@@ -225,11 +225,11 @@ class CertificateTypePickerView
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary),
+        borderSide: BorderSide(color: AppColors.primary),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );

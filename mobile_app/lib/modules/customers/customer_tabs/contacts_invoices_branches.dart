@@ -98,7 +98,7 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -116,16 +116,16 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                     children: [
                       Text(
                         id == null ? 'New contact' : 'Edit contact',
-                        style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                        style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                       ),
                       const Spacer(),
-                      IconButton(onPressed: () => Navigator.pop(ctx, false), icon: const Icon(Icons.close_rounded, color: Colors.white54)),
+                      IconButton(onPressed: () => Navigator.pop(ctx, false), icon: Icon(Icons.close_rounded, color: AppColors.slate400)),
                     ],
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: titleC,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: customerInputDecoration('Title (Mr / Ms / …)'),
                   ),
                   const SizedBox(height: 10),
@@ -133,7 +133,7 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                     controller: firstC,
                     textCapitalization: TextCapitalization.words,
                     inputFormatters: const [capitalizeWordsFormatter],
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: customerInputDecoration('First name'),
                   ),
                   const SizedBox(height: 10),
@@ -141,33 +141,33 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                     controller: surC,
                     textCapitalization: TextCapitalization.words,
                     inputFormatters: const [capitalizeWordsFormatter],
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: customerInputDecoration('Surname *'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: posC,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: customerInputDecoration('Position'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: emailC,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     keyboardType: TextInputType.emailAddress,
                     decoration: customerInputDecoration('Email'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: mobileC,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     keyboardType: TextInputType.phone,
                     decoration: customerInputDecoration('Mobile'),
                   ),
                   const SizedBox(height: 10),
                   TextField(
                     controller: landC,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     keyboardType: TextInputType.phone,
                     decoration: customerInputDecoration('Landline'),
                   ),
@@ -175,7 +175,7 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                   CheckboxListTile(
                     value: primary,
                     onChanged: (v) => setS(() => primary = v ?? false),
-                    title: Text('Primary contact', style: GoogleFonts.inter(color: Colors.white)),
+                    title: Text('Primary contact', style: GoogleFonts.inter(color: AppColors.slate900)),
                     activeColor: AppColors.primary,
                   ),
                   const SizedBox(height: 16),
@@ -265,11 +265,11 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                 Expanded(
                   child: TextField(
                     controller: _search,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'Search contacts',
-                      hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.35)),
-                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.45)),
+                      hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                       border: InputBorder.none,
                       isDense: true,
                     ),
@@ -278,12 +278,12 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                 IconButton(
                   tooltip: 'Refresh',
                   onPressed: _load,
-                  icon: Icon(Icons.refresh_rounded, color: AppColors.whiteOverlay(0.65)),
+                  icon: Icon(Icons.refresh_rounded, color: AppColors.slate500),
                 ),
                 FilledButton.icon(
                   onPressed: () => _saveSheet(),
                   style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                  icon: const Icon(Icons.add_rounded, size: 18),
+                  icon: Icon(Icons.add_rounded, size: 18),
                   label: Text('Add', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
                 ),
               ],
@@ -335,11 +335,11 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                                           children: [
                                             Text(
                                               name.isEmpty ? 'Contact' : name,
-                                              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                                              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 15),
                                             ),
                                             if (sub.isNotEmpty) ...[
                                               const SizedBox(height: 4),
-                                              Text(sub, style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.55))),
+                                              Text(sub, style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500)),
                                             ],
                                           ],
                                         ),
@@ -351,11 +351,11 @@ class _CustomerContactsTabState extends State<CustomerContactsTab> {
                                         ),
                                       IconButton(
                                         tooltip: 'Delete contact',
-                                        icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                                        icon: Icon(Icons.delete_outline_rounded, size: 20),
                                         color: const Color(0xFFFCA5A5),
                                         onPressed: () => _deleteContact(r),
                                       ),
-                                      Icon(Icons.chevron_right_rounded, color: AppColors.whiteOverlay(0.35)),
+                                      Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
                                     ],
                                   ),
                                 ),
@@ -460,11 +460,11 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
               children: [
                 TextField(
                   controller: _search,
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Search by invoice # or job…',
-                    hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.35)),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.45)),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                     border: InputBorder.none,
                     isDense: true,
                   ),
@@ -472,7 +472,7 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
                 const SizedBox(height: 12),
                 FilledButton.icon(
                   onPressed: _openNewInvoice,
-                  icon: const Icon(Icons.add_rounded, size: 20),
+                  icon: Icon(Icons.add_rounded, size: 20),
                   label: Text('Add new invoice', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
                 ),
               ],
@@ -533,17 +533,17 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
                                             children: [
                                               Text(
                                                 ctStr(r, 'invoice_number'),
-                                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+                                                style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16),
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
                                                 ctStr(r, 'job_title').isEmpty ? 'Direct invoice' : ctStr(r, 'job_title'),
-                                                style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.75)),
+                                                style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600),
                                               ),
                                               const SizedBox(height: 6),
                                               Text(
                                                 formatIsoDateShort(ctStr(r, 'invoice_date')),
-                                                style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
+                                                style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
                                               ),
                                             ],
                                           ),
@@ -571,7 +571,7 @@ class _CustomerInvoicesTabState extends State<CustomerInvoicesTab> {
                                       const SizedBox(height: 8),
                                       Text(
                                         ctStr(r, 'work_address_name'),
-                                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
+                                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
                                       ),
                                     ],
                                   ],
@@ -655,7 +655,7 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => Padding(
@@ -666,22 +666,22 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(id == null ? 'New branch' : 'Edit branch', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
+                Text(id == null ? 'New branch' : 'Edit branch', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18)),
                 const SizedBox(height: 14),
-                TextField(controller: name, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Branch name *')),
+                TextField(controller: name, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Branch name *')),
                 const SizedBox(height: 10),
-                TextField(controller: line1, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 1 *')),
+                TextField(controller: line1, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Address line 1 *')),
                 const SizedBox(height: 10),
-                TextField(controller: line2, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 2')),
+                TextField(controller: line2, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Address line 2')),
                 const SizedBox(height: 10),
-                TextField(controller: line3, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Address line 3')),
+                TextField(controller: line3, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Address line 3')),
                 const SizedBox(height: 10),
-                TextField(controller: town, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Town')),
+                TextField(controller: town, textCapitalization: TextCapitalization.words, inputFormatters: const [capitalizeWordsFormatter], style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Town')),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   initialValue: county.isEmpty ? null : county,
                   decoration: customerInputDecoration('County'),
-                  hint: Text('Select county', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45))),
+                  hint: Text('Select county', style: GoogleFonts.inter(color: AppColors.slate400)),
                   items: [
                     const DropdownMenuItem<String>(value: null, child: Text('—')),
                     ..._branchUkCounties.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))),
@@ -691,7 +691,7 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
                   }),
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: postcode, style: const TextStyle(color: Colors.white), decoration: customerInputDecoration('Postcode')),
+                TextField(controller: postcode, style: TextStyle(color: AppColors.slate900), decoration: customerInputDecoration('Postcode')),
                 const SizedBox(height: 18),
                 FilledButton(
                   onPressed: () {
@@ -764,20 +764,20 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
                 Expanded(
                   child: TextField(
                     controller: _search,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       hintText: 'Search branches',
-                      hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.35)),
-                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.45)),
+                      hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                       border: InputBorder.none,
                     ),
                   ),
                 ),
-                IconButton(onPressed: _load, icon: Icon(Icons.refresh_rounded, color: AppColors.whiteOverlay(0.65))),
+                IconButton(onPressed: _load, icon: Icon(Icons.refresh_rounded, color: AppColors.slate500)),
                 FilledButton.icon(
                   onPressed: () => _branchSheet(),
                   style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                  icon: const Icon(Icons.add_rounded, size: 18),
+                  icon: Icon(Icons.add_rounded, size: 18),
                   label: Text('Add', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
                 ),
               ],
@@ -818,15 +818,15 @@ class _CustomerBranchesTabState extends State<CustomerBranchesTab> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(ctStr(r, 'branch_name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                                            Text(ctStr(r, 'branch_name'), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 15)),
                                             const SizedBox(height: 6),
-                                            Text(addr, style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65), height: 1.3)),
+                                            Text(addr, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500, height: 1.3)),
                                           ],
                                         ),
                                       ),
                                     ),
-                                    IconButton(icon: const Icon(Icons.edit_outlined, size: 20), color: AppColors.primary, onPressed: () => _branchSheet(existing: r)),
-                                    IconButton(icon: const Icon(Icons.delete_outline_rounded, size: 20), color: const Color(0xFFFCA5A5), onPressed: () => _delete(id)),
+                                    IconButton(icon: Icon(Icons.edit_outlined, size: 20), color: AppColors.primary, onPressed: () => _branchSheet(existing: r)),
+                                    IconButton(icon: Icon(Icons.delete_outline_rounded, size: 20), color: const Color(0xFFFCA5A5), onPressed: () => _delete(id)),
                                   ],
                                 ),
                               ),

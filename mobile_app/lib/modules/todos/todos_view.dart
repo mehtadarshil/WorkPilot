@@ -12,32 +12,32 @@ class TodosView extends GetView<TodosController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'My Todos',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
             IconButton(
               onPressed: () => _showAddSheet(context),
-              icon: const Icon(Icons.add_rounded, color: AppColors.primary),
+              icon: Icon(Icons.add_rounded, color: AppColors.primary),
               tooltip: 'Add Todo',
             ),
           ],
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -159,7 +159,7 @@ class TodosView extends GetView<TodosController> {
           color: Colors.red.shade700.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: const Icon(Icons.delete_rounded, color: Colors.white),
+        child: Icon(Icons.delete_rounded, color: AppColors.slate900),
       ),
       confirmDismiss: (_) async {
         return await showDialog<bool>(
@@ -309,7 +309,7 @@ class TodosView extends GetView<TodosController> {
             children: [
               Text(
                 'New todo',
-                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.slate900),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -371,7 +371,7 @@ class TodosView extends GetView<TodosController> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.slate400),
+                            Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.slate400),
                             const SizedBox(width: 8),
                             Text(
                               dueDate != null
@@ -411,7 +411,7 @@ class TodosView extends GetView<TodosController> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.access_time_rounded, size: 16, color: AppColors.slate400),
+                            Icon(Icons.access_time_rounded, size: 16, color: AppColors.slate400),
                             const SizedBox(width: 8),
                             Text(
                               dueTime != null
@@ -498,7 +498,7 @@ class TodosView extends GetView<TodosController> {
             children: [
               Text(
                 'Edit todo',
-                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.slate900),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -560,7 +560,7 @@ class TodosView extends GetView<TodosController> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.slate400),
+                            Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.slate400),
                             const SizedBox(width: 8),
                             Text(
                               dueDate != null
@@ -600,7 +600,7 @@ class TodosView extends GetView<TodosController> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.access_time_rounded, size: 16, color: AppColors.slate400),
+                            Icon(Icons.access_time_rounded, size: 16, color: AppColors.slate400),
                             const SizedBox(width: 8),
                             Text(
                               dueTime != null

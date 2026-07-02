@@ -161,7 +161,11 @@ class _FlippableIdBadgeState extends State<FlippableIdBadge> with SingleTickerPr
           final front = widget.controller.showFront.value;
           return Text(
             front ? 'Tap the right edge to view back' : 'Tap the right edge to view front',
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withValues(alpha: 0.72),
+            ),
           );
         }),
       ],

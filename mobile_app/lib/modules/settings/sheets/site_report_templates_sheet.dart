@@ -191,7 +191,7 @@ class _SiteReportTemplatesSheetState extends State<SiteReportTemplatesSheet> {
               subtitle: slug == 'fra' ? Text('Default', style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate500)) : null,
               trailing: slug != 'fra'
                   ? IconButton(
-                      icon: const Icon(Icons.delete, size: 18, color: Colors.redAccent),
+                      icon: Icon(Icons.delete, size: 18, color: Colors.redAccent),
                       onPressed: () => _delete(id),
                     )
                   : null,
@@ -212,7 +212,7 @@ class _SiteReportTemplatesSheetState extends State<SiteReportTemplatesSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
               ),
               child: _creating
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                   : Text('Create', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
             ),
           ],

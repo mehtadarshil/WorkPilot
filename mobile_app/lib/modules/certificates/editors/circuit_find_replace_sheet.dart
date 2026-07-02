@@ -17,7 +17,7 @@ Future<void> showCircuitFindReplaceSheet({
 
   await showModalBottomSheet<void>(
     context: context,
-    backgroundColor: const Color(0xFF0F172A),
+    backgroundColor: AppColors.slate50,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -48,8 +48,8 @@ Future<void> showCircuitFindReplaceSheet({
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedColumn,
-                  dropdownColor: const Color(0xFF0F172A),
-                  style: GoogleFonts.inter(color: Colors.white),
+                  dropdownColor: AppColors.slate50,
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: _sheetDecoration('Column'),
                   items: textColumns
                       .map(
@@ -67,13 +67,13 @@ Future<void> showCircuitFindReplaceSheet({
                 const SizedBox(height: 12),
                 TextField(
                   controller: findController,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: _sheetDecoration('Find'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: replaceController,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: _sheetDecoration('Replace with'),
                 ),
                 const SizedBox(height: 20),

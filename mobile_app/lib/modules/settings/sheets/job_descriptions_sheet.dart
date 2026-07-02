@@ -273,11 +273,11 @@ class _JobDescriptionsSheetState extends State<JobDescriptionsSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.edit, size: 18, color: AppColors.primary),
+                    icon: Icon(Icons.edit, size: 18, color: AppColors.primary),
                     onPressed: () => _edit(item),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete, size: 18, color: Colors.redAccent),
+                    icon: Icon(Icons.delete, size: 18, color: Colors.redAccent),
                     onPressed: () => _delete(id),
                   ),
                 ],

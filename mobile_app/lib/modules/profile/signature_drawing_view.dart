@@ -91,18 +91,18 @@ class _SignatureDrawingViewState extends State<SignatureDrawingView> {
         : 'Draw your signature inside the box below.';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(titleText, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: () => Get.back(),
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -160,8 +160,8 @@ class _SignatureDrawingViewState extends State<SignatureDrawingView> {
                         child: OutlinedButton(
                           onPressed: _saving ? null : () => _controller.clear(),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white24),
+                            foregroundColor: AppColors.slate900,
+                            side: BorderSide(color: Colors.white24),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

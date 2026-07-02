@@ -67,7 +67,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.08),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
       child: child,
@@ -293,7 +293,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
       decoration: BoxDecoration(
         color: AppColors.blackOverlay(0.15),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,7 +315,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
                         (m['original_filename'] as String?) ?? 'Video',
                         style: GoogleFonts.inter(fontSize: 11),
                       ),
-                      avatar: const Icon(Icons.videocam_rounded, size: 16),
+                      avatar: Icon(Icons.videocam_rounded, size: 16),
                     )
                   else
                     Chip(
@@ -323,7 +323,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
                         (m['original_filename'] as String?) ?? 'Image',
                         style: GoogleFonts.inter(fontSize: 11),
                       ),
-                      avatar: const Icon(Icons.image_rounded, size: 16),
+                      avatar: Icon(Icons.image_rounded, size: 16),
                     ),
               ],
             ),

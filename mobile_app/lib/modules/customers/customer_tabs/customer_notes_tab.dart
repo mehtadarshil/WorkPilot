@@ -43,7 +43,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
@@ -61,7 +61,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                       style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
                     ),
                   ),
-                  IconButton(onPressed: () => Navigator.pop(ctx, false), icon: const Icon(Icons.close_rounded, color: Colors.white54)),
+                  IconButton(onPressed: () => Navigator.pop(ctx, false), icon: Icon(Icons.close_rounded, color: Colors.white54)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -74,7 +74,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                 controller: c,
                 maxLines: 7,
                 minLines: 4,
-                style: GoogleFonts.inter(color: Colors.white),
+                style: GoogleFonts.inter(color: AppColors.slate900),
                 decoration: customerInputDecoration('Behaviour notes'),
               ),
               const SizedBox(height: 16),
@@ -108,7 +108,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
@@ -123,12 +123,12 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                 style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
               ),
               const SizedBox(height: 14),
-              TextField(controller: titleC, style: GoogleFonts.inter(color: Colors.white), decoration: customerInputDecoration('Title *')),
+              TextField(controller: titleC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('Title *')),
               const SizedBox(height: 12),
               TextField(
                 controller: descC,
                 maxLines: 5,
-                style: GoogleFonts.inter(color: Colors.white),
+                style: GoogleFonts.inter(color: AppColors.slate900),
                 decoration: customerInputDecoration('Description *'),
               ),
               const SizedBox(height: 16),
@@ -251,7 +251,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                         onPressed: _savingBehaviour ? null : () => _editBehaviourNotes(behaviour),
                         icon: _savingBehaviour
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.edit_note_rounded, size: 18),
+                            : Icon(Icons.edit_note_rounded, size: 18),
                         label: const Text('Edit'),
                       ),
                     ],
@@ -259,7 +259,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                   const SizedBox(height: 8),
                   Text(
                     behaviour.isEmpty ? 'No behaviour notes recorded yet.' : behaviour,
-                    style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.78), fontSize: 13, height: 1.45),
+                    style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13, height: 1.45),
                   ),
                 ],
               ),
@@ -269,7 +269,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
               trailing: IconButton.filledTonal(
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _noteDialog(),
-                icon: const Icon(Icons.add_rounded, size: 20),
+                icon: Icon(Icons.add_rounded, size: 20),
               ),
             ),
             if (technicalNotes.isEmpty)
@@ -301,12 +301,12 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
               Expanded(
                 child: Text(ctStr(n, 'title'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
               ),
-              IconButton(icon: const Icon(Icons.edit_outlined, size: 20), color: AppColors.primary, onPressed: () => _noteDialog(existing: n)),
-              IconButton(icon: const Icon(Icons.delete_outline_rounded, size: 20), color: const Color(0xFFFCA5A5), onPressed: () => _deleteNote(id)),
+              IconButton(icon: Icon(Icons.edit_outlined, size: 20), color: AppColors.primary, onPressed: () => _noteDialog(existing: n)),
+              IconButton(icon: Icon(Icons.delete_outline_rounded, size: 20), color: const Color(0xFFFCA5A5), onPressed: () => _deleteNote(id)),
             ],
           ),
           const SizedBox(height: 6),
-          Text(ctStr(n, 'description'), style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.78), height: 1.4)),
+          Text(ctStr(n, 'description'), style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600, height: 1.4)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -348,7 +348,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                   width: 92,
                   height: 72,
                   color: AppColors.whiteOverlay(0.08),
-                  child: Icon(Icons.image_outlined, color: AppColors.whiteOverlay(0.35)),
+                  child: Icon(Icons.image_outlined, color: AppColors.slate400),
                 );
               }
               return Image.memory(bytes, width: 92, height: 72, fit: BoxFit.cover);
@@ -363,7 +363,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
             child: Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.65), shape: BoxShape.circle),
-              child: const Icon(Icons.close_rounded, size: 14, color: Colors.white),
+              child: Icon(Icons.close_rounded, size: 14, color: AppColors.slate900),
             ),
           ),
         ),

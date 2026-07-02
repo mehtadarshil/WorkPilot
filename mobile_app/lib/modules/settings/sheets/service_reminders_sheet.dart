@@ -153,7 +153,7 @@ class _ServiceRemindersSheetState extends State<ServiceRemindersSheet> {
             onPressed: _running ? null : _runNow,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary),
+              side: BorderSide(color: AppColors.primary),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),

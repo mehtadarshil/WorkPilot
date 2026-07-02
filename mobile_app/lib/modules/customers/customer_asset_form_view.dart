@@ -176,9 +176,9 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
   Widget build(BuildContext context) {
     if (_loading) {
       return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
+        value: SystemUiOverlayStyle.dark,
         child: Scaffold(
-          backgroundColor: AppColors.gradientStart,
+          backgroundColor: AppColors.slate50,
           appBar: AppBar(title: Text('Asset', style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
           body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
         ),
@@ -190,28 +190,28 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
 
     final isNew = _assetId == null;
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(isNew ? 'Add asset' : 'Edit asset', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),
           ),
           actions: [
             if (!isNew)
               IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFFCA5A5)),
+                icon: Icon(Icons.delete_outline_rounded, color: Color(0xFFFCA5A5)),
                 onPressed: _saving ? null : _delete,
               ),
           ],
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -239,10 +239,10 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
                     DropdownButtonFormField<String>(
                       value: _kAssetGroups.contains(_assetGroup) ? _assetGroup : 'Other',
                       dropdownColor: const Color(0xFF134E4A),
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Group'),
                       items: _kAssetGroups
-                          .map((g) => DropdownMenuItem(value: g, child: Text(g, style: GoogleFonts.inter(color: Colors.white))))
+                          .map((g) => DropdownMenuItem(value: g, child: Text(g, style: GoogleFonts.inter(color: AppColors.slate900))))
                           .toList(),
                       onChanged: _saving
                           ? null
@@ -256,7 +256,7 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
                     TextField(
                       controller: _assetType,
                       enabled: !_saving,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('e.g. Boiler'),
                     ),
                   ],
@@ -273,25 +273,25 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
                       controller: _description,
                       enabled: !_saving,
                       maxLines: 2,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Title / summary shown in lists'),
                     ),
                     const SizedBox(height: 12),
                     Text('MAKE', style: _label()),
                     const SizedBox(height: 6),
-                    TextField(controller: _make, enabled: !_saving, style: GoogleFonts.inter(color: Colors.white), decoration: customerInputDecoration('')),
+                    TextField(controller: _make, enabled: !_saving, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('')),
                     const SizedBox(height: 12),
                     Text('MODEL', style: _label()),
                     const SizedBox(height: 6),
-                    TextField(controller: _model, enabled: !_saving, style: GoogleFonts.inter(color: Colors.white), decoration: customerInputDecoration('')),
+                    TextField(controller: _model, enabled: !_saving, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('')),
                     const SizedBox(height: 12),
                     Text('SERIAL NUMBER', style: _label()),
                     const SizedBox(height: 6),
-                    TextField(controller: _serial, enabled: !_saving, style: GoogleFonts.inter(color: Colors.white), decoration: customerInputDecoration('')),
+                    TextField(controller: _serial, enabled: !_saving, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('')),
                     const SizedBox(height: 12),
                     Text('LOCATION', style: _label()),
                     const SizedBox(height: 6),
-                    TextField(controller: _location, enabled: !_saving, style: GoogleFonts.inter(color: Colors.white), decoration: customerInputDecoration('')),
+                    TextField(controller: _location, enabled: !_saving, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('')),
                     const SizedBox(height: 12),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,

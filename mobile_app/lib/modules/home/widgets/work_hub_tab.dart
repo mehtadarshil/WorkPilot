@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:glass_kit/glass_kit.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../widgets/wp_surface.dart';
 
 import '../../../app/routes/app_routes.dart';
 import '../../../core/values/app_colors.dart';
@@ -199,38 +199,22 @@ class WorkHubTab extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
               child: LayoutBuilder(
                 builder: (context, c) {
-                  return GlassContainer.frostedGlass(
+                  return Container(
                     height: 172,
                     width: c.maxWidth,
-                    blur: 28,
-                    frostedOpacity: 0.11,
-                    borderRadius: BorderRadius.circular(26),
-                    borderWidth: 1,
-                    borderGradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.whiteOverlay(0.55),
-                        AppColors.whiteOverlay(0.07),
-                      ],
-                    ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.whiteOverlay(0.12),
-                        const Color(0x55101828),
-                        const Color(0x880a1220),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.blackOverlay(0.35),
-                        blurRadius: 32,
-                        offset: const Offset(0, 16),
-                      ),
-                    ],
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: Colors.white,
+                      border: Border.all(color: AppColors.slate200, width: 0.8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -264,10 +248,8 @@ class WorkHubTab extends StatelessWidget {
                               ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: AppColors.whiteOverlay(0.2),
-                                ),
-                                color: AppColors.whiteOverlay(0.06),
+                                border: Border.all(color: AppColors.slate200),
+                                color: AppColors.slate100,
                               ),
                               child: Text(
                                 'CRM · native',
@@ -275,7 +257,7 @@ class WorkHubTab extends StatelessWidget {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.6,
-                                  color: AppColors.whiteOverlay(0.78),
+                                  color: AppColors.slate600,
                                 ),
                               ),
                             ),
@@ -287,7 +269,7 @@ class WorkHubTab extends StatelessWidget {
                                 fontWeight: FontWeight.w800,
                                 height: 1.05,
                                 letterSpacing: -0.8,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -298,7 +280,7 @@ class WorkHubTab extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 height: 1.3,
-                                color: AppColors.whiteOverlay(0.68),
+                                color: AppColors.slate500,
                               ),
                             ),
                           ],
@@ -313,35 +295,7 @@ class WorkHubTab extends StatelessWidget {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(22, 22, 22, 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(2),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          AppColors.primary,
-                          AppColors.primary.withValues(alpha: 0.4),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Modules',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: AppColors.whiteOverlay(0.5),
-                    ),
-                  ),
-                ],
-              ),
+              child: const WpSectionLabel('Modules'),
             ),
           ),
           if (tiles.isEmpty)
@@ -353,33 +307,25 @@ class WorkHubTab extends StatelessWidget {
                 ),
                 child: LayoutBuilder(
                   builder: (context, c) {
-                    return GlassContainer.frostedGlass(
+                    return Container(
                       height: 100,
                       width: c.maxWidth,
-                      blur: 22,
-                      frostedOpacity: 0.08,
-                      borderRadius: BorderRadius.circular(22),
-                      borderWidth: 1,
-                      borderGradient: LinearGradient(
-                        colors: [
-                          AppColors.whiteOverlay(0.25),
-                          AppColors.whiteOverlay(0.05),
-                        ],
-                      ),
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.whiteOverlay(0.06),
-                          AppColors.blackOverlay(0.15),
-                        ],
-                      ),
                       padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.white,
+                        border: Border.all(
+                          color: AppColors.whiteOverlay(0.08),
+                          width: 0.8,
+                        ),
+                      ),
                       child: Center(
                         child: Text(
                           'No CRM modules are enabled for this profile.',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             fontSize: 14,
-                            color: AppColors.whiteOverlay(0.65),
+                            color: AppColors.slate500,
                           ),
                         ),
                       ),
@@ -402,55 +348,25 @@ class WorkHubTab extends StatelessWidget {
                   final t = tiles[i];
                   return LayoutBuilder(
                     builder: (context, constraints) {
-                      return GlassContainer.frostedGlass(
+                      return Container(
                         height: constraints.maxHeight,
                         width: constraints.maxWidth,
-                        blur: 24,
-                        frostedOpacity: 0.1,
-                        borderRadius: BorderRadius.circular(22),
-                        borderWidth: 1,
-                        borderGradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color.lerp(
-                              Colors.white,
-                              t.accent,
-                              0.35,
-                            )!.withValues(alpha: 0.45),
-                            AppColors.whiteOverlay(0.06),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.slate200, width: 0.8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
                         ),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.whiteOverlay(0.14),
-                            AppColors.blackOverlay(0.28),
-                            Color.lerp(
-                              const Color(0xFF0f172a),
-                              t.accent,
-                              0.12,
-                            )!,
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.blackOverlay(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                          BoxShadow(
-                            color: t.accent.withValues(alpha: 0.08),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        padding: EdgeInsets.zero,
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            borderRadius: BorderRadius.circular(22),
+                            borderRadius: BorderRadius.circular(16),
                             onTap: () => _open(t.module),
                             splashColor: t.accent.withValues(alpha: 0.12),
                             highlightColor: t.accent.withValues(alpha: 0.06),
@@ -468,15 +384,12 @@ class WorkHubTab extends StatelessWidget {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      _GlassIconOrb(
-                                        icon: t.icon,
-                                        accent: t.accent,
-                                      ),
+                                      WpAccentIconBadge(icon: t.icon, accent: t.accent),
                                       const Spacer(),
                                       Icon(
                                         Icons.arrow_outward_rounded,
                                         size: 18,
-                                        color: AppColors.whiteOverlay(0.35),
+                                        color: AppColors.slate400,
                                       ),
                                     ],
                                   ),
@@ -497,7 +410,7 @@ class WorkHubTab extends StatelessWidget {
                                   Text(
                                     t.label,
                                     style: GoogleFonts.inter(
-                                      color: Colors.white,
+                                      color: AppColors.slate900,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 16,
                                       letterSpacing: -0.2,
@@ -509,7 +422,7 @@ class WorkHubTab extends StatelessWidget {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
-                                      color: AppColors.whiteOverlay(0.52),
+                                      color: AppColors.slate500,
                                       fontSize: 12,
                                       height: 1.25,
                                       fontWeight: FontWeight.w500,
@@ -529,41 +442,5 @@ class WorkHubTab extends StatelessWidget {
         ],
       );
     });
-  }
-}
-
-class _GlassIconOrb extends StatelessWidget {
-  const _GlassIconOrb({required this.icon, required this.accent});
-
-  final IconData icon;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.whiteOverlay(0.22)),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            accent.withValues(alpha: 0.35),
-            AppColors.whiteOverlay(0.08),
-            AppColors.blackOverlay(0.2),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.25),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Icon(icon, color: Colors.white.withValues(alpha: 0.95), size: 24),
-    );
   }
 }

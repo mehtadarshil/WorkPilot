@@ -346,7 +346,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
       enableDrag: true,
       showDragHandle: true,
       useSafeArea: true,
-      backgroundColor: const Color(0xFF0f172a),
+      backgroundColor: Colors.white,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setS) {
@@ -423,7 +423,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                         IconButton(
                           tooltip: 'Close',
                           onPressed: sending ? null : () => Navigator.pop(ctx),
-                          icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                          icon: Icon(Icons.close_rounded, color: Colors.white70),
                         ),
                       ],
                     ),
@@ -436,7 +436,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                         ),
                       ),
                     if (toOptions.isNotEmpty) ...[
-                      Text('Quick pick', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 12)),
+                      Text('Quick pick', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 6,
@@ -451,36 +451,36 @@ class _JobTabFilesState extends State<JobTabFiles> {
                       ),
                       const SizedBox(height: 12),
                     ],
-                    TextField(controller: toC, style: GoogleFonts.inter(color: Colors.white), decoration: const InputDecoration(labelText: 'To', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: toC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'To', labelStyle: TextStyle(color: Colors.white70))),
                     TextButton(
                       style: TextButton.styleFrom(alignment: Alignment.centerLeft),
                       onPressed: () => setS(() => showCc = !showCc),
                       child: Text(showCc ? 'Hide CC' : 'Add CC', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                     if (showCc)
-                      TextField(controller: ccC, style: GoogleFonts.inter(color: Colors.white), decoration: const InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70))),
+                      TextField(controller: ccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70))),
                     TextButton(
                       style: TextButton.styleFrom(alignment: Alignment.centerLeft),
                       onPressed: () => setS(() => showBcc = !showBcc),
                       child: Text(showBcc ? 'Hide BCC' : 'Add BCC', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                     if (showBcc)
-                      TextField(controller: bccC, style: GoogleFonts.inter(color: Colors.white), decoration: const InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70))),
+                      TextField(controller: bccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70))),
                     const SizedBox(height: 12),
-                    TextField(controller: subC, style: GoogleFonts.inter(color: Colors.white), decoration: const InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: subC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70))),
                     const SizedBox(height: 12),
-                    TextField(controller: bodyC, maxLines: 8, style: GoogleFonts.inter(color: Colors.white), decoration: const InputDecoration(labelText: 'Message', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: bodyC, maxLines: 8, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Message', labelStyle: TextStyle(color: Colors.white70))),
                     const SizedBox(height: 12),
                     SwitchListTile(
                       value: appendSig,
                       onChanged: (v) => setS(() => appendSig = v),
                       activeThumbColor: AppColors.primary,
-                      title: Text('Include email signature', style: GoogleFonts.inter(color: Colors.white)),
+                      title: Text('Include email signature', style: GoogleFonts.inter(color: AppColors.slate900)),
                     ),
                     _emailFilePicker(setS, attachments),
                     TextButton.icon(
                       onPressed: addManualAttachment,
-                      icon: const Icon(Icons.attach_file_rounded, color: AppColors.primary),
+                      icon: Icon(Icons.attach_file_rounded, color: AppColors.primary),
                       label: Text('Attach files', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                     if (attachments.isNotEmpty)
@@ -490,7 +490,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(entry.value['filename'] ?? '', style: GoogleFonts.inter(color: Colors.white70, fontSize: 13)),
                           trailing: IconButton(
-                            icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
+                            icon: Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
                             onPressed: () => setS(() => attachments.removeAt(entry.key)),
                           ),
                         );
@@ -532,7 +532,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.folder_open_rounded, color: AppColors.primary, size: 18),
+                  Icon(Icons.folder_open_rounded, color: AppColors.primary, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text('Pick files from linked job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
@@ -593,7 +593,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                             if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
                           }
                         },
-                  icon: const Icon(Icons.add_rounded),
+                  icon: Icon(Icons.add_rounded),
                   label: const Text('Add selected to email'),
                 ),
               ),
@@ -670,10 +670,10 @@ class _JobTabFilesState extends State<JobTabFiles> {
                   onPressed: _preparingEmail ? null : _composeEmail,
                   icon: _preparingEmail
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.mail_outline_rounded, size: 18),
+                      : Icon(Icons.mail_outline_rounded, size: 18),
                   label: const Text('Compose email'),
                 ),
-                IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded, color: AppColors.primary)),
+                IconButton(onPressed: _load, icon: Icon(Icons.refresh_rounded, color: AppColors.primary)),
               ],
             ),
           ],

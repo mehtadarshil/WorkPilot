@@ -46,7 +46,7 @@ Future<JobExpenseFormData?> showAddJobExpenseDialog(
                 children: [
                   DropdownButtonFormField<String>(
                     value: expenseType,
-                    decoration: const InputDecoration(labelText: 'Expense type'),
+                    decoration: InputDecoration(labelText: 'Expense type'),
                     items: const [
                       DropdownMenuItem(value: 'personal', child: Text('Personal')),
                       DropdownMenuItem(value: 'company', child: Text('Company')),
@@ -57,17 +57,17 @@ Future<JobExpenseFormData?> showAddJobExpenseDialog(
                   ),
                   TextField(
                     controller: categoryC,
-                    decoration: const InputDecoration(labelText: 'Category'),
+                    decoration: InputDecoration(labelText: 'Category'),
                     textCapitalization: TextCapitalization.sentences,
                   ),
                   TextField(
                     controller: amountC,
-                    decoration: const InputDecoration(labelText: 'Amount'),
+                    decoration: InputDecoration(labelText: 'Amount'),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                   TextField(
                     controller: descriptionC,
-                    decoration: const InputDecoration(labelText: 'Notes'),
+                    decoration: InputDecoration(labelText: 'Notes'),
                     maxLines: 2,
                   ),
                   const SizedBox(height: 8),
@@ -82,7 +82,7 @@ Future<JobExpenseFormData?> showAddJobExpenseDialog(
                     ),
                     trailing: proof == null
                         ? IconButton(
-                            icon: const Icon(Icons.photo_camera_outlined),
+                            icon: Icon(Icons.photo_camera_outlined),
                             onPressed: () async {
                               final x = await picker.pickImage(
                                 source: ImageSource.camera,
@@ -92,7 +92,7 @@ Future<JobExpenseFormData?> showAddJobExpenseDialog(
                             },
                           )
                         : IconButton(
-                            icon: const Icon(Icons.close),
+                            icon: Icon(Icons.close),
                             onPressed: () => setS(() => proof = null),
                           ),
                     onTap: () async {

@@ -208,7 +208,7 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
       ),
       child: Material(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        color: const Color(0xFF0f172a),
+        color: Colors.white,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
           child: Obx(() {
@@ -269,7 +269,7 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                     children: [
                       OutlinedButton.icon(
                         onPressed: busy ? null : _addPhotosGallery,
-                        icon: const Icon(
+                        icon: Icon(
                           Icons.photo_library_outlined,
                           size: 18,
                         ),
@@ -280,7 +280,7 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                       ),
                       OutlinedButton.icon(
                         onPressed: busy ? null : _addPhotoCamera,
-                        icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                        icon: Icon(Icons.photo_camera_outlined, size: 18),
                         label: const Text('Camera'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.slate300,
@@ -301,7 +301,7 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                     ..._imagePaths.map(
                       (path) => ListTile(
                         dense: true,
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.image_outlined,
                           color: AppColors.primary,
                         ),
@@ -315,7 +315,7 @@ class _AddTechnicalNoteSheetState extends State<_AddTechnicalNoteSheet> {
                           ),
                         ),
                         trailing: IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 20),
+                          icon: Icon(Icons.close_rounded, size: 20),
                           onPressed: busy
                               ? null
                               : () => setState(() => _imagePaths.remove(path)),
@@ -479,7 +479,7 @@ class _SubmissionCard extends StatelessWidget {
                           errorBuilder: (_, __, ___) => Container(
                             width: 88,
                             color: AppColors.slate900,
-                            child: const Icon(
+                            child: Icon(
                               Icons.broken_image_outlined,
                               color: AppColors.slate500,
                             ),
@@ -533,47 +533,20 @@ class _DetailGlassPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.whiteOverlay(0.45), AppColors.whiteOverlay(0.06)],
-        ),
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200, width: 0.8),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.4),
-            blurRadius: 28,
-            offset: const Offset(0, 14),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.15),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20.85),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20.85),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.whiteOverlay(0.1),
-                    const Color(0x661e293b),
-                    const Color(0x990f172a),
-                  ],
-                ),
-                border: Border.all(color: AppColors.whiteOverlay(0.14)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-                child: child,
-              ),
-            ),
-          ),
-        ),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+        child: child,
       ),
     );
   }

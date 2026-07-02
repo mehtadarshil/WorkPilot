@@ -13,20 +13,20 @@ class CustomerFormView extends GetView<CustomerFormController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             controller.isEdit ? 'Edit customer' : 'New customer',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.close_rounded),
+            icon: Icon(Icons.close_rounded),
             onPressed: Get.back,
           ),
           actions: [
@@ -37,7 +37,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
                     ? const SizedBox(
                         width: 22,
                         height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900),
                       )
                     : Text(
                         'Save',
@@ -52,7 +52,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
           ],
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -79,7 +79,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
                         padding: const EdgeInsets.all(12),
                         child: Text(
                           controller.error.value,
-                          style: GoogleFonts.inter(color: Colors.white),
+                          style: GoogleFonts.inter(color: AppColors.slate900),
                         ),
                       ),
                     ),
@@ -146,7 +146,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
                   return DropdownButtonFormField<int?>(
                     initialValue: controller.customerTypeId.value,
                     dropdownColor: AppColors.slate900,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: _inputDeco(),
                     items: [
                       const DropdownMenuItem<int?>(value: null, child: Text('None')),
@@ -203,11 +203,11 @@ class CustomerFormView extends GetView<CustomerFormController> {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppColors.primary),
+        borderSide: BorderSide(color: AppColors.primary),
       ),
     );
   }
@@ -226,7 +226,7 @@ class CustomerFormView extends GetView<CustomerFormController> {
       textCapitalization:
           capitalizeWords ? TextCapitalization.words : TextCapitalization.none,
       inputFormatters: capitalizeWords ? const [capitalizeWordsFormatter] : null,
-      style: GoogleFonts.inter(color: Colors.white),
+      style: GoogleFonts.inter(color: AppColors.slate900),
       decoration: _inputDeco(),
       validator: required
           ? (v) {

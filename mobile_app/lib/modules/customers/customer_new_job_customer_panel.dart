@@ -74,7 +74,7 @@ class CustomerNewJobCustomerPanel extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               '$addressLabel: $addressStr',
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65)),
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
             ),
           ],
           if (customerId > 0) ...[
@@ -96,7 +96,7 @@ class CustomerNewJobCustomerPanel extends StatelessWidget {
               workAddresses.isEmpty
                   ? 'No site/work addresses found for this customer.'
                   : 'Optional: choose where this job will be carried out.',
-              style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+              style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
             ),
           ],
         ],

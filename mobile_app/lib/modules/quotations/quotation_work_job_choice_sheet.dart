@@ -18,7 +18,7 @@ Future<void> showQuotationWorkJobChoiceSheet(
     isScrollControlled: true,
     showDragHandle: true,
     useSafeArea: true,
-    backgroundColor: const Color(0xFF0f172a),
+    backgroundColor: Colors.white,
     builder: (ctx) {
       return Padding(
         padding: EdgeInsets.only(

@@ -169,7 +169,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: _pickProof,
-                  icon: const Icon(Icons.add_a_photo_rounded, color: AppColors.primary),
+                  icon: Icon(Icons.add_a_photo_rounded, color: AppColors.primary),
                   label: Text(
                     _proof == null ? 'Take proof photo (required)' : 'Proof: ${_proof!.name}',
                     style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w700),
@@ -181,7 +181,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
                   onPressed: _saving ? null : _submitCost,
                   icon: _saving
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.save_rounded),
+                      : Icon(Icons.save_rounded),
                   label: const Text('Save cost'),
                 ),
               ],
@@ -199,7 +199,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.08),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
       child: child,
@@ -224,7 +224,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400),
         enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.whiteOverlay(0.16)), borderRadius: BorderRadius.circular(12)),
-        focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(12)),
+        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

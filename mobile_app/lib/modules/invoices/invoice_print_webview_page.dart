@@ -76,12 +76,12 @@ class _InvoicePrintWebViewPageState extends State<InvoicePrintWebViewPage> {
           if (_printUrl != null)
             IconButton(
               tooltip: 'Open in browser',
-              icon: const Icon(Icons.open_in_new_rounded),
+              icon: Icon(Icons.open_in_new_rounded),
               onPressed: _openExternal,
             ),
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
+            icon: Icon(Icons.refresh_rounded),
             onPressed: _pageError != null || _printUrl == null ? null : () => _controller.reload(),
           ),
         ],

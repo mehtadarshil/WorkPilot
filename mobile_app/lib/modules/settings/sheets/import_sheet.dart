@@ -34,7 +34,7 @@ class ImportSheet extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Icons.info_outline, color: Color(0xFFE65100)),
+              Icon(Icons.info_outline, color: Color(0xFFE65100)),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(

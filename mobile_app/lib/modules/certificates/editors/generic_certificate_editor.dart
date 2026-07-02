@@ -179,7 +179,7 @@ class _ReinspectionQuickPicks extends StatelessWidget {
         children: reinspectionQuickOptions
             .map(
               (option) => ActionChip(
-                label: Text(option, style: const TextStyle(fontSize: 11)),
+                label: Text(option, style: TextStyle(fontSize: 11)),
                 onPressed: () => onPick(option),
               ),
             )
@@ -237,7 +237,7 @@ class _JsonListEditor extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
                     onPressed: () => _remove(index),
-                    icon: const Icon(Icons.delete_outline_rounded),
+                    icon: Icon(Icons.delete_outline_rounded),
                     label: const Text('Remove'),
                   ),
                 ),
@@ -247,7 +247,7 @@ class _JsonListEditor extends StatelessWidget {
         }),
         OutlinedButton.icon(
           onPressed: () => _add(rows),
-          icon: const Icon(Icons.add_rounded),
+          icon: Icon(Icons.add_rounded),
           label: Text('Add ${spec.itemTitle.toLowerCase()}'),
         ),
       ],

@@ -14,17 +14,17 @@ class InvoicesListView extends GetView<InvoicesListController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text('Invoices', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
@@ -38,11 +38,11 @@ class InvoicesListView extends GetView<InvoicesListController> {
             controller.reloadFromStart();
           },
           backgroundColor: AppColors.primary,
-          icon: const Icon(Icons.add_rounded),
+          icon: Icon(Icons.add_rounded),
           label: Text('Create', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -60,7 +60,7 @@ class InvoicesListView extends GetView<InvoicesListController> {
                     children: [
                       Text(
                         'Outstanding (all)',
-                        style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55), fontSize: 11, fontWeight: FontWeight.w700),
+                        style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11, fontWeight: FontWeight.w700),
                       ),
                       Text(
                         InvoiceHelpers.formatMoney(controller.overallOutstanding.value, 'GBP'),
@@ -94,24 +94,24 @@ class InvoicesListView extends GetView<InvoicesListController> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: TextField(
                   onChanged: controller.setSearch,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search invoices…',
-                    hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.55)),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
                     filled: true,
                     fillColor: AppColors.whiteOverlay(0.08),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.4),
+                      borderSide: BorderSide(color: AppColors.primary, width: 1.4),
                     ),
                   ),
                 ),
@@ -122,9 +122,9 @@ class InvoicesListView extends GetView<InvoicesListController> {
                   return DropdownButtonFormField<String>(
                     key: ValueKey<String?>(controller.stateFilter.value.isEmpty ? null : controller.stateFilter.value),
                     initialValue: controller.stateFilter.value.isEmpty ? null : controller.stateFilter.value,
-                    hint: Text('All states', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.65))),
+                    hint: Text('All states', style: GoogleFonts.inter(color: AppColors.slate500)),
                     dropdownColor: const Color(0xFF1e293b),
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: AppColors.whiteOverlay(0.08),
@@ -133,12 +133,12 @@ class InvoicesListView extends GetView<InvoicesListController> {
                     items: [
                       DropdownMenuItem<String>(
                         value: null,
-                        child: Text('All states', style: GoogleFonts.inter(color: Colors.white)),
+                        child: Text('All states', style: GoogleFonts.inter(color: AppColors.slate900)),
                       ),
                       for (final s in invoiceStatesOrdered)
                         DropdownMenuItem<String>(
                           value: s,
-                          child: Text(InvoiceHelpers.stateLabel(s), style: GoogleFonts.inter(color: Colors.white)),
+                          child: Text(InvoiceHelpers.stateLabel(s), style: GoogleFonts.inter(color: AppColors.slate900)),
                         ),
                     ],
                     onChanged: (v) => controller.setStateFilter(v ?? ''),
@@ -254,7 +254,7 @@ class InvoicesListView extends GetView<InvoicesListController> {
                                       ],
                                       if (jobTitle != null && jobTitle.isNotEmpty) ...[
                                         const SizedBox(height: 2),
-                                        Text(jobTitle, style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45), fontSize: 12)),
+                                        Text(jobTitle, style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)),
                                       ],
                                       const SizedBox(height: 8),
                                       Row(
@@ -270,7 +270,7 @@ class InvoicesListView extends GetView<InvoicesListController> {
                                           const Spacer(),
                                           Text(
                                             '${InvoiceHelpers.formatDateIso(invDate)} · due ${InvoiceHelpers.formatDateIso(due)}',
-                                            style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+                                            style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
                                           ),
                                         ],
                                       ),
@@ -322,7 +322,7 @@ class _CountChip extends StatelessWidget {
             children: [
               Text(label, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
               const SizedBox(width: 6),
-              Text('$count', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontWeight: FontWeight.w800)),
+              Text('$count', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w800)),
             ],
           ),
         ),

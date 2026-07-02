@@ -323,11 +323,11 @@ class _UsersSheetState extends State<UsersSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.edit, size: 18, color: AppColors.primary),
+                    icon: Icon(Icons.edit, size: 18, color: AppColors.primary),
                     onPressed: () => _edit(u),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete, size: 18, color: Colors.redAccent),
+                    icon: Icon(Icons.delete, size: 18, color: Colors.redAccent),
                     onPressed: () => _delete(id),
                   ),
                 ],
@@ -340,12 +340,12 @@ class _UsersSheetState extends State<UsersSheet> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left),
+                icon: Icon(Icons.chevron_left),
                 onPressed: _page > 1 ? () { setState(() => _page--); _load(); } : null,
               ),
               Text('Page $_page of $_totalPages', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
               IconButton(
-                icon: const Icon(Icons.chevron_right),
+                icon: Icon(Icons.chevron_right),
                 onPressed: _page < _totalPages ? () { setState(() => _page++); _load(); } : null,
               ),
             ],

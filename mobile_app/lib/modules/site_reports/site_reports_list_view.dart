@@ -198,7 +198,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                             value: selectedCustomerId,
                             dropdownColor: const Color(0xFF1E293B),
                             isExpanded: true,
-                            icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                            icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             items: customers.map((c) {
                               final rawId = c['id'];
@@ -250,7 +250,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                           value: selectedWorkAddressId,
                           dropdownColor: const Color(0xFF1E293B),
                           isExpanded: true,
-                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                          icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           items: [
                             DropdownMenuItem<int?>(
@@ -309,7 +309,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                             value: selectedTemplateId,
                             dropdownColor: const Color(0xFF1E293B),
                             isExpanded: true,
-                            icon: const Icon(Icons.arrow_drop_down, color: Colors.white54),
+                            icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             items: templates.map((t) {
                               final rawId = t['id'];
@@ -390,30 +390,30 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Site Reports',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: () => _showCreateSheet(context),
           backgroundColor: AppColors.primary,
-          child: const Icon(Icons.add, color: Colors.white),
+          child: Icon(Icons.add, color: AppColors.slate900),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -430,11 +430,11 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: TextField(
                   onChanged: (v) => controller.searchQuery.value = v,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search by cert, address, customer...',
                     hintStyle: GoogleFonts.inter(color: AppColors.slate400),
-                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.slate400),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                     filled: true,
                     fillColor: AppColors.whiteOverlay(0.06),
                     border: OutlineInputBorder(
@@ -559,7 +559,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                             const SizedBox(height: 4),
                                             Row(
                                               children: [
-                                                const Icon(Icons.place_rounded, size: 14, color: AppColors.slate400),
+                                                Icon(Icons.place_rounded, size: 14, color: AppColors.slate400),
                                                 const SizedBox(width: 4),
                                                 Expanded(
                                                   child: Text(
@@ -587,7 +587,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                           ],
                                         ],
                                       ),
-                                trailing: const Icon(
+                                trailing: Icon(
                                   Icons.chevron_right_rounded,
                                   color: Colors.white54,
                                 ),

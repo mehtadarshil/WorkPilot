@@ -50,7 +50,7 @@ class JobTabInvoices extends StatelessWidget {
   Future<void> _deleteInvoice(int id, JobDetailController c) async {
     final go = await Get.dialog<bool>(
       AlertDialog(
-        backgroundColor: const Color(0xFF0f172a),
+        backgroundColor: Colors.white,
         title: const Text('Delete this draft invoice?'),
         content: const Text('This cannot be undone.'),
         actions: [
@@ -143,13 +143,13 @@ class JobTabInvoices extends StatelessWidget {
               if (hasPricingItems && !hasDrafts)
                 FilledButton.icon(
                   onPressed: () => _generateFromJobItems(c),
-                  icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                  icon: Icon(Icons.auto_fix_high_rounded, size: 18),
                   label: const Text('Generate from job items'),
                 ),
               if (hasPricingItems && !hasDrafts) const SizedBox(width: 10),
               FilledButton.icon(
                 onPressed: () => _addNewInvoice(c),
-                icon: const Icon(Icons.add_rounded, size: 18),
+                icon: Icon(Icons.add_rounded, size: 18),
                 label: const Text('Add new invoice'),
               ),
             ],
@@ -300,19 +300,19 @@ class JobTabInvoices extends StatelessWidget {
                 ),
                 if (draft && id != null) ...[
                   const SizedBox(height: 10),
-                  const Divider(color: Colors.white10, height: 1),
+                  Divider(color: Colors.white10, height: 1),
                   const SizedBox(height: 8),
                   Row(
                     children: [
                       TextButton.icon(
                         onPressed: () => _issueInvoice(id, controller),
-                        icon: const Icon(Icons.send_rounded, size: 16),
+                        icon: Icon(Icons.send_rounded, size: 16),
                         label: Text('Issue', style: GoogleFonts.inter(color: const Color(0xFF34D399), fontWeight: FontWeight.w700)),
                       ),
                       const SizedBox(width: 8),
                       TextButton.icon(
                         onPressed: () => _deleteInvoice(id, controller),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                        icon: Icon(Icons.delete_outline_rounded, size: 16),
                         label: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontWeight: FontWeight.w700)),
                       ),
                     ],
@@ -330,7 +330,7 @@ class JobTabInvoices extends StatelessWidget {
     return Text(
       '$label: $value',
       style: GoogleFonts.inter(
-        color: AppColors.whiteOverlay(0.55),
+        color: AppColors.slate500,
         fontSize: 12,
         fontWeight: FontWeight.w500,
       ),

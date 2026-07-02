@@ -238,21 +238,21 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.07),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Site Images',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.white),
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.slate900),
           ),
           const SizedBox(height: 4),
           Text(
             widget.workAddressId != null
                 ? 'Images stored for this work site only.'
                 : 'Images stored at the customer level (all sites).',
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.55)),
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500),
           ),
           const SizedBox(height: 14),
           Row(
@@ -265,7 +265,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                  icon: Icon(Icons.camera_alt_outlined, size: 18),
                   label: Text('Camera', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13)),
                 ),
               ),
@@ -274,12 +274,12 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                 child: OutlinedButton.icon(
                   onPressed: _uploading ? null : _pickFromGallery,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: AppColors.whiteOverlay(0.2)),
+                    foregroundColor: AppColors.slate900,
+                    side: BorderSide(color: AppColors.slate300),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  icon: Icon(Icons.photo_library_outlined, size: 18),
                   label: Text('Gallery', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13)),
                 ),
               ),
@@ -310,7 +310,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
           Text(
             'Upload photos of this site using the buttons above.',
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.38), fontSize: 12),
+            style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
           ),
         ],
       ),
@@ -417,7 +417,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                   Expanded(
                     child: Text(
                       ctStr(img, 'original_filename').isEmpty ? 'Image' : ctStr(img, 'original_filename'),
-                      style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 12, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12, fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -440,7 +440,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                       controller: noteCtrl,
                       maxLines: 3,
                       minLines: 1,
-                      style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.85), fontSize: 12),
+                      style: GoogleFonts.inter(color: AppColors.slate700, fontSize: 12),
                       decoration: InputDecoration(
                         hintText: 'Add a note for this image...',
                         hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.3)),
@@ -453,7 +453,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: AppColors.primary),
+                          borderSide: BorderSide(color: AppColors.primary),
                         ),
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

@@ -63,7 +63,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
                         controller: reminderFrequency,
                         enabled: !saving,
                         keyboardType: TextInputType.number,
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                         decoration: customerInputDecoration('e.g. 1'),
                       ),
                     ),
@@ -83,7 +83,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   'How often should a reminder be triggered for this service job?',
-                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
                 ),
               ],
             ),
@@ -96,7 +96,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
             child: activeChecklist.isEmpty
                 ? Text(
                     'No service checklist options configured yet. Add them in Settings -> Job Descriptions.',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.55)),
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
                   )
                 : Wrap(
                     spacing: 12,

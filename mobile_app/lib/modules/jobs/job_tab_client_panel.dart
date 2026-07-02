@@ -341,12 +341,12 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
                       children: [
                         if (url.isNotEmpty)
                           IconButton(
-                            icon: const Icon(Icons.copy_rounded, color: AppColors.primary),
+                            icon: Icon(Icons.copy_rounded, color: AppColors.primary),
                             onPressed: () => _copy(url),
                           ),
                         if (url.isNotEmpty)
                           IconButton(
-                            icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primary),
+                            icon: Icon(Icons.open_in_new_rounded, color: AppColors.primary),
                             onPressed: () => _openUrl(url),
                           ),
                       ],

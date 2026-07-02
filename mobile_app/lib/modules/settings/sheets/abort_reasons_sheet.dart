@@ -120,12 +120,12 @@ class _AbortReasonsSheetState extends State<AbortReasonsSheet> {
                 Column(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      icon: Icon(Icons.arrow_upward, size: 18),
                       onPressed: i == 0 ? null : () => _move(i, -1),
                       color: AppColors.slate500,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.arrow_downward, size: 18),
+                      icon: Icon(Icons.arrow_downward, size: 18),
                       onPressed: i == _controllers.length - 1 ? null : () => _move(i, 1),
                       color: AppColors.slate500,
                     ),
@@ -133,7 +133,7 @@ class _AbortReasonsSheetState extends State<AbortReasonsSheet> {
                 ),
                 Expanded(child: sheetTextField(c, hint: 'Reason label')),
                 IconButton(
-                  icon: const Icon(Icons.delete, size: 18, color: Colors.redAccent),
+                  icon: Icon(Icons.delete, size: 18, color: Colors.redAccent),
                   onPressed: () => _remove(i),
                 ),
               ],
@@ -148,7 +148,7 @@ class _AbortReasonsSheetState extends State<AbortReasonsSheet> {
                 onPressed: _add,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
+                  side: BorderSide(color: AppColors.primary),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -165,7 +165,7 @@ class _AbortReasonsSheetState extends State<AbortReasonsSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 child: _saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                     : Text('Save list', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16)),
               ),
             ),

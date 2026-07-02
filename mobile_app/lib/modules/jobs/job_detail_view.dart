@@ -89,13 +89,13 @@ class _JobDetailViewState extends State<JobDetailView>
     final controller = Get.find<JobDetailController>();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Obx(() {
             final number = (controller.job.value?['job_number'] as String?)?.trim();
@@ -105,7 +105,7 @@ class _JobDetailViewState extends State<JobDetailView>
             );
           }),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
@@ -116,7 +116,7 @@ class _JobDetailViewState extends State<JobDetailView>
               if (!showEdit) return const SizedBox.shrink();
               return IconButton(
                 tooltip: 'Edit Job',
-                icon: const Icon(Icons.edit_rounded),
+                icon: Icon(Icons.edit_rounded),
                 onPressed: () => Get.toNamed(AppRoutes.editJob),
               );
             }),
@@ -124,7 +124,7 @@ class _JobDetailViewState extends State<JobDetailView>
               if (controller.loading.value) return const SizedBox.shrink();
               return IconButton(
                 tooltip: 'Refresh',
-                icon: const Icon(Icons.refresh_rounded),
+                icon: Icon(Icons.refresh_rounded),
                 onPressed: controller.refreshAll,
               );
             }),
@@ -141,7 +141,7 @@ class _JobDetailViewState extends State<JobDetailView>
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,

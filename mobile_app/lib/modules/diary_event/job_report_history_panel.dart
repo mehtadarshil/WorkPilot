@@ -191,7 +191,7 @@ class _HistoryExtraSubmissionCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
         color: AppColors.whiteOverlay(0.05),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,15 +236,15 @@ class _HistoryExtraSubmissionCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           color: AppColors.whiteOverlay(0.08),
-                          border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                          border: Border.all(color: AppColors.slate200),
                         ),
-                        child: const Icon(Icons.lock_outline, color: AppColors.slate500, size: 28),
+                        child: Icon(Icons.lock_outline, color: AppColors.slate500, size: 28),
                       );
                     }
                     return DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                        border: Border.all(color: AppColors.slate200),
                       ),
                       child: AuthVideoPosterTile(
                         url: m.fullUrl,
@@ -280,7 +280,7 @@ class _HistoryExtraSubmissionCard extends StatelessWidget {
                         errorBuilder: (_, __, ___) => Container(
                           width: 88,
                           color: AppColors.slate900,
-                          child: const Icon(Icons.broken_image_outlined, color: AppColors.slate500),
+                          child: Icon(Icons.broken_image_outlined, color: AppColors.slate500),
                         ),
                       ),
                     ),
@@ -326,7 +326,7 @@ class _HistoryAnswerValue extends StatelessWidget {
                           child: CircleAvatar(
                             backgroundColor: Colors.black45,
                             child: IconButton(
-                              icon: const Icon(Icons.close_rounded, color: Colors.white),
+                              icon: Icon(Icons.close_rounded, color: AppColors.slate900),
                               onPressed: () => Navigator.pop(ctx),
                             ),
                           ),

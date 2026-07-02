@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/values/app_colors.dart';
+import '../../widgets/wp_surface.dart';
 import 'holidays_controller.dart';
 
 class HolidaysView extends GetView<HolidaysController> {
@@ -12,32 +13,32 @@ class HolidaysView extends GetView<HolidaysController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
-        systemNavigationBarColor: AppColors.gradientStart,
-        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.slate50,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Holidays',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
             IconButton(
               onPressed: () => _showRequestSheet(context),
-              icon: const Icon(Icons.add_rounded, color: AppColors.primary),
+              icon: Icon(Icons.add_rounded, color: AppColors.primary),
               tooltip: 'Request Holiday',
             ),
           ],
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -92,14 +93,10 @@ class HolidaysView extends GetView<HolidaysController> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary.withValues(alpha: 0.25)
-              : AppColors.whiteOverlay(0.06),
+          color: selected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.slate100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected
-                ? AppColors.primary.withValues(alpha: 0.5)
-                : AppColors.whiteOverlay(0.12),
+            color: selected ? AppColors.primary.withValues(alpha: 0.35) : AppColors.slate200,
           ),
         ),
         child: Text(
@@ -107,7 +104,7 @@ class HolidaysView extends GetView<HolidaysController> {
           style: GoogleFonts.inter(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: selected ? AppColors.primary : AppColors.whiteOverlay(0.6),
+            color: selected ? AppColors.primaryDark : AppColors.slate600,
           ),
         ),
       ),
@@ -151,10 +148,10 @@ class HolidaysView extends GetView<HolidaysController> {
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.whiteOverlay(0.08),
-                border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                color: WpAccents.amber.withValues(alpha: 0.14),
+                border: Border.all(color: WpAccents.amber.withValues(alpha: 0.35)),
               ),
-              child: Icon(Icons.event_busy_rounded, size: 32, color: AppColors.whiteOverlay(0.4)),
+              child: const Icon(Icons.event_busy_rounded, size: 32, color: WpAccents.amber),
             ),
             const SizedBox(height: 16),
             Text(
@@ -162,13 +159,13 @@ class HolidaysView extends GetView<HolidaysController> {
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: AppColors.whiteOverlay(0.7),
+                color: AppColors.slate900,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               'Tap + to request time off',
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.4)),
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
             ),
           ],
         ),
@@ -204,11 +201,11 @@ class HolidaysView extends GetView<HolidaysController> {
           child: Ink(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              color: const Color(0xB30F172A),
-              border: Border.all(color: AppColors.whiteOverlay(0.12)),
+              color: Colors.white,
+              border: Border.all(color: AppColors.slate200),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.blackOverlay(0.25),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 16,
                   offset: const Offset(0, 6),
                 ),
@@ -227,7 +224,7 @@ class HolidaysView extends GetView<HolidaysController> {
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: AppColors.slate900,
                           ),
                         ),
                       ),
@@ -237,11 +234,11 @@ class HolidaysView extends GetView<HolidaysController> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.whiteOverlay(0.5)),
+                      Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.slate400),
                       const SizedBox(width: 6),
                       Text(
                         _fmtRange(r.startDate, r.endDate),
-                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.6)),
+                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600),
                       ),
                       if (r.daysCount != null || r.startDate.isNotEmpty) ...[
                         const SizedBox(width: 12),
@@ -266,11 +263,11 @@ class HolidaysView extends GetView<HolidaysController> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.label_rounded, size: 14, color: AppColors.whiteOverlay(0.5)),
+                      Icon(Icons.label_rounded, size: 14, color: AppColors.slate400),
                       const SizedBox(width: 6),
                       Text(
                         r.leaveType[0].toUpperCase() + r.leaveType.substring(1),
-                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.6)),
+                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600),
                       ),
                     ],
                   ),
@@ -278,7 +275,7 @@ class HolidaysView extends GetView<HolidaysController> {
                     const SizedBox(height: 8),
                     Text(
                       r.reason!,
-                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.45)),
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -292,7 +289,7 @@ class HolidaysView extends GetView<HolidaysController> {
                             onPressed: () => controller.updateRequestStatus(r.id, 'rejected'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFFFCA5A5),
-                              side: const BorderSide(color: Color(0xFF7F1D1D)),
+                              side: BorderSide(color: Color(0xFF7F1D1D)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               padding: const EdgeInsets.symmetric(vertical: 11),
                             ),
@@ -342,10 +339,10 @@ class HolidaysView extends GetView<HolidaysController> {
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.whiteOverlay(0.08),
-                border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                color: WpAccents.mint.withValues(alpha: 0.14),
+                border: Border.all(color: WpAccents.mint.withValues(alpha: 0.35)),
               ),
-              child: Icon(Icons.celebration_rounded, size: 32, color: AppColors.whiteOverlay(0.4)),
+              child: const Icon(Icons.celebration_rounded, size: 32, color: WpAccents.mint),
             ),
             const SizedBox(height: 16),
             Text(
@@ -353,13 +350,13 @@ class HolidaysView extends GetView<HolidaysController> {
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: AppColors.whiteOverlay(0.7),
+                color: AppColors.slate900,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               'Tap + to add a holiday',
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.4)),
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
             ),
           ],
         ),
@@ -379,11 +376,11 @@ class HolidaysView extends GetView<HolidaysController> {
               child: Ink(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
-                  color: const Color(0xB30F172A),
-                  border: Border.all(color: AppColors.whiteOverlay(0.12)),
+                  color: Colors.white,
+                  border: Border.all(color: AppColors.slate200),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.blackOverlay(0.25),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 16,
                       offset: const Offset(0, 6),
                     ),
@@ -400,7 +397,7 @@ class HolidaysView extends GetView<HolidaysController> {
                           shape: BoxShape.circle,
                           color: AppColors.primary.withValues(alpha: 0.22),
                         ),
-                        child: const Icon(Icons.celebration_rounded, size: 22, color: Colors.white),
+                        child: Icon(Icons.celebration_rounded, size: 22, color: WpAccents.mint),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -412,7 +409,7 @@ class HolidaysView extends GetView<HolidaysController> {
                               style: GoogleFonts.inter(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             const SizedBox(height: 3),
@@ -420,7 +417,7 @@ class HolidaysView extends GetView<HolidaysController> {
                               _fmtDate(h.holidayDate),
                               style: GoogleFonts.inter(
                                 fontSize: 13,
-                                color: AppColors.whiteOverlay(0.58),
+                                color: AppColors.slate500,
                               ),
                             ),
                             if (h.isRecurring)
@@ -502,19 +499,19 @@ class HolidaysView extends GetView<HolidaysController> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppColors.slate50,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Color(0xFF0F172A),
+                AppColors.slate50,
                 Color(0xFF022C22),
               ],
             ),
@@ -533,7 +530,7 @@ class HolidaysView extends GetView<HolidaysController> {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: AppColors.whiteOverlay(0.2),
+                        color: AppColors.slate300,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -559,11 +556,11 @@ class HolidaysView extends GetView<HolidaysController> {
                       items: [
                         DropdownMenuItem<int>(
                           value: null,
-                          child: Text('Myself', style: GoogleFonts.inter(color: Colors.white)),
+                          child: Text('Myself', style: GoogleFonts.inter(color: AppColors.slate900)),
                         ),
                         ...controller.officers.map((o) => DropdownMenuItem<int>(
                           value: o['id'] as int,
-                          child: Text(o['full_name'] as String? ?? '', style: GoogleFonts.inter(color: Colors.white)),
+                          child: Text(o['full_name'] as String? ?? '', style: GoogleFonts.inter(color: AppColors.slate900)),
                         )),
                       ],
                       onChanged: (v) => setState(() => selectedOfficerId = v),
@@ -614,7 +611,7 @@ class HolidaysView extends GetView<HolidaysController> {
                     readOnly: true,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
                     decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
-                      suffixIcon: const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
+                      suffixIcon: Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
                     onTap: () async {
                       if (isAllDayState!) {
@@ -654,7 +651,7 @@ class HolidaysView extends GetView<HolidaysController> {
                     readOnly: true,
                     style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
                     decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
-                      suffixIcon: const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
+                      suffixIcon: Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
                     onTap: () async {
                       if (isAllDayState!) {
@@ -818,29 +815,21 @@ class HolidaysView extends GetView<HolidaysController> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+        borderSide: const BorderSide(color: AppColors.slate200),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        borderSide: BorderSide(color: AppColors.primary, width: 1.5),
       ),
       filled: true,
       fillColor: AppColors.whiteOverlay(0.06),
       hintText: hint,
-      hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.whiteOverlay(0.35)),
+      hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.slate400),
     );
   }
 
   Widget _sectionHeader(String label) {
-    return Text(
-      label,
-      style: GoogleFonts.inter(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        color: AppColors.whiteOverlay(0.5),
-        letterSpacing: 0.5,
-      ),
-    );
+    return WpSectionLabel(label);
   }
 
   Widget _statusBadge(String status) {

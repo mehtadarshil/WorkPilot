@@ -14,7 +14,7 @@ Future<void> showCircuitPasteSheet({
 
   await showModalBottomSheet<void>(
     context: context,
-    backgroundColor: const Color(0xFF0F172A),
+    backgroundColor: AppColors.slate50,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -49,8 +49,8 @@ Future<void> showCircuitPasteSheet({
                       child: TextField(
                         controller: TextEditingController(text: startRow.toString()),
                         keyboardType: TextInputType.number,
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: const InputDecoration(labelText: 'Start row (0-based)'),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
+                        decoration: InputDecoration(labelText: 'Start row (0-based)'),
                         onChanged: (v) => setModalState(() => startRow = int.tryParse(v) ?? 0),
                       ),
                     ),
@@ -58,9 +58,9 @@ Future<void> showCircuitPasteSheet({
                     Expanded(
                       child: DropdownButtonFormField<int>(
                         value: startColIndex,
-                        dropdownColor: const Color(0xFF0F172A),
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: const InputDecoration(labelText: 'Start column'),
+                        dropdownColor: AppColors.slate50,
+                        style: GoogleFonts.inter(color: AppColors.slate900),
+                        decoration: InputDecoration(labelText: 'Start column'),
                         items: fillable.asMap().entries
                             .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value.label)))
                             .toList(),
@@ -76,7 +76,7 @@ Future<void> showCircuitPasteSheet({
                   controller: textController,
                   maxLines: 6,
                   style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Clipboard data',
                     border: OutlineInputBorder(),
                   ),

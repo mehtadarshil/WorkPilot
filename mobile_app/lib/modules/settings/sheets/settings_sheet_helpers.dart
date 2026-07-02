@@ -17,7 +17,7 @@ InputDecoration sheetInputDeco({String hint = ''}) {
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppColors.primary),
+      borderSide: BorderSide(color: AppColors.primary),
     ),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
   );
@@ -104,7 +104,7 @@ Widget sheetSaveButton({required VoidCallback? onPressed, required bool saving, 
           ? const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900),
             )
           : Text(
               label,

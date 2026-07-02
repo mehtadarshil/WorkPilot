@@ -1,6 +1,7 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:glass_kit/glass_kit.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../app/routes/app_routes.dart';
@@ -24,7 +25,7 @@ class HomeView extends GetView<HomeController> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
@@ -74,7 +75,7 @@ class _ShellGradientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -106,7 +107,7 @@ class _ShellAmbientOrbs extends StatelessWidget {
             child: _Orb(
               diameter: size.width * 0.72,
               colors: [
-                AppColors.primary.withValues(alpha: 0.14),
+                AppColors.primary.withValues(alpha: 0.05),
                 Colors.transparent,
               ],
             ),
@@ -117,7 +118,7 @@ class _ShellAmbientOrbs extends StatelessWidget {
             child: _Orb(
               diameter: size.width * 0.65,
               colors: [
-                const Color(0xFF022C22).withValues(alpha: 0.45),
+                AppColors.primary.withValues(alpha: 0.04),
                 Colors.transparent,
               ],
             ),
@@ -164,64 +165,57 @@ class _GlassTabBar extends StatelessWidget {
       final profileI = controller.profileTabIndex;
       return LayoutBuilder(
         builder: (context, constraints) {
-          return GlassContainer.frostedGlass(
-            height: 72,
-            width: constraints.maxWidth,
-            blur: 36,
-            frostedOpacity: 0.12,
+          return ClipRRect(
             borderRadius: BorderRadius.circular(28),
-            borderWidth: 1,
-            borderGradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.whiteOverlay(0.5),
-                AppColors.whiteOverlay(0.08),
-              ],
-            ),
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppColors.whiteOverlay(0.14),
-                const Color(0x66101828),
-                const Color(0x990a0f1a),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.blackOverlay(0.45),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: AppColors.whiteOverlay(0.04),
-                blurRadius: 0,
-                offset: const Offset(0, 1),
-              ),
-            ],
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final w = c.maxWidth;
-                final segment = w / tabCount;
-                final slideIdx = idx.clamp(0, tabCount - 1);
-                return Stack(
-                  clipBehavior: Clip.hardEdge,
-                  alignment: Alignment.center,
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 260),
-                      curve: Curves.easeOutCubic,
-                      left: slideIdx * segment,
-                      width: segment,
-                      top: 0,
-                      bottom: 0,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 2),
-                        child: _IOSSelectionCapsule(),
-                      ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                height: 72,
+                width: constraints.maxWidth,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.82),
+                      Colors.white.withValues(alpha: 0.66),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    width: 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
                     ),
+                  ],
+                ),
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final w = c.maxWidth;
+                    final segment = w / tabCount;
+                    final slideIdx = idx.clamp(0, tabCount - 1);
+                    return Stack(
+                      clipBehavior: Clip.hardEdge,
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOutCubic,
+                          left: slideIdx * segment,
+                          width: segment,
+                          top: 0,
+                          bottom: 0,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 2),
+                            child: _IOSSelectionCapsule(),
+                          ),
+                        ),
                     Row(
                       children: [
                         _NavItem(
@@ -253,11 +247,13 @@ class _GlassTabBar extends StatelessWidget {
                           label: 'Profile',
                           onTap: () => controller.navIndex.value = profileI,
                         ),
+                          ],
+                        ),
                       ],
-                    ),
-                  ],
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           );
         },
@@ -266,40 +262,48 @@ class _GlassTabBar extends StatelessWidget {
   }
 }
 
-/// Secondary “lifted glass” chip + thin iridescent rim (approximates chromatic
-/// highlights on real UIVisualEffectView stacks).
+/// iOS "liquid glass" selection pill: a frosted, teal-tinted lens with a soft
+/// specular highlight along the top edge and a fine light rim for depth.
 class _IOSSelectionCapsule extends StatelessWidget {
   const _IOSSelectionCapsule();
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0x55A5F3FC),
-            const Color(0x33F0ABFC),
-            const Color(0x44FDE68A),
-          ],
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(1.25),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20.75),
-            color: AppColors.whiteOverlay(0.16),
-            border: Border.all(color: AppColors.whiteOverlay(0.22)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.blackOverlay(0.2),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: 0.55),
+                  AppColors.primary.withValues(alpha: 0.16),
+                ],
               ),
-            ],
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.85),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  blurRadius: 1,
+                  spreadRadius: -1,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -324,15 +328,15 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? Colors.white : AppColors.whiteOverlay(0.45);
+    final color = selected ? AppColors.primary : AppColors.slate400;
     return Expanded(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(20),
-          splashColor: AppColors.whiteOverlay(0.1),
-          highlightColor: AppColors.whiteOverlay(0.05),
+          splashColor: AppColors.primary.withValues(alpha: 0.08),
+          highlightColor: AppColors.primary.withValues(alpha: 0.04),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -486,7 +490,7 @@ class _OfflineSyncBanner extends StatelessWidget {
                           headline,
                           style: GoogleFonts.inter(
                             fontSize: 13,
-                            color: AppColors.slate300,
+                            color: AppColors.slate500,
                             height: 1.35,
                           ),
                         ),
@@ -603,8 +607,15 @@ class _StatChip extends StatelessWidget {
     final inner = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        color: AppColors.whiteOverlay(0.06),
-        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+        color: Colors.white, // Match white cards
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
@@ -619,7 +630,7 @@ class _StatChip extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.slate400,
+                      color: AppColors.slate500,
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -628,7 +639,7 @@ class _StatChip extends StatelessWidget {
                   Icon(
                     Icons.chevron_right_rounded,
                     size: 18,
-                    color: AppColors.whiteOverlay(0.35),
+                    color: AppColors.slate400,
                   ),
               ],
             ),
@@ -638,7 +649,7 @@ class _StatChip extends StatelessWidget {
               style: GoogleFonts.inter(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: AppColors.slate900,
               ),
             ),
           ],
@@ -688,7 +699,7 @@ class _HomeHeader extends GetView<HomeController> {
                   style: GoogleFonts.inter(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: AppColors.slate900,
                     letterSpacing: -0.5,
                     height: 1.15,
                   ),
@@ -699,7 +710,7 @@ class _HomeHeader extends GetView<HomeController> {
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: AppColors.slate400,
+                    color: AppColors.slate500,
                     letterSpacing: 0.2,
                   ),
                 ),
@@ -712,7 +723,6 @@ class _HomeHeader extends GetView<HomeController> {
   }
 }
 
-/// Frosted card shell matching login / tab bar (translucent, teal-tinted edge).
 class _HomeGlassCard extends StatelessWidget {
   const _HomeGlassCard({required this.child});
 
@@ -722,37 +732,23 @@ class _HomeGlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppColors.whiteOverlay(0.18),
-            AppColors.primary.withValues(alpha: 0.08),
-            AppColors.whiteOverlay(0.04),
-          ],
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white, // Pure white card matching web console
+        border: Border.all(
+          color: const Color(0xFFE2E8F0), // Slate 200
+          width: 0.8,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.blackOverlay(0.35),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(1.1),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20.9),
-            color: const Color(0xB30F172A),
-            border: Border.all(color: AppColors.whiteOverlay(0.1)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-            child: SizedBox(width: double.infinity, child: child),
-          ),
-        ),
+        padding: const EdgeInsets.all(18),
+        child: SizedBox(width: double.infinity, child: child),
       ),
     );
   }
@@ -801,7 +797,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                           letterSpacing: -0.2,
                         ),
                       ),
@@ -820,7 +816,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.45,
-                      color: AppColors.slate300,
+                      color: AppColors.slate500,
                     ),
                   )
                 else if (next == null)
@@ -829,7 +825,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.45,
-                      color: AppColors.slate300,
+                      color: AppColors.slate500,
                     ),
                   )
                 else ...[
@@ -901,7 +897,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                     ),
                   ),
                   if (next.description != null && next.description!.trim().isNotEmpty) ...[
@@ -932,7 +928,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         height: 1.45,
-                        color: AppColors.slate300,
+                        color: AppColors.slate500,
                       ),
                     ),
                   ],
@@ -977,7 +973,7 @@ class _HomeCurrentEventCard extends GetView<HomeController> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const Icon(Icons.menu_book_rounded, size: 18),
+                    icon: Icon(Icons.menu_book_rounded, size: 18),
                     label: Text(
                       'Open diary',
                       style: GoogleFonts.inter(
@@ -1022,7 +1018,7 @@ class _HomeTimesheetCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -1107,7 +1103,7 @@ class _HomeTimesheetCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       height: 1.35,
-                      color: AppColors.slate300,
+                      color: AppColors.slate500,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1127,7 +1123,7 @@ class _HomeTimesheetCard extends GetView<HomeController> {
                   fontSize: 36,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 2,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
@@ -1178,7 +1174,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -1222,7 +1218,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.45,
-                  color: AppColors.slate300,
+                  color: AppColors.slate500,
                 ),
               )
             else
@@ -1237,7 +1233,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1246,7 +1242,7 @@ class _HomeMyOfficeTasksOpenCard extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           height: 1.4,
-                          color: AppColors.slate300,
+                          color: AppColors.slate500,
                         ),
                       ),
                       if (t.reminderAt != null &&
@@ -1389,7 +1385,7 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -1412,7 +1408,7 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.45,
-                  color: AppColors.slate300,
+                  color: AppColors.slate500,
                 ),
               )
             else
@@ -1427,7 +1423,7 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1436,7 +1432,7 @@ class _HomeMyOfficeTasksCompletedCard extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           height: 1.4,
-                          color: AppColors.slate300,
+                          color: AppColors.slate500,
                         ),
                       ),
                       if (t.completedAt != null &&
@@ -1510,7 +1506,7 @@ class _DiaryScopeToggle extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       padding: const EdgeInsets.all(3),
       child: Row(
@@ -1660,11 +1656,11 @@ class _DiaryTab extends GetView<HomeController> {
         child: Ink(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            color: const Color(0xB30F172A),
-            border: Border.all(color: AppColors.whiteOverlay(0.12)),
+            color: Colors.white,
+            border: Border.all(color: AppColors.slate200),
             boxShadow: [
               BoxShadow(
-                color: AppColors.blackOverlay(0.25),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -1698,7 +1694,7 @@ class _DiaryTab extends GetView<HomeController> {
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                  color: AppColors.slate900,
                                   height: 1.25,
                                 ),
                               ),
@@ -1741,7 +1737,7 @@ class _DiaryTab extends GetView<HomeController> {
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
-                              color: AppColors.slate300,
+                              color: AppColors.slate500,
                             ),
                           ),
                         ],
@@ -1837,7 +1833,7 @@ class _DiaryTab extends GetView<HomeController> {
                                       _formatTimeRange(e.startTime, e.durationMinutes),
                                       style: GoogleFonts.inter(
                                         fontSize: 13,
-                                        color: AppColors.slate300,
+                                        color: AppColors.slate500,
                                       ),
                                     ),
                                   ),
@@ -1969,7 +1965,7 @@ class _DiaryTab extends GetView<HomeController> {
                 style: GoogleFonts.inter(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -2091,7 +2087,7 @@ class _DiaryTab extends GetView<HomeController> {
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                            color: AppColors.slate900,
                             letterSpacing: -0.3,
                           ),
                         ),
@@ -2157,7 +2153,7 @@ class _DiaryTab extends GetView<HomeController> {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.slate300,
+                        color: AppColors.slate500,
                       ),
                     ),
                   ),
@@ -2272,7 +2268,7 @@ class _DiaryViewModeToggle extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       padding: const EdgeInsets.all(3),
       child: Row(
@@ -2546,7 +2542,7 @@ class _HorizontalDateSelectorState extends State<_HorizontalDateSelector> {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: isSelected ? Colors.white : (isToday ? AppColors.primary : AppColors.slate300),
+                      color: isSelected ? AppColors.slate900 : (isToday ? AppColors.primary : AppColors.slate500),
                     ),
                   ),
                   const SizedBox(height: 1),
@@ -2613,7 +2609,7 @@ class _DiaryCalendarView extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: AppColors.slate900,
                     letterSpacing: -0.3,
                   ),
                 ),
@@ -2737,7 +2733,7 @@ class _CalendarDayCell extends StatelessWidget {
     } else if (isToday) {
       textColor = AppColors.primary;
     } else if (isCurrentMonth) {
-      textColor = Colors.white;
+      textColor = AppColors.slate900;
     } else {
       textColor = AppColors.slate500;
     }
@@ -2819,7 +2815,7 @@ class _MonthNavButton extends StatelessWidget {
           height: 38,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.whiteOverlay(0.08)),
+            border: Border.all(color: AppColors.slate200),
           ),
           child: Icon(
             icon,
@@ -2838,18 +2834,18 @@ class _ProfileTab extends GetView<HomeController> {
   Future<void> _confirmLogout() async {
     final ok = await Get.dialog<bool>(
       AlertDialog(
-        backgroundColor: const Color(0xFF0f172a),
+        backgroundColor: Colors.white,
         title: Text(
           'Log out?',
           style: GoogleFonts.inter(
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: AppColors.slate900,
           ),
         ),
         content: Text(
           'Any pending offline changes will be cleared on logout.',
           style: GoogleFonts.inter(
-            color: AppColors.slate300,
+            color: AppColors.slate500,
             height: 1.35,
             fontSize: 13,
           ),
@@ -2859,7 +2855,7 @@ class _ProfileTab extends GetView<HomeController> {
             onPressed: () => Get.back(result: false),
             child: Text(
               'Cancel',
-              style: GoogleFonts.inter(color: AppColors.slate300),
+              style: GoogleFonts.inter(color: AppColors.slate500),
             ),
           ),
           TextButton(
@@ -2908,7 +2904,7 @@ class _ProfileTab extends GetView<HomeController> {
               style: GoogleFonts.inter(
                 fontSize: 28,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: AppColors.slate900,
                 letterSpacing: -0.6,
               ),
             ),
@@ -2941,7 +2937,7 @@ class _ProfileTab extends GetView<HomeController> {
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                            color: AppColors.slate900,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -2990,7 +2986,7 @@ class _ProfileTab extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -3057,7 +3053,7 @@ class _ProfileTab extends GetView<HomeController> {
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
-                            color: Colors.white,
+                            color: AppColors.slate900,
                           ),
                         ),
                       ],
@@ -3106,7 +3102,7 @@ class _ProfileTab extends GetView<HomeController> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.sync_rounded, size: 18),
+                              : Icon(Icons.sync_rounded, size: 18),
                           label: Text(
                             syncing ? 'Syncing…' : 'Sync now',
                             style: GoogleFonts.inter(
@@ -3138,7 +3134,7 @@ class _ProfileTab extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -3147,7 +3143,7 @@ class _ProfileTab extends GetView<HomeController> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     dense: true,
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.check_circle_outline_rounded,
                       color: AppColors.slate300,
                       size: 22,
@@ -3155,7 +3151,7 @@ class _ProfileTab extends GetView<HomeController> {
                     title: Text(
                       'My Todos',
                       style: GoogleFonts.inter(
-                        color: AppColors.slate300,
+                        color: AppColors.slate500,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -3166,7 +3162,7 @@ class _ProfileTab extends GetView<HomeController> {
                         color: AppColors.slate500,
                       ),
                     ),
-                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    trailing: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
                     onTap: () => Get.toNamed(AppRoutes.todos),
                   ),
                 ],
@@ -3190,7 +3186,7 @@ class _ProfileTab extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -3224,7 +3220,7 @@ class _ProfileTab extends GetView<HomeController> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -3233,7 +3229,7 @@ class _ProfileTab extends GetView<HomeController> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     dense: true,
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.privacy_tip_outlined,
                       color: AppColors.slate300,
                       size: 20,
@@ -3241,11 +3237,11 @@ class _ProfileTab extends GetView<HomeController> {
                     title: Text(
                       'Privacy policy',
                       style: GoogleFonts.inter(
-                        color: AppColors.slate300,
+                        color: AppColors.slate500,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    trailing: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
                     onTap: () => Get.to<void>(
                       () => const LegalDocumentView(
                         title: 'Privacy policy',
@@ -3256,7 +3252,7 @@ class _ProfileTab extends GetView<HomeController> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     dense: true,
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.description_outlined,
                       color: AppColors.slate300,
                       size: 20,
@@ -3264,11 +3260,11 @@ class _ProfileTab extends GetView<HomeController> {
                     title: Text(
                       'Terms of service',
                       style: GoogleFonts.inter(
-                        color: AppColors.slate300,
+                        color: AppColors.slate500,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    trailing: const Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
+                    trailing: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
                     onTap: () => Get.to<void>(
                       () => const LegalDocumentView(
                         title: 'Terms of service',
@@ -3298,7 +3294,7 @@ class _ProfileTab extends GetView<HomeController> {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -3308,7 +3304,7 @@ class _ProfileTab extends GetView<HomeController> {
                       backgroundColor: Colors.red.shade700.withValues(
                         alpha: 0.85,
                       ),
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppColors.slate900,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -3458,7 +3454,7 @@ class _ProfileContactSummary extends StatelessWidget {
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: AppColors.slate900,
                       ),
                     ),
                   ],
@@ -3518,7 +3514,7 @@ class _ProfileLine extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           value,
-          style: GoogleFonts.inter(fontSize: 15, color: AppColors.slate300),
+          style: GoogleFonts.inter(fontSize: 15, color: AppColors.slate500),
         ),
       ],
     );

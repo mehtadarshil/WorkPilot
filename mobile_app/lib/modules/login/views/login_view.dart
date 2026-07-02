@@ -19,7 +19,7 @@ class LoginView extends GetView<LoginController> {
     final cardH = (size.height - inset.bottom - 48).clamp(480.0, 680.0);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
@@ -40,32 +40,32 @@ class LoginView extends GetView<LoginController> {
                   child: GlassContainer.frostedGlass(
                     height: cardH,
                     width: cardW,
-                    blur: 26,
-                    frostedOpacity: 0.14,
+                    blur: 20,
+                    frostedOpacity: 0.04,
                     borderRadius: BorderRadius.circular(28),
-                    borderWidth: 1.2,
+                    borderWidth: 0.8,
                     borderGradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        AppColors.whiteOverlay(0.45),
-                        AppColors.whiteOverlay(0.06),
+                        AppColors.whiteOverlay(0.18),
+                        AppColors.whiteOverlay(0.02),
                       ],
                     ),
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                       colors: [
-                        AppColors.whiteOverlay(0.08),
-                        const Color(0x661e293b),
-                        const Color(0x990f172a),
+                        AppColors.whiteOverlay(0.02),
+                        const Color(0x331e293b),
+                        const Color(0x660f172a),
                       ],
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.blackOverlay(0.45),
-                        blurRadius: 48,
-                        offset: const Offset(0, 24),
+                        color: AppColors.blackOverlay(0.3),
+                        blurRadius: 32,
+                        offset: const Offset(0, 16),
                       ),
                     ],
                     padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
@@ -116,7 +116,7 @@ class _GradientBackground extends StatelessWidget {
     return Container(
       width: size.width,
       height: size.height,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -147,7 +147,7 @@ class _AmbientOrbs extends StatelessWidget {
             child: _Orb(
               diameter: size.width * 0.85,
               colors: [
-                AppColors.primary.withValues(alpha: 0.12),
+                AppColors.primary.withValues(alpha: 0.04),
                 Colors.transparent,
               ],
             ),
@@ -158,7 +158,7 @@ class _AmbientOrbs extends StatelessWidget {
             child: _Orb(
               diameter: size.width * 0.75,
               colors: [
-                const Color(0xFF022C22).withValues(alpha: 0.5),
+                AppColors.primary.withValues(alpha: 0.05),
                 Colors.transparent,
               ],
             ),
@@ -228,7 +228,7 @@ class _BrandRow extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 22,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -263,7 +263,7 @@ class _LogoFallback extends StatelessWidget {
           colors: [AppColors.primary, AppColors.primaryDark],
         ),
       ),
-      child: const Icon(Icons.hub_rounded, color: Colors.white, size: 26),
+      child: Icon(Icons.hub_rounded, color: Colors.white, size: 26),
     );
   }
 }
@@ -280,7 +280,7 @@ class _HeaderText extends StatelessWidget {
             fontSize: 28,
             fontWeight: FontWeight.w900,
             height: 1.15,
-            color: Colors.white,
+            color: AppColors.slate900,
             letterSpacing: -0.8,
           ),
         ),
@@ -310,7 +310,7 @@ class _EmailField extends GetView<LoginController> {
             fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 1.2,
-            color: AppColors.slate300,
+            color: AppColors.slate500,
           ),
         ),
         const SizedBox(height: 8),
@@ -319,7 +319,7 @@ class _EmailField extends GetView<LoginController> {
           keyboardType: TextInputType.emailAddress,
           autocorrect: false,
           autofillHints: const [AutofillHints.email],
-          style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 15),
           validator: controller.validateEmail,
           decoration: InputDecoration(
             hintText: 'you@company.com',
@@ -330,11 +330,11 @@ class _EmailField extends GetView<LoginController> {
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+              borderSide: const BorderSide(color: AppColors.slate200),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -364,7 +364,7 @@ class _PasswordField extends GetView<LoginController> {
             fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 1.2,
-            color: AppColors.slate300,
+            color: AppColors.slate500,
           ),
         ),
         const SizedBox(height: 8),
@@ -373,7 +373,7 @@ class _PasswordField extends GetView<LoginController> {
             controller: controller.passwordController,
             obscureText: controller.obscurePassword.value,
             autofillHints: const [AutofillHints.password],
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 15),
             validator: controller.validatePassword,
             decoration: InputDecoration(
               hintText: '••••••••',
@@ -394,11 +394,11 @@ class _PasswordField extends GetView<LoginController> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                borderSide: const BorderSide(color: AppColors.slate200),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -467,7 +467,7 @@ class _SignInButton extends GetView<LoginController> {
             shadowColor: AppColors.primary.withValues(alpha: 0.45),
             backgroundColor: AppColors.primary,
             disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.45),
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.slate900,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
           child: loading
@@ -543,7 +543,7 @@ class _RememberMeCheckbox extends GetView<LoginController> {
               Text(
                 'Remember me',
                 style: GoogleFonts.inter(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: AppColors.slate900.withValues(alpha: 0.9),
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),

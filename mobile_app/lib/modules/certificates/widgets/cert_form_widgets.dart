@@ -51,12 +51,12 @@ class CertificateGradientScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.gradientStart,
+      backgroundColor: AppColors.slate50,
       appBar: appBar,
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -90,8 +90,8 @@ class CertSectionCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        color: const Color(0xB30F172A),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -181,7 +181,7 @@ class CertSelectField extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField<String>(
         initialValue: safeValue,
-        dropdownColor: const Color(0xFF0F172A),
+        dropdownColor: AppColors.slate50,
         style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
         decoration: _inputDecoration(label),
         items: options
@@ -379,11 +379,11 @@ InputDecoration _inputDecoration(String label) {
     fillColor: AppColors.whiteOverlay(0.06),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+      borderSide: const BorderSide(color: AppColors.slate200),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
-      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      borderSide: BorderSide(color: AppColors.primary, width: 1.5),
     ),
   );
 }

@@ -51,7 +51,7 @@ class SearchableSelectField<T> extends StatelessWidget {
     final picked = await showModalBottomSheet<Object?>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppColors.slate50,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -78,7 +78,7 @@ class SearchableSelectField<T> extends StatelessWidget {
     final baseDeco = decoration ??
         InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: Colors.white70),
           floatingLabelBehavior: FloatingLabelBehavior.always,
         );
 
@@ -195,20 +195,20 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: TextField(
                   controller: _searchC,
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search…',
                     hintStyle: GoogleFonts.inter(color: AppColors.slate500),
-                    prefixIcon: const Icon(Icons.search_rounded, color: AppColors.slate400),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                     filled: true,
                     fillColor: AppColors.whiteOverlay(0.06),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                   ),
                   onChanged: (v) => setState(() => _query = v),
@@ -247,7 +247,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                               ),
                             ),
                             trailing: selected
-                                ? const Icon(Icons.check_rounded, color: AppColors.primary)
+                                ? Icon(Icons.check_rounded, color: AppColors.primary)
                                 : null,
                             onTap: () => _pick(opt.value),
                           );

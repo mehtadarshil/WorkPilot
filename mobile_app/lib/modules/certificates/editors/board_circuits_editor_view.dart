@@ -131,7 +131,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
         }),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.slate900,
         actions: [
           Obx(() {
             final boards = widget.controller.listAt('boards');
@@ -144,7 +144,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             if (boardId.isEmpty) return const SizedBox.shrink();
             return IconButton(
               tooltip: 'Print schedule',
-              icon: const Icon(Icons.print_rounded, color: Colors.white),
+              icon: Icon(Icons.print_rounded, color: AppColors.slate900),
               onPressed: () async {
                 await Get.to(
                   () => CertificatePrintWebViewPage(
@@ -178,7 +178,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
         child: Obx(() {
           final List<dynamic> rawBoards = widget.controller.document['boards'] as List<dynamic>? ?? [];
           if (widget.boardIndex < 0 || widget.boardIndex >= rawBoards.length) {
-            return const Center(child: Text('Board not found', style: TextStyle(color: Colors.white)));
+            return const Center(child: Text('Board not found', style: TextStyle(color: AppColors.slate900)));
           }
           final boards = rawBoards.cast<Map<String, dynamic>>();
           final board = boards[widget.boardIndex];
@@ -247,7 +247,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                     decoration: BoxDecoration(
                       color: AppColors.whiteOverlay(0.04),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                      border: Border.all(color: AppColors.slate200),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
@@ -359,7 +359,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: AppColors.whiteOverlay(0.12)),
+                  borderSide: const BorderSide(color: AppColors.slate200),
                 ),
               ),
               onChanged: readOnly ? null : (val) => _patchBoardField(board, 'name', val, boards),
@@ -387,7 +387,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         children: [
@@ -519,11 +519,11 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                               Row(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.photo_library_outlined, color: AppColors.primary, size: 18),
+                                    icon: Icon(Icons.photo_library_outlined, color: AppColors.primary, size: 18),
                                     onPressed: () => _pickBoardPhoto(ImageSource.gallery, board, photos, boards),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.photo_camera_outlined, color: AppColors.primary, size: 18),
+                                    icon: Icon(Icons.photo_camera_outlined, color: AppColors.primary, size: 18),
                                     onPressed: () => _pickBoardPhoto(ImageSource.camera, board, photos, boards),
                                   ),
                                 ],
@@ -580,7 +580,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               backgroundColor: Colors.black54,
               radius: 12,
               child: IconButton(
-                icon: const Icon(Icons.close, size: 12, color: Color(0xFFE11D48)),
+                icon: Icon(Icons.close, size: 12, color: Color(0xFFE11D48)),
                 padding: EdgeInsets.zero,
                 onPressed: () => _removeBoardPhoto(idx, board, photos, boards),
               ),
@@ -621,7 +621,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     final safeVal = options.any((o) => o.value == val) ? val : options.first.value;
     return DropdownButtonFormField<String>(
       value: safeVal,
-      dropdownColor: const Color(0xFF0F172A),
+      dropdownColor: AppColors.slate50,
       style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
       decoration: _boardDecoration(label),
       items: options.map((o) => DropdownMenuItem(value: o.value, child: Text(o.label, overflow: TextOverflow.ellipsis))).toList(),
@@ -754,21 +754,21 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               IconButton(
                 tooltip: 'Quick add',
                 onPressed: readOnly ? null : () => _openQuickAdd(board, circuits, boards),
-                icon: const Icon(Icons.bolt_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.bolt_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
                 tooltip: 'Quick add 6',
                 onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, 6),
-                icon: const Icon(Icons.playlist_add_rounded, color: Colors.white, size: 20),
+                icon: Icon(Icons.playlist_add_rounded, color: Colors.white, size: 20),
               ),
               IconButton(
                 tooltip: 'Add circuits',
                 onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, _quickAddCount),
-                icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 20),
               ),
               DropdownButton<int>(
                 value: _quickAddCount,
-                dropdownColor: const Color(0xFF0F172A),
+                dropdownColor: AppColors.slate50,
                 style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
                 underline: const SizedBox.shrink(),
                 items: const [1, 6, 12, 18].map((c) => DropdownMenuItem(value: c, child: Text('× $c'))).toList(),
@@ -789,7 +789,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                           _saveCircuitsList(next, board, boards);
                         },
                       ),
-                icon: const Icon(Icons.find_replace_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.find_replace_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
                 tooltip: 'Paste',
@@ -811,24 +811,24 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                           _saveCircuitsList(next, board, boards);
                         },
                       ),
-                icon: const Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
                 tooltip: 'Autofill',
                 onPressed: readOnly || circuits.length < 2
                     ? null
                     : () => _autofillFromPrevious(board, circuits, boards),
-                icon: const Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
                 tooltip: 'Renumber',
                 onPressed: readOnly ? null : () => _renumberCircuits(board, circuits, boards),
-                icon: const Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
                 tooltip: 'Recalculate',
                 onPressed: readOnly ? null : () => _recalculateCircuits(board, circuits, boards),
-                icon: const Icon(Icons.calculate_outlined, color: AppColors.primary, size: 20),
+                icon: Icon(Icons.calculate_outlined, color: AppColors.primary, size: 20),
               ),
             ] else ...[
             ElevatedButton(
@@ -845,7 +845,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             const SizedBox(width: 8),
             ElevatedButton.icon(
               onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, _quickAddCount),
-              icon: const Icon(Icons.add, size: 16),
+              icon: Icon(Icons.add, size: 16),
               label: Text('Add', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -856,7 +856,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             const SizedBox(width: 6),
             DropdownButton<int>(
               value: _quickAddCount,
-              dropdownColor: const Color(0xFF0F172A),
+              dropdownColor: AppColors.slate50,
               style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
               items: const [1, 6, 12, 18].map((c) => DropdownMenuItem(value: c, child: Text('× $c'))).toList(),
               onChanged: readOnly ? null : (v) {
@@ -872,7 +872,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   _saveCircuitsList(next, board, boards);
                 },
               ),
-              icon: const Icon(Icons.find_replace_rounded, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.find_replace_rounded, color: AppColors.primary, size: 18),
               label: Text('Find & replace', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             const SizedBox(width: 8),
@@ -893,25 +893,25 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   _saveCircuitsList(next, board, boards);
                 },
               ),
-              icon: const Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.content_paste_rounded, color: AppColors.primary, size: 18),
               label: Text('Paste', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
               onPressed: readOnly || circuits.length < 2 ? null : () => _autofillFromPrevious(board, circuits, boards),
-              icon: const Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 18),
               label: Text('Autofill', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
               onPressed: readOnly ? null : () => _renumberCircuits(board, circuits, boards),
-              icon: const Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 18),
               label: Text('Renumber', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
               onPressed: readOnly ? null : () => _recalculateCircuits(board, circuits, boards),
-              icon: const Icon(Icons.calculate_outlined, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.calculate_outlined, color: AppColors.primary, size: 18),
               label: Text('Recalculate', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             ],
@@ -971,7 +971,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             onPressed: () => setState(() => _fillToolsExpanded = true),
-            icon: const Icon(Icons.view_column_outlined, color: AppColors.primary, size: 18),
+            icon: Icon(Icons.view_column_outlined, color: AppColors.primary, size: 18),
             label: Text('Fill column tools', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
           ),
         ),
@@ -991,7 +991,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: () => setState(() => _fillToolsExpanded = false),
-                icon: const Icon(Icons.expand_less_rounded, color: AppColors.slate400, size: 20),
+                icon: Icon(Icons.expand_less_rounded, color: AppColors.slate400, size: 20),
               ),
             ),
           SingleChildScrollView(
@@ -1004,7 +1004,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 const SizedBox(width: 8),
                 DropdownButton<String>(
                   value: _fillColumnKey,
-                  dropdownColor: const Color(0xFF0F172A),
+                  dropdownColor: AppColors.slate50,
                   style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
                   underline: const SizedBox.shrink(),
                   items: fillable
@@ -1173,7 +1173,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   ),
                 ),
                 if (col.calculated)
-                  const Icon(Icons.calculate_outlined, color: AppColors.primary, size: 10),
+                  Icon(Icons.calculate_outlined, color: AppColors.primary, size: 10),
               ],
             ),
           );

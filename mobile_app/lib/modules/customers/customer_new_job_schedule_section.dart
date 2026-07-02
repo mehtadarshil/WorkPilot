@@ -58,7 +58,7 @@ class CustomerNewJobScheduleSection extends StatelessWidget {
             Expanded(
               child: OutlinedButton(
                 onPressed: saving ? null : onPickDate,
-                child: Text(dateText, style: GoogleFonts.inter(color: Colors.white)),
+                child: Text(dateText, style: GoogleFonts.inter(color: AppColors.slate900)),
               ),
             ),
             const SizedBox(width: 8),
@@ -68,7 +68,7 @@ class CustomerNewJobScheduleSection extends StatelessWidget {
                 onPressed: saving ? null : onPickTime,
                 child: Text(
                   expectedTime == null ? 'Time' : expectedTime!.format(context),
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                 ),
               ),
             ),
@@ -104,7 +104,7 @@ class CustomerNewJobScheduleSection extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           'Assign this job to a specific team or user group.',
-          style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+          style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
         ),
         const SizedBox(height: 16),
         Text('BUSINESS UNIT', style: _labelStyle()),

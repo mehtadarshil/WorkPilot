@@ -16,16 +16,16 @@ class QuotationVisitDetailView extends GetView<QuotationVisitDetailController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           title: Obx(() {
@@ -104,7 +104,7 @@ class QuotationVisitDetailView extends GetView<QuotationVisitDetailController> {
           final officers = _officerNames(v);
 
           return Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -252,12 +252,12 @@ class _HeaderActions extends StatelessWidget {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900),
                       )
-                    : const Icon(Icons.add_rounded, size: 18),
+                    : Icon(Icons.add_rounded, size: 18),
                 label: Text(busy ? 'Creating…' : 'Create quotation'),
                 style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
+                  foregroundColor: AppColors.slate900,
                   backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
@@ -269,10 +269,10 @@ class _HeaderActions extends StatelessWidget {
                 final id = (quotation['id'] as num?)?.toInt();
                 if (id != null) Get.toNamed(AppRoutes.quotationDetail, arguments: id);
               },
-              icon: const Icon(Icons.description_outlined, size: 18),
+              icon: Icon(Icons.description_outlined, size: 18),
               label: Text((quotation['quotation_number'] as String?) ?? 'Quotation'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.slate900,
                 side: BorderSide(color: AppColors.whiteOverlay(0.25)),
               ),
             ),
@@ -289,11 +289,11 @@ class _HeaderActions extends StatelessWidget {
                   workAddressId: (v['work_address_id'] as num?)?.toInt(),
                 );
               },
-              icon: const Icon(Icons.work_outline_rounded, size: 18),
+              icon: Icon(Icons.work_outline_rounded, size: 18),
               label: const Text('Set up work job'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF6EE7B7),
-                side: const BorderSide(color: Color(0xFF6EE7B7)),
+                side: BorderSide(color: Color(0xFF6EE7B7)),
               ),
             ),
         ],
@@ -337,9 +337,9 @@ class _InfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xB30F172A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -385,9 +385,9 @@ class _DiaryEventCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xB30F172A),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -487,7 +487,7 @@ class _DiaryEventCard extends StatelessWidget {
               children: [
                 Text(
                   'Officer site notes',
-                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.slate900),
                 ),
                 const SizedBox(height: 10),
                 if (technical.isEmpty && extra.isEmpty)
@@ -569,7 +569,7 @@ class _NoteBlock extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.whiteOverlay(0.08)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -363,19 +363,19 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             _editId == null ? 'Create invoice' : 'Edit invoice',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),
           ),
           actions: [
@@ -387,14 +387,14 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
             ],
             TextButton(
               onPressed: _saving || _loading ? null : () => _save(),
-              child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: Colors.white)),
+              child: Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: AppColors.slate900)),
             ),
           ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
             : Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -412,8 +412,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     if (_editId != null)
                       TextField(
                         controller: _invoiceNumberC,
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: const InputDecoration(
+                        style: GoogleFonts.inter(color: AppColors.slate900),
+                        decoration: InputDecoration(
                           labelText: 'Invoice number',
                           labelStyle: TextStyle(color: Colors.white70),
                         ),
@@ -527,16 +527,16 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       isExpanded: true,
                       initialValue: _currency,
                       dropdownColor: const Color(0xFF1e293b),
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(labelText: 'Currency', labelStyle: TextStyle(color: Colors.white70)),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(labelText: 'Currency', labelStyle: TextStyle(color: Colors.white70)),
                       items: [for (final c in _currencies) DropdownMenuItem(value: c, child: Text(c))],
                       onChanged: (v) => setState(() => _currency = v ?? 'USD'),
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _customerRefC,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(
                         labelText: 'Customer reference (optional)',
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
@@ -545,8 +545,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     TextField(
                       controller: _descriptionC,
                       maxLines: 3,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(
                         labelText: 'Project description',
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
@@ -555,8 +555,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     TextField(
                       controller: _notesC,
                       maxLines: 2,
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(
                         labelText: 'Internal notes',
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
@@ -580,8 +580,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     TextField(
                       controller: _taxC,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: GoogleFonts.inter(color: Colors.white),
-                      decoration: const InputDecoration(
+                      style: GoogleFonts.inter(color: AppColors.slate900),
+                      decoration: InputDecoration(
                         labelText: 'Tax %',
                         labelStyle: TextStyle(color: Colors.white70),
                       ),
@@ -589,7 +589,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     const SizedBox(height: 12),
                     Text(
                       'Subtotal ${InvoiceHelpers.formatMoney(_subtotal, _currency)} · Tax ${InvoiceHelpers.formatMoney(_taxAmount, _currency)} · Total ${InvoiceHelpers.formatMoney(_total, _currency)}',
-                      style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.75), fontSize: 13),
+                      style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13),
                       softWrap: true,
                     ),
                     if (_editId != null) ...[
@@ -599,8 +599,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         key: ValueKey<String>(_state),
                         initialValue: _state,
                         dropdownColor: const Color(0xFF1e293b),
-                        style: GoogleFonts.inter(color: Colors.white),
-                        decoration: const InputDecoration(labelText: 'Status', labelStyle: TextStyle(color: Colors.white70)),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
+                        decoration: InputDecoration(labelText: 'Status', labelStyle: TextStyle(color: Colors.white70)),
                         items: [
                           for (final s in invoiceStatesOrdered)
                             DropdownMenuItem(value: s, child: Text(InvoiceHelpers.stateLabel(s))),
@@ -625,7 +625,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           child: TextField(
             controller: l.descC,
             style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: const InputDecoration(hintText: 'Description', hintStyle: TextStyle(color: Colors.white38)),
+            decoration: InputDecoration(hintText: 'Description', hintStyle: TextStyle(color: Colors.white38)),
           ),
         ),
         const SizedBox(width: 6),
@@ -635,7 +635,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
             controller: l.qtyC,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: const InputDecoration(hintText: 'Qty', hintStyle: TextStyle(color: Colors.white38)),
+            decoration: InputDecoration(hintText: 'Qty', hintStyle: TextStyle(color: Colors.white38)),
           ),
         ),
         const SizedBox(width: 6),
@@ -645,7 +645,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
             controller: l.priceC,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: const InputDecoration(hintText: 'Price', hintStyle: TextStyle(color: Colors.white38)),
+            decoration: InputDecoration(hintText: 'Price', hintStyle: TextStyle(color: Colors.white38)),
           ),
         ),
         IconButton(
@@ -654,7 +654,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
               : () => setState(() {
                   _lines.removeAt(i).dispose();
                 }),
-          icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
+          icon: Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
         ),
       ],
     );

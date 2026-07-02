@@ -561,7 +561,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
   Future<void> _pickImageSource(BuildContext context, String fieldId) async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xF21E293B),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -570,16 +570,16 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_library_rounded, color: Colors.white),
-              title: Text('Gallery', style: GoogleFonts.inter(color: Colors.white)),
+              leading: Icon(Icons.photo_library_rounded, color: AppColors.slate900),
+              title: Text('Gallery', style: GoogleFonts.inter(color: AppColors.slate900)),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickAndUploadImage(fieldId, ImageSource.gallery);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_camera_rounded, color: Colors.white),
-              title: Text('Camera', style: GoogleFonts.inter(color: Colors.white)),
+              leading: Icon(Icons.photo_camera_rounded, color: AppColors.slate900),
+              title: Text('Camera', style: GoogleFonts.inter(color: AppColors.slate900)),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickAndUploadImage(fieldId, ImageSource.camera);
@@ -970,7 +970,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _titleCtr,
-                    style: GoogleFonts.inter(color: Colors.white),
+                    style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'Report title',
                       labelStyle: GoogleFonts.inter(color: AppColors.slate400),
@@ -1155,13 +1155,13 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 children: [
                   Text(title, style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 4),
-                  const Divider(color: AppColors.primary, thickness: 1),
+                  Divider(color: AppColors.primary, thickness: 1),
                 ],
               ),
             ),
             TextButton.icon(
               onPressed: () => _addRepeatableInstance(sectionId, sectionFields),
-              icon: const Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
+              icon: Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
               label: Text(addLabel, style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
             ),
           ],
@@ -1204,17 +1204,17 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_upward_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.arrow_upward_rounded, color: AppColors.slate300, size: 20),
                         tooltip: 'Move Up',
                         onPressed: i == 0 ? null : () => _moveRepeatableInstance(sectionId, i, 'up'),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.arrow_downward_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.arrow_downward_rounded, color: AppColors.slate300, size: 20),
                         tooltip: 'Move Down',
                         onPressed: i == instances.length - 1 ? null : () => _moveRepeatableInstance(sectionId, i, 'down'),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.copy_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.copy_rounded, color: AppColors.slate300, size: 20),
                         tooltip: 'Copy $repeatLabel',
                         onPressed: () => _copyRepeatableInstance(sectionId, inst, sectionFields),
                       ),
@@ -1223,7 +1223,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                         onPressed: () => setState(() => _repeatableCollapsed[collapseKey] = !collapsed),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
+                        icon: Icon(Icons.delete_outline_rounded, color: AppColors.primary),
                         onPressed: () => _removeRepeatableInstance(sectionId, instanceId, sectionFields),
                       ),
                     ],
@@ -1307,7 +1307,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Divider(color: AppColors.primary, thickness: 1),
+              Divider(color: AppColors.primary, thickness: 1),
             ],
           ),
         ),
@@ -1350,7 +1350,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             decoration: BoxDecoration(
               color: AppColors.whiteOverlay(0.04),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.whiteOverlay(0.08)),
+              border: Border.all(color: AppColors.slate200),
             ),
             child: Text(
               content,
@@ -1404,7 +1404,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   decoration: BoxDecoration(
                     color: AppColors.whiteOverlay(0.03),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.whiteOverlay(0.08)),
+                    border: Border.all(color: AppColors.slate200),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1458,7 +1458,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                       if (imageId != null)
                         TextButton.icon(
                           onPressed: () => _removeImageRow(key, rowId, imageId),
-                          icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary, size: 18),
+                          icon: Icon(Icons.delete_outline_rounded, color: AppColors.primary, size: 18),
                           label: Text('Remove image', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
                         ),
                     ],
@@ -1467,7 +1467,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               }(),
             OutlinedButton.icon(
               onPressed: () => _pickImageSource(context, key),
-              icon: const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 16),
+              icon: Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 16),
               label: Text('Add photo', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: AppColors.whiteOverlay(0.25)),
@@ -1586,7 +1586,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             ),
             TextButton.icon(
               onPressed: () => _clearSignature(key, imageId!),
-              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.primary),
+              icon: Icon(Icons.delete_outline_rounded, color: AppColors.primary),
               label: Text('Clear signature', style: GoogleFonts.inter(color: AppColors.primary)),
             ),
           ],
@@ -1625,7 +1625,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 const Spacer(),
                 TextButton.icon(
                   onPressed: () => _uploadSignature(key),
-                  icon: const Icon(Icons.check_rounded, color: AppColors.primary),
+                  icon: Icon(Icons.check_rounded, color: AppColors.primary),
                   label: Text('Save signature', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -1658,11 +1658,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
             dropdownColor: const Color(0xFF1E293B),
-            style: GoogleFonts.inter(color: Colors.white),
+            style: GoogleFonts.inter(color: AppColors.slate900),
             items: [
-              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
+              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: AppColors.slate900))),
               for (final o in opts.where((x) => x.isNotEmpty))
-                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: const TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: TextStyle(color: AppColors.slate900))),
             ],
             onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),
@@ -1684,11 +1684,11 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
             dropdownColor: const Color(0xFF1E293B),
-            style: GoogleFonts.inter(color: Colors.white),
+            style: GoogleFonts.inter(color: AppColors.slate900),
             items: [
-              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: Colors.white))),
+              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: AppColors.slate900))),
               for (final o in opts.where((x) => x.isNotEmpty))
-                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: const TextStyle(color: Colors.white))),
+                DropdownMenuItem(value: o, child: Text(_yesNoLabel(o), style: TextStyle(color: AppColors.slate900))),
             ],
             onChanged: (v) => setState(() => _yesNo[controlKey] = v),
           ),
@@ -1706,12 +1706,12 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           child: TextField(
             controller: c,
             readOnly: true,
-            style: GoogleFonts.inter(color: Colors.white),
+            style: GoogleFonts.inter(color: AppColors.slate900),
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.whiteOverlay(0.06),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              suffixIcon: const Icon(Icons.calendar_month_rounded, color: AppColors.slate400),
+              suffixIcon: Icon(Icons.calendar_month_rounded, color: AppColors.slate400),
             ),
             onTap: () async {
               final initial = DateTime.tryParse(c.text) ?? DateTime.now();
@@ -1729,7 +1729,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                         surface: Color(0xFF1E293B),
                         onSurface: Colors.white,
                       ),
-                      dialogBackgroundColor: const Color(0xFF0F172A),
+                      dialogBackgroundColor: AppColors.slate50,
                     ),
                     child: child!,
                   );
@@ -1755,7 +1755,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
         child: TextField(
           controller: c,
           maxLines: maxLines,
-          style: GoogleFonts.inter(color: Colors.white),
+          style: GoogleFonts.inter(color: AppColors.slate900),
           decoration: InputDecoration(
             filled: true,
             fillColor: AppColors.whiteOverlay(0.06),

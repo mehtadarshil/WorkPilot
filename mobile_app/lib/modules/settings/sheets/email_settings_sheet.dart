@@ -178,7 +178,7 @@ class _EmailSettingsSheetState extends State<EmailSettingsSheet> {
                   onPressed: _sendingTest ? null : _sendTest,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
+                    side: BorderSide(color: AppColors.primary),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),

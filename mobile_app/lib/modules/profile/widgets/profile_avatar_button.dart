@@ -14,12 +14,15 @@ class ProfileAvatarButton extends StatelessWidget {
     this.fallbackInitial,
     this.onTap,
     this.showEditHint = false,
+    this.lightSurface = true,
   });
 
   final double radius;
   final String? fallbackInitial;
   final VoidCallback? onTap;
   final bool showEditHint;
+  /// When true, avatar sits on a light card/header (dark initial text).
+  final bool lightSurface;
 
   @override
   Widget build(BuildContext context) {
@@ -29,10 +32,14 @@ class ProfileAvatarButton extends StatelessWidget {
     return Obx(() {
       final bytes = cache.photoBytes.value;
       final loading = cache.loading.value && bytes == null;
+      final initialColor = lightSurface ? AppColors.slate700 : Colors.white;
+      final bgColor = lightSurface
+          ? AppColors.primary.withValues(alpha: 0.12)
+          : AppColors.whiteOverlay(0.12);
 
       Widget avatar = CircleAvatar(
         radius: radius,
-        backgroundColor: AppColors.whiteOverlay(0.12),
+        backgroundColor: bgColor,
         backgroundImage: bytes != null ? MemoryImage(bytes) : null,
         child: bytes == null && !loading
             ? Text(
@@ -40,7 +47,7 @@ class ProfileAvatarButton extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: radius * 0.65,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: initialColor,
                 ),
               )
             : loading
@@ -67,9 +74,9 @@ class ProfileAvatarButton extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.gradientStart, width: 2),
+                  border: Border.all(color: Colors.white, width: 2),
                 ),
-                child: const Icon(Icons.badge_rounded, size: 14, color: Colors.white),
+                child: Icon(Icons.badge_rounded, size: 14, color: AppColors.slate900),
               ),
             ),
           ],

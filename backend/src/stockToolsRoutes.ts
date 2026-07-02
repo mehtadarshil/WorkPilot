@@ -121,6 +121,14 @@ export async function ensureStockToolsSchema(pool: Pool) {
       ALTER TABLE tools ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
     `);
     await pool.query(`
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS zone VARCHAR(255);
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS aisle VARCHAR(255);
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS shelf VARCHAR(255);
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS box VARCHAR(255);
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS storage_code VARCHAR(255);
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS location_notes TEXT;
+    `);
+    await pool.query(`
       ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS locations JSONB;
     `);
     await pool.query(`
@@ -341,6 +349,12 @@ const DEFAULT_STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC',
 const DEFAULT_TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
 const DEFAULT_UNIFORM_CATEGORIES = ['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'Footwear', 'Branded', 'Other'];
 const DEFAULT_UNIFORM_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'];
+
+function normalizeBinField(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 function parseStringOptions(raw: unknown, fallback: string[]): string[] {
   if (!Array.isArray(raw)) return [...fallback];
@@ -842,11 +856,25 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         ? 'Other'
         : settings.tool_category_options[0];
 
+      const loadedForConvert = await loadStockItemPlacements(client, itemId);
+      const defPlacement = loadedForConvert
+        ? loadedForConvert.placements[pickDefaultPlacementIndex(loadedForConvert.placements)]
+        : null;
+
       const toolIns = await client.query(
-        `INSERT INTO tools (name, category, status, location, quantity, image_url, created_by)
-         VALUES ($1, $2, 'available', $3, $4, $5, $6)
+        `INSERT INTO tools (name, category, status, location, quantity, image_url, created_by,
+                            zone, aisle, shelf, box, storage_code, location_notes)
+         VALUES ($1, $2, 'available', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
-        [item.name, toolCategory, item.location, convertQty, item.image_url, userId],
+        [
+          item.name, toolCategory, item.location, convertQty, item.image_url, userId,
+          normalizeBinField((defPlacement as any)?.zone),
+          normalizeBinField((defPlacement as any)?.aisle),
+          normalizeBinField((defPlacement as any)?.shelf),
+          normalizeBinField((defPlacement as any)?.box),
+          normalizeBinField((defPlacement as any)?.storage_code),
+          normalizeBinField((defPlacement as any)?.notes),
+        ],
       );
 
       await consumePlacementStock(client, itemId, convertQty, null);
@@ -1114,7 +1142,11 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
   app.post('/api/tools', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
-    const { name, category, status, location, assigned_officer_id, quantity, image_base64, original_filename, content_type } = req.body;
+    const {
+      name, category, status, location, assigned_officer_id, quantity,
+      zone, aisle, shelf, box, storage_code, location_notes,
+      image_base64, original_filename, content_type,
+    } = req.body;
 
     if (!name || !category || !location) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -1131,10 +1163,15 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const assignedId = assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null;
 
       const ins = await pool.query(
-        `INSERT INTO tools (name, category, status, location, quantity, assigned_officer_id, image_url, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO tools (name, category, status, location, quantity, assigned_officer_id, image_url, created_by,
+                            zone, aisle, shelf, box, storage_code, location_notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING *`,
-        [name, category, status || 'available', location, qty, assignedId, imageUrl, userId]
+        [
+          name, category, status || 'available', location, qty, assignedId, imageUrl, userId,
+          normalizeBinField(zone), normalizeBinField(aisle), normalizeBinField(shelf),
+          normalizeBinField(box), normalizeBinField(storage_code), normalizeBinField(location_notes),
+        ]
       );
 
       return res.status(201).json(ins.rows[0]);
@@ -1152,7 +1189,11 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(400).json({ message: 'Invalid ID' });
     }
 
-    const { name, category, status, location, assigned_officer_id, quantity, image_base64, original_filename, content_type } = req.body;
+    const {
+      name, category, status, location, assigned_officer_id, quantity,
+      zone, aisle, shelf, box, storage_code, location_notes,
+      image_base64, original_filename, content_type,
+    } = req.body;
 
     try {
       const toolCheck = await pool.query('SELECT * FROM tools WHERE id = $1', [toolId]);
@@ -1188,6 +1229,30 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       if (location !== undefined) {
         updates.push(`location = $${idx++}`);
         values.push(location);
+      }
+      if (zone !== undefined) {
+        updates.push(`zone = $${idx++}`);
+        values.push(normalizeBinField(zone));
+      }
+      if (aisle !== undefined) {
+        updates.push(`aisle = $${idx++}`);
+        values.push(normalizeBinField(aisle));
+      }
+      if (shelf !== undefined) {
+        updates.push(`shelf = $${idx++}`);
+        values.push(normalizeBinField(shelf));
+      }
+      if (box !== undefined) {
+        updates.push(`box = $${idx++}`);
+        values.push(normalizeBinField(box));
+      }
+      if (storage_code !== undefined) {
+        updates.push(`storage_code = $${idx++}`);
+        values.push(normalizeBinField(storage_code));
+      }
+      if (location_notes !== undefined) {
+        updates.push(`location_notes = $${idx++}`);
+        values.push(normalizeBinField(location_notes));
       }
       if (quantity !== undefined) {
         const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
@@ -1322,7 +1387,20 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         await persistStockPlacements(client, stockItemId, adjusted.placements);
         newStockQty = totalPlacementQuantity(adjusted.placements);
       } else {
-        const initialPlacements = [{ location: tool.location, quantity: convertQty }];
+        const initialPlacement: Record<string, unknown> = { location: tool.location, quantity: convertQty };
+        const zoneVal = normalizeBinField(tool.zone);
+        const aisleVal = normalizeBinField(tool.aisle);
+        const shelfVal = normalizeBinField(tool.shelf);
+        const boxVal = normalizeBinField(tool.box);
+        const storageVal = normalizeBinField(tool.storage_code);
+        const notesVal = normalizeBinField(tool.location_notes);
+        if (zoneVal) initialPlacement.zone = zoneVal;
+        if (aisleVal) initialPlacement.aisle = aisleVal;
+        if (shelfVal) initialPlacement.shelf = shelfVal;
+        if (boxVal) initialPlacement.box = boxVal;
+        if (storageVal) initialPlacement.storage_code = storageVal;
+        if (notesVal) initialPlacement.notes = notesVal;
+        const initialPlacements = [initialPlacement];
         const stockIns = await client.query(
           `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
            VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)

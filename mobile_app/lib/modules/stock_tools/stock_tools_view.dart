@@ -18,18 +18,21 @@ class StockToolsView extends GetView<StockToolsController> {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
-        backgroundColor: AppColors.slate900,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Stock & Tools',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.slate900),
           ),
-          backgroundColor: AppColors.slate900,
+          backgroundColor: Colors.white,
           elevation: 0,
-          foregroundColor: Colors.white,
+          scrolledUnderElevation: 0,
+          foregroundColor: AppColors.slate900,
+          iconTheme: const IconThemeData(color: AppColors.slate700),
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
           actions: [
             IconButton(
-              icon: const Icon(Icons.settings_outlined),
+              icon: Icon(Icons.settings_outlined),
               onPressed: () => _showSettingsSheet(context),
             ),
           ],
@@ -73,7 +76,7 @@ class StockToolsView extends GetView<StockToolsController> {
           color: AppColors.slate500.withOpacity(0.2),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.image_not_supported_outlined, color: AppColors.slate400, size: 24),
+        child: Icon(Icons.image_not_supported_outlined, color: AppColors.slate400, size: 24),
       );
     }
 
@@ -114,7 +117,7 @@ class StockToolsView extends GetView<StockToolsController> {
             },
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              return const Icon(Icons.broken_image_outlined, color: Colors.redAccent, size: 24);
+              return Icon(Icons.broken_image_outlined, color: Colors.redAccent, size: 24);
             },
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
@@ -215,7 +218,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                       padding: const EdgeInsets.only(bottom: 4),
                                       child: Row(
                                         children: [
-                                          const Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
+                                          Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
@@ -232,7 +235,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                           IconButton(
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                            icon: const Icon(Icons.copy, size: 14, color: AppColors.slate400),
+                                            icon: Icon(Icons.copy, size: 14, color: AppColors.slate400),
                                             tooltip: 'Copy location',
                                             onPressed: () async {
                                               await Clipboard.setData(ClipboardData(text: label));
@@ -260,7 +263,7 @@ class StockToolsView extends GetView<StockToolsController> {
                               ),
                               const SizedBox(height: 8),
                               PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: AppColors.slate400),
+                                icon: Icon(Icons.more_vert, color: AppColors.slate400),
                                 color: AppColors.slate900,
                                 onSelected: (val) {
                                   if (val == 'edit') {
@@ -272,8 +275,8 @@ class StockToolsView extends GetView<StockToolsController> {
                                   }
                                 },
                                 itemBuilder: (context) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: Colors.white))),
-                                  const PopupMenuItem(value: 'convert', child: Text('Convert to Tool', style: TextStyle(color: Colors.white))),
+                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: AppColors.slate900))),
+                                  const PopupMenuItem(value: 'convert', child: Text('Convert to Tool', style: TextStyle(color: AppColors.slate900))),
                                   const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
                                 ],
                               ),
@@ -296,8 +299,8 @@ class StockToolsView extends GetView<StockToolsController> {
               minimumSize: const Size(double.infinity, 48),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: Text('Add Stock Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+            icon: Icon(Icons.add, color: AppColors.slate900),
+            label: Text('Add Stock Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             onPressed: () => _showStockFormSheet(context),
           ),
         ),
@@ -313,11 +316,11 @@ class StockToolsView extends GetView<StockToolsController> {
         children: [
           TextField(
             onChanged: (val) => controller.stockSearch.value = val,
-            style: GoogleFonts.outfit(color: Colors.white),
+            style: GoogleFonts.outfit(color: AppColors.slate900),
             decoration: InputDecoration(
               hintText: 'Search name, MPN, box, aisle...',
               hintStyle: GoogleFonts.outfit(color: AppColors.slate500),
-              prefixIcon: const Icon(Icons.search, color: AppColors.slate500),
+              prefixIcon: Icon(Icons.search, color: AppColors.slate500),
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.1),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -384,6 +387,17 @@ class StockToolsView extends GetView<StockToolsController> {
                   final assigned = tool['assigned_officer_name'] as String?;
                   final img = tool['image_url'] as String?;
 
+                  final placementMap = <String, dynamic>{
+                    'location': loc,
+                    if (tool['zone'] != null) 'zone': '${tool['zone']}',
+                    if (tool['aisle'] != null) 'aisle': '${tool['aisle']}',
+                    if (tool['shelf'] != null) 'shelf': '${tool['shelf']}',
+                    if (tool['box'] != null) 'box': '${tool['box']}',
+                    if (tool['storage_code'] != null) 'storage_code': '${tool['storage_code']}',
+                  };
+                  final placementLabel = formatPlacementLabel(placementMap);
+                  final hasBinDetail = placementLabel != loc;
+
                   Color statusColor = Colors.green;
                   if (status == 'in_use') statusColor = Colors.blue;
                   if (status == 'missing') statusColor = Colors.red;
@@ -423,6 +437,33 @@ class StockToolsView extends GetView<StockToolsController> {
                                     _buildChip(loc, Colors.orange.withOpacity(0.1), Colors.orange),
                                   ],
                                 ),
+                                if (hasBinDetail) ...[
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          placementLabel,
+                                          style: GoogleFonts.outfit(color: AppColors.slate600, fontSize: 11),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                        icon: Icon(Icons.copy, size: 14, color: AppColors.slate400),
+                                        tooltip: 'Copy location',
+                                        onPressed: () async {
+                                          await Clipboard.setData(ClipboardData(text: placementLabel));
+                                          Get.snackbar('Copied', placementLabel, snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
                                 if (assigned != null && assigned.isNotEmpty) ...[
                                   const SizedBox(height: 6),
                                   Text(
@@ -446,7 +487,7 @@ class StockToolsView extends GetView<StockToolsController> {
                               ),
                               const SizedBox(height: 12),
                               PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: AppColors.slate400),
+                                icon: Icon(Icons.more_vert, color: AppColors.slate400),
                                 color: AppColors.slate900,
                                 onSelected: (val) {
                                   if (val == 'edit') {
@@ -458,8 +499,8 @@ class StockToolsView extends GetView<StockToolsController> {
                                   }
                                 },
                                 itemBuilder: (context) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: Colors.white))),
-                                  const PopupMenuItem(value: 'convert', child: Text('Convert to Stock', style: TextStyle(color: Colors.white))),
+                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: AppColors.slate900))),
+                                  const PopupMenuItem(value: 'convert', child: Text('Convert to Stock', style: TextStyle(color: AppColors.slate900))),
                                   const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
                                 ],
                               ),
@@ -482,8 +523,8 @@ class StockToolsView extends GetView<StockToolsController> {
               minimumSize: const Size(double.infinity, 48),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: Text('Add Tool', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+            icon: Icon(Icons.add, color: AppColors.slate900),
+            label: Text('Add Tool', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             onPressed: () => _showToolFormSheet(context),
           ),
         ),
@@ -499,11 +540,11 @@ class StockToolsView extends GetView<StockToolsController> {
         children: [
           TextField(
             onChanged: (val) => controller.toolSearch.value = val,
-            style: GoogleFonts.outfit(color: Colors.white),
+            style: GoogleFonts.outfit(color: AppColors.slate900),
             decoration: InputDecoration(
               hintText: 'Search Tools...',
               hintStyle: GoogleFonts.outfit(color: AppColors.slate500),
-              prefixIcon: const Icon(Icons.search, color: AppColors.slate500),
+              prefixIcon: Icon(Icons.search, color: AppColors.slate500),
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.1),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -644,7 +685,7 @@ class StockToolsView extends GetView<StockToolsController> {
                               ),
                               const SizedBox(height: 12),
                               PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, color: AppColors.slate400),
+                                icon: Icon(Icons.more_vert, color: AppColors.slate400),
                                 color: AppColors.slate900,
                                 onSelected: (val) {
                                   if (val == 'edit') {
@@ -654,7 +695,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                   }
                                 },
                                 itemBuilder: (context) => [
-                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: Colors.white))),
+                                  const PopupMenuItem(value: 'edit', child: Text('Edit', style: TextStyle(color: AppColors.slate900))),
                                   const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
                                 ],
                               ),
@@ -677,8 +718,8 @@ class StockToolsView extends GetView<StockToolsController> {
               minimumSize: const Size(double.infinity, 48),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            icon: const Icon(Icons.add, color: Colors.white),
-            label: Text('Add Uniform Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+            icon: Icon(Icons.add, color: AppColors.slate900),
+            label: Text('Add Uniform Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             onPressed: () => _showUniformFormSheet(context),
           ),
         ),
@@ -694,11 +735,11 @@ class StockToolsView extends GetView<StockToolsController> {
         children: [
           TextField(
             onChanged: (val) => controller.uniformSearch.value = val,
-            style: GoogleFonts.outfit(color: Colors.white),
+            style: GoogleFonts.outfit(color: AppColors.slate900),
             decoration: InputDecoration(
               hintText: 'Search Uniforms...',
               hintStyle: GoogleFonts.outfit(color: AppColors.slate500),
-              prefixIcon: const Icon(Icons.search, color: AppColors.slate500),
+              prefixIcon: Icon(Icons.search, color: AppColors.slate500),
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.1),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -756,7 +797,7 @@ class StockToolsView extends GetView<StockToolsController> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.bar_chart_rounded, size: 64, color: AppColors.slate500),
+              Icon(Icons.bar_chart_rounded, size: 64, color: AppColors.slate500),
               const SizedBox(height: 12),
               Text('No stats loaded', style: GoogleFonts.outfit(color: AppColors.slate400)),
             ],
@@ -779,7 +820,7 @@ class StockToolsView extends GetView<StockToolsController> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Stock Metrics', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Stock Metrics', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.slate900)),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -791,7 +832,7 @@ class StockToolsView extends GetView<StockToolsController> {
               ],
             ),
             const SizedBox(height: 24),
-            Text('Tools & Equipment', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Tools & Equipment', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.slate900)),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(16),
@@ -805,11 +846,11 @@ class StockToolsView extends GetView<StockToolsController> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total Tools registered:', style: GoogleFonts.outfit(color: Colors.white)),
+                      Text('Total Tools registered:', style: GoogleFonts.outfit(color: AppColors.slate900)),
                       Text('$toolsCount', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                     ],
                   ),
-                  const Divider(color: AppColors.slate500, height: 24),
+                  Divider(color: AppColors.slate500, height: 24),
                   _buildStatusRow('Available', '${tByStatus['available'] ?? 0}', Colors.green),
                   _buildStatusRow('In Use', '${tByStatus['in_use'] ?? 0}', Colors.blue),
                   _buildStatusRow('Damaged', '${tByStatus['damaged'] ?? 0}', Colors.orange),
@@ -818,7 +859,7 @@ class StockToolsView extends GetView<StockToolsController> {
               ),
             ),
             const SizedBox(height: 24),
-            Text('Uniforms Tracker', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Uniforms Tracker', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.slate900)),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(16),
@@ -832,11 +873,11 @@ class StockToolsView extends GetView<StockToolsController> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Total Uniform items:', style: GoogleFonts.outfit(color: Colors.white)),
+                      Text('Total Uniform items:', style: GoogleFonts.outfit(color: AppColors.slate900)),
                       Text('$uniformsCount', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                     ],
                   ),
-                  const Divider(color: AppColors.slate500, height: 24),
+                  Divider(color: AppColors.slate500, height: 24),
                   _buildStatusRow('Available', '${uByStatus['available'] ?? 0}', Colors.green),
                   _buildStatusRow('Issued', '${uByStatus['issued'] ?? 0}', Colors.blue),
                   _buildStatusRow('Damaged', '${uByStatus['damaged'] ?? 0}', Colors.orange),
@@ -846,7 +887,7 @@ class StockToolsView extends GetView<StockToolsController> {
               ),
             ),
             const SizedBox(height: 24),
-            Text('Stock Consumption by Category', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+            Text('Stock Consumption by Category', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.slate900)),
             const SizedBox(height: 10),
             ...catStats.map((item) {
               final cat = item['category'] as String? ?? 'General';
@@ -930,7 +971,7 @@ class StockToolsView extends GetView<StockToolsController> {
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.slate900,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -939,9 +980,9 @@ class StockToolsView extends GetView<StockToolsController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Manage Lists & Options', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text('Manage Lists & Options', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900)),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: AppColors.slate900),
                   onPressed: () => Get.back(),
                 ),
               ],
@@ -990,7 +1031,7 @@ class StockToolsView extends GetView<StockToolsController> {
                 );
                 Get.back();
               },
-              child: Text('Save Options', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+              child: Text('Save Options', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
         ),
@@ -1010,13 +1051,13 @@ class StockToolsView extends GetView<StockToolsController> {
           const SizedBox(height: 6),
           TextField(
             controller: textC,
-            style: GoogleFonts.outfit(color: Colors.white),
+            style: GoogleFonts.outfit(color: AppColors.slate900),
             maxLines: 4,
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.08),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.slate500.withOpacity(0.2))),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primary)),
             ),
           ),
         ],
@@ -1055,7 +1096,7 @@ class StockToolsView extends GetView<StockToolsController> {
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.slate900,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -1064,9 +1105,9 @@ class StockToolsView extends GetView<StockToolsController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(isEdit ? 'Edit Stock Item' : 'Add Stock Item', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text(isEdit ? 'Edit Stock Item' : 'Add Stock Item', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900)),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: AppColors.slate900),
                   onPressed: () => Get.back(),
                 ),
               ],
@@ -1085,7 +1126,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     children: [
                       Text('Storage placements', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+                        icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
                         onPressed: () {
                           formLocs.add(emptyPlacementRow(controller.locations.isNotEmpty ? controller.locations[0] : 'Store'));
                         },
@@ -1139,8 +1180,8 @@ class StockToolsView extends GetView<StockToolsController> {
                                   child: TextField(
                                     controller: qtyC,
                                     keyboardType: TextInputType.number,
-                                    style: GoogleFonts.outfit(color: Colors.white),
-                                    decoration: const InputDecoration(labelText: 'Qty', labelStyle: TextStyle(color: AppColors.slate400)),
+                                    style: GoogleFonts.outfit(color: AppColors.slate900),
+                                    decoration: InputDecoration(labelText: 'Qty', labelStyle: TextStyle(color: AppColors.slate400)),
                                     onChanged: (val) {
                                       formLocs[idx] = {...l, 'quantity': int.tryParse(val) ?? 0};
                                     },
@@ -1148,7 +1189,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                 ),
                                 if (formLocs.length > 1)
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    icon: Icon(Icons.delete_outline, color: Colors.redAccent),
                                     onPressed: () => formLocs.removeAt(idx),
                                   ),
                               ],
@@ -1204,7 +1245,7 @@ class StockToolsView extends GetView<StockToolsController> {
                 );
                 if (ok) Get.back();
               },
-              child: Text(isEdit ? 'Save Changes' : 'Create Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+              child: Text(isEdit ? 'Save Changes' : 'Create Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
         ),
@@ -1225,11 +1266,17 @@ class StockToolsView extends GetView<StockToolsController> {
     final selectedStatus = (isEdit ? (tool['status'] ?? 'available') : 'available').obs;
     final selectedLocation = (isEdit ? (tool['location'] ?? controller.locations[0]) : controller.locations[0]).obs;
     final selectedOfficer = (isEdit && tool['assigned_officer_id'] != null ? '${tool['assigned_officer_id']}' : '').obs;
+    final zone = (isEdit ? (tool['zone'] as String? ?? '') : '').obs;
+    final aisle = (isEdit ? (tool['aisle'] as String? ?? '') : '').obs;
+    final shelf = (isEdit ? (tool['shelf'] as String? ?? '') : '').obs;
+    final box = (isEdit ? (tool['box'] as String? ?? '') : '').obs;
+    final storageCode = (isEdit ? (tool['storage_code'] as String? ?? '') : '').obs;
+    final locationNotes = (isEdit ? (tool['location_notes'] as String? ?? '') : '').obs;
 
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.slate900,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -1238,9 +1285,9 @@ class StockToolsView extends GetView<StockToolsController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(isEdit ? 'Edit Tool' : 'Add Tool', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text(isEdit ? 'Edit Tool' : 'Add Tool', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900)),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: AppColors.slate900),
                   onPressed: () => Get.back(),
                 ),
               ],
@@ -1253,13 +1300,56 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildInput('Quantity*', qtyC, isNumber: true),
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.toolCategories, (val) => selectedCategory.value = val!)),
                   Obx(() => _buildDropdownField('Status', selectedStatus.value, const ['available', 'in_use', 'missing', 'damaged'], (val) => selectedStatus.value = val!)),
-                  Obx(() => _buildDropdownField('Location', selectedLocation.value, controller.locations, (val) => selectedLocation.value = val!)),
+                  const SizedBox(height: 4),
+                  Text('Storage location', style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 13, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.slate500.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
+                    ),
+                    child: Column(
+                      children: [
+                        Obx(() => _buildDropdown(
+                          value: selectedLocation.value,
+                          items: controller.locations,
+                          label: 'Site',
+                          onChanged: (val) {
+                            if (val != null) selectedLocation.value = val;
+                          },
+                        )),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(child: Obx(() => _buildPlacementMiniField('Zone', zone.value, (v) => zone.value = v))),
+                            const SizedBox(width: 8),
+                            Expanded(child: Obx(() => _buildPlacementMiniField('Aisle', aisle.value, (v) => aisle.value = v))),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(child: Obx(() => _buildPlacementMiniField('Shelf', shelf.value, (v) => shelf.value = v))),
+                            const SizedBox(width: 8),
+                            Expanded(child: Obx(() => _buildPlacementMiniField('Box', box.value, (v) => box.value = v))),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Obx(() => _buildPlacementMiniField('Storage code', storageCode.value, (v) => storageCode.value = v)),
+                        const SizedBox(height: 8),
+                        Obx(() => _buildPlacementMiniField('Notes', locationNotes.value, (v) => locationNotes.value = v)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
-                      const DropdownMenuItem(value: '', child: Text('Unassigned', style: TextStyle(color: Colors.white))),
+                      const DropdownMenuItem(value: '', child: Text('Unassigned', style: TextStyle(color: AppColors.slate900))),
                       ...controller.officers.map((o) => DropdownMenuItem(
                         value: '${o['id']}',
-                        child: Text(o['full_name'] ?? '', style: const TextStyle(color: Colors.white)),
+                        child: Text(o['full_name'] ?? '', style: TextStyle(color: AppColors.slate900)),
                       )),
                     ];
                     return Padding(
@@ -1273,7 +1363,7 @@ class StockToolsView extends GetView<StockToolsController> {
                             value: selectedOfficer.value,
                             items: offList,
                             dropdownColor: AppColors.slate900,
-                            decoration: const InputDecoration(border: OutlineInputBorder()),
+                            decoration: InputDecoration(border: OutlineInputBorder()),
                             onChanged: (val) => selectedOfficer.value = val ?? '',
                           ),
                         ],
@@ -1304,10 +1394,16 @@ class StockToolsView extends GetView<StockToolsController> {
                   status: selectedStatus.value,
                   location: selectedLocation.value,
                   assignedOfficerId: selectedOfficer.isEmpty ? null : int.tryParse(selectedOfficer.value),
+                  zone: zone.value,
+                  aisle: aisle.value,
+                  shelf: shelf.value,
+                  box: box.value,
+                  storageCode: storageCode.value,
+                  locationNotes: locationNotes.value,
                 );
                 if (ok) Get.back();
               },
-              child: Text(isEdit ? 'Save Changes' : 'Create Tool', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+              child: Text(isEdit ? 'Save Changes' : 'Create Tool', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
         ),
@@ -1334,7 +1430,7 @@ class StockToolsView extends GetView<StockToolsController> {
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.slate900,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -1343,9 +1439,9 @@ class StockToolsView extends GetView<StockToolsController> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(isEdit ? 'Edit Uniform Item' : 'Add Uniform Item', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text(isEdit ? 'Edit Uniform Item' : 'Add Uniform Item', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.slate900)),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  icon: Icon(Icons.close, color: AppColors.slate900),
                   onPressed: () => Get.back(),
                 ),
               ],
@@ -1362,10 +1458,10 @@ class StockToolsView extends GetView<StockToolsController> {
                   Obx(() => _buildDropdownField('Location', selectedLocation.value, controller.locations, (val) => selectedLocation.value = val!)),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
-                      const DropdownMenuItem(value: '', child: Text('Unassigned', style: TextStyle(color: Colors.white))),
+                      const DropdownMenuItem(value: '', child: Text('Unassigned', style: TextStyle(color: AppColors.slate900))),
                       ...controller.officers.map((o) => DropdownMenuItem(
                         value: '${o['id']}',
-                        child: Text(o['full_name'] ?? '', style: const TextStyle(color: Colors.white)),
+                        child: Text(o['full_name'] ?? '', style: TextStyle(color: AppColors.slate900)),
                       )),
                     ];
                     return Padding(
@@ -1379,7 +1475,7 @@ class StockToolsView extends GetView<StockToolsController> {
                             value: selectedOfficer.value,
                             items: offList,
                             dropdownColor: AppColors.slate900,
-                            decoration: const InputDecoration(border: OutlineInputBorder()),
+                            decoration: InputDecoration(border: OutlineInputBorder()),
                             onChanged: (val) => selectedOfficer.value = val ?? '',
                           ),
                         ],
@@ -1416,7 +1512,7 @@ class StockToolsView extends GetView<StockToolsController> {
                 );
                 if (ok) Get.back();
               },
-              child: Text(isEdit ? 'Save Changes' : 'Create Uniform', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white)),
+              child: Text(isEdit ? 'Save Changes' : 'Create Uniform', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
         ),
@@ -1441,14 +1537,14 @@ class StockToolsView extends GetView<StockToolsController> {
             const SizedBox(height: 12),
             TextField(
               controller: qtyC,
-              style: GoogleFonts.outfit(color: Colors.white),
+              style: GoogleFonts.outfit(color: AppColors.slate900),
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Conversion Quantity', labelStyle: TextStyle(color: AppColors.slate400)),
+              decoration: InputDecoration(labelText: 'Conversion Quantity', labelStyle: TextStyle(color: AppColors.slate400)),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: AppColors.slate900))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             onPressed: () async {
@@ -1457,7 +1553,7 @@ class StockToolsView extends GetView<StockToolsController> {
               final ok = await controller.convertStockToTool(item['id'] as int, q);
               if (ok) Get.back();
             },
-            child: const Text('Convert', style: TextStyle(color: Colors.white)),
+            child: const Text('Convert', style: TextStyle(color: AppColors.slate900)),
           ),
         ],
       ),
@@ -1482,9 +1578,9 @@ class StockToolsView extends GetView<StockToolsController> {
               const SizedBox(height: 12),
               TextField(
                 controller: qtyC,
-                style: GoogleFonts.outfit(color: Colors.white),
+                style: GoogleFonts.outfit(color: AppColors.slate900),
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Conversion Quantity', labelStyle: TextStyle(color: AppColors.slate400)),
+                decoration: InputDecoration(labelText: 'Conversion Quantity', labelStyle: TextStyle(color: AppColors.slate400)),
               ),
               const SizedBox(height: 12),
               Obx(() => _buildDropdownField('Stock Category', selectedCategory.value, controller.stockCategories, (val) => selectedCategory.value = val!)),
@@ -1493,7 +1589,7 @@ class StockToolsView extends GetView<StockToolsController> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: AppColors.slate900))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             onPressed: () async {
@@ -1507,7 +1603,7 @@ class StockToolsView extends GetView<StockToolsController> {
               );
               if (ok) Get.back();
             },
-            child: const Text('Convert', style: TextStyle(color: Colors.white)),
+            child: const Text('Convert', style: TextStyle(color: AppColors.slate900)),
           ),
         ],
       ),
@@ -1520,16 +1616,16 @@ class StockToolsView extends GetView<StockToolsController> {
       AlertDialog(
         backgroundColor: AppColors.slate900,
         title: const Text('Delete Stock Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to delete this stock item? This will also remove its transaction logs.', style: TextStyle(color: AppColors.slate400)),
+        content: Text('Are you sure you want to delete this stock item? This will also remove its transaction logs.', style: TextStyle(color: AppColors.slate400)),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: AppColors.slate900))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               controller.deleteStockItem(id);
               Get.back();
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete', style: TextStyle(color: AppColors.slate900)),
           ),
         ],
       ),
@@ -1541,16 +1637,16 @@ class StockToolsView extends GetView<StockToolsController> {
       AlertDialog(
         backgroundColor: AppColors.slate900,
         title: const Text('Delete Tool', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to delete this tool registration?', style: TextStyle(color: AppColors.slate400)),
+        content: Text('Are you sure you want to delete this tool registration?', style: TextStyle(color: AppColors.slate400)),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: AppColors.slate900))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               controller.deleteToolItem(id);
               Get.back();
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete', style: TextStyle(color: AppColors.slate900)),
           ),
         ],
       ),
@@ -1562,16 +1658,16 @@ class StockToolsView extends GetView<StockToolsController> {
       AlertDialog(
         backgroundColor: AppColors.slate900,
         title: const Text('Delete Uniform Item', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to delete this uniform item registration?', style: TextStyle(color: AppColors.slate400)),
+        content: Text('Are you sure you want to delete this uniform item registration?', style: TextStyle(color: AppColors.slate400)),
         actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: Colors.white))),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel', style: TextStyle(color: AppColors.slate900))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               controller.deleteUniformItem(id);
               Get.back();
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+            child: const Text('Delete', style: TextStyle(color: AppColors.slate900)),
           ),
         ],
       ),
@@ -1586,7 +1682,7 @@ class StockToolsView extends GetView<StockToolsController> {
       style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: AppColors.slate400, fontSize: 11),
+        labelStyle: TextStyle(color: AppColors.slate400, fontSize: 11),
         filled: true,
         fillColor: AppColors.slate500.withOpacity(0.08),
         border: OutlineInputBorder(
@@ -1595,7 +1691,7 @@ class StockToolsView extends GetView<StockToolsController> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.primary),
+          borderSide: BorderSide(color: AppColors.primary),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -1614,7 +1710,7 @@ class StockToolsView extends GetView<StockToolsController> {
             controller: textC,
             keyboardType: isNumber ? TextInputType.number : (isMultiline ? TextInputType.multiline : TextInputType.text),
             maxLines: isMultiline ? 3 : 1,
-            style: GoogleFonts.outfit(color: Colors.white),
+            style: GoogleFonts.outfit(color: AppColors.slate900),
             decoration: InputDecoration(
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.08),
@@ -1646,15 +1742,15 @@ class StockToolsView extends GetView<StockToolsController> {
     required String label,
     required ValueChanged<String?> onChanged,
   }) {
-    final list = items.map((i) => DropdownMenuItem(value: i, child: Text(i, style: const TextStyle(color: Colors.white)))).toList();
+    final list = items.map((i) => DropdownMenuItem(value: i, child: Text(i, style: TextStyle(color: AppColors.slate900)))).toList();
     if (!items.contains(value) && value.isNotEmpty) {
-      list.insert(0, DropdownMenuItem(value: value, child: Text(value, style: const TextStyle(color: Colors.white))));
+      list.insert(0, DropdownMenuItem(value: value, child: Text(value, style: TextStyle(color: AppColors.slate900))));
     }
     return DropdownButtonFormField<String>(
       value: value.isEmpty ? null : value,
       items: list,
       dropdownColor: AppColors.slate900,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         border: OutlineInputBorder(),
         contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -1675,10 +1771,10 @@ class StockToolsView extends GetView<StockToolsController> {
               decoration: BoxDecoration(color: AppColors.slate500.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
               child: Row(
                 children: [
-                  const Icon(Icons.image, color: AppColors.primary),
+                  Icon(Icons.image, color: AppColors.primary),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(controller.imageFilename.value, style: const TextStyle(color: Colors.white), overflow: TextOverflow.ellipsis)),
-                  IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => controller.clearImage()),
+                  Expanded(child: Text(controller.imageFilename.value, style: TextStyle(color: AppColors.slate900), overflow: TextOverflow.ellipsis)),
+                  IconButton(icon: Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => controller.clearImage()),
                 ],
               ),
             );
@@ -1687,15 +1783,15 @@ class StockToolsView extends GetView<StockToolsController> {
             children: [
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.slate500.withOpacity(0.2)),
-                icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                label: const Text('Camera', style: TextStyle(color: Colors.white)),
+                icon: Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                label: const Text('Camera', style: TextStyle(color: AppColors.slate900)),
                 onPressed: () => controller.pickImage(ImageSource.camera),
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.slate500.withOpacity(0.2)),
-                icon: const Icon(Icons.photo_library, color: Colors.white, size: 18),
-                label: const Text('Gallery', style: TextStyle(color: Colors.white)),
+                icon: Icon(Icons.photo_library, color: Colors.white, size: 18),
+                label: const Text('Gallery', style: TextStyle(color: AppColors.slate900)),
                 onPressed: () => controller.pickImage(ImageSource.gallery),
               ),
             ],

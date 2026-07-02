@@ -150,7 +150,7 @@ class _EditJobViewState extends State<EditJobView> {
       fontSize: 11,
       fontWeight: FontWeight.w700,
       letterSpacing: 0.8,
-      color: AppColors.whiteOverlay(0.55),
+      color: AppColors.slate500,
     );
   }
 
@@ -174,7 +174,7 @@ class _EditJobViewState extends State<EditJobView> {
           keyboardType: keyboardType,
           inputFormatters: inputFormatters,
           textCapitalization: textCapitalization,
-          style: GoogleFonts.inter(color: Colors.white),
+          style: GoogleFonts.inter(color: AppColors.slate900),
           decoration: customerInputDecoration(''),
         ),
         const SizedBox(height: 14),
@@ -217,7 +217,7 @@ class _EditJobViewState extends State<EditJobView> {
         const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.whiteOverlay(0.15)),
+            border: Border.all(color: AppColors.slate200),
             borderRadius: BorderRadius.circular(12),
           ),
           child: ListTile(
@@ -231,11 +231,11 @@ class _EditJobViewState extends State<EditJobView> {
               children: [
                 if (date != null)
                   IconButton(
-                    icon: const Icon(Icons.clear_rounded, color: Colors.white54),
+                    icon: Icon(Icons.clear_rounded, color: Colors.white54),
                     onPressed: _saving ? null : onClear,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.calendar_month_rounded, color: AppColors.primary),
+                  icon: Icon(Icons.calendar_month_rounded, color: AppColors.primary),
                   onPressed: _saving ? null : onTap,
                 ),
               ],
@@ -296,16 +296,16 @@ class _EditJobViewState extends State<EditJobView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.gradientStart,
+      backgroundColor: AppColors.slate50,
       appBar: AppBar(
         title: Text('Edit Job', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: _saving ? null : () => Get.back(),
         ),
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -525,7 +525,7 @@ class _EditJobViewState extends State<EditJobView> {
                         else
                           Container(
                             decoration: BoxDecoration(
-                              border: Border.all(color: AppColors.whiteOverlay(0.15)),
+                              border: Border.all(color: AppColors.slate200),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
@@ -543,7 +543,7 @@ class _EditJobViewState extends State<EditJobView> {
                                               _selectedOfficerIds.remove(id);
                                             }
                                           }),
-                                  title: Text(name, style: GoogleFonts.inter(fontSize: 14, color: Colors.white)),
+                                  title: Text(name, style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate900)),
                                   activeColor: AppColors.primary,
                                   dense: true,
                                   visualDensity: VisualDensity.compact,

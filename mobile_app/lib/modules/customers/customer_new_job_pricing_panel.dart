@@ -34,7 +34,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: OutlinedButton.icon(
               onPressed: saving ? null : onAddRow,
-              icon: const Icon(Icons.add_rounded, size: 18),
+              icon: Icon(Icons.add_rounded, size: 18),
               label: const Text('Add row'),
             ),
           ),
@@ -45,7 +45,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
               child: Text(
                 'No pricing items. Select a description to auto-fill or add manually.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
+                style: GoogleFonts.inter(color: AppColors.slate400),
               ),
             )
           else
@@ -69,7 +69,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                     final r = e.value;
                     return DataRow(
                       cells: [
-                        DataCell(Text('${idx + 1}', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55)))),
+                        DataCell(Text('${idx + 1}', style: GoogleFonts.inter(color: AppColors.slate500))),
                         DataCell(
                           SizedBox(
                             width: 140,
@@ -77,7 +77,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               controller: r.itemNameC,
                               enabled: !saving,
                               style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
                           ),
@@ -90,7 +90,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               enabled: !saving,
                               keyboardType: TextInputType.number,
                               style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
                           ),
@@ -103,7 +103,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               enabled: !saving,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
                           ),
@@ -116,7 +116,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               enabled: !saving,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
                           ),
@@ -129,7 +129,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               enabled: !saving,
                               keyboardType: TextInputType.number,
                               style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                              decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
                           ),
@@ -142,7 +142,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                         ),
                         DataCell(
                           IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFFCA5A5)),
+                            icon: Icon(Icons.delete_outline_rounded, color: Color(0xFFFCA5A5)),
                             onPressed: saving ? null : () => onRemoveRow(r.key),
                           ),
                         ),
@@ -165,7 +165,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                       DataCell(
                         Text(
                           grandTotal.toStringAsFixed(2),
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: Colors.white),
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: AppColors.slate900),
                         ),
                       ),
                       const DataCell(SizedBox()),

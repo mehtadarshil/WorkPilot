@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 
 import '../../core/services/user_profile_cache.dart';
@@ -37,9 +39,7 @@ class IdCardController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    if (_cache.profile.value == null) {
-      _cache.refresh();
-    }
+    unawaited(_cache.refresh());
     
     // Load officers list if logged-in user is admin
     if (Get.isRegistered<HomeController>()) {

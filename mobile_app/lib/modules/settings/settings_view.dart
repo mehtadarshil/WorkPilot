@@ -198,25 +198,25 @@ class SettingsView extends StatelessWidget {
     final permissions = _permissions;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Settings',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -269,7 +269,7 @@ class _SettingsHero extends StatelessWidget {
               shape: BoxShape.circle,
               color: AppColors.primary.withValues(alpha: 0.22),
             ),
-            child: const Icon(Icons.tune_rounded, color: Colors.white),
+            child: Icon(Icons.tune_rounded, color: AppColors.slate900),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -288,7 +288,7 @@ class _SettingsHero extends StatelessWidget {
                 Text(
                   'Each tab is controlled by its own permission.',
                   style: GoogleFonts.inter(
-                    color: AppColors.whiteOverlay(0.68),
+                    color: AppColors.slate500,
                     fontSize: 12.5,
                     height: 1.3,
                   ),
@@ -412,7 +412,7 @@ class _SettingsTabSheet extends StatelessWidget {
       builder: (context, scrollController) {
         return Container(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),

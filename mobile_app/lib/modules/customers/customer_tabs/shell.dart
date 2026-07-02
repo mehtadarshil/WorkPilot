@@ -59,12 +59,12 @@ Widget customerPanel({
     margin: const EdgeInsets.only(bottom: 12),
     padding: padding,
     decoration: BoxDecoration(
-      color: AppColors.whiteOverlay(0.09),
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.whiteOverlay(0.12)),
+      border: Border.all(color: AppColors.slate200),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.12),
+          color: Colors.black.withValues(alpha: 0.05),
           blurRadius: 12,
           offset: const Offset(0, 4),
         ),
@@ -86,7 +86,7 @@ Widget customerSectionHeader(String title, {Widget? trailing}) {
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 1.1,
-            color: AppColors.whiteOverlay(0.5),
+            color: AppColors.slate600,
           ),
         ),
         const Spacer(),
@@ -105,15 +105,15 @@ Widget customerEmptyState({
     padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
     child: Column(
       children: [
-        Icon(icon, size: 40, color: AppColors.whiteOverlay(0.2)),
+        Icon(icon, size: 40, color: AppColors.slate300),
         const SizedBox(height: 12),
-        Text(title, style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.85), fontWeight: FontWeight.w600)),
+        Text(title, style: GoogleFonts.inter(color: AppColors.slate700, fontWeight: FontWeight.w600)),
         if (subtitle != null && subtitle.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
           ),
         ],
       ],
@@ -132,7 +132,7 @@ Widget metaChip(String label) {
     ),
     child: Text(
       label,
-      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.whiteOverlay(0.85)),
+      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.slate700),
     ),
   );
 }
@@ -187,14 +187,14 @@ Widget statusPill(String label, {bool compact = false}) {
 InputDecoration customerInputDecoration(String label) {
   return InputDecoration(
     labelText: label,
-    labelStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.55)),
+    labelStyle: GoogleFonts.inter(color: AppColors.slate500),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+      borderSide: const BorderSide(color: AppColors.slate200),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppColors.primary),
+      borderSide: BorderSide(color: AppColors.primary),
     ),
   );
 }
@@ -207,21 +207,21 @@ Widget infoRow(String label, String value, {IconData? icon}) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 18, color: AppColors.whiteOverlay(0.45)),
+          Icon(icon, size: 18, color: AppColors.slate400),
           const SizedBox(width: 10),
         ],
         Expanded(
           flex: 2,
           child: Text(
             label,
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45), fontWeight: FontWeight.w500),
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400, fontWeight: FontWeight.w500),
           ),
         ),
         Expanded(
           flex: 3,
           child: Text(
             value,
-            style: GoogleFonts.inter(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500, height: 1.25),
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate900, fontWeight: FontWeight.w500, height: 1.25),
           ),
         ),
       ],

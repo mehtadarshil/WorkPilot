@@ -22,25 +22,25 @@ class SitesListView extends GetView<SitesListController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(
             'Sites',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -57,24 +57,24 @@ class SitesListView extends GetView<SitesListController> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: TextField(
-                  style: GoogleFonts.inter(color: Colors.white),
+                  style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search site, address, customer…',
-                    hintStyle: GoogleFonts.inter(color: AppColors.whiteOverlay(0.45)),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
                     prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.5)),
                     filled: true,
                     fillColor: AppColors.whiteOverlay(0.08),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppColors.whiteOverlay(0.15)),
+                      borderSide: const BorderSide(color: AppColors.slate200),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                      borderSide: BorderSide(color: AppColors.primary, width: 1.2),
                     ),
                   ),
                   onChanged: (v) {
@@ -95,7 +95,7 @@ class SitesListView extends GetView<SitesListController> {
                     '${controller.items.length} sites',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: AppColors.whiteOverlay(0.55),
+                      color: AppColors.slate500,
                     ),
                   );
                 }),
@@ -205,7 +205,7 @@ class SitesListView extends GetView<SitesListController> {
                                                 subtitle,
                                                 style: GoogleFonts.inter(
                                                   fontSize: 13,
-                                                  color: AppColors.whiteOverlay(0.55),
+                                                  color: AppColors.slate500,
                                                   height: 1.3,
                                                 ),
                                               ),
@@ -250,7 +250,7 @@ class SitesListView extends GetView<SitesListController> {
                                     const SizedBox(width: 6),
                                     Icon(
                                       Icons.chevron_right_rounded,
-                                      color: AppColors.whiteOverlay(0.35),
+                                      color: AppColors.slate400,
                                     ),
                                   ],
                                 ),

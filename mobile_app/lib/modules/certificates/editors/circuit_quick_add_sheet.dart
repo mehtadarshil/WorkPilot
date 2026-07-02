@@ -33,7 +33,7 @@ Future<void> showCircuitQuickAddSheet({
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF0F172A),
+    backgroundColor: AppColors.slate50,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
     ),
@@ -73,12 +73,12 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                   children: [
                     Text(
                       'Quick add',
-                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.slate900),
                     ),
                     const Spacer(),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                      icon: Icon(Icons.close_rounded, color: Colors.white70),
                     ),
                   ],
                 ),
@@ -175,7 +175,7 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                                     setState(() => _added.add(preset.id));
                                   },
                                   backgroundColor: bg,
-                                  side: added ? const BorderSide(color: AppColors.primary, width: 2) : null,
+                                  side: added ? BorderSide(color: AppColors.primary, width: 2) : null,
                                 );
                               }).toList(),
                             ),

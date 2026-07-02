@@ -196,9 +196,9 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
   Widget build(BuildContext context) {
     if (_loading) {
       return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
+        value: SystemUiOverlayStyle.dark,
         child: Scaffold(
-          backgroundColor: AppColors.gradientStart,
+          backgroundColor: AppColors.slate50,
           appBar: AppBar(title: Text('New invoice', style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
           body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
         ),
@@ -215,21 +215,21 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
     final addr = [ctStr(cust, 'address_line_1'), ctStr(cust, 'address_line_2'), ctStr(cust, 'address_line_3'), ctStr(cust, 'town'), ctStr(cust, 'county'), ctStr(cust, 'postcode')].where((e) => e.isNotEmpty).join(', ');
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text('Add invoice', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -246,7 +246,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                     Text(ctStr(cust, 'full_name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
                     if (addr.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(addr, style: GoogleFonts.inter(fontSize: 13, color: AppColors.whiteOverlay(0.65))),
+                      Text(addr, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
                     ],
                     if (_workAddress != null) ...[
                       const SizedBox(height: 10),
@@ -256,7 +256,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       ),
                       Text(
                         [ctStr(_workAddress!, 'address_line_1'), ctStr(_workAddress!, 'address_line_2'), ctStr(_workAddress!, 'address_line_3'), ctStr(_workAddress!, 'town'), ctStr(_workAddress!, 'county'), ctStr(_workAddress!, 'postcode')].where((e) => e.isNotEmpty).join(', '),
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.65)),
+                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500),
                       ),
                     ],
                   ],
@@ -280,7 +280,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                     TextField(
                       controller: _description,
                       enabled: !_saving,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Invoice description'),
                     ),
                     const SizedBox(height: 12),
@@ -290,7 +290,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       controller: _notes,
                       enabled: !_saving,
                       maxLines: 3,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Optional'),
                     ),
                     const SizedBox(height: 12),
@@ -299,7 +299,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                     TextField(
                       controller: _reference,
                       enabled: !_saving,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('PO / ref'),
                     ),
                     const SizedBox(height: 12),
@@ -309,7 +309,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       controller: _taxPct,
                       enabled: !_saving,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('20'),
                     ),
                     const SizedBox(height: 12),
@@ -319,7 +319,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       onPressed: _saving ? null : _pickInvoiceDate,
                       child: Text(
                         '${_invoiceDate.year}-${_invoiceDate.month.toString().padLeft(2, '0')}-${_invoiceDate.day.toString().padLeft(2, '0')}',
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -329,7 +329,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       onPressed: _saving ? null : _pickDueDate,
                       child: Text(
                         '${_dueDate.year}-${_dueDate.month.toString().padLeft(2, '0')}-${_dueDate.day.toString().padLeft(2, '0')}',
-                        style: GoogleFonts.inter(color: Colors.white),
+                        style: GoogleFonts.inter(color: AppColors.slate900),
                       ),
                     ),
                   ],
@@ -376,7 +376,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close_rounded, color: Color(0xFFFCA5A5)),
+                            icon: Icon(Icons.close_rounded, color: Color(0xFFFCA5A5)),
                             onPressed: _saving ? null : () => _removeLine(i),
                           ),
                         ],
@@ -387,7 +387,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: _saving ? null : _addLine,
-                        icon: const Icon(Icons.add_rounded, size: 18),
+                        icon: Icon(Icons.add_rounded, size: 18),
                         label: const Text('Add line'),
                       ),
                     ),

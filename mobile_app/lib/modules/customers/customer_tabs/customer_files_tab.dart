@@ -257,17 +257,17 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                       children: [
                         FilledButton.tonalIcon(
                           onPressed: _pickGallery,
-                          icon: const Icon(Icons.photo_library_outlined, size: 18),
+                          icon: Icon(Icons.photo_library_outlined, size: 18),
                           label: const Text('Gallery'),
                         ),
                         FilledButton.tonalIcon(
                           onPressed: _pickCamera,
-                          icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                          icon: Icon(Icons.photo_camera_outlined, size: 18),
                           label: const Text('Camera'),
                         ),
                         FilledButton.icon(
                           onPressed: _pickDocuments,
-                          icon: const Icon(Icons.upload_file_rounded, size: 18),
+                          icon: Icon(Icons.upload_file_rounded, size: 18),
                           label: const Text('Files'),
                         ),
                       ],
@@ -311,7 +311,7 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                     errorBuilder: (_, __, ___) => Container(
                                       color: AppColors.whiteOverlay(0.08),
-                                      child: const Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
                                     ),
                                   ),
                                 ),
@@ -368,11 +368,11 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                         height: 44,
                                         fit: BoxFit.cover,
                                         headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
-                                        errorBuilder: (_, __, ___) => Icon(Icons.image_outlined, color: AppColors.whiteOverlay(0.45)),
+                                        errorBuilder: (_, __, ___) => Icon(Icons.image_outlined, color: AppColors.slate400),
                                       ),
                                     )
                                   else
-                                    Icon(Icons.insert_drive_file_outlined, color: AppColors.whiteOverlay(0.45), size: 40),
+                                    Icon(Icons.insert_drive_file_outlined, color: AppColors.slate400, size: 40),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
@@ -389,7 +389,7 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                           generated
                                               ? '${ctStr(r, 'created_by_name')} · ${ctStr(r, 'source_label')}'
                                               : '${ctStr(r, 'content_type')} · ${_bytesLabel(r['byte_size'])}',
-                                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.45)),
+                                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(

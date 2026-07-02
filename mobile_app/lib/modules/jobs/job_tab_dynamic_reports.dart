@@ -87,7 +87,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
         },
       ),
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: AppColors.slate50,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -171,7 +171,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.whiteOverlay(0.08),
-        border: Border.all(color: AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
       child: child,
@@ -218,11 +218,11 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
               ),
               IconButton(
                 onPressed: () => _openEditor(report: r),
-                icon: const Icon(Icons.edit_rounded, color: AppColors.slate400, size: 20),
+                icon: Icon(Icons.edit_rounded, color: AppColors.slate400, size: 20),
               ),
               IconButton(
                 onPressed: () => _deleteReport((r['id'] as num).toInt(), title),
-                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.slate400, size: 20),
+                icon: Icon(Icons.delete_outline_rounded, color: AppColors.slate400, size: 20),
               ),
             ],
           ),
@@ -488,12 +488,12 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                   ),
                   IconButton(
                     onPressed: () => Get.back(),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.slate400),
+                    icon: Icon(Icons.close_rounded, color: AppColors.slate400),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1, color: Color(0xFF334155)),
+            Divider(height: 1, color: Color(0xFF334155)),
             // Body
             Flexible(
               child: SingleChildScrollView(
@@ -513,7 +513,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today_rounded, color: AppColors.slate400, size: 18),
+                            Icon(Icons.calendar_today_rounded, color: AppColors.slate400, size: 18),
                             const SizedBox(width: 10),
                             Text(
                               _formatDate(_date),
@@ -544,7 +544,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
                       onPressed: _addItem,
-                      icon: const Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
+                      icon: Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
                       label: Text('Add item', style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.whiteOverlay(0.25))),
                     ),
@@ -554,7 +554,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                       child: FilledButton(
                         onPressed: _saving ? null : _save,
                         child: _saving
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                             : Text(widget.report != null ? 'Update report' : 'Save report'),
                       ),
                     ),
@@ -578,7 +578,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400),
         enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.whiteOverlay(0.16)), borderRadius: BorderRadius.circular(12)),
-        focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(12)),
+        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -652,7 +652,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
               ),
               IconButton(
                 onPressed: () => _removeItem(idx),
-                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.slate400, size: 20),
+                icon: Icon(Icons.delete_outline_rounded, color: AppColors.slate400, size: 20),
               ),
             ],
           ),
@@ -675,7 +675,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
         enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.whiteOverlay(0.16)), borderRadius: BorderRadius.circular(10)),
-        focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(10)),
+        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: AppColors.primary), borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

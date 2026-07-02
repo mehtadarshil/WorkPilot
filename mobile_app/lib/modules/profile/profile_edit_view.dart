@@ -15,25 +15,25 @@ class ProfileEditView extends GetView<ProfileEditController> {
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
+      value: SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text('Edit profile', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: Get.back,
           ),
           actions: [
             IconButton(
               tooltip: 'ID card',
-              icon: const Icon(Icons.badge_outlined),
+              icon: Icon(Icons.badge_outlined),
               onPressed: openIdCard,
             ),
           ],
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -118,7 +118,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
                       backgroundColor: AppColors.primary,
                     ),
                     child: busy
-                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
                         : Text('Save', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16)),
                   );
                 }),
@@ -145,7 +145,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
                   backgroundColor: AppColors.whiteOverlay(0.12),
                   backgroundImage: bytes != null ? MemoryImage(bytes) : null,
                   child: bytes == null && !loading
-                      ? Text(initial, style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white))
+                      ? Text(initial, style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.slate900))
                       : null,
                 ),
                 if (loading)
@@ -161,12 +161,12 @@ class ProfileEditView extends GetView<ProfileEditController> {
               children: [
                 OutlinedButton.icon(
                   onPressed: controller.saving.value ? null : () => controller.pickPhoto(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  icon: Icon(Icons.photo_library_outlined, size: 18),
                   label: const Text('Gallery'),
                 ),
                 OutlinedButton.icon(
                   onPressed: controller.saving.value ? null : () => controller.pickPhoto(ImageSource.camera),
-                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                  icon: Icon(Icons.photo_camera_outlined, size: 18),
                   label: const Text('Camera'),
                 ),
                 if (bytes != null || controller.profile.value?.hasProfilePhoto == true)
@@ -205,7 +205,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
         textCapitalization:
             capitalizeWords ? TextCapitalization.words : TextCapitalization.none,
         inputFormatters: capitalizeWords ? const [capitalizeWordsFormatter] : null,
-        style: GoogleFonts.inter(color: Colors.white),
+        style: GoogleFonts.inter(color: AppColors.slate900),
         decoration: InputDecoration(
           labelText: label,
           labelStyle: GoogleFonts.inter(color: AppColors.slate400),

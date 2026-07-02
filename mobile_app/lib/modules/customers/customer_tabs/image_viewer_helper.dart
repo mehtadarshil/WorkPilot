@@ -23,7 +23,7 @@ void openFullscreenImage(BuildContext context, String url, {Map<String, String>?
                       backgroundColor: Colors.black45,
                       radius: 20,
                       child: IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                        icon: Icon(Icons.close_rounded, color: Colors.white, size: 20),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ),

@@ -348,7 +348,14 @@ class StockToolsController extends GetxController {
     required String status,
     required String location,
     int? assignedOfficerId,
+    String zone = '',
+    String aisle = '',
+    String shelf = '',
+    String box = '',
+    String storageCode = '',
+    String locationNotes = '',
   }) async {
+    String? clean(String v) => v.trim().isEmpty ? null : v.trim();
     final payload = <String, dynamic>{
       'name': name.trim(),
       'category': category,
@@ -356,6 +363,12 @@ class StockToolsController extends GetxController {
       'status': status,
       'location': location,
       'assigned_officer_id': assignedOfficerId,
+      'zone': clean(zone),
+      'aisle': clean(aisle),
+      'shelf': clean(shelf),
+      'box': clean(box),
+      'storage_code': clean(storageCode),
+      'location_notes': clean(locationNotes),
     };
     if (base64Image.isNotEmpty) {
       payload['image_base64'] = base64Image.value;

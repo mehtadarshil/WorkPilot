@@ -602,9 +602,9 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
   Widget build(BuildContext context) {
     if (_loading) {
       return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
+        value: SystemUiOverlayStyle.dark,
         child: Scaffold(
-          backgroundColor: AppColors.gradientStart,
+          backgroundColor: AppColors.slate50,
           appBar: AppBar(title: Text(_pageTitle, style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
           body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
         ),
@@ -614,21 +614,21 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     final activeChecklist = _serviceChecklist.where((i) => i['is_active'] == true).toList();
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
+      value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: AppColors.gradientStart,
       ),
       child: Scaffold(
-        backgroundColor: AppColors.gradientStart,
+        backgroundColor: AppColors.slate50,
         appBar: AppBar(
           title: Text(_pageTitle, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            icon: Icon(Icons.arrow_back_ios_new_rounded),
             onPressed: _saving ? null : () => Get.back(),
           ),
         ),
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -694,7 +694,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     const SizedBox(height: 6),
                     Text(
                       'Optional: pick someone from this customer\'s contacts. Site visit and reminders use their details when set.',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
                     ),
                     const SizedBox(height: 16),
                     Text('CONTACT NAME', style: _labelStyle()),
@@ -704,13 +704,13 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                       enabled: !_saving,
                       textCapitalization: TextCapitalization.words,
                       inputFormatters: const [capitalizeWordsFormatter],
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration(''),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Shown on the job and to engineers. Filled automatically when you pick a contact above; you can edit the wording.',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.whiteOverlay(0.45)),
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate400),
                     ),
                     const SizedBox(height: 16),
                     Text('DESCRIPTION *', style: _labelStyle()),
@@ -747,7 +747,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     TextField(
                       controller: _skills,
                       enabled: !_saving,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Comma-separated, auto-filled from description'),
                     ),
                     const SizedBox(height: 16),
@@ -757,7 +757,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                       controller: _jobNotes,
                       enabled: !_saving,
                       maxLines: 4,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('Auto-filled from description template…'),
                     ),
                     const SizedBox(height: 16),
@@ -812,7 +812,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                       controller: _quotedAmount,
                       enabled: !_saving,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('0.00'),
                     ),
                     const SizedBox(height: 12),
@@ -820,7 +820,7 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                     TextField(
                       controller: _customerReference,
                       enabled: !_saving,
-                      style: GoogleFonts.inter(color: Colors.white),
+                      style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: customerInputDecoration('PO number, ref, etc.'),
                     ),
                     const SizedBox(height: 12),
@@ -853,8 +853,8 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
                   FilledButton.icon(
                     onPressed: _saving ? null : _submit,
                     icon: _saving
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.save_rounded, size: 18),
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.slate900))
+                        : Icon(Icons.save_rounded, size: 18),
                     label: Text(_saving ? 'Creating…' : 'Add job'),
                   ),
                 ],
