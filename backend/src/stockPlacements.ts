@@ -1,6 +1,7 @@
 export type StockPlacement = {
   location: string;
   quantity: number;
+  quality?: string;
   zone?: string;
   aisle?: string;
   shelf?: string;
@@ -17,6 +18,7 @@ function trimOpt(value: unknown): string | undefined {
 
 export function formatPlacementLabel(placement: StockPlacement): string {
   const parts: string[] = [placement.location];
+  if (placement.quality) parts.push(placement.quality);
   if (placement.zone) parts.push(placement.zone);
   if (placement.aisle) parts.push(`Aisle ${placement.aisle}`);
   if (placement.shelf) parts.push(`Shelf ${placement.shelf}`);
@@ -28,6 +30,7 @@ export function formatPlacementLabel(placement: StockPlacement): string {
 export function placementSearchBlob(placement: StockPlacement): string {
   return [
     placement.location,
+    placement.quality,
     placement.zone,
     placement.aisle,
     placement.shelf,
@@ -41,7 +44,7 @@ export function placementSearchBlob(placement: StockPlacement): string {
     .toLowerCase();
 }
 
-export function normalizeStockPlacement(raw: unknown, fallbackLocation = 'Store'): StockPlacement | null {
+export function normalizeStockPlacement(raw: unknown, fallbackLocation = 'Store', fallbackQuality = 'New'): StockPlacement | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
   const location = trimOpt(r.location) || fallbackLocation;
@@ -50,6 +53,7 @@ export function normalizeStockPlacement(raw: unknown, fallbackLocation = 'Store'
     ? Math.max(0, Math.trunc(qtyRaw))
     : Math.max(0, parseInt(String(qtyRaw ?? '0'), 10) || 0);
 
+  const quality = trimOpt(r.quality) || fallbackQuality;
   const zone = trimOpt(r.zone);
   const aisle = trimOpt(r.aisle);
   const shelf = trimOpt(r.shelf);
@@ -61,7 +65,7 @@ export function normalizeStockPlacement(raw: unknown, fallbackLocation = 'Store'
     box = storage_code;
   }
 
-  const placement: StockPlacement = { location, quantity };
+  const placement: StockPlacement = { location, quantity, quality };
   if (zone) placement.zone = zone;
   if (aisle) placement.aisle = aisle;
   if (shelf) placement.shelf = shelf;
@@ -75,18 +79,19 @@ export function normalizeStockPlacements(
   raw: unknown,
   fallbackLocation: string,
   fallbackQuantity: number,
+  fallbackQuality = 'New',
   requireBinForLocations: string[] = [],
 ): StockPlacement[] {
   if (!Array.isArray(raw) || raw.length === 0) {
-    return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity) }];
+    return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity), quality: fallbackQuality }];
   }
 
   const placements = raw
-    .map((item) => normalizeStockPlacement(item, fallbackLocation))
+    .map((item) => normalizeStockPlacement(item, fallbackLocation, fallbackQuality))
     .filter((p): p is StockPlacement => p !== null);
 
   if (placements.length === 0) {
-    return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity) }];
+    return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity), quality: fallbackQuality }];
   }
 
   const requireSet = new Set(requireBinForLocations.map((l) => l.toLowerCase()));
@@ -115,14 +120,19 @@ export function pickDefaultPlacementIndex(placements: StockPlacement[]): number 
   return bestIdx;
 }
 
-export function parseLocationsFromDb(raw: unknown, fallbackLocation: string, fallbackQuantity: number): StockPlacement[] {
+export function parseLocationsFromDb(
+  raw: unknown,
+  fallbackLocation: string,
+  fallbackQuantity: number,
+  fallbackQuality = 'New',
+): StockPlacement[] {
   if (Array.isArray(raw) && raw.length > 0) {
     const parsed = raw
-      .map((item) => normalizeStockPlacement(item, fallbackLocation))
+      .map((item) => normalizeStockPlacement(item, fallbackLocation, fallbackQuality))
       .filter((p): p is StockPlacement => p !== null);
     if (parsed.length > 0) return parsed;
   }
-  return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity) }];
+  return [{ location: fallbackLocation, quantity: Math.max(0, fallbackQuantity), quality: fallbackQuality }];
 }
 
 export function applyPlacementQuantityDelta(

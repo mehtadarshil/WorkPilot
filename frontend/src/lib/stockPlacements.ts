@@ -1,6 +1,7 @@
 export type StockPlacement = {
   location: string;
   quantity: number;
+  quality?: string;
   zone?: string;
   aisle?: string;
   shelf?: string;
@@ -12,6 +13,7 @@ export type StockPlacement = {
 export type StockPlacementFormRow = {
   location: string;
   quantity: string;
+  quality: string;
   zone: string;
   aisle: string;
   shelf: string;
@@ -28,6 +30,7 @@ function trimOpt(value: unknown): string | undefined {
 
 export function formatPlacementLabel(placement: StockPlacement): string {
   const parts: string[] = [placement.location];
+  if (placement.quality) parts.push(placement.quality);
   if (placement.zone) parts.push(placement.zone);
   if (placement.aisle) parts.push(`Aisle ${placement.aisle}`);
   if (placement.shelf) parts.push(`Shelf ${placement.shelf}`);
@@ -41,6 +44,7 @@ export function formatPlacementLabel(placement: StockPlacement): string {
 export function placementSearchBlob(placement: StockPlacement): string {
   return [
     placement.location,
+    placement.quality,
     placement.zone,
     placement.aisle,
     placement.shelf,
@@ -58,11 +62,13 @@ export function parsePlacementsFromItem(item: {
   locations?: StockPlacement[];
   location?: string;
   quantity?: number;
+  quality?: string;
 }): StockPlacement[] {
   if (item.locations && item.locations.length > 0) {
     return item.locations.map((raw) => ({
       location: raw.location || item.location || 'Store',
       quantity: Number(raw.quantity) || 0,
+      quality: raw.quality || item.quality || 'New',
       zone: trimOpt(raw.zone),
       aisle: trimOpt(raw.aisle),
       shelf: trimOpt(raw.shelf),
@@ -71,13 +77,14 @@ export function parsePlacementsFromItem(item: {
       notes: trimOpt(raw.notes),
     }));
   }
-  return [{ location: item.location || 'Store', quantity: Number(item.quantity) || 0 }];
+  return [{ location: item.location || 'Store', quantity: Number(item.quantity) || 0, quality: item.quality || 'New' }];
 }
 
 export function placementFormFromApi(raw: StockPlacement): StockPlacementFormRow {
   return {
     location: raw.location,
     quantity: String(raw.quantity),
+    quality: raw.quality || 'New',
     zone: raw.zone || '',
     aisle: raw.aisle || '',
     shelf: raw.shelf || '',
@@ -91,6 +98,7 @@ export function emptyPlacementFormRow(defaultLocation: string): StockPlacementFo
   return {
     location: defaultLocation,
     quantity: '0',
+    quality: 'New',
     zone: '',
     aisle: '',
     shelf: '',
@@ -104,6 +112,7 @@ export function placementFormToApi(row: StockPlacementFormRow): StockPlacement {
   const placement: StockPlacement = {
     location: row.location,
     quantity: parseInt(row.quantity, 10) || 0,
+    quality: row.quality.trim() || 'New',
   };
   const zone = row.zone.trim();
   const aisle = row.aisle.trim();

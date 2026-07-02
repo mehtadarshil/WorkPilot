@@ -269,7 +269,6 @@ class StockToolsController extends GetxController {
     int? id,
     required String name,
     required String mpn,
-    required String quality,
     required List<Map<String, dynamic>> locs,
     required String category,
   }) async {
@@ -277,7 +276,6 @@ class StockToolsController extends GetxController {
       'name': name.trim(),
       'mpn': mpn.trim().isEmpty ? null : mpn.trim(),
       'category': category,
-      'quality': quality,
       'locations': locs.map(placementRowToApi).toList(),
     };
     final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
@@ -344,32 +342,22 @@ class StockToolsController extends GetxController {
     int? id,
     required String name,
     required String category,
-    required int quantity,
     required String status,
-    required String location,
+    required List<Map<String, dynamic>> locs,
     int? assignedOfficerId,
-    String zone = '',
-    String aisle = '',
-    String shelf = '',
-    String box = '',
-    String storageCode = '',
-    String locationNotes = '',
   }) async {
-    String? clean(String v) => v.trim().isEmpty ? null : v.trim();
     final payload = <String, dynamic>{
       'name': name.trim(),
       'category': category,
-      'quantity': quantity,
       'status': status,
-      'location': location,
       'assigned_officer_id': assignedOfficerId,
-      'zone': clean(zone),
-      'aisle': clean(aisle),
-      'shelf': clean(shelf),
-      'box': clean(box),
-      'storage_code': clean(storageCode),
-      'location_notes': clean(locationNotes),
+      'locations': locs.map(placementRowToApi).toList(),
     };
+    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    if (binError != null) {
+      Get.snackbar('Error', binError);
+      return false;
+    }
     if (base64Image.isNotEmpty) {
       payload['image_base64'] = base64Image.value;
       payload['original_filename'] = imageFilename.value;

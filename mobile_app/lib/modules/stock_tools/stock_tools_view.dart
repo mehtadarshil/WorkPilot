@@ -158,10 +158,10 @@ class StockToolsView extends GetView<StockToolsController> {
                   final mpn = item['mpn'] as String? ?? '';
                   final qty = item['quantity'] as int? ?? 0;
                   final category = item['category'] as String? ?? 'General';
-                  final quality = item['quality'] as String? ?? 'New';
                   final loc = item['location'] as String? ?? 'Store';
                   final img = item['image_url'] as String?;
                   final placements = parsePlacementsFromItem(item);
+                  final qualities = placements.map((p) => p['quality'] as String?).where((q) => q != null && q.isNotEmpty).toSet().join(', ');
 
                   return Card(
                     color: Colors.white,
@@ -199,7 +199,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                   runSpacing: 4,
                                   children: [
                                     _buildChip(category, AppColors.primary.withOpacity(0.1), AppColors.primary),
-                                    _buildChip(quality, Colors.blue.withOpacity(0.1), Colors.blue),
+                                    _buildChip(qualities.isEmpty ? 'New' : qualities, Colors.blue.withOpacity(0.1), Colors.blue),
                                     _buildChip(loc, Colors.orange.withOpacity(0.1), Colors.orange),
                                   ],
                                 ),
@@ -387,16 +387,8 @@ class StockToolsView extends GetView<StockToolsController> {
                   final assigned = tool['assigned_officer_name'] as String?;
                   final img = tool['image_url'] as String?;
 
-                  final placementMap = <String, dynamic>{
-                    'location': loc,
-                    if (tool['zone'] != null) 'zone': '${tool['zone']}',
-                    if (tool['aisle'] != null) 'aisle': '${tool['aisle']}',
-                    if (tool['shelf'] != null) 'shelf': '${tool['shelf']}',
-                    if (tool['box'] != null) 'box': '${tool['box']}',
-                    if (tool['storage_code'] != null) 'storage_code': '${tool['storage_code']}',
-                  };
-                  final placementLabel = formatPlacementLabel(placementMap);
-                  final hasBinDetail = placementLabel != loc;
+                  final placements = parsePlacementsFromItem(tool);
+                  final qualities = placements.map((p) => p['quality'] as String?).where((q) => q != null && q.isNotEmpty).toSet().join(', ');
 
                   Color statusColor = Colors.green;
                   if (status == 'in_use') statusColor = Colors.blue;
@@ -434,35 +426,53 @@ class StockToolsView extends GetView<StockToolsController> {
                                   children: [
                                     _buildChip(category, AppColors.primary.withOpacity(0.1), AppColors.primary),
                                     _buildChip(status.replaceAll('_', ' ').capitalizeFirst!, statusColor.withOpacity(0.1), statusColor),
+                                    _buildChip(qualities.isEmpty ? 'Used - Good' : qualities, Colors.blue.withOpacity(0.1), Colors.blue),
                                     _buildChip(loc, Colors.orange.withOpacity(0.1), Colors.orange),
                                   ],
                                 ),
-                                if (hasBinDetail) ...[
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          placementLabel,
-                                          style: GoogleFonts.outfit(color: AppColors.slate600, fontSize: 11),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                        icon: Icon(Icons.copy, size: 14, color: AppColors.slate400),
-                                        tooltip: 'Copy location',
-                                        onPressed: () async {
-                                          await Clipboard.setData(ClipboardData(text: placementLabel));
-                                          Get.snackbar('Copied', placementLabel, snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
-                                        },
-                                      ),
-                                    ],
+                                if (placements.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Where is it?',
+                                    style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.bold),
                                   ),
+                                  const SizedBox(height: 4),
+                                  ...placements.asMap().entries.map((entry) {
+                                    final p = entry.value;
+                                    final label = formatPlacementLabel(p);
+                                    final pq = (p['quantity'] as num?)?.toInt() ?? 0;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.place_outlined, size: 12, color: AppColors.primary),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              style: GoogleFonts.outfit(color: Colors.black54, fontSize: 11),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Text(
+                                            '×$pq',
+                                            style: GoogleFonts.outfit(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                          IconButton(
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                            icon: Icon(Icons.copy, size: 14, color: AppColors.slate400),
+                                            tooltip: 'Copy location',
+                                            onPressed: () async {
+                                              await Clipboard.setData(ClipboardData(text: label));
+                                              Get.snackbar('Copied', label, snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
                                 ],
                                 if (assigned != null && assigned.isNotEmpty) ...[
                                   const SizedBox(height: 6),
@@ -1091,6 +1101,7 @@ class StockToolsView extends GetView<StockToolsController> {
         row['box'] = row['box'] ?? '';
         row['storage_code'] = row['storage_code'] ?? '';
         row['notes'] = row['notes'] ?? '';
+        row['quality'] = row['quality'] ?? 'Used - Good';
       }
     }
     if (rawLocations.isEmpty) {
@@ -1098,7 +1109,6 @@ class StockToolsView extends GetView<StockToolsController> {
     }
 
     final formLocs = rawLocations.obs;
-    final selectedQuality = (isEdit ? (item['quality'] ?? 'New') : 'New').obs;
     final selectedCategory = (isEdit ? (item['category'] ?? controller.stockCategories[0]) : controller.stockCategories[0]).obs;
 
     Get.bottomSheet(
@@ -1127,7 +1137,6 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildInput('Item Name*', nameC),
                   _buildInput('MPN', mpnC),
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.stockCategories, (val) => selectedCategory.value = val!)),
-                  Obx(() => _buildDropdownField('Quality', selectedQuality.value, const ['New', 'Used - Good', 'Used - Fair', 'Damaged'], (val) => selectedQuality.value = val!)),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1167,13 +1176,14 @@ class StockToolsView extends GetView<StockToolsController> {
                           border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
                         ),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
                                 Expanded(
                                   flex: 2,
                                   child: _buildDropdown(
-                                    value: l['location'],
+                                    value: l['location'] ?? 'Store',
                                     items: controller.locations,
                                     label: 'Site',
                                     onChanged: (val) {
@@ -1200,6 +1210,24 @@ class StockToolsView extends GetView<StockToolsController> {
                                     icon: Icon(Icons.delete_outline, color: Colors.redAccent),
                                     onPressed: () => formLocs.removeAt(idx),
                                   ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Quality', style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                _buildDropdown(
+                                  value: l['quality'] as String? ?? 'Used - Good',
+                                  items: const ['New', 'Used - Good', 'Used - Fair', 'Damaged'],
+                                  label: 'Quality',
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      formLocs[idx] = {...l, 'quality': val};
+                                    }
+                                  },
+                                ),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -1247,7 +1275,6 @@ class StockToolsView extends GetView<StockToolsController> {
                   id: isEdit ? (item['id'] as int) : null,
                   name: nameC.text,
                   mpn: mpnC.text,
-                  quality: selectedQuality.value,
                   locs: formLocs.toList(),
                   category: selectedCategory.value,
                 );
@@ -1268,18 +1295,29 @@ class StockToolsView extends GetView<StockToolsController> {
     controller.clearImage();
     final isEdit = tool != null;
     final nameC = TextEditingController(text: isEdit ? (tool['name'] ?? '') : '');
-    final qtyC = TextEditingController(text: isEdit ? '${tool['quantity'] ?? 1}' : '1');
 
+    // Parse existing placements or set defaults
+    final List<Map<String, dynamic>> rawLocations = [];
+    if (isEdit) {
+      rawLocations.addAll(parsePlacementsFromItem(tool));
+      for (final row in rawLocations) {
+        row['zone'] = row['zone'] ?? '';
+        row['aisle'] = row['aisle'] ?? '';
+        row['shelf'] = row['shelf'] ?? '';
+        row['box'] = row['box'] ?? '';
+        row['storage_code'] = row['storage_code'] ?? '';
+        row['notes'] = row['notes'] ?? '';
+        row['quality'] = row['quality'] ?? 'Used - Good';
+      }
+    }
+    if (rawLocations.isEmpty) {
+      rawLocations.add(emptyPlacementRow(controller.locations.isNotEmpty ? controller.locations[0] : 'Store'));
+    }
+
+    final formLocs = rawLocations.obs;
     final selectedCategory = (isEdit ? (tool['category'] ?? controller.toolCategories[0]) : controller.toolCategories[0]).obs;
     final selectedStatus = (isEdit ? (tool['status'] ?? 'available') : 'available').obs;
-    final selectedLocation = (isEdit ? (tool['location'] ?? controller.locations[0]) : controller.locations[0]).obs;
     final selectedOfficer = (isEdit && tool['assigned_officer_id'] != null ? '${tool['assigned_officer_id']}' : '').obs;
-    final zone = (isEdit ? (tool['zone'] as String? ?? '') : '').obs;
-    final aisle = (isEdit ? (tool['aisle'] as String? ?? '') : '').obs;
-    final shelf = (isEdit ? (tool['shelf'] as String? ?? '') : '').obs;
-    final box = (isEdit ? (tool['box'] as String? ?? '') : '').obs;
-    final storageCode = (isEdit ? (tool['storage_code'] as String? ?? '') : '').obs;
-    final locationNotes = (isEdit ? (tool['location_notes'] as String? ?? '') : '').obs;
 
     Get.bottomSheet(
       Container(
@@ -1305,52 +1343,126 @@ class StockToolsView extends GetView<StockToolsController> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [
                   _buildInput('Tool Name*', nameC),
-                  _buildInput('Quantity*', qtyC, isNumber: true),
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.toolCategories, (val) => selectedCategory.value = val!)),
                   Obx(() => _buildDropdownField('Status', selectedStatus.value, const ['available', 'in_use', 'missing', 'damaged'], (val) => selectedStatus.value = val!)),
-                  const SizedBox(height: 4),
-                  Text('Storage location', style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.slate500.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
-                    ),
-                    child: Column(
-                      children: [
-                        Obx(() => _buildDropdown(
-                          value: selectedLocation.value,
-                          items: controller.locations,
-                          label: 'Site',
-                          onChanged: (val) {
-                            if (val != null) selectedLocation.value = val;
-                          },
-                        )),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(child: Obx(() => _buildPlacementMiniField('Zone', zone.value, (v) => zone.value = v))),
-                            const SizedBox(width: 8),
-                            Expanded(child: Obx(() => _buildPlacementMiniField('Aisle', aisle.value, (v) => aisle.value = v))),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(child: Obx(() => _buildPlacementMiniField('Shelf', shelf.value, (v) => shelf.value = v))),
-                            const SizedBox(width: 8),
-                            Expanded(child: Obx(() => _buildPlacementMiniField('Box', box.value, (v) => box.value = v))),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Obx(() => _buildPlacementMiniField('Storage code', storageCode.value, (v) => storageCode.value = v)),
-                        const SizedBox(height: 8),
-                        Obx(() => _buildPlacementMiniField('Notes', locationNotes.value, (v) => locationNotes.value = v)),
-                      ],
-                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Storage placements', style: GoogleFonts.outfit(color: AppColors.slate900, fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: Icon(Icons.add_circle_outline, color: AppColors.primary),
+                        onPressed: () {
+                          formLocs.add(emptyPlacementRow(controller.locations.isNotEmpty ? controller.locations[0] : 'Store'));
+                        },
+                      ),
+                    ],
                   ),
+                  Obx(() {
+                    if (controller.requireBinLocations.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Box or storage code required for: ${controller.requireBinLocations.join(', ')}',
+                        style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11),
+                      ),
+                    );
+                  }),
+                  Obx(() => ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: formLocs.length,
+                    itemBuilder: (context, idx) {
+                      final l = formLocs[idx];
+                      final qtyC = TextEditingController(text: '${l['quantity']}');
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.slate500.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate500.withOpacity(0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: _buildDropdown(
+                                    value: l['location'] ?? 'Store',
+                                    items: controller.locations,
+                                    label: 'Site',
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        formLocs[idx] = {...l, 'location': val};
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller: qtyC,
+                                    keyboardType: TextInputType.number,
+                                    style: GoogleFonts.outfit(color: AppColors.slate900),
+                                    decoration: InputDecoration(labelText: 'Qty', labelStyle: TextStyle(color: AppColors.slate400)),
+                                    onChanged: (val) {
+                                      formLocs[idx] = {...l, 'quantity': int.tryParse(val) ?? 0};
+                                    },
+                                  ),
+                                ),
+                                if (formLocs.length > 1)
+                                  IconButton(
+                                    icon: Icon(Icons.delete_outline, color: Colors.redAccent),
+                                    onPressed: () => formLocs.removeAt(idx),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Quality', style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                _buildDropdown(
+                                  value: l['quality'] as String? ?? 'Used - Good',
+                                  items: const ['New', 'Used - Good', 'Used - Fair', 'Damaged'],
+                                  label: 'Quality',
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      formLocs[idx] = {...l, 'quality': val};
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(child: _buildPlacementMiniField('Zone', l['zone'] ?? '', (v) => formLocs[idx] = {...l, 'zone': v})),
+                                const SizedBox(width: 8),
+                                Expanded(child: _buildPlacementMiniField('Aisle', l['aisle'] ?? '', (v) => formLocs[idx] = {...l, 'aisle': v})),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(child: _buildPlacementMiniField('Shelf', l['shelf'] ?? '', (v) => formLocs[idx] = {...l, 'shelf': v})),
+                                const SizedBox(width: 8),
+                                Expanded(child: _buildPlacementMiniField('Box', l['box'] ?? '', (v) => formLocs[idx] = {...l, 'box': v})),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _buildPlacementMiniField('Storage code', l['storage_code'] ?? '', (v) => formLocs[idx] = {...l, 'storage_code': v}),
+                            const SizedBox(height: 8),
+                            _buildPlacementMiniField('Notes', l['notes'] ?? '', (v) => formLocs[idx] = {...l, 'notes': v}),
+                          ],
+                        ),
+                      );
+                    },
+                  )),
                   const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
@@ -1393,21 +1505,13 @@ class StockToolsView extends GetView<StockToolsController> {
                   Get.snackbar('Error', 'Name is required');
                   return;
                 }
-                final qty = int.tryParse(qtyC.text) ?? 1;
                 final ok = await controller.saveToolItem(
                   id: isEdit ? (tool['id'] as int) : null,
                   name: nameC.text,
                   category: selectedCategory.value,
-                  quantity: qty,
                   status: selectedStatus.value,
-                  location: selectedLocation.value,
+                  locs: formLocs.toList(),
                   assignedOfficerId: selectedOfficer.isEmpty ? null : int.tryParse(selectedOfficer.value),
-                  zone: zone.value,
-                  aisle: aisle.value,
-                  shelf: shelf.value,
-                  box: box.value,
-                  storageCode: storageCode.value,
-                  locationNotes: locationNotes.value,
                 );
                 if (ok) Get.back();
               },

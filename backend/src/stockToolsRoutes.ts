@@ -127,9 +127,11 @@ export async function ensureStockToolsSchema(pool: Pool) {
       ALTER TABLE tools ADD COLUMN IF NOT EXISTS box VARCHAR(255);
       ALTER TABLE tools ADD COLUMN IF NOT EXISTS storage_code VARCHAR(255);
       ALTER TABLE tools ADD COLUMN IF NOT EXISTS location_notes TEXT;
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS locations JSONB;
     `);
     await pool.query(`
       ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS locations JSONB;
+      ALTER TABLE stock_items ALTER COLUMN quality DROP NOT NULL;
     `);
     await pool.query(`
       ALTER TABLE stock_tools_settings
@@ -220,6 +222,54 @@ async function restorePlacementStock(
   const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, qtyToRestore);
   if (!adjusted) return;
   await persistStockPlacements(client, stockItemId, adjusted.placements);
+}
+
+async function loadToolPlacements(
+  client: { query: Pool['query'] },
+  toolId: number,
+): Promise<{ item: { location: string; quantity: number; locations: unknown; name: string; image_url: string | null }; placements: StockPlacement[] } | null> {
+  const itemRes = await client.query<{ location: string; quantity: number; locations: unknown; name: string; image_url: string | null }>(
+    'SELECT location, quantity, locations, name, image_url FROM tools WHERE id = $1 FOR UPDATE',
+    [toolId],
+  );
+  if ((itemRes.rowCount ?? 0) === 0) return null;
+  const item = itemRes.rows[0];
+  const placements = parseLocationsFromDb(item.locations, item.location, item.quantity, 'Used - Good');
+  return { item, placements };
+}
+
+async function persistToolPlacements(
+  client: { query: Pool['query'] },
+  toolId: number,
+  placements: StockPlacement[],
+) {
+  const totalQty = totalPlacementQuantity(placements);
+  const primaryLocation = placements[0]?.location || 'Store';
+  await client.query(
+    `UPDATE tools SET quantity = $1, location = $2, locations = $3 WHERE id = $4`,
+    [totalQty, primaryLocation, JSON.stringify(placements), toolId],
+  );
+}
+
+async function consumePlacementTool(
+  client: { query: Pool['query'] },
+  toolId: number,
+  qtyToConsume: number,
+  preferredPlacementIndex: number | null,
+): Promise<{ placementIndex: number; placementLabel: string }> {
+  const loaded = await loadToolPlacements(client, toolId);
+  if (!loaded) throw new Error('Tool not found');
+  const idx = preferredPlacementIndex != null
+    && preferredPlacementIndex >= 0
+    && preferredPlacementIndex < loaded.placements.length
+    ? preferredPlacementIndex
+    : pickDefaultPlacementIndex(loaded.placements);
+  const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, -qtyToConsume);
+  if (!adjusted) {
+    throw new Error('Insufficient quantity at the selected placement');
+  }
+  await persistToolPlacements(client, toolId, adjusted.placements);
+  return { placementIndex: idx, placementLabel: adjusted.label };
 }
 
 async function consumePlacementStock(
@@ -621,7 +671,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const userId = getTenantScopeUserId(req.user!);
     const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type } = req.body;
 
-    if (!name || !category || !quality) {
+    if (!name || !category) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -629,10 +679,12 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const settings = await loadStockToolsSettingsRow(pool, userId);
       const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
       const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0;
+      const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : 'New';
       const resolvedLocations = normalizeStockPlacements(
         locations,
         fallbackLocation,
         fallbackQty,
+        fallbackQuality,
         settings.require_bin_for_locations,
       );
       const qty = totalPlacementQuantity(resolvedLocations);
@@ -647,7 +699,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
-        [name, mpn || null, qty, category, quality, primaryLocation, imageUrl, userId, JSON.stringify(resolvedLocations)]
+        [name, mpn || null, qty, category, fallbackQuality, primaryLocation, imageUrl, userId, JSON.stringify(resolvedLocations)]
       );
 
       const newItem = ins.rows[0];
@@ -723,10 +775,12 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       let newQty = existing.quantity;
       if (Array.isArray(locations)) {
         const settings = await loadStockToolsSettingsRow(pool, userId);
+        const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : (existing.quality || 'New');
         const normalized = normalizeStockPlacements(
           locations,
           existing.location || 'Store',
           existing.quantity,
+          fallbackQuality,
           settings.require_bin_for_locations,
         );
         newQty = totalPlacementQuantity(normalized);
@@ -861,10 +915,33 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         ? loadedForConvert.placements[pickDefaultPlacementIndex(loadedForConvert.placements)]
         : null;
 
+      let rem = convertQty;
+      const toolPlacements: StockPlacement[] = [];
+      if (loadedForConvert && loadedForConvert.placements.length > 0) {
+        for (const p of loadedForConvert.placements) {
+          if (rem <= 0) break;
+          const take = Math.min(p.quantity, rem);
+          if (take > 0) {
+            toolPlacements.push({
+              ...p,
+              quantity: take
+            });
+            rem -= take;
+          }
+        }
+      }
+      if (toolPlacements.length === 0) {
+        toolPlacements.push({
+          location: item.location || 'Store',
+          quantity: convertQty,
+          quality: (defPlacement as any)?.quality || 'Used - Good'
+        });
+      }
+
       const toolIns = await client.query(
         `INSERT INTO tools (name, category, status, location, quantity, image_url, created_by,
-                            zone, aisle, shelf, box, storage_code, location_notes)
-         VALUES ($1, $2, 'available', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                            zone, aisle, shelf, box, storage_code, location_notes, locations)
+         VALUES ($1, $2, 'available', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
         [
           item.name, toolCategory, item.location, convertQty, item.image_url, userId,
@@ -874,6 +951,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
           normalizeBinField((defPlacement as any)?.box),
           normalizeBinField((defPlacement as any)?.storage_code),
           normalizeBinField((defPlacement as any)?.notes),
+          JSON.stringify(toolPlacements),
         ],
       );
 
@@ -1145,16 +1223,27 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const {
       name, category, status, location, assigned_officer_id, quantity,
       zone, aisle, shelf, box, storage_code, location_notes,
-      image_base64, original_filename, content_type,
+      locations, image_base64, original_filename, content_type,
     } = req.body;
 
-    if (!name || !category || !location) {
+    if (!name || !category) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity || '1'), 10) || 1;
-
     try {
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
+      const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '1'), 10) || 1;
+      const resolvedLocations = normalizeStockPlacements(
+        locations,
+        fallbackLocation,
+        fallbackQty,
+        'Used - Good', // tools default quality
+        settings.require_bin_for_locations,
+      );
+      const qty = totalPlacementQuantity(resolvedLocations);
+      const primaryLocation = resolvedLocations[0]?.location || 'Store';
+
       let imageUrl: string | null = null;
       if (image_base64) {
         imageUrl = await storeStockToolImage('tool-photos', image_base64, original_filename, content_type);
@@ -1164,13 +1253,14 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
       const ins = await pool.query(
         `INSERT INTO tools (name, category, status, location, quantity, assigned_officer_id, image_url, created_by,
-                            zone, aisle, shelf, box, storage_code, location_notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                            zone, aisle, shelf, box, storage_code, location_notes, locations)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING *`,
         [
-          name, category, status || 'available', location, qty, assignedId, imageUrl, userId,
+          name, category, status || 'available', primaryLocation, qty, assignedId, imageUrl, userId,
           normalizeBinField(zone), normalizeBinField(aisle), normalizeBinField(shelf),
           normalizeBinField(box), normalizeBinField(storage_code), normalizeBinField(location_notes),
+          JSON.stringify(resolvedLocations)
         ]
       );
 
@@ -1192,7 +1282,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const {
       name, category, status, location, assigned_officer_id, quantity,
       zone, aisle, shelf, box, storage_code, location_notes,
-      image_base64, original_filename, content_type,
+      locations, image_base64, original_filename, content_type,
     } = req.body;
 
     try {
@@ -1226,39 +1316,6 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         updates.push(`status = $${idx++}`);
         values.push(status);
       }
-      if (location !== undefined) {
-        updates.push(`location = $${idx++}`);
-        values.push(location);
-      }
-      if (zone !== undefined) {
-        updates.push(`zone = $${idx++}`);
-        values.push(normalizeBinField(zone));
-      }
-      if (aisle !== undefined) {
-        updates.push(`aisle = $${idx++}`);
-        values.push(normalizeBinField(aisle));
-      }
-      if (shelf !== undefined) {
-        updates.push(`shelf = $${idx++}`);
-        values.push(normalizeBinField(shelf));
-      }
-      if (box !== undefined) {
-        updates.push(`box = $${idx++}`);
-        values.push(normalizeBinField(box));
-      }
-      if (storage_code !== undefined) {
-        updates.push(`storage_code = $${idx++}`);
-        values.push(normalizeBinField(storage_code));
-      }
-      if (location_notes !== undefined) {
-        updates.push(`location_notes = $${idx++}`);
-        values.push(normalizeBinField(location_notes));
-      }
-      if (quantity !== undefined) {
-        const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
-        updates.push(`quantity = $${idx++}`);
-        values.push(qty);
-      }
       if (assigned_officer_id !== undefined) {
         updates.push(`assigned_officer_id = $${idx++}`);
         values.push(assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null);
@@ -1266,6 +1323,74 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       if (imageUrl !== existing.image_url) {
         updates.push(`image_url = $${idx++}`);
         values.push(imageUrl);
+      }
+
+      if (Array.isArray(locations)) {
+        const settings = await loadStockToolsSettingsRow(pool, userId);
+        const normalized = normalizeStockPlacements(
+          locations,
+          existing.location || 'Store',
+          existing.quantity || 1,
+          'Used - Good',
+          settings.require_bin_for_locations,
+        );
+        const newQty = totalPlacementQuantity(normalized);
+        const primaryLocation = normalized[0]?.location || 'Store';
+
+        updates.push(`locations = $${idx++}`);
+        values.push(JSON.stringify(normalized));
+
+        updates.push(`location = $${idx++}`);
+        values.push(primaryLocation);
+
+        updates.push(`quantity = $${idx++}`);
+        values.push(newQty);
+      } else {
+        if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+          const arr = Array.isArray(existing.locations) ? [...existing.locations] : [{ location: existing.location, quantity: existing.quantity, quality: 'Used - Good' }];
+          if (arr.length > 0) {
+            arr[0].location = location;
+          }
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(arr));
+        }
+        if (quantity !== undefined) {
+          const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
+          updates.push(`quantity = $${idx++}`);
+          values.push(qty);
+          const arr = Array.isArray(existing.locations) ? [...existing.locations] : [{ location: existing.location, quantity: existing.quantity, quality: 'Used - Good' }];
+          if (arr.length > 0) {
+            arr[0].quantity = qty;
+          }
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(arr));
+        }
+        if (zone !== undefined) {
+          updates.push(`zone = $${idx++}`);
+          values.push(normalizeBinField(zone));
+        }
+        if (aisle !== undefined) {
+          updates.push(`aisle = $${idx++}`);
+          values.push(normalizeBinField(aisle));
+        }
+        if (shelf !== undefined) {
+          updates.push(`shelf = $${idx++}`);
+          values.push(normalizeBinField(shelf));
+        }
+        if (box !== undefined) {
+          updates.push(`box = $${idx++}`);
+          values.push(normalizeBinField(box));
+        }
+        if (storage_code !== undefined) {
+          updates.push(`storage_code = $${idx++}`);
+          values.push(normalizeBinField(storage_code));
+        }
+        if (location_notes !== undefined) {
+          updates.push(`location_notes = $${idx++}`);
+          values.push(normalizeBinField(location_notes));
+        }
       }
 
       if (updates.length > 0) {
@@ -1332,13 +1457,13 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         await client.query('ROLLBACK');
         return res.status(404).json({ message: 'Tool not found' });
       }
-      const tool = toolRes.rows[0];
-      if (!isSuperAdmin && tool.created_by !== userId) {
+      const loadedTool = await loadToolPlacements(client, toolId);
+      if (!loadedTool) {
         await client.query('ROLLBACK');
-        return res.status(403).json({ message: 'Forbidden' });
+        return res.status(404).json({ message: 'Tool not found' });
       }
 
-      const toolQty = typeof tool.quantity === 'number' ? tool.quantity : parseInt(String(tool.quantity || '1'), 10) || 1;
+      const toolQty = totalPlacementQuantity(loadedTool.placements);
       const rawQty = body.quantity;
       const convertQty = rawQty === undefined
         ? toolQty
@@ -1354,6 +1479,22 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         return res.status(400).json({ message: `Only ${toolQty} unit(s) available for this tool` });
       }
 
+      let rem = convertQty;
+      const convertedPlacements: StockPlacement[] = [];
+      for (const p of loadedTool.placements) {
+        if (rem <= 0) break;
+        const take = Math.min(p.quantity, rem);
+        if (take > 0) {
+          convertedPlacements.push({
+            ...p,
+            quantity: take
+          });
+          rem -= take;
+        }
+      }
+
+      await consumePlacementTool(client, toolId, convertQty, null);
+
       const settings = await loadStockToolsSettingsRow(pool, userId);
       const stockCategory = typeof body.category === 'string' && body.category.trim()
         ? body.category.trim()
@@ -1366,7 +1507,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         `SELECT id, quantity FROM stock_items
          WHERE created_by = $1 AND name = $2 AND location = $3 AND category = $4
          ORDER BY id ASC LIMIT 1`,
-        [userId, tool.name, tool.location, stockCategory],
+         [userId, loadedTool.item.name, loadedTool.item.location, stockCategory],
       );
 
       let stockItemId: number;
@@ -1378,34 +1519,31 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
           await client.query('ROLLBACK');
           return res.status(404).json({ message: 'Stock item not found' });
         }
-        const idx = pickDefaultPlacementIndex(loaded.placements);
-        const adjusted = applyPlacementQuantityDelta(loaded.placements, idx, convertQty);
-        if (!adjusted) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ message: 'Could not add stock to placement' });
+        const nextPlacements = [...loaded.placements];
+        for (const cp of convertedPlacements) {
+          const match = nextPlacements.find(x => 
+            x.location === cp.location &&
+            x.zone === cp.zone &&
+            x.aisle === cp.aisle &&
+            x.shelf === cp.shelf &&
+            x.box === cp.box &&
+            x.storage_code === cp.storage_code &&
+            (x.quality || 'New') === (cp.quality || 'New')
+          );
+          if (match) {
+            match.quantity += cp.quantity;
+          } else {
+            nextPlacements.push(cp);
+          }
         }
-        await persistStockPlacements(client, stockItemId, adjusted.placements);
-        newStockQty = totalPlacementQuantity(adjusted.placements);
+        await persistStockPlacements(client, stockItemId, nextPlacements);
+        newStockQty = totalPlacementQuantity(nextPlacements);
       } else {
-        const initialPlacement: Record<string, unknown> = { location: tool.location, quantity: convertQty };
-        const zoneVal = normalizeBinField(tool.zone);
-        const aisleVal = normalizeBinField(tool.aisle);
-        const shelfVal = normalizeBinField(tool.shelf);
-        const boxVal = normalizeBinField(tool.box);
-        const storageVal = normalizeBinField(tool.storage_code);
-        const notesVal = normalizeBinField(tool.location_notes);
-        if (zoneVal) initialPlacement.zone = zoneVal;
-        if (aisleVal) initialPlacement.aisle = aisleVal;
-        if (shelfVal) initialPlacement.shelf = shelfVal;
-        if (boxVal) initialPlacement.box = boxVal;
-        if (storageVal) initialPlacement.storage_code = storageVal;
-        if (notesVal) initialPlacement.notes = notesVal;
-        const initialPlacements = [initialPlacement];
         const stockIns = await client.query(
           `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
            VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)
            RETURNING id, quantity`,
-          [tool.name, convertQty, stockCategory, quality, tool.location, tool.image_url, userId, JSON.stringify(initialPlacements)],
+          [loadedTool.item.name, convertQty, stockCategory, convertedPlacements[0]?.quality || quality, loadedTool.item.location, loadedTool.item.image_url, userId, JSON.stringify(convertedPlacements)],
         );
         stockItemId = stockIns.rows[0].id;
         newStockQty = stockIns.rows[0].quantity;
@@ -1420,8 +1558,6 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const remainingToolQty = toolQty - convertQty;
       if (remainingToolQty <= 0) {
         await client.query('DELETE FROM tools WHERE id = $1', [toolId]);
-      } else {
-        await client.query('UPDATE tools SET quantity = $1 WHERE id = $2', [remainingToolQty, toolId]);
       }
 
       await client.query('COMMIT');

@@ -1,5 +1,7 @@
 String formatPlacementLabel(Map<String, dynamic> placement) {
   final parts = <String>[placement['location'] as String? ?? 'Store'];
+  final quality = (placement['quality'] as String?)?.trim();
+  if (quality != null && quality.isNotEmpty) parts.add(quality);
   final zone = (placement['zone'] as String?)?.trim();
   final aisle = (placement['aisle'] as String?)?.trim();
   final shelf = (placement['shelf'] as String?)?.trim();
@@ -20,10 +22,11 @@ List<Map<String, dynamic>> parsePlacementsFromItem(Map<String, dynamic> item) {
   final raw = item['locations'];
   if (raw is List && raw.isNotEmpty) {
     return raw.map((entry) {
-      if (entry is! Map) return <String, dynamic>{'location': 'Store', 'quantity': 0};
+      if (entry is! Map) return <String, dynamic>{'location': 'Store', 'quantity': 0, 'quality': 'Used - Good'};
       return {
         'location': entry['location'] as String? ?? item['location'] as String? ?? 'Store',
         'quantity': (entry['quantity'] as num?)?.toInt() ?? 0,
+        'quality': entry['quality'] as String? ?? item['quality'] as String? ?? 'Used - Good',
         if (entry['zone'] != null) 'zone': '${entry['zone']}',
         if (entry['aisle'] != null) 'aisle': '${entry['aisle']}',
         if (entry['shelf'] != null) 'shelf': '${entry['shelf']}',
@@ -37,6 +40,7 @@ List<Map<String, dynamic>> parsePlacementsFromItem(Map<String, dynamic> item) {
     {
       'location': item['location'] as String? ?? 'Store',
       'quantity': (item['quantity'] as num?)?.toInt() ?? 0,
+      'quality': item['quality'] as String? ?? 'Used - Good',
     },
   ];
 }
@@ -44,6 +48,7 @@ List<Map<String, dynamic>> parsePlacementsFromItem(Map<String, dynamic> item) {
 String placementSearchBlob(Map<String, dynamic> placement) {
   return [
     placement['location'],
+    placement['quality'],
     placement['zone'],
     placement['aisle'],
     placement['shelf'],
@@ -58,6 +63,7 @@ Map<String, dynamic> emptyPlacementRow(String defaultLocation) {
   return {
     'location': defaultLocation,
     'quantity': 0,
+    'quality': 'Used - Good',
     'zone': '',
     'aisle': '',
     'shelf': '',
@@ -71,6 +77,7 @@ Map<String, dynamic> placementRowToApi(Map<String, dynamic> row) {
   final placement = <String, dynamic>{
     'location': row['location'] as String? ?? 'Store',
     'quantity': (row['quantity'] as num?)?.toInt() ?? int.tryParse('${row['quantity']}') ?? 0,
+    'quality': row['quality'] as String? ?? 'Used - Good',
   };
   for (final key in ['zone', 'aisle', 'shelf', 'box', 'storage_code', 'notes']) {
     final val = (row[key] as String?)?.trim() ?? '';

@@ -219,18 +219,24 @@ export default function StockToolsPage() {
 
   const [showToolModal, setShowToolModal] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
-  const [toolForm, setToolForm] = useState({
+  const [toolForm, setToolForm] = useState<{
+    name: string;
+    category: string;
+    quantity: string;
+    status: 'available' | 'in_use' | 'missing' | 'damaged';
+    location: string;
+    locations: StockPlacementFormRow[];
+    assigned_officer_id: string;
+    image_base64: string;
+    original_filename: string;
+    content_type: string;
+  }>({
     name: '',
     category: 'Power Tools',
     quantity: '1',
-    status: 'available' as 'available' | 'in_use' | 'missing' | 'damaged',
+    status: 'available',
     location: 'Store',
-    zone: '',
-    aisle: '',
-    shelf: '',
-    box: '',
-    storage_code: '',
-    location_notes: '',
+    locations: [emptyPlacementFormRow('Store')],
     assigned_officer_id: '',
     image_base64: '',
     original_filename: '',
@@ -570,12 +576,7 @@ export default function StockToolsPage() {
       quantity: '1',
       status: 'available',
       location: 'Store',
-      zone: '',
-      aisle: '',
-      shelf: '',
-      box: '',
-      storage_code: '',
-      location_notes: '',
+      locations: [emptyPlacementFormRow(locations[0] || 'Store')],
       assigned_officer_id: '',
       image_base64: '',
       original_filename: '',
@@ -587,18 +588,15 @@ export default function StockToolsPage() {
 
   const handleOpenEditTool = (tool: Tool) => {
     setEditingTool(tool);
+    const parsed = parsePlacementsFromItem(tool as any);
+    const mappedPlacements = parsed.map(placementFormFromApi);
     setToolForm({
       name: tool.name,
       category: tool.category,
       quantity: String(tool.quantity ?? 1),
       status: tool.status,
       location: tool.location,
-      zone: tool.zone ?? '',
-      aisle: tool.aisle ?? '',
-      shelf: tool.shelf ?? '',
-      box: tool.box ?? '',
-      storage_code: tool.storage_code ?? '',
-      location_notes: tool.location_notes ?? '',
+      locations: mappedPlacements,
       assigned_officer_id: tool.assigned_officer_id ? String(tool.assigned_officer_id) : '',
       image_base64: '',
       original_filename: '',
@@ -629,19 +627,28 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
-    const qty = parseInt(toolForm.quantity, 10);
+    const parsedLocations = toolForm.locations.map(placementFormToApi);
+    if (parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
+      setErrorMsg('Quantity must be a positive integer');
+      return;
+    }
+    const binError = validatePlacementsRequireBin(parsedLocations, requireBinLocations);
+    if (binError) {
+      setErrorMsg(binError);
+      return;
+    }
+
+    const qty = parsedLocations.reduce((sum, loc) => sum + loc.quantity, 0);
+    if (qty < 1) {
+      setErrorMsg('Total quantity must be at least 1');
+      return;
+    }
+
     const payload = {
       name: toolForm.name.trim(),
       category: toolForm.category,
-      quantity: qty,
       status: toolForm.status,
-      location: toolForm.location,
-      zone: toolForm.zone.trim() || null,
-      aisle: toolForm.aisle.trim() || null,
-      shelf: toolForm.shelf.trim() || null,
-      box: toolForm.box.trim() || null,
-      storage_code: toolForm.storage_code.trim() || null,
-      location_notes: toolForm.location_notes.trim() || null,
+      locations: parsedLocations,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
       ...(toolForm.image_base64
         ? imageUploadFields(toolForm.image_base64, toolForm.original_filename, toolForm.content_type)
@@ -650,10 +657,6 @@ export default function StockToolsPage() {
 
     if (!payload.name) {
       setErrorMsg('Name is required');
-      return;
-    }
-    if (isNaN(qty) || qty < 1) {
-      setErrorMsg('Quantity must be at least 1');
       return;
     }
 
@@ -976,7 +979,9 @@ export default function StockToolsPage() {
                             </div>
                             <div>
                               <p className="text-slate-400 font-semibold mb-0.5">Quality</p>
-                              <p className="font-bold text-slate-700 truncate">{item.quality}</p>
+                              <p className="font-bold text-slate-700 truncate">
+                                {placements.map((l) => l.quality).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || 'N/A'}
+                              </p>
                             </div>
                             <div>
                               <p className="text-slate-400 font-semibold mb-0.5">Stock Level</p>
@@ -1273,39 +1278,70 @@ export default function StockToolsPage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-xs border border-slate-100">
-                        <div>
-                          <p className="text-slate-400 font-semibold mb-0.5">Location</p>
-                          <p className="font-bold text-slate-700 truncate" title={tool.location}>
-                            {tool.location}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400 font-semibold mb-0.5">Quantity</p>
-                          <p className="font-bold text-slate-700 truncate">{tool.quantity ?? 1}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400 font-semibold mb-0.5">Status</p>
-                          <p className="font-bold text-slate-700 truncate">{statusLabel}</p>
-                        </div>
-                      </div>
-
                       {(() => {
-                        const placementLabel = formatPlacementLabel({
-                          location: tool.location,
-                          quantity: tool.quantity ?? 0,
-                          zone: tool.zone ?? undefined,
-                          aisle: tool.aisle ?? undefined,
-                          shelf: tool.shelf ?? undefined,
-                          box: tool.box ?? undefined,
-                          storage_code: tool.storage_code ?? undefined,
-                        } as StockPlacement);
-                        if (placementLabel === tool.location) return null;
+                        const placements = parsePlacementsFromItem(tool);
                         return (
-                          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-teal-50 px-2.5 py-1.5 text-xs text-teal-800 border border-teal-100">
-                            <MapPin className="size-3.5 shrink-0" />
-                            <span className="truncate" title={placementLabel}>{placementLabel}</span>
-                          </div>
+                          <>
+                            <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2.5 text-xs border border-slate-100">
+                              <div>
+                                <p className="text-slate-400 font-semibold mb-0.5">Sites</p>
+                                <p className="font-bold text-slate-700 truncate" title={placements.map((l) => l.location).join(', ')}>
+                                  {[...new Set(placements.map((l) => l.location))].join(', ')}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-slate-400 font-semibold mb-0.5">Quality</p>
+                                <p className="font-bold text-slate-700 truncate">
+                                  {placements.map((l) => l.quality).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || 'N/A'}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-slate-400 font-semibold mb-0.5">Status</p>
+                                <p className="font-bold text-slate-700 truncate">{statusLabel}</p>
+                              </div>
+                            </div>
+
+                            {placements.length > 0 && (
+                              <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <MapPin className="size-3.5 text-[#14B8A6]" />
+                                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                                    Where is it? ({placements.length})
+                                  </p>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  {placements.map((placement, pIdx) => {
+                                    const label = formatPlacementLabel(placement);
+                                    const copyKey = `tool-${tool.id}-${pIdx}`;
+                                    return (
+                                      <div
+                                        key={copyKey}
+                                        className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5 border border-slate-100"
+                                      >
+                                        <p className="text-xs font-semibold text-slate-700 truncate" title={label}>
+                                          {label}
+                                        </p>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <span className="text-xs font-bold text-[#14B8A6]">×{placement.quantity}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => void copyPlacementLabel(copyKey, label)}
+                                            className="rounded p-1 text-slate-400 hover:bg-white hover:text-[#14B8A6] transition"
+                                            title="Copy location"
+                                          >
+                                            <Copy className="size-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {copiedPlacementKey?.startsWith(`tool-${tool.id}-`) && (
+                                  <p className="mt-1.5 text-[10px] font-semibold text-emerald-600">Copied to clipboard</p>
+                                )}
+                              </div>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
@@ -1570,7 +1606,7 @@ export default function StockToolsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">MPN / Part Number</label>
                   <input
@@ -1590,18 +1626,6 @@ export default function StockToolsPage() {
                   >
                     {stockCategoryOptions.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quality</label>
-                  <select
-                    value={stockForm.quality}
-                    onChange={(e) => setStockForm((prev) => ({ ...prev, quality: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  >
-                    {QUALITIES.map(q => (
-                      <option key={q} value={q}>{q}</option>
                     ))}
                   </select>
                 </div>
@@ -1718,6 +1742,22 @@ export default function StockToolsPage() {
                             placeholder="A3-B-14"
                             className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
                           />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Quality</label>
+                          <select
+                            value={loc.quality}
+                            onChange={(e) => {
+                              const newLocs = [...stockForm.locations];
+                              newLocs[index] = { ...newLocs[index], quality: e.target.value };
+                              setStockForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {QUALITIES.map(q => (
+                              <option key={q} value={q}>{q}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
@@ -1883,31 +1923,6 @@ export default function StockToolsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={toolForm.quantity}
-                    onChange={(e) => setToolForm((prev) => ({ ...prev, quantity: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location</label>
-                  <select
-                    value={toolForm.location}
-                    onChange={(e) => setToolForm((prev) => ({ ...prev, location: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  >
-                    {locations.map(loc => (
-                      <option key={loc} value={loc}>{loc}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>
                   <select
                     value={toolForm.status}
@@ -1922,59 +1937,179 @@ export default function StockToolsPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-3">
-                <p className="text-[11px] text-slate-500">
-                  Record zone, aisle, shelf, and box/cell so staff can quickly find this tool.
+              {/* Storage placements */}
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setToolForm(prev => ({
+                        ...prev,
+                        locations: [...prev.locations, emptyPlacementFormRow(locations[0] || 'Store')]
+                      }));
+                    }}
+                    className="text-xs font-bold text-[#14B8A6] hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="size-3.5" /> Add placement
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-3">
+                  Record site, aisle, shelf, and box/cell so staff can find tools quickly.
+                  {requireBinLocations.length > 0 && (
+                    <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
+                  )}
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Zone</label>
-                    <input
-                      value={toolForm.zone}
-                      onChange={(e) => setToolForm((prev) => ({ ...prev, zone: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Aisle</label>
-                    <input
-                      value={toolForm.aisle}
-                      onChange={(e) => setToolForm((prev) => ({ ...prev, aisle: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Shelf</label>
-                    <input
-                      value={toolForm.shelf}
-                      onChange={(e) => setToolForm((prev) => ({ ...prev, shelf: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Box / Cell</label>
-                    <input
-                      value={toolForm.box}
-                      onChange={(e) => setToolForm((prev) => ({ ...prev, box: e.target.value }))}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Storage code</label>
-                  <input
-                    value={toolForm.storage_code}
-                    onChange={(e) => setToolForm((prev) => ({ ...prev, storage_code: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location notes</label>
-                  <input
-                    value={toolForm.location_notes}
-                    onChange={(e) => setToolForm((prev) => ({ ...prev, location_notes: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
-                  />
+                <div className="flex flex-col gap-3">
+                  {toolForm.locations.map((loc, index) => (
+                    <div key={index} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 animate-fadeIn">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Site</label>
+                          <select
+                            value={loc.location}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], location: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {locations.map(l => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Zone</label>
+                          <input
+                            value={loc.zone}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], zone: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="WH-A"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Aisle</label>
+                          <input
+                            value={loc.aisle}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], aisle: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="3"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Shelf</label>
+                          <input
+                            value={loc.shelf}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], shelf: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="B"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Box / Cell</label>
+                          <input
+                            value={loc.box}
+                            list={storageBins.length > 0 ? 'storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], box: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Storage code</label>
+                          <input
+                            value={loc.storage_code}
+                            list={storageBins.length > 0 ? 'storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], storage_code: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="A3-B-14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Quality</label>
+                          <select
+                            value={loc.quality}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], quality: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {QUALITIES.map(q => (
+                              <option key={q} value={q}>{q}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={loc.quantity}
+                            onChange={(e) => {
+                              const newLocs = [...toolForm.locations];
+                              newLocs[index] = { ...newLocs[index], quantity: e.target.value };
+                              setToolForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          {toolForm.locations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setToolForm(prev => ({
+                                  ...prev,
+                                  locations: prev.locations.filter((_, i) => i !== index)
+                                }));
+                              }}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 transition"
+                              title="Remove placement"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        value={loc.notes}
+                        onChange={(e) => {
+                          const newLocs = [...toolForm.locations];
+                          newLocs[index] = { ...newLocs[index], notes: e.target.value };
+                          setToolForm(prev => ({ ...prev, locations: newLocs }));
+                        }}
+                        placeholder="Notes (optional) — e.g. top shelf, left side"
+                        className="mt-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
 
