@@ -39,4 +39,5 @@ abstract class AppRoutes {
   static const String holidays = '/holidays';
   static const String stockTools = '/stock-tools';
   static const String todos = '/todos';
+  static const String calendarSync = '/calendar-sync';
 }

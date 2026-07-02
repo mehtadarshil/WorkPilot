@@ -94,4 +94,13 @@ abstract class AppConstants {
   static const String storageRefreshToken = 'refresh_token';
   static const String storageUserJson = 'user_json';
   static const String storageBiometricEnabled = 'biometric_enabled';
+
+  /// Calendar sync (per-device, per-user preferences)
+  static const String storageCalendarSyncEnabled = 'calendar_sync_enabled';
+  static const String storageCalendarSyncCalendarId = 'calendar_sync_calendar_id';
+  static const String storageCalendarSyncDiary = 'calendar_sync_diary';
+  static const String storageCalendarSyncHolidays = 'calendar_sync_holidays';
+  static const String storageCalendarSyncReminderMinutes = 'calendar_sync_reminder_minutes';
+  static const String storageCalendarSyncLastSyncedAt = 'calendar_sync_last_synced_at';
+  static const String storageCalendarSyncIdMap = 'calendar_sync_id_map';
 }

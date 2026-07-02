@@ -4,6 +4,7 @@ import '../../core/network/dio_client.dart';
 import '../../core/offline/connectivity_service.dart';
 import '../../core/offline/offline_queue_service.dart';
 import '../../core/services/biometric_service.dart';
+import '../../core/services/calendar_sync_service.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/user_profile_cache.dart';
 import '../../data/providers/api_provider.dart';
@@ -36,6 +37,10 @@ class InitialBinding extends Bindings {
     );
     Get.put<UserProfileCache>(UserProfileCache(), permanent: true);
     Get.put<BiometricService>(BiometricService(), permanent: true);
+    Get.put<CalendarSyncService>(
+      CalendarSyncService(repository: Get.find<MobileRepository>()),
+      permanent: true,
+    );
     Get.put<CustomersRepository>(
       CustomersRepository(Get.find<ApiProvider>()),
       permanent: true,

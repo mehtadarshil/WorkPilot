@@ -13,6 +13,7 @@ import '../../../core/values/app_colors.dart';
 import '../../../core/values/app_constants.dart';
 import '../../../data/models/diary_event_row.dart';
 import '../../profile/widgets/profile_avatar_button.dart';
+import '../../calendar_sync/calendar_sync_profile_tile.dart';
 import '../../legal/legal_document_view.dart';
 import '../controllers/home_controller.dart';
 import '../widgets/work_hub_tab.dart';
@@ -3161,6 +3162,8 @@ class _ProfileTab extends GetView<HomeController> {
                     trailing: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
                     onTap: () => Get.toNamed(AppRoutes.todos),
                   ),
+                  Divider(height: 1, color: AppColors.slate100),
+                  const CalendarSyncProfileTile(),
                 ],
               ),
             ),

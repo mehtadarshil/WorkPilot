@@ -10,6 +10,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/offline/diary_timesheet_sync.dart';
 import '../../../core/offline/offline_api_support.dart';
 import '../../../core/services/biometric_service.dart';
+import '../../../core/services/calendar_sync_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/services/user_profile_cache.dart';
 import '../../../data/models/diary_event_row.dart';
@@ -179,6 +180,7 @@ class HomeController extends GetxController with WidgetsBindingObserver {
       } else {
         diaryEvents.clear();
       }
+      if (!r.fromCache) _maybeSyncCalendar();
     } on ApiException catch (e) {
       if (apiExceptionLooksLikeNoConnection(e) && home.value != null) {
         homeError.value = 'Offline — showing last synced home data.';
@@ -190,6 +192,19 @@ class HomeController extends GetxController with WidgetsBindingObserver {
     } finally {
       homeLoading.value = false;
     }
+  }
+
+  bool _calendarSyncedThisSession = false;
+
+  /// Push diary/holiday events to the device calendar once per session, if the
+  /// user has enabled calendar sync. Failures are silent (best-effort).
+  void _maybeSyncCalendar() {
+    if (_calendarSyncedThisSession) return;
+    if (!Get.isRegistered<CalendarSyncService>()) return;
+    final svc = Get.find<CalendarSyncService>();
+    if (!svc.enabled) return;
+    _calendarSyncedThisSession = true;
+    unawaited(svc.syncIfEnabled());
   }
 
   void _applyGreetingFromProfile(MobileHomeResponse h) {

@@ -66,6 +66,8 @@ import '../../modules/stock_tools/stock_tools_binding.dart';
 import '../../modules/stock_tools/stock_tools_view.dart';
 import '../../modules/todos/todos_binding.dart';
 import '../../modules/todos/todos_view.dart';
+import '../../modules/calendar_sync/calendar_sync_binding.dart';
+import '../../modules/calendar_sync/calendar_sync_view.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -245,6 +247,11 @@ class AppPages {
       name: AppRoutes.todos,
       page: () => const TodosView(),
       binding: TodosBinding(),
+    ),
+    GetPage<void>(
+      name: AppRoutes.calendarSync,
+      page: () => const CalendarSyncView(),
+      binding: CalendarSyncBinding(),
     ),
   ];
 }
