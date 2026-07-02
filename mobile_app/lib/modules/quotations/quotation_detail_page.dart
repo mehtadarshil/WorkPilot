@@ -399,8 +399,8 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(qNumber, style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16)),
-            Text(cust, style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+              Text(qNumber, style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(cust, style: GoogleFonts.inter(fontSize: 12, color: Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
         bottom: TabBar(
@@ -526,7 +526,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                   child: Text(q['description'] as String, style: GoogleFonts.inter(color: AppColors.slate900)),
                 ),
               const SizedBox(height: 16),
-              Text('Line items', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
+              Text('Line items', style: GoogleFonts.inter(color: Colors.black54, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               if (items is List)
                 ...items.map((e) {
@@ -560,7 +560,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: Text(desc, style: GoogleFonts.inter(color: AppColors.slate900)),
-                        subtitle: Text('$qty × ${QuotationHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+                        subtitle: Text('$qty × ${QuotationHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.black45, fontSize: 12)),
                         trailing: Text(QuotationHelpers.formatMoney(am, cur), style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
                       ),
                       if (parsedImages.isNotEmpty) ...[
@@ -591,7 +591,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                     ],
                   );
                 }),
-              Divider(color: Colors.white24),
+              Divider(color: Colors.black12),
               _kv('Subtotal', QuotationHelpers.formatMoney(sub, cur)),
               _kv(taxLabel, QuotationHelpers.formatMoney(tax, cur)),
               _kv('Total', QuotationHelpers.formatMoney(tot, cur), bold: true),
@@ -652,8 +652,8 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                                         return Container(
                                           width: 80,
                                           height: 60,
-                                          color: Colors.white12,
-                                          child: Icon(Icons.image_outlined, color: Colors.white38),
+                                          color: Colors.black12,
+                                          child: Icon(Icons.image_outlined, color: Colors.black38),
                                         );
                                       }
                                       return Image.memory(
@@ -678,7 +678,7 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
                 controller: _internalDraft,
                 maxLines: 2,
                 style: GoogleFonts.inter(color: AppColors.slate900),
-                decoration: InputDecoration(hintText: 'New internal note…', hintStyle: TextStyle(color: Colors.white38)),
+                decoration: InputDecoration(hintText: 'New internal note…', hintStyle: TextStyle(color: Colors.black38)),
               ),
               if (_noteImagePaths.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -772,8 +772,8 @@ class _QuotationDetailPageState extends State<QuotationDetailPage> with SingleTi
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 120, child: Text(k, style: GoogleFonts.inter(color: Colors.white54, fontSize: 13))),
-          Expanded(child: Text(v, style: GoogleFonts.inter(color: Colors.white, fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
+          SizedBox(width: 120, child: Text(k, style: GoogleFonts.inter(color: Colors.black45, fontSize: 13))),
+          Expanded(child: Text(v, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
         ],
       ),
     );

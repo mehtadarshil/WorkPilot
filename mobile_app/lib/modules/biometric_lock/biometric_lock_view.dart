@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:glass_kit/glass_kit.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/values/app_colors.dart';
@@ -48,19 +47,11 @@ class BiometricLockView extends GetView<BiometricLockController> {
                       height: 96,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.whiteOverlay(0.22)),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.primary.withValues(alpha: 0.35),
-                            AppColors.whiteOverlay(0.08),
-                            AppColors.blackOverlay(0.2),
-                          ],
-                        ),
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.25),
+                            color: AppColors.primary.withValues(alpha: 0.18),
                             blurRadius: 24,
                             offset: const Offset(0, 8),
                           ),
@@ -68,7 +59,7 @@ class BiometricLockView extends GetView<BiometricLockController> {
                       ),
                       child: Icon(
                         Icons.lock_rounded,
-                        color: Colors.white.withValues(alpha: 0.95),
+                        color: AppColors.primary,
                         size: 44,
                       ),
                     ),
@@ -76,7 +67,7 @@ class BiometricLockView extends GetView<BiometricLockController> {
                     Text(
                       AppConstants.appName,
                       style: GoogleFonts.inter(
-                        color: Colors.white,
+                        color: AppColors.slate900,
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.8,
@@ -86,7 +77,7 @@ class BiometricLockView extends GetView<BiometricLockController> {
                     Text(
                       'Unlock with biometrics or device PIN',
                       style: GoogleFonts.inter(
-                        color: AppColors.whiteOverlay(0.6),
+                        color: AppColors.slate500,
                         fontSize: 15,
                       ),
                     ),
@@ -102,7 +93,7 @@ class BiometricLockView extends GetView<BiometricLockController> {
                           err,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
-                            color: const Color(0xFFFCA5A5),
+                            color: const Color(0xFFDC2626),
                             fontSize: 14,
                           ),
                         ),
@@ -113,21 +104,16 @@ class BiometricLockView extends GetView<BiometricLockController> {
                       height: 52,
                       child: Obx(() {
                         final loading = controller.isAuthenticating.value;
-                        return GlassContainer.frostedGlass(
-                          blur: 24,
-                          frostedOpacity: 0.12,
-                          borderRadius: BorderRadius.circular(16),
-                          borderWidth: 1,
-                          borderGradient: LinearGradient(
-                            colors: [
-                              AppColors.whiteOverlay(0.35),
-                              AppColors.whiteOverlay(0.06),
-                            ],
-                          ),
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.whiteOverlay(0.14),
-                              AppColors.blackOverlay(0.28),
+                        return DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
                             ],
                           ),
                           child: Material(
@@ -137,27 +123,27 @@ class BiometricLockView extends GetView<BiometricLockController> {
                               onTap: loading ? null : controller.retry,
                               child: Center(
                                 child: loading
-                                    ? SizedBox(
+                                    ? const SizedBox(
                                         width: 22,
                                         height: 22,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.5,
-                                          color: AppColors.primary,
+                                          color: Colors.white,
                                         ),
                                       )
                                     : Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Icon(
+                                          const Icon(
                                             Icons.lock_open_rounded,
-                                            color: Colors.white.withValues(alpha: 0.95),
+                                            color: Colors.white,
                                             size: 22,
                                           ),
                                           const SizedBox(width: 10),
                                           Text(
                                             'Unlock',
                                             style: GoogleFonts.inter(
-                                              color: Colors.white.withValues(alpha: 0.95),
+                                              color: Colors.white,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 15,
                                             ),
@@ -176,7 +162,7 @@ class BiometricLockView extends GetView<BiometricLockController> {
                       child: Text(
                         'Log out',
                         style: GoogleFonts.inter(
-                          color: AppColors.whiteOverlay(0.5),
+                          color: AppColors.slate500,
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),

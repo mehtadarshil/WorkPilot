@@ -236,7 +236,7 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.07),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.slate200),
       ),
@@ -330,9 +330,9 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
       padding: const EdgeInsets.only(bottom: 14),
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.whiteOverlay(0.06),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+          border: Border.all(color: AppColors.slate200),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,15 +357,15 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                         if (prog == null) return child;
                         return Container(
                           height: 200,
-                          color: AppColors.whiteOverlay(0.05),
+                          color: AppColors.slate100,
                           child: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
                         );
                       },
                       errorBuilder: (_, __, ___) => Container(
                         height: 200,
-                        color: AppColors.whiteOverlay(0.05),
+                        color: AppColors.slate100,
                         child: Center(
-                          child: Icon(Icons.broken_image_outlined, color: AppColors.whiteOverlay(0.3), size: 48),
+                          child: Icon(Icons.broken_image_outlined, color: AppColors.slate400, size: 48),
                         ),
                       ),
                     ),
@@ -443,13 +443,13 @@ class _CustomerSiteImagesTabState extends State<CustomerSiteImagesTab> {
                       style: GoogleFonts.inter(color: AppColors.slate700, fontSize: 12),
                       decoration: InputDecoration(
                         hintText: 'Add a note for this image...',
-                        hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.3)),
+                        hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
                         filled: true,
-                        fillColor: AppColors.whiteOverlay(0.05),
+                        fillColor: AppColors.slate50,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: AppColors.whiteOverlay(0.1)),
+                          borderSide: BorderSide(color: AppColors.slate200),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),

@@ -35,7 +35,7 @@ Future<void> showCircuitPasteSheet({
               children: [
                 Text(
                   'Paste from Excel',
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -75,7 +75,7 @@ Future<void> showCircuitPasteSheet({
                 TextField(
                   controller: textController,
                   maxLines: 6,
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
                   decoration: InputDecoration(
                     labelText: 'Clipboard data',
                     border: OutlineInputBorder(),

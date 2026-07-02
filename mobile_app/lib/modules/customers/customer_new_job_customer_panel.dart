@@ -67,7 +67,7 @@ class CustomerNewJobCustomerPanel extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Customer: ${ctStr(customer!, 'full_name')}',
-              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
             ),
           ],
           if (addressStr.isNotEmpty) ...[

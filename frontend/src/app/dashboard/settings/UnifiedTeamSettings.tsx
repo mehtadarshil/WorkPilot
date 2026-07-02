@@ -38,6 +38,9 @@ export interface TeamMemberRow {
   created_at: string;
   access_label: string;
   linked_user_id?: number | null;
+  bank_name?: string | null;
+  sort_code?: string | null;
+  account_number?: string | null;
 }
 
 interface UnifiedTeamSettingsProps {
@@ -61,6 +64,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
   const [formEmail, setFormEmail] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formFullName, setFormFullName] = useState('');
+  const [formBankName, setFormBankName] = useState('');
+  const [formSortCode, setFormSortCode] = useState('');
+  const [formAccountNumber, setFormAccountNumber] = useState('');
   const [linkFieldProfile, setLinkFieldProfile] = useState(false);
   const [preset, setPreset] = useState<'manager' | 'desk_officer' | 'field' | 'custom'>('desk_officer');
   const [perms, setPerms] = useState<TenantPermissionsMap>(() => presetDeskOfficerPermissions());
@@ -108,6 +114,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
     setFormEmail('');
     setFormPassword('');
     setFormFullName('');
+    setFormBankName('');
+    setFormSortCode('');
+    setFormAccountNumber('');
     setAccountKind('dashboard');
     setLinkFieldProfile(false);
     applyPreset('desk_officer');
@@ -120,6 +129,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
     setEditPassword('');
     setEditRow(m);
     setFormFullName(m.full_name || '');
+    setFormBankName(m.bank_name || '');
+    setFormSortCode(m.sort_code || '');
+    setFormAccountNumber(m.account_number || '');
     setPreset('custom');
     setPerms(m.permissions ? normalizePermissions(m.permissions) : presetDeskOfficerPermissions());
   };
@@ -147,6 +159,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
             preset: preset === 'custom' ? undefined : preset === 'field' ? 'desk_officer' : preset,
             permissions: preset === 'custom' ? perms : undefined,
             link_field_profile: linkFieldProfile,
+            bank_name: formBankName.trim() || null,
+            sort_code: formSortCode.trim() || null,
+            account_number: formAccountNumber.trim() || null,
           },
           token,
         );
@@ -160,6 +175,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
             initial_password: formPassword,
             state: 'active',
             permissions: stripToFieldMobilePermissions(perms),
+            bank_name: formBankName.trim() || null,
+            sort_code: formSortCode.trim() || null,
+            account_number: formAccountNumber.trim() || null,
           },
           token,
         );
@@ -182,6 +200,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
           full_name: formFullName.trim() || null,
           preset: preset === 'custom' ? undefined : preset,
           permissions: preset === 'custom' ? perms : undefined,
+          bank_name: formBankName.trim() || null,
+          sort_code: formSortCode.trim() || null,
+          account_number: formAccountNumber.trim() || null,
         };
         const np = editPassword.trim();
         if (np) body.password = np;
@@ -190,6 +211,9 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
         const body: Record<string, unknown> = {
           permissions: stripToFieldMobilePermissions(perms),
           full_name: formFullName.trim(),
+          bank_name: formBankName.trim() || null,
+          sort_code: formSortCode.trim() || null,
+          account_number: formAccountNumber.trim() || null,
         };
         const np = editPassword.trim();
         if (np) body.initial_password = np;
@@ -218,6 +242,49 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
       setError('Failed to remove.');
     }
   };
+
+  const bankFields = (
+    <div className="rounded-lg border border-slate-200 p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-600">Bank details (for payments)</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Shown when recording a payment and in payment history on the Staff Work tab. Optional.
+      </p>
+      <div className="mt-2 space-y-2">
+        <div>
+          <label className="text-xs font-semibold text-slate-600">Bank name</label>
+          <input
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={formBankName}
+            onChange={(e) => setFormBankName(e.target.value)}
+            placeholder="e.g. Barclays"
+            autoComplete="off"
+          />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Sort code</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={formSortCode}
+              onChange={(e) => setFormSortCode(e.target.value)}
+              placeholder="00-00-00"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Account number</label>
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={formAccountNumber}
+              onChange={(e) => setFormAccountNumber(e.target.value)}
+              placeholder="12345678"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const permFormFor = (roleCtx: 'dashboard' | 'field') => (
     <div className="space-y-3">
@@ -540,6 +607,7 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
                     </span>
                   </label>
                 )}
+                {bankFields}
                 {permFormFor(accountKind)}
               </div>
               <div className="mt-6 flex justify-end gap-2">
@@ -597,6 +665,7 @@ export default function UnifiedTeamSettings({ onOfficerProfile, onTeamChanged }:
                     autoComplete="new-password"
                   />
                 </div>
+                {bankFields}
                 {permFormFor(editRow.kind === 'field' ? 'field' : 'dashboard')}
               </div>
               <div className="mt-6 flex justify-end gap-2">

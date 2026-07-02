@@ -126,7 +126,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
               Expanded(
                 child: Text(
                   'Job Reports',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                 ),
               ),
               FilledButton.tonal(
@@ -142,7 +142,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
                 children: [
                   Text(
                     'No reports yet',
-                    style: GoogleFonts.inter(color: AppColors.slate300, fontWeight: FontWeight.w700, fontSize: 15),
+                    style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -170,7 +170,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
       padding: const EdgeInsets.all(14),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.08),
+        color: Colors.white,
         border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -199,7 +199,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(title, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 15)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -228,7 +228,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
           ),
           if (notes.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(notes, style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13)),
+            Text(notes, style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13)),
           ],
           if (items.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -251,7 +251,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
                               children: [
                                 Text(
                                   (items[i]['item_name'] as String?) ?? '',
-                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 13),
                                 ),
                                 if ((items[i]['description'] as String?)?.trim().isNotEmpty == true)
                                   Text(
@@ -266,7 +266,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
                             child: Text(
                               '${items[i]['quantity']}',
                               textAlign: TextAlign.right,
-                              style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13),
                             ),
                           ),
                           Expanded(
@@ -274,7 +274,7 @@ class _JobTabDynamicReportsState extends State<JobTabDynamicReports> {
                             child: Text(
                               _money(items[i]['unit_cost']),
                               textAlign: TextAlign.right,
-                              style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13),
                             ),
                           ),
                           Expanded(
@@ -483,7 +483,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                   Expanded(
                     child: Text(
                       widget.report != null ? 'Edit Report' : 'New Report',
-                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                     ),
                   ),
                   IconButton(
@@ -517,7 +517,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                             const SizedBox(width: 10),
                             Text(
                               _formatDate(_date),
-                              style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -529,7 +529,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Line items', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                        Text('Line items', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 15)),
                         Text('Total: ${_money(_total)}', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w800)),
                       ],
                     ),
@@ -545,7 +545,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
                     OutlinedButton.icon(
                       onPressed: _addItem,
                       icon: Icon(Icons.add_rounded, color: AppColors.primary, size: 18),
-                      label: Text('Add item', style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w700)),
+                      label: Text('Add item', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.whiteOverlay(0.25))),
                     ),
                     const SizedBox(height: 24),
@@ -573,7 +573,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
     return TextField(
       controller: c,
       maxLines: maxLines,
-      style: GoogleFonts.inter(color: AppColors.slate50),
+      style: GoogleFonts.inter(color: AppColors.slate900),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400),
@@ -597,7 +597,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
           TextField(
             controller: TextEditingController(text: it.name)..selection = TextSelection.collapsed(offset: it.name.length),
             onChanged: (v) => it.name = v,
-            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 14),
             decoration: InputDecoration(
               hintText: 'Item name',
               hintStyle: GoogleFonts.inter(color: AppColors.slate500),
@@ -609,7 +609,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
           TextField(
             controller: TextEditingController(text: it.desc)..selection = TextSelection.collapsed(offset: it.desc.length),
             onChanged: (v) => it.desc = v,
-            style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 12),
+            style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12),
             decoration: InputDecoration(
               hintText: 'Description (optional)',
               hintStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12),
@@ -670,7 +670,7 @@ class _ReportEditorSheetState extends State<_ReportEditorSheet> {
         final n = double.tryParse(v) ?? 0;
         onChanged(n);
       },
-      style: GoogleFonts.inter(color: AppColors.slate50),
+      style: GoogleFonts.inter(color: AppColors.slate900),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),

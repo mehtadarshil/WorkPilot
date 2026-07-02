@@ -71,6 +71,9 @@ function rowToProfilePayload(
     next_of_kin_relationship: row.next_of_kin_relationship ?? null,
     has_profile_photo: hasPhoto,
     signature_data_url: row.signature_data_url ?? null,
+    bank_name: row.bank_name ?? null,
+    sort_code: row.sort_code ?? null,
+    account_number: row.account_number ?? null,
   };
   if (subject.kind === 'officer') {
     base.department = row.department ?? null;
@@ -85,7 +88,8 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
     const r = await pool.query(
       `SELECT id, full_name, email, phone, mobile_phone, landline_phone, department, role_position, state,
               profile_address, profile_notes, next_of_kin_name, next_of_kin_phone, next_of_kin_relationship,
-              profile_photo_filename, profile_photo_url, signature_data_url
+              profile_photo_filename, profile_photo_url, signature_data_url,
+              bank_name, sort_code, account_number
        FROM officers WHERE id = $1`,
       [subject.id],
     );
@@ -93,7 +97,8 @@ async function loadProfileRow(pool: Pool, subject: ProfileSubject): Promise<Reco
   }
   const r = await pool.query(
     `SELECT id, email, full_name, phone, mobile_phone, landline_phone, address AS profile_address, notes AS profile_notes,
-            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename, profile_photo_url, signature_data_url
+            next_of_kin_name, next_of_kin_phone, next_of_kin_relationship, profile_photo_filename, profile_photo_url, signature_data_url,
+            bank_name, sort_code, account_number
      FROM users WHERE id = $1`,
     [subject.id],
   );
@@ -188,6 +193,13 @@ export function mountMobileProfileRoutes(
       if (kinPhone !== undefined) add('next_of_kin_phone', kinPhone);
       const kinRel = optionalTrim(body.next_of_kin_relationship, 100);
       if (kinRel !== undefined) add('next_of_kin_relationship', kinRel);
+
+      const bankName = optionalTrim(body.bank_name, 200);
+      if (bankName !== undefined) add('bank_name', bankName);
+      const sortCode = optionalTrim(body.sort_code, 20);
+      if (sortCode !== undefined) add('sort_code', sortCode);
+      const accountNumber = optionalTrim(body.account_number, 30);
+      if (accountNumber !== undefined) add('account_number', accountNumber);
 
       const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : undefined;
       if (signatureDataUrl !== undefined) {
@@ -312,6 +324,9 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'profile_photo_filename VARCHAR(255)',
     'profile_photo_url TEXT',
     'signature_data_url TEXT',
+    'bank_name VARCHAR(200)',
+    'sort_code VARCHAR(20)',
+    'account_number VARCHAR(30)',
   ];
   for (const def of officerCols) {
     await pool.query(`ALTER TABLE officers ADD COLUMN IF NOT EXISTS ${def}`);
@@ -325,6 +340,9 @@ export async function ensureMobileProfileColumns(pool: Pool): Promise<void> {
     'profile_photo_filename VARCHAR(255)',
     'profile_photo_url TEXT',
     'signature_data_url TEXT',
+    'bank_name VARCHAR(200)',
+    'sort_code VARCHAR(20)',
+    'account_number VARCHAR(30)',
   ];
   for (const def of userCols) {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${def}`);

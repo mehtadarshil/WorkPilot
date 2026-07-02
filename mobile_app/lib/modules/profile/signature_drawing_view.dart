@@ -119,7 +119,7 @@ class _SignatureDrawingViewState extends State<SignatureDrawingView> {
                     helpText,
                     style: GoogleFonts.inter(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.8),
+                      color: AppColors.slate600,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -161,7 +161,7 @@ class _SignatureDrawingViewState extends State<SignatureDrawingView> {
                           onPressed: _saving ? null : () => _controller.clear(),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.slate900,
-                            side: BorderSide(color: Colors.white24),
+                            side: BorderSide(color: Colors.black12),
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

@@ -269,7 +269,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.whiteOverlay(0.1),
+                                    color: AppColors.slate100,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text('JOB', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.primary, letterSpacing: 0.8)),
@@ -278,7 +278,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                                 Expanded(
                                   child: Text(
                                     ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
-                                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                                    style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -314,16 +314,16 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: AppColors.whiteOverlay(0.1),
+                                  color: AppColors.slate100,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: Text('INV', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFFFBBF24), letterSpacing: 0.8)),
+                                child: Text('INV', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFFB45309), letterSpacing: 0.8)),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   ctStr(inv, 'invoice_number'),
-                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -377,7 +377,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                           children: [
                             Text(
                               ctStr(c, 'full_name').isEmpty ? 'Customer' : ctStr(c, 'full_name'),
-                              style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, height: 1.15),
+                              style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.slate900, height: 1.15),
                             ),
                             const SizedBox(height: 8),
                             Text(
@@ -396,7 +396,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Divider(color: AppColors.whiteOverlay(0.08)),
+                  Divider(color: AppColors.slate200),
                   const SizedBox(height: 8),
                   infoRow('Account', 'ACC-${widget.controller.customerId.toString().padLeft(4, '0')}'),
                   infoRow('Phone', ctStr(c, 'contact_mobile').isNotEmpty ? ctStr(c, 'contact_mobile') : ctStr(c, 'phone'), icon: Icons.phone_outlined),
@@ -445,7 +445,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                               children: [
                                 Text(
                                   ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
-                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600, fontSize: 15),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
@@ -498,7 +498,7 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: Text(ctStr(n, 'title'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+                              child: Text(ctStr(n, 'title'), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
                             ),
                             IconButton(
                               icon: Icon(Icons.edit_outlined, size: 20),
@@ -527,13 +527,13 @@ class _CustomerAllWorksTabState extends State<CustomerAllWorksTab> {
                 children: [
                   TextField(
                     controller: _historySearch,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: 'Search history…',
                       hintStyle: GoogleFonts.inter(color: AppColors.slate400),
                       prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                       filled: true,
-                      fillColor: AppColors.whiteOverlay(0.06),
+                      fillColor: Colors.white,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),

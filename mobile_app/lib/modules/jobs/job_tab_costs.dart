@@ -118,7 +118,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
       return const Center(child: CircularProgressIndicator(color: AppColors.primary));
     }
     if (_error != null) {
-      return Center(child: Text(_error!, style: GoogleFonts.inter(color: AppColors.slate300)));
+      return Center(child: Text(_error!, style: GoogleFonts.inter(color: AppColors.slate600)));
     }
 
     final summary = (_data?['summary'] is Map) ? Map<String, dynamic>.from(_data!['summary'] as Map) : <String, dynamic>{};
@@ -137,7 +137,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Job costs', style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 18, fontWeight: FontWeight.w800)),
+                Text('Job costs', style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 18, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 10,
@@ -159,7 +159,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Add site cost', style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w800)),
+                Text('Add site cost', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 _field(_desc, 'Description'),
                 const SizedBox(height: 8),
@@ -172,7 +172,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
                   icon: Icon(Icons.add_a_photo_rounded, color: AppColors.primary),
                   label: Text(
                     _proof == null ? 'Take proof photo (required)' : 'Proof: ${_proof!.name}',
-                    style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w700),
+                    style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700),
                   ),
                   style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.whiteOverlay(0.25))),
                 ),
@@ -198,7 +198,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.08),
+        color: Colors.white,
         border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -209,8 +209,8 @@ class _JobTabCostsState extends State<JobTabCosts> {
   Widget _pill(String label, String value) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(color: AppColors.blackOverlay(0.18), borderRadius: BorderRadius.circular(999)),
-      child: Text('$label: $value', style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w800, fontSize: 12)),
+      decoration: BoxDecoration(color: AppColors.slate100, borderRadius: BorderRadius.circular(999)),
+      child: Text('$label: $value', style: GoogleFonts.inter(color: AppColors.slate700, fontWeight: FontWeight.w800, fontSize: 12)),
     );
   }
 
@@ -219,7 +219,7 @@ class _JobTabCostsState extends State<JobTabCosts> {
       controller: c,
       keyboardType: keyboardType,
       maxLines: maxLines,
-      style: GoogleFonts.inter(color: AppColors.slate50),
+      style: GoogleFonts.inter(color: AppColors.slate900),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: GoogleFonts.inter(color: AppColors.slate400),
@@ -236,12 +236,12 @@ class _JobTabCostsState extends State<JobTabCosts> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${line['label'] ?? 'Cost'}', style: GoogleFonts.inter(color: AppColors.slate50, fontWeight: FontWeight.w800)),
+            Text('${line['label'] ?? 'Cost'}', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
             Text('${line['source'] ?? ''} · ${_money(line['amount'])}', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w800)),
             if ((line['description'] as String?)?.trim().isNotEmpty == true) ...[
               const SizedBox(height: 6),
-              Text(line['description'] as String, style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 12)),
+              Text(line['description'] as String, style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
             ],
           ],
         ),

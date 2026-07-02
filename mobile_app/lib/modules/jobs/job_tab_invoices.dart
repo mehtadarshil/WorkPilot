@@ -161,7 +161,7 @@ class JobTabInvoices extends StatelessWidget {
             outstanding: outstanding,
           ),
           const SizedBox(height: 16),
-          Text('Invoices', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+          Text('Invoices', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 8),
           if (finalized.isEmpty)
             _panel(child: Text('No finalized invoices.', style: GoogleFonts.inter(color: AppColors.slate400)))
@@ -183,8 +183,11 @@ class JobTabInvoices extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AppColors.whiteOverlay(0.08),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppColors.slate200),
+        ),
         child: Padding(padding: const EdgeInsets.all(16), child: child),
       ),
     );
@@ -222,7 +225,7 @@ class JobTabInvoices extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           _money(value),
-          style: GoogleFonts.inter(color: color ?? Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+          style: GoogleFonts.inter(color: color ?? AppColors.slate900, fontWeight: FontWeight.w900, fontSize: 14),
         ),
       ],
     );
@@ -243,8 +246,11 @@ class JobTabInvoices extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AppColors.whiteOverlay(0.08),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppColors.slate200),
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () => _navigateToInvoice(id, edit: draft),
@@ -259,7 +265,7 @@ class JobTabInvoices extends StatelessWidget {
                       child: Text(
                         invoiceNum.isNotEmpty ? invoiceNum : 'Invoice',
                         style: GoogleFonts.inter(
-                          color: draft ? AppColors.primary : Colors.white,
+                          color: draft ? AppColors.primary : AppColors.slate900,
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
                         ),
@@ -300,7 +306,7 @@ class JobTabInvoices extends StatelessWidget {
                 ),
                 if (draft && id != null) ...[
                   const SizedBox(height: 10),
-                  Divider(color: Colors.white10, height: 1),
+                  Divider(color: Colors.black12, height: 1),
                   const SizedBox(height: 8),
                   Row(
                     children: [

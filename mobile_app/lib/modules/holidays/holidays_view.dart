@@ -237,7 +237,7 @@ class HolidaysView extends GetView<HolidaysController> {
                       Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.slate400),
                       const SizedBox(width: 6),
                       Text(
-                        _fmtRange(r.startDate, r.endDate),
+                        _fmtRange(r.startDate, r.endDate, r.allDay),
                         style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600),
                       ),
                       if (r.daysCount != null || r.startDate.isNotEmpty) ...[
@@ -249,7 +249,7 @@ class HolidaysView extends GetView<HolidaysController> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            _fmtDuration(r.startDate, r.endDate, r.daysCount),
+                            _fmtDuration(r.startDate, r.endDate, r.daysCount, r.allDay),
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -446,23 +446,23 @@ class HolidaysView extends GetView<HolidaysController> {
                         onPressed: () async {
                           final confirmed = await Get.dialog<bool>(
                             AlertDialog(
-                              backgroundColor: const Color(0xFF1E293B),
+                              backgroundColor: Colors.white,
                               title: Text(
                                 'Delete Holiday',
-                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                                style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700),
                               ),
                               content: Text(
                                 'Delete "${h.title}"?',
-                                style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.7)),
+                                style: GoogleFonts.inter(color: AppColors.slate600),
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Get.back(result: false),
-                                  child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.whiteOverlay(0.6))),
+                                  child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.slate600)),
                                 ),
                                 TextButton(
                                   onPressed: () => Get.back(result: true),
-                                  child: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5))),
+                                  child: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFDC2626))),
                                 ),
                               ],
                             ),
@@ -474,7 +474,7 @@ class HolidaysView extends GetView<HolidaysController> {
                         icon: Icon(
                           Icons.delete_outline_rounded,
                           size: 20,
-                          color: AppColors.whiteOverlay(0.4),
+                          color: AppColors.slate400,
                         ),
                       ),
                     ],
@@ -505,16 +505,9 @@ class HolidaysView extends GetView<HolidaysController> {
       ),
       builder: (ctx) {
         return Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.slate50,
-                Color(0xFF022C22),
-              ],
-            ),
+            color: Colors.white,
           ),
           padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
           child: StatefulBuilder(
@@ -541,7 +534,7 @@ class HolidaysView extends GetView<HolidaysController> {
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -550,8 +543,8 @@ class HolidaysView extends GetView<HolidaysController> {
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       value: selectedOfficerId,
-                      dropdownColor: const Color(0xFF1E293B),
-                      style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                      dropdownColor: Colors.white,
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                       decoration: _sheetInputDecoration('Myself'),
                       items: [
                         DropdownMenuItem<int>(
@@ -598,7 +591,7 @@ class HolidaysView extends GetView<HolidaysController> {
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -609,7 +602,7 @@ class HolidaysView extends GetView<HolidaysController> {
                   TextField(
                     controller: startController,
                     readOnly: true,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
                       suffixIcon: Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
@@ -623,9 +616,9 @@ class HolidaysView extends GetView<HolidaysController> {
                           builder: (context, child) {
                             return Theme(
                               data: Theme.of(context).copyWith(
-                                colorScheme: const ColorScheme.dark(
+                                colorScheme: ColorScheme.light(
                                   primary: AppColors.primary,
-                                  surface: Color(0xFF1E293B),
+                                  surface: Colors.white,
                                 ),
                               ),
                               child: child!,
@@ -649,7 +642,7 @@ class HolidaysView extends GetView<HolidaysController> {
                   TextField(
                     controller: endController,
                     readOnly: true,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: _sheetInputDecoration(isAllDayState! ? 'Select date' : 'Select date & time').copyWith(
                       suffixIcon: Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
                     ),
@@ -663,9 +656,9 @@ class HolidaysView extends GetView<HolidaysController> {
                           builder: (context, child) {
                             return Theme(
                               data: Theme.of(context).copyWith(
-                                colorScheme: const ColorScheme.dark(
+                                colorScheme: ColorScheme.light(
                                   primary: AppColors.primary,
-                                  surface: Color(0xFF1E293B),
+                                  surface: Colors.white,
                                 ),
                               ),
                               child: child!,
@@ -688,8 +681,8 @@ class HolidaysView extends GetView<HolidaysController> {
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: leaveType,
-                    dropdownColor: const Color(0xFF1E293B),
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    dropdownColor: Colors.white,
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: _sheetInputDecoration(''),
                     items: const [
                       DropdownMenuItem(value: 'annual', child: Text('Annual Leave')),
@@ -706,7 +699,7 @@ class HolidaysView extends GetView<HolidaysController> {
                   TextField(
                     controller: reasonController,
                     maxLines: 2,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                     decoration: _sheetInputDecoration('Optional'),
                   ),
                   const SizedBox(height: 24),
@@ -730,6 +723,7 @@ class HolidaysView extends GetView<HolidaysController> {
                           officerId: selectedOfficerId,
                           startDate: startVal,
                           endDate: endVal,
+                          allDay: isAllDayState!,
                           leaveType: leaveType,
                           reason: reasonController.text.isNotEmpty ? reasonController.text : null,
                         );
@@ -767,9 +761,9 @@ class HolidaysView extends GetView<HolidaysController> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
+            colorScheme: ColorScheme.light(
               primary: AppColors.primary,
-              surface: Color(0xFF1E293B),
+              surface: Colors.white,
             ),
           ),
           child: child!,
@@ -784,9 +778,9 @@ class HolidaysView extends GetView<HolidaysController> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
+            colorScheme: ColorScheme.light(
               primary: AppColors.primary,
-              surface: Color(0xFF1E293B),
+              surface: Colors.white,
             ),
           ),
           child: child!,
@@ -805,7 +799,7 @@ class HolidaysView extends GetView<HolidaysController> {
       style: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppColors.whiteOverlay(0.6),
+        color: AppColors.slate600,
       ),
     );
   }
@@ -822,7 +816,7 @@ class HolidaysView extends GetView<HolidaysController> {
         borderSide: BorderSide(color: AppColors.primary, width: 1.5),
       ),
       filled: true,
-      fillColor: AppColors.whiteOverlay(0.06),
+      fillColor: Colors.white,
       hintText: hint,
       hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.slate400),
     );
@@ -880,14 +874,14 @@ class HolidaysView extends GetView<HolidaysController> {
     }
   }
 
-  String _fmtRange(String startStr, String endStr) {
+  String _fmtRange(String startStr, String endStr, [bool allDay = true]) {
     try {
       final start = DateTime.parse(startStr).toLocal();
       final end = DateTime.parse(endStr).toLocal();
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      final startHasTime = !startStr.endsWith('00:00:00') && !startStr.endsWith('00:00:00.000Z') && (start.hour != 0 || start.minute != 0);
-      final endHasTime = !endStr.endsWith('00:00:00') && !endStr.endsWith('00:00:00.000Z') && (end.hour != 0 || end.minute != 0);
+      final startHasTime = !allDay;
+      final endHasTime = !allDay;
       
       final startDateStr = '${start.day} ${months[start.month - 1]} ${start.year}';
       final endDateStr = '${end.day} ${months[end.month - 1]} ${end.year}';
@@ -921,12 +915,19 @@ class HolidaysView extends GetView<HolidaysController> {
     }
   }
 
-  String _fmtDuration(String startStr, String endStr, int? backendDaysCount) {
+  String _fmtDuration(String startStr, String endStr, num? backendDaysCount, [bool allDay = true]) {
     try {
       final start = DateTime.parse(startStr);
       final end = DateTime.parse(endStr);
       final diff = end.difference(start);
       final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
+      // Timed (partial-day) leave always reports in hours.
+      if (!allDay) {
+        if (diff.inMinutes <= 0) return '–';
+        final hrs = diff.inMinutes / 60.0;
+        final hrsStr = hrs % 1 == 0 ? hrs.toInt().toString() : hrs.toStringAsFixed(1);
+        return '${hrsStr}h';
+      }
       if (diff.inSeconds <= 0 && sameDay) return '1d';
       if (sameDay && diff.inHours < 24) {
         if (diff.inHours < 1) return '1d';
@@ -952,4 +953,5 @@ class HolidaysView extends GetView<HolidaysController> {
       return backendDaysCount != null ? '${backendDaysCount}d' : '';
     }
   }
+
 }

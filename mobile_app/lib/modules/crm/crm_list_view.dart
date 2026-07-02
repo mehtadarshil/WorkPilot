@@ -307,7 +307,7 @@ class CrmListView extends GetView<CrmListController> {
                           color: AppColors.slate400,
                         ),
                         filled: true,
-                        fillColor: AppColors.whiteOverlay(0.08),
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
                           borderSide: const BorderSide(color: AppColors.slate200),
@@ -587,8 +587,11 @@ class CrmListView extends GetView<CrmListController> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Material(
-                              color: AppColors.whiteOverlay(0.08),
-                              borderRadius: BorderRadius.circular(16),
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: const BorderSide(color: AppColors.slate200),
+                              ),
                               child: ListTile(
                                 onTap: () {
                                   if (controller.module == 'jobs') {
@@ -618,7 +621,7 @@ class CrmListView extends GetView<CrmListController> {
                                 trailing: controller.module == 'certifications'
                                     ? PopupMenuButton<String>(
                                         icon: Icon(Icons.more_vert_rounded, color: AppColors.slate400),
-                                        color: const Color(0xFF1E293B),
+                                        color: Colors.white,
                                         onSelected: (value) async {
                                           final raw = row['id'];
                                           final id = raw is int ? raw : (raw is num ? raw.toInt() : null);

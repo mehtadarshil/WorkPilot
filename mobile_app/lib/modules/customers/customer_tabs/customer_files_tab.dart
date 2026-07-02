@@ -310,8 +310,8 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                     width: 96,
                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                     errorBuilder: (_, __, ___) => Container(
-                                      color: AppColors.whiteOverlay(0.08),
-                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                      color: AppColors.slate100,
+                                      child: Icon(Icons.broken_image_outlined, color: Colors.black38),
                                     ),
                                   ),
                                 ),
@@ -380,7 +380,7 @@ class _CustomerFilesTabState extends State<CustomerFilesTab> {
                                       children: [
                                         Text(
                                           ctStr(r, 'original_filename'),
-                                          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                                          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700),
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),

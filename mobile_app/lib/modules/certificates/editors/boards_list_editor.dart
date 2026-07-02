@@ -78,7 +78,7 @@ class BoardsListEditor extends StatelessWidget {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        color: AppColors.whiteOverlay(0.04),
+                        color: AppColors.slate100,
                         border: Border.all(color: AppColors.slate200),
                       ),
                       child: Padding(
@@ -96,7 +96,7 @@ class BoardsListEditor extends StatelessWidget {
                                       Text(
                                         name,
                                         style: GoogleFonts.inter(
-                                          color: Colors.white,
+                                          color: AppColors.slate900,
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,
                                         ),

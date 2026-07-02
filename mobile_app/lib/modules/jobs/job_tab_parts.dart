@@ -102,7 +102,7 @@ class _JobTabPartsState extends State<JobTabParts> {
       res = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         isScrollControlled: true,
-        backgroundColor: AppColors.slate900,
+        backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -133,7 +133,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int>(
                       value: catId,
-                      dropdownColor: AppColors.slate900,
+                      dropdownColor: Colors.white,
                       style: GoogleFonts.outfit(color: AppColors.slate900),
                       decoration: _sheetInputDecoration('Catalogue part'),
                       items: [
@@ -157,7 +157,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int?>(
                       value: stockId,
-                      dropdownColor: AppColors.slate900,
+                      dropdownColor: Colors.white,
                       style: GoogleFonts.outfit(color: AppColors.slate900),
                       decoration: _sheetInputDecoration('Link to stock (optional)'),
                       items: [
@@ -203,8 +203,8 @@ class _JobTabPartsState extends State<JobTabParts> {
                             const SizedBox(height: 8),
                             DropdownButtonFormField<int>(
                               value: placementIdx ?? pickDefaultPlacementIndex(placements),
-                              dropdownColor: AppColors.slate900,
-                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                              dropdownColor: Colors.white,
+                              style: GoogleFonts.outfit(color: AppColors.slate900, fontSize: 13),
                               decoration: _sheetInputDecoration('Storage location'),
                               items: [
                                 for (var i = 0; i < placements.length; i++)
@@ -302,7 +302,7 @@ class _JobTabPartsState extends State<JobTabParts> {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.slate900,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -333,7 +333,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: status,
-                    dropdownColor: AppColors.slate900,
+                    dropdownColor: Colors.white,
                     style: GoogleFonts.outfit(color: AppColors.slate900),
                     decoration: _sheetInputDecoration('Status'),
                     items: [
@@ -354,7 +354,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                   const SizedBox(height: 12),
                   DropdownButtonFormField<int?>(
                     value: stockId,
-                    dropdownColor: AppColors.slate900,
+                    dropdownColor: Colors.white,
                     style: GoogleFonts.outfit(color: AppColors.slate900),
                     decoration: _sheetInputDecoration('Link to stock'),
                     items: [
@@ -379,8 +379,8 @@ class _JobTabPartsState extends State<JobTabParts> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
                       value: placementIdx ?? pickDefaultPlacementIndex(placements),
-                      dropdownColor: AppColors.slate900,
-                      style: GoogleFonts.outfit(color: Colors.white, fontSize: 13),
+                      dropdownColor: Colors.white,
+                      style: GoogleFonts.outfit(color: AppColors.slate900, fontSize: 13),
                       decoration: _sheetInputDecoration('Pick from placement'),
                       items: [
                         for (var i = 0; i < placements.length; i++)
@@ -551,8 +551,11 @@ class _JobTabPartsState extends State<JobTabParts> {
                 final hasStock = p['stock_item_id'] != null;
 
                 return Card(
-                  color: AppColors.whiteOverlay(0.06),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: AppColors.slate200),
+                  ),
                   margin: const EdgeInsets.only(bottom: 10),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
@@ -569,7 +572,7 @@ class _JobTabPartsState extends State<JobTabParts> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(name, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                                    Text(name, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 4),
                                     Text(
                                       '${jobPartStatusLabel(st)} · Qty ${p['quantity']}',

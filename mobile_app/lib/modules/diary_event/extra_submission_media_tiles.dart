@@ -80,7 +80,7 @@ class _AuthVideoPosterTileState extends State<AuthVideoPosterTile> {
                   gaplessPlayback: true,
                 )
               else
-                ColoredBox(color: AppColors.whiteOverlay(0.08)),
+                ColoredBox(color: AppColors.slate500),
               if (_loading)
                 const Center(
                   child: SizedBox(

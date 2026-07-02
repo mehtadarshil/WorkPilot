@@ -115,7 +115,7 @@ class CertificateTypePickerView
                                 border: Border.all(
                                   color: selected
                                       ? AppColors.primary
-                                      : AppColors.whiteOverlay(0.12),
+                                      : AppColors.slate200,
                                 ),
                               ),
                               child: Padding(
@@ -125,11 +125,13 @@ class CertificateTypePickerView
                                     CircleAvatar(
                                       backgroundColor: selected
                                           ? AppColors.primary
-                                          : AppColors.whiteOverlay(0.08),
+                                          : AppColors.slate100,
                                       child: Text(
                                         type.shortLabel.split('-').first,
                                         style: GoogleFonts.inter(
-                                          color: Colors.white,
+                                          color: selected
+                                              ? Colors.white
+                                              : AppColors.slate700,
                                           fontWeight: FontWeight.w900,
                                           fontSize: 11,
                                         ),
@@ -144,7 +146,7 @@ class CertificateTypePickerView
                                           Text(
                                             type.title,
                                             style: GoogleFonts.inter(
-                                              color: Colors.white,
+                                              color: AppColors.slate900,
                                               fontWeight: FontWeight.w800,
                                             ),
                                           ),
@@ -221,7 +223,7 @@ class CertificateTypePickerView
       hintText: hint,
       hintStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 14),
       filled: true,
-      fillColor: AppColors.whiteOverlay(0.06),
+      fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),

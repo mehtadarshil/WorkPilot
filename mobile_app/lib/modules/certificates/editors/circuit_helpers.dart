@@ -110,6 +110,63 @@ Map<String, dynamic> autofillCircuitFromPrevious(
   return applyCircuitCalculations(filled, board, use100Percent);
 }
 
+/// Placeholder values offered by the "Autofill all blanks" action.
+const List<String> autofillBlankValues = ['LIM', 'N/A', 'N/V', '---'];
+
+/// Fills every empty cell across all circuits with [value].
+///
+/// Skips the circuit number, description and spare/unknown rows. Calculated
+/// columns that get filled are marked as manual overrides so the placeholder
+/// survives subsequent recalculation.
+List<Map<String, dynamic>> autofillBlankCells(
+  List<Map<String, dynamic>> circuits,
+  String value,
+  Map<String, dynamic> board,
+  bool use100Percent,
+) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return circuits;
+  final specs = CIRCUIT_COLUMNS_SPEC.where(
+    (c) => c.key != 'actions' && c.key != 'circuitNumber' && c.key != 'description',
+  ).toList();
+  return circuits.map((circuit) {
+    if (isSpareOrUnknownCircuit(circuit)) return circuit;
+    final next = Map<String, dynamic>.from(circuit);
+    final rawOverrides = next['calcOverrides'];
+    final overrides = rawOverrides is Map
+        ? Map<String, dynamic>.from(rawOverrides)
+        : <String, dynamic>{};
+    var changed = false;
+    for (final spec in specs) {
+      final current = next[spec.key]?.toString().trim() ?? '';
+      if (current.isEmpty) {
+        next[spec.key] = clampCircuitField(spec.key, trimmed);
+        if (spec.calculated) overrides[spec.key] = true;
+        changed = true;
+      }
+    }
+    if (!changed) return circuit;
+    next['calcOverrides'] = overrides;
+    return applyCircuitCalculations(next, board, use100Percent);
+  }).toList();
+}
+
+/// Number of empty (fillable) cells across all circuits, ignoring spare rows.
+int countBlankCells(List<Map<String, dynamic>> circuits) {
+  final specs = CIRCUIT_COLUMNS_SPEC.where(
+    (c) => c.key != 'actions' && c.key != 'circuitNumber' && c.key != 'description',
+  ).toList();
+  var count = 0;
+  for (final circuit in circuits) {
+    if (isSpareOrUnknownCircuit(circuit)) continue;
+    for (final spec in specs) {
+      final current = circuit[spec.key]?.toString().trim() ?? '';
+      if (current.isEmpty) count++;
+    }
+  }
+  return count;
+}
+
 String normalizeBoardStatus(String? status) {
   final value = status?.trim().toLowerCase() ?? '';
   if (value == 'complete' || value == 'done') return 'done';
@@ -206,6 +263,26 @@ List<Map<String, dynamic>> fillColumnIntelligent(
   final trimmed = clampCircuitField(column, value.trim());
   return circuits.map((circuit) {
     if (isSpareOrUnknownCircuit(circuit)) return circuit;
+    final next = Map<String, dynamic>.from(circuit);
+    next[column] = trimmed;
+    return applyCircuitCalculations(next, board, use100Percent);
+  }).toList();
+}
+
+/// Fills only the empty cells of a single column (skips spare/unknown rows and non-empty cells).
+List<Map<String, dynamic>> fillColumnBlanks(
+  List<Map<String, dynamic>> circuits,
+  String column,
+  String value,
+  Map<String, dynamic> board,
+  bool use100Percent,
+) {
+  final trimmed = clampCircuitField(column, value.trim());
+  if (trimmed.isEmpty) return circuits;
+  return circuits.map((circuit) {
+    if (isSpareOrUnknownCircuit(circuit)) return circuit;
+    final current = circuit[column]?.toString().trim() ?? '';
+    if (current.isNotEmpty) return circuit;
     final next = Map<String, dynamic>.from(circuit);
     next[column] = trimmed;
     return applyCircuitCalculations(next, board, use100Percent);

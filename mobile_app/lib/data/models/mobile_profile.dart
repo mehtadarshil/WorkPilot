@@ -18,6 +18,9 @@ class MobileProfile {
     this.nextOfKinRelationship,
     this.hasProfilePhoto = false,
     this.signatureDataUrl,
+    this.bankName,
+    this.sortCode,
+    this.accountNumber,
   });
 
   factory MobileProfile.fromJson(Map<String, dynamic> json) {
@@ -39,6 +42,9 @@ class MobileProfile {
       nextOfKinRelationship: _optStr(json['next_of_kin_relationship']),
       hasProfilePhoto: json['has_profile_photo'] == true,
       signatureDataUrl: _optStr(json['signature_data_url']),
+      bankName: _optStr(json['bank_name']),
+      sortCode: _optStr(json['sort_code']),
+      accountNumber: _optStr(json['account_number']),
     );
   }
 
@@ -65,6 +71,9 @@ class MobileProfile {
   final String? nextOfKinRelationship;
   final bool hasProfilePhoto;
   final String? signatureDataUrl;
+  final String? bankName;
+  final String? sortCode;
+  final String? accountNumber;
 
   bool get isOfficer => subjectKind == 'officer';
 
@@ -81,6 +90,9 @@ class MobileProfile {
       'next_of_kin_phone': nextOfKinPhone,
       'next_of_kin_relationship': nextOfKinRelationship,
       'signature_data_url': signatureDataUrl,
+      'bank_name': bankName,
+      'sort_code': sortCode,
+      'account_number': accountNumber,
       if (isOfficer) ...<String, dynamic>{
         'department': department,
         'role_position': rolePosition,

@@ -33,6 +33,9 @@ type OfficerWorkRow = {
   role_position: string | null;
   department: string | null;
   state: string;
+  bank_name?: string | null;
+  sort_code?: string | null;
+  account_number?: string | null;
   days_worked: number;
   total_seconds: number;
   travelling_seconds: number;
@@ -153,6 +156,7 @@ type HolidayRequest = {
   officer_name: string | null;
   start_date: string;
   end_date: string;
+  all_day?: boolean;
   leave_type: string;
   reason: string | null;
   status: string;
@@ -229,13 +233,13 @@ function formatDateTimeString(d: string) {
   return dateStr;
 }
 
-function formatHolidayRange(startDateStr: string, endDateStr: string): string {
+function formatHolidayRange(startDateStr: string, endDateStr: string, allDay = true): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '–';
   
-  const startHasTime = startDateStr.includes('T') && !startDateStr.endsWith('T00:00:00') && !startDateStr.endsWith('T00:00:00.000Z');
-  const endHasTime = endDateStr.includes('T') && !endDateStr.endsWith('T00:00:00') && !endDateStr.endsWith('T00:00:00.000Z');
+  const startHasTime = !allDay;
+  const endHasTime = !allDay;
   
   const startDateStrFormatted = start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const endDateStrFormatted = end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -266,13 +270,20 @@ function formatHolidayRange(startDateStr: string, endDateStr: string): string {
   }
 }
 
-function formatHolidayDuration(startDateStr: string, endDateStr: string, backendDays: number | null): string {
+function formatHolidayDuration(startDateStr: string, endDateStr: string, backendDays: number | null, allDay = true): string {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return backendDays != null ? `${backendDays}d` : '–';
   }
   const diffMs = end.getTime() - start.getTime();
+  // Timed (partial-day) leave always reports in hours.
+  if (!allDay) {
+    const hours = diffMs / (1000 * 60 * 60);
+    if (hours <= 0) return '–';
+    const hrs = Number.isInteger(hours) ? hours : parseFloat(hours.toFixed(1));
+    return `${hrs}h`;
+  }
   const sameDay =
     start.getFullYear() === end.getFullYear() &&
     start.getMonth() === end.getMonth() &&
@@ -303,6 +314,12 @@ function formatHolidayDuration(startDateStr: string, endDateStr: string, backend
     ? backendDays
     : (Number.isInteger(diffHours / 24) ? diffHours / 24 : parseFloat((diffHours / 24).toFixed(1)));
   return `${days}d`;
+}
+
+/** Prefer the explicit stored flag; fall back to inference for legacy rows. */
+function resolveRequestAllDay(request: { all_day?: boolean; start_date: string; end_date: string }): boolean {
+  if (typeof request.all_day === 'boolean') return request.all_day;
+  return holidayRequestLooksAllDay(request.start_date, request.end_date);
 }
 
 function holidayRequestLooksAllDay(startDateStr: string, endDateStr: string): boolean {
@@ -631,7 +648,7 @@ export default function StaffWorkPage() {
         .map((r: any) => {
           const oKey = officerColorKey(r.officer_id, r.officer_name);
           const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
-          const allDayLeave = holidayRequestLooksAllDay(r.start_date, r.end_date);
+          const allDayLeave = resolveRequestAllDay(r);
           return {
             id: `leave-${r.id}`,
             title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
@@ -889,6 +906,7 @@ export default function StaffWorkPage() {
         officer_id: reqForm.officer_id ? Number(reqForm.officer_id) : undefined,
         start_date: startDateStr,
         end_date: endDateStr,
+        all_day: allDay,
         leave_type: reqForm.leave_type,
         reason: reqForm.reason || undefined,
       }, token);
@@ -902,7 +920,7 @@ export default function StaffWorkPage() {
   };
 
   const openEditRequest = (request: HolidayRequest) => {
-    const isAllDay = holidayRequestLooksAllDay(request.start_date, request.end_date);
+    const isAllDay = resolveRequestAllDay(request);
     setEditingRequest(request);
     setEditAllDay(isAllDay);
     setEditForm({
@@ -927,6 +945,7 @@ export default function StaffWorkPage() {
       await patchJson(`/holiday-requests/${editingRequest.id}`, {
         start_date: startDateStr,
         end_date: endDateStr,
+        all_day: editAllDay,
         leave_type: editForm.leave_type,
         reason: editForm.reason || null,
       }, token);
@@ -1555,6 +1574,32 @@ export default function StaffWorkPage() {
                     <X className="size-5 text-slate-500" />
                   </button>
                 </div>
+                {(paymentModalOfficer.bank_name || paymentModalOfficer.sort_code || paymentModalOfficer.account_number) ? (
+                  <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 p-3">
+                    <p className="text-xs font-semibold uppercase text-teal-700 mb-2">Bank Details</p>
+                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                      <div className="min-w-0">
+                        <span className="text-xs text-teal-600">Bank</span>
+                        <p className="font-medium text-teal-900 break-words">{paymentModalOfficer.bank_name || '—'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs text-teal-600">Sort code</span>
+                        <p className="font-medium text-teal-900 break-words">{paymentModalOfficer.sort_code || '—'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs text-teal-600">Account</span>
+                        <p className="font-medium text-teal-900 break-all">{paymentModalOfficer.account_number || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500 mb-1">Bank Details</p>
+                    <p className="text-xs text-slate-500">
+                      No bank details on file. Add them in Settings → Users by editing this team member.
+                    </p>
+                  </div>
+                )}
                 <form onSubmit={(e) => void submitOfficerPayment(e)} className="space-y-4">
                   <label className="block text-sm font-semibold text-slate-700">
                     Amount
@@ -1645,6 +1690,29 @@ export default function StaffWorkPage() {
                     {officerPaymentSummary && (
                       <p className="mt-1 text-xs text-slate-500">
                         Approved personal: {formatMoney(officerPaymentSummary.approved_total)} · Paid: {formatMoney(officerPaymentSummary.paid_total)} · Outstanding: {formatMoney(officerPaymentSummary.outstanding)}
+                      </p>
+                    )}
+                    {(paymentHistoryOfficer.bank_name || paymentHistoryOfficer.sort_code || paymentHistoryOfficer.account_number) ? (
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                        {paymentHistoryOfficer.bank_name && (
+                          <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">
+                            <span className="font-medium">Bank:</span> {paymentHistoryOfficer.bank_name}
+                          </span>
+                        )}
+                        {paymentHistoryOfficer.sort_code && (
+                          <span className="rounded bg-slate-100 px-2 py-1 text-slate-700">
+                            <span className="font-medium">Sort:</span> {paymentHistoryOfficer.sort_code}
+                          </span>
+                        )}
+                        {paymentHistoryOfficer.account_number && (
+                          <span className="max-w-full break-all rounded bg-slate-100 px-2 py-1 text-slate-700">
+                            <span className="font-medium">Acct:</span> {paymentHistoryOfficer.account_number}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-400">
+                        No bank details on file · add them in Settings → Users
                       </p>
                     )}
                   </div>
@@ -1843,9 +1911,9 @@ export default function StaffWorkPage() {
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="px-5 py-4 font-semibold text-slate-900">{r.officer_name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">
-                              {formatHolidayRange(r.start_date, r.end_date)}
+                              {formatHolidayRange(r.start_date, r.end_date, resolveRequestAllDay(r))}
                             </td>
-                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count)}</td>
+                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count, resolveRequestAllDay(r))}</td>
                             <td className="px-5 py-4 capitalize text-slate-700">{r.leave_type}</td>
                             <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate">{r.reason || '–'}</td>
                             <td className="px-5 py-4 text-right">
@@ -1909,9 +1977,9 @@ export default function StaffWorkPage() {
                           <tr key={r.id} className="hover:bg-slate-50">
                             <td className="px-5 py-4 font-semibold text-slate-900">{r.officer_name || 'Unknown'}</td>
                             <td className="px-5 py-4 text-slate-700">
-                              {formatHolidayRange(r.start_date, r.end_date)}
+                              {formatHolidayRange(r.start_date, r.end_date, resolveRequestAllDay(r))}
                             </td>
-                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count)}</td>
+                            <td className="px-5 py-4 font-semibold text-slate-900">{formatHolidayDuration(r.start_date, r.end_date, r.days_count, resolveRequestAllDay(r))}</td>
                             <td className="px-5 py-4 capitalize text-slate-700">{r.leave_type}</td>
                             <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate">{r.reason || '–'}</td>
                             <td className="px-5 py-4">
@@ -2396,9 +2464,9 @@ export default function StaffWorkPage() {
                     <div>
                       <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Dates</span>
                       <p className="mt-0.5 text-slate-800">
-                        {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date)}
+                        {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date, resolveRequestAllDay(selectedEvent.raw))}
                       </p>
-                      {!holidayRequestLooksAllDay(selectedEvent.raw.start_date, selectedEvent.raw.end_date) && (
+                      {!resolveRequestAllDay(selectedEvent.raw) && (
                         <p className="text-xs text-slate-500 mt-0.5">
                           {format(new Date(selectedEvent.raw.start_date), 'HH:mm')} – {format(new Date(selectedEvent.raw.end_date), 'HH:mm')}
                         </p>
@@ -2411,6 +2479,7 @@ export default function StaffWorkPage() {
                           selectedEvent.raw.start_date,
                           selectedEvent.raw.end_date,
                           selectedEvent.raw.days_count,
+                          resolveRequestAllDay(selectedEvent.raw),
                         )}
                       </p>
                     </div>

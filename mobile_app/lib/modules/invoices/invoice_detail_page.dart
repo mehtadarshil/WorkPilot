@@ -200,7 +200,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                   children: [
                     Text(
                       editing == null ? 'Record payment' : 'Edit payment',
-                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                     ),
                     Text(
                       'Balance due: ${InvoiceHelpers.formatMoney(_balanceDue, cur)}',
@@ -213,15 +213,15 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Amount',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     DropdownButtonFormField<String>(
                       key: ValueKey<String>(method),
                       initialValue: method,
-                      dropdownColor: const Color(0xFF1e293b),
+                      dropdownColor: Colors.white,
                       style: GoogleFonts.inter(color: AppColors.slate900),
-                      decoration: InputDecoration(labelText: 'Method', labelStyle: TextStyle(color: Colors.white70)),
+                      decoration: InputDecoration(labelText: 'Method', labelStyle: TextStyle(color: Colors.black54)),
                       items: [
                         for (final m in InvoiceHelpers.paymentMethods)
                           DropdownMenuItem(value: m['value'], child: Text(m['label']!)),
@@ -229,8 +229,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                       onChanged: (v) => setS(() => method = v ?? method),
                     ),
                     ListTile(
-                      title: Text('Payment date', style: GoogleFonts.inter(color: Colors.white70, fontSize: 12)),
-                      subtitle: Text(payDate, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                      title: Text('Payment date', style: GoogleFonts.inter(color: Colors.black54, fontSize: 12)),
+                      subtitle: Text(payDate, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                       onTap: () async {
                         final d = await showDatePicker(
                           context: ctx,
@@ -246,7 +246,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Reference (optional)',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     if (err != null)
@@ -357,8 +357,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(invNo, style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16)),
-            Text(cust, style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+            Text(invNo, style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(cust, style: GoogleFonts.inter(fontSize: 12, color: Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
           ],
         ),
         bottom: TabBar(
@@ -458,16 +458,16 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                   ),
                 ),
               const SizedBox(height: 16),
-              Text('Status', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
+              Text('Status', style: GoogleFonts.inter(color: Colors.black54, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 key: ValueKey<String>(_state),
                 initialValue: invoiceStatesOrdered.contains(_state) ? _state : 'draft',
-                dropdownColor: const Color(0xFF1e293b),
+                dropdownColor: Colors.white,
                 style: GoogleFonts.inter(color: AppColors.slate900),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: Color(0x22ffffff),
+                  fillColor: Colors.white,
                   border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                 ),
                 items: [
@@ -484,18 +484,18 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
               if ((inv['work_site_name'] as String?)?.trim().isNotEmpty == true ||
                   (inv['work_site_address'] as String?)?.trim().isNotEmpty == true) ...[
                 const SizedBox(height: 8),
-                Text('Work / site', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
+                Text('Work / site', style: GoogleFonts.inter(color: Colors.black54, fontWeight: FontWeight.w700)),
                 if ((inv['work_site_name'] as String?)?.trim().isNotEmpty == true)
                   Text(inv['work_site_name'] as String, style: GoogleFonts.inter(color: AppColors.slate900)),
                 if ((inv['work_site_address'] as String?)?.trim().isNotEmpty == true)
-                  Text(inv['work_site_address'] as String, style: GoogleFonts.inter(color: Colors.white70)),
+                  Text(inv['work_site_address'] as String, style: GoogleFonts.inter(color: Colors.black54)),
               ],
               if ((inv['description'] as String?)?.trim().isNotEmpty == true) ...[
                 const SizedBox(height: 12),
                 Text(inv['description'] as String, style: GoogleFonts.inter(color: AppColors.slate900)),
               ],
               const SizedBox(height: 16),
-              Text('Line items', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
+              Text('Line items', style: GoogleFonts.inter(color: Colors.black54, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               if (items is List)
                 ...items.map((e) {
@@ -509,11 +509,11 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(desc, style: GoogleFonts.inter(color: AppColors.slate900)),
-                    subtitle: Text('$qty × ${InvoiceHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+                    subtitle: Text('$qty × ${InvoiceHelpers.formatMoney(up, cur)}', style: GoogleFonts.inter(color: Colors.black45, fontSize: 12)),
                     trailing: Text(InvoiceHelpers.formatMoney(am, cur), style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w700)),
                   );
                 }),
-              Divider(color: Colors.white24),
+              Divider(color: Colors.black12),
               _kv('Subtotal', InvoiceHelpers.formatMoney(sub, cur)),
               _kv(taxLabel, InvoiceHelpers.formatMoney(tax, cur)),
               _kv('Total', InvoiceHelpers.formatMoney(tot, cur), bold: true),
@@ -522,7 +522,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
               const SizedBox(height: 20),
               Row(
                 children: [
-                  Text('Payments', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+                  Text('Payments', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
                   const Spacer(),
                   if (_remainingCents > 0 && _state != 'cancelled')
                     TextButton(
@@ -532,7 +532,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                 ],
               ),
               if (paymentsList.isEmpty)
-                Text('No payments yet.', style: GoogleFonts.inter(color: Colors.white38))
+                Text('No payments yet.', style: GoogleFonts.inter(color: Colors.black38))
               else
                 ...paymentsList.map((e) {
                   if (e is! Map) return const SizedBox.shrink();
@@ -541,10 +541,10 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                   final dt = (p['payment_date'] as String?) ?? '';
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(InvoiceHelpers.formatMoney(amt, cur), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                    title: Text(InvoiceHelpers.formatMoney(amt, cur), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       '${InvoiceHelpers.paymentMethodLabel(p['payment_method'] as String?)} · $dt',
-                      style: GoogleFonts.inter(color: Colors.white54, fontSize: 12),
+                      style: GoogleFonts.inter(color: Colors.black45, fontSize: 12),
                     ),
                     trailing: _state == 'cancelled'
                         ? null
@@ -556,7 +556,7 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                 }),
               if (_job != null) ...[
                 const SizedBox(height: 24),
-                Text('Job', style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w700)),
+                Text('Job', style: GoogleFonts.inter(color: Colors.black54, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Text(_job!['title'] as String? ?? '', style: GoogleFonts.inter(color: AppColors.slate900)),
               ],
@@ -584,8 +584,8 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 120, child: Text(k, style: GoogleFonts.inter(color: Colors.white54, fontSize: 13))),
-          Expanded(child: Text(v, style: GoogleFonts.inter(color: Colors.white, fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
+          SizedBox(width: 120, child: Text(k, style: GoogleFonts.inter(color: Colors.black45, fontSize: 13))),
+          Expanded(child: Text(v, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: bold ? FontWeight.w800 : FontWeight.w500))),
         ],
       ),
     );

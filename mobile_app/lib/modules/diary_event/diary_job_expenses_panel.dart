@@ -54,7 +54,7 @@ class DiaryJobExpensesPanel extends StatelessWidget {
               children: [
                 Expanded(child: _accentTitleLocal('Job expenses')),
                 Material(
-                  color: AppColors.primary.withValues(alpha: 0.4),
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     onTap: posting ? null : () => _openAddDialog(context),
@@ -150,7 +150,7 @@ class _ExpenseRow extends StatelessWidget {
                   '$category · ${_formatMoney(expense['amount'])}',
                   style: GoogleFonts.inter(
                     fontSize: 14,
-                    color: Colors.white,
+                    color: AppColors.slate900,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -212,7 +212,7 @@ Widget _accentTitleLocal(String t) {
           style: GoogleFonts.inter(
             fontSize: 16,
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: AppColors.slate900,
             letterSpacing: -0.2,
           ),
         ),

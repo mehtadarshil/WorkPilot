@@ -180,7 +180,7 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Material(
-                                  color: AppColors.whiteOverlay(0.1),
+                                  color: AppColors.slate100,
                                   borderRadius: BorderRadius.circular(12),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -464,8 +464,8 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                                                     width: 88,
                                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                                     errorBuilder: (_, __, ___) => Container(
-                                                      color: AppColors.whiteOverlay(0.08),
-                                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                                      color: AppColors.slate100,
+                                                      child: Icon(Icons.broken_image_outlined, color: Colors.black38),
                                                     ),
                                                   ),
                                                 ),
@@ -1014,7 +1014,7 @@ class _StatusBanner extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(icon, color: Colors.white, size: 26),
+                      Icon(icon, color: AppColors.slate700, size: 26),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1034,7 +1034,7 @@ class _StatusBanner extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 height: 1.35,
-                                color: Colors.white.withValues(alpha: 0.92),
+                                color: AppColors.slate600,
                               ),
                             ),
                           ],
@@ -1167,7 +1167,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                   leading: Icon(Icons.verified_outlined, color: AppColors.primary, size: 20),
                   title: Text(
                     cert.certificateNumber,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
                     certificateTypeForSlug(cert.typeSlug).shortLabel,
@@ -1200,7 +1200,7 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
                     report.reportTitle?.trim().isNotEmpty == true
                         ? report.reportTitle!
                         : (report.templateName ?? 'Site report'),
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13, fontWeight: FontWeight.w600),
                   ),
                   subtitle: report.certificateNumber?.trim().isNotEmpty == true
                       ? Text(
@@ -1722,11 +1722,11 @@ class _NavigationAppSheetState extends State<_NavigationAppSheet> {
               )
             else
               ..._apps.map((app) => ListTile(
-                    leading: Icon(app.icon, color: app.available ? Colors.white : AppColors.slate400),
+                    leading: Icon(app.icon, color: app.available ? AppColors.slate700 : AppColors.slate400),
                     title: Text(
                       app.name + (app.available ? '' : ' (not installed)'),
                       style: GoogleFonts.inter(
-                        color: app.available ? Colors.white : AppColors.slate400,
+                        color: app.available ? AppColors.slate900 : AppColors.slate400,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1959,7 +1959,7 @@ class _BottomActions extends StatelessWidget {
 
   final DiaryEventDetailController controller;
 
-  static const _outlineOnGlass = BorderSide(color: Color(0x55FFFFFF));
+  static const _outlineOnGlass = BorderSide(color: AppColors.slate200);
 
   @override
   Widget build(BuildContext context) {
@@ -2390,7 +2390,7 @@ class _AbortVisitDialogState extends State<_AbortVisitDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: AppColors.whiteOverlay(0.08),
+                color: AppColors.slate100,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.slate200),
               ),
@@ -2639,7 +2639,7 @@ class _VisitTimelinePanel extends StatelessWidget {
                           Expanded(
                             child: Container(
                               width: 2,
-                              color: AppColors.whiteOverlay(0.15),
+                              color: AppColors.slate200,
                             ),
                           ),
                       ],
@@ -2890,7 +2890,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
               end: Alignment.bottomCenter,
               colors: [
                 AppColors.whiteOverlay(0.14),
-                const Color(0xEF0F172A),
+                Colors.white,
               ],
             ),
             border: Border(
@@ -2987,10 +2987,10 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                   else
                     Container(
                       decoration: BoxDecoration(
-                        color: AppColors.whiteOverlay(0.06),
+                        color: AppColors.slate100,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: AppColors.whiteOverlay(0.14),
+                          color: AppColors.slate200,
                         ),
                       ),
                       child: Column(
@@ -3112,12 +3112,12 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                             decoration: BoxDecoration(
                               color: selected
                                   ? AppColors.primary
-                                  : AppColors.whiteOverlay(0.08),
+                                  : AppColors.slate100,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
                                 color: selected
                                     ? AppColors.primary
-                                    : AppColors.whiteOverlay(0.15),
+                                    : AppColors.slate200,
                               ),
                             ),
                             child: Text(
@@ -3151,10 +3151,10 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                 const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
-                    color: AppColors.whiteOverlay(0.06),
+                    color: AppColors.slate100,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: AppColors.whiteOverlay(0.14),
+                      color: AppColors.slate200,
                     ),
                   ),
                   child: TextField(

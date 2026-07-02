@@ -36,7 +36,7 @@ Future<void> showQuotationWorkJobChoiceSheet(
               style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: AppColors.slate900,
               ),
             ),
             const SizedBox(height: 6),
@@ -131,7 +131,7 @@ class _ChoiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.whiteOverlay(0.04),
+      color: AppColors.slate100,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
@@ -164,7 +164,7 @@ class _ChoiceTile extends StatelessWidget {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: AppColors.slate900,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -173,7 +173,7 @@ class _ChoiceTile extends StatelessWidget {
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         height: 1.4,
-                        color: AppColors.slate300,
+                        color: AppColors.slate600,
                       ),
                     ),
                   ],

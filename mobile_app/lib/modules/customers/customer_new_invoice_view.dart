@@ -243,7 +243,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(ctStr(cust, 'full_name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                    Text(ctStr(cust, 'full_name'), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16)),
                     if (addr.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(addr, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
@@ -341,7 +341,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (var i = 0; i < _lines.length; i++) ...[
-                      if (i > 0) Divider(color: AppColors.whiteOverlay(0.08)),
+                      if (i > 0) Divider(color: AppColors.slate200),
                       Row(
                         children: [
                           Expanded(
@@ -349,7 +349,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                             child: TextField(
                               controller: _lines[i].desc,
                               enabled: !_saving,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: customerInputDecoration('Description'),
                             ),
                           ),
@@ -360,7 +360,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                               controller: _lines[i].qty,
                               enabled: !_saving,
                               keyboardType: TextInputType.number,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: customerInputDecoration('Qty'),
                             ),
                           ),
@@ -371,7 +371,7 @@ class _CustomerNewInvoiceViewState extends State<CustomerNewInvoiceView> {
                               controller: _lines[i].unit,
                               enabled: !_saving,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: customerInputDecoration('Price'),
                             ),
                           ),

@@ -26,6 +26,9 @@ export interface User {
   /** Mobile app login enabled (password set in User Management). */
   has_mobile_login?: boolean;
   calendar_color?: string | null;
+  bank_name?: string | null;
+  sort_code?: string | null;
+  account_number?: string | null;
 }
 
 interface UsersResponse {
@@ -83,6 +86,9 @@ export default function UsersSettings() {
   const [formNewPassword, setFormNewPassword] = useState('');
   const [formClearMobilePassword, setFormClearMobilePassword] = useState(false);
   const [formCalendarColor, setFormCalendarColor] = useState('');
+  const [formBankName, setFormBankName] = useState('');
+  const [formSortCode, setFormSortCode] = useState('');
+  const [formAccountNumber, setFormAccountNumber] = useState('');
   const [showDashboardTeamSection, setShowDashboardTeamSection] = useState(false);
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -163,6 +169,9 @@ export default function UsersSettings() {
     setFormNewPassword('');
     setFormClearMobilePassword(false);
     setFormCalendarColor('');
+    setFormBankName('');
+    setFormSortCode('');
+    setFormAccountNumber('');
   };
 
   const openAdd = () => {
@@ -184,6 +193,9 @@ export default function UsersSettings() {
     setFormAssignedResponsibilities(u.assigned_responsibilities ?? '');
     setFormState(u.state);
     setFormCalendarColor(u.calendar_color ?? '');
+    setFormBankName(u.bank_name ?? '');
+    setFormSortCode(u.sort_code ?? '');
+    setFormAccountNumber(u.account_number ?? '');
     setActionMenu(null);
     setEditModalOpen(true);
   };
@@ -223,6 +235,9 @@ export default function UsersSettings() {
           assigned_responsibilities: formAssignedResponsibilities.trim() || undefined,
           state: formState,
           initial_password: initialPassword,
+          bank_name: formBankName.trim() || undefined,
+          sort_code: formSortCode.trim() || undefined,
+          account_number: formAccountNumber.trim() || undefined,
         },
         token,
       );
@@ -261,6 +276,9 @@ export default function UsersSettings() {
           assigned_responsibilities: formAssignedResponsibilities.trim() || null,
           state: formState,
           calendar_color: formCalendarColor.trim() || null,
+          bank_name: formBankName.trim() || null,
+          sort_code: formSortCode.trim() || null,
+          account_number: formAccountNumber.trim() || null,
           ...(formClearMobilePassword ? { clear_mobile_password: true } : {}),
           ...(newPw && !formClearMobilePassword ? { initial_password: newPw } : {}),
         },
@@ -546,6 +564,12 @@ export default function UsersSettings() {
           setFormClearMobilePassword={setFormClearMobilePassword}
           formCalendarColor={formCalendarColor}
           setFormCalendarColor={setFormCalendarColor}
+          formBankName={formBankName}
+          setFormBankName={setFormBankName}
+          formSortCode={formSortCode}
+          setFormSortCode={setFormSortCode}
+          formAccountNumber={formAccountNumber}
+          setFormAccountNumber={setFormAccountNumber}
           submitLabel="Add"
         />
       )}
@@ -584,6 +608,12 @@ export default function UsersSettings() {
           setFormClearMobilePassword={setFormClearMobilePassword}
           formCalendarColor={formCalendarColor}
           setFormCalendarColor={setFormCalendarColor}
+          formBankName={formBankName}
+          setFormBankName={setFormBankName}
+          formSortCode={formSortCode}
+          setFormSortCode={setFormSortCode}
+          formAccountNumber={formAccountNumber}
+          setFormAccountNumber={setFormAccountNumber}
           submitLabel="Save Changes"
         />
       )}
@@ -634,6 +664,12 @@ function UserModal({
   setFormClearMobilePassword,
   formCalendarColor,
   setFormCalendarColor,
+  formBankName,
+  setFormBankName,
+  formSortCode,
+  setFormSortCode,
+  formAccountNumber,
+  setFormAccountNumber,
   submitLabel,
 }: {
   title: string;
@@ -668,6 +704,12 @@ function UserModal({
   setFormClearMobilePassword: (v: boolean) => void;
   formCalendarColor: string;
   setFormCalendarColor: (v: string) => void;
+  formBankName: string;
+  setFormBankName: (v: string) => void;
+  formSortCode: string;
+  setFormSortCode: (v: string) => void;
+  formAccountNumber: string;
+  setFormAccountNumber: (v: string) => void;
   submitLabel: string;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
@@ -808,6 +850,23 @@ function UserModal({
           <div>
             <label className="block text-sm font-medium text-slate-700">Assigned responsibilities</label>
             <textarea rows={3} value={formAssignedResponsibilities} onChange={(e) => setFormAssignedResponsibilities(e.target.value)} placeholder="Main duties and focus areas..." className={inputClass} />
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Bank Details</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Bank name</label>
+                <input type="text" value={formBankName} onChange={(e) => setFormBankName(e.target.value)} placeholder="e.g. HSBC, Barclays" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Sort code</label>
+                <input type="text" value={formSortCode} onChange={(e) => setFormSortCode(e.target.value)} placeholder="e.g. 12-34-56" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Account number</label>
+                <input type="text" value={formAccountNumber} onChange={(e) => setFormAccountNumber(e.target.value)} placeholder="e.g. 12345678" className={inputClass} />
+              </div>
+            </div>
           </div>
 
           <div className="mt-8 flex items-center justify-end gap-3 border-t border-slate-100 pt-6">

@@ -295,13 +295,13 @@ class _CustomerAssetFormViewState extends State<CustomerAssetFormView> {
                     const SizedBox(height: 12),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
-                      title: Text('Installed by us', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                      title: Text('Installed by us', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                       value: _installedByUs,
                       onChanged: _saving ? null : (v) => setState(() => _installedByUs = v),
                     ),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
-                      title: Text('Under warranty', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                      title: Text('Under warranty', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                       value: _underWarranty,
                       onChanged: _saving ? null : (v) => setState(() => _underWarranty = v),
                     ),

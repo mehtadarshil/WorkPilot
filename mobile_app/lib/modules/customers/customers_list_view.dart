@@ -95,9 +95,9 @@ class CustomersListView extends GetView<CustomersListController> {
                   decoration: InputDecoration(
                     hintText: 'Search name, email, company…',
                     hintStyle: GoogleFonts.inter(color: AppColors.slate400),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.5)),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.08),
+                    fillColor: Colors.white,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: const BorderSide(color: AppColors.slate200),
@@ -138,14 +138,14 @@ class CustomersListView extends GetView<CustomersListController> {
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
                                 color: filter == s
-                                    ? AppColors.gradientStart
-                                    : AppColors.whiteOverlay(0.85),
+                                    ? Colors.white
+                                    : AppColors.slate700,
                               ),
                             ),
                             selected: filter == s,
                             onSelected: (_) => controller.setStatus(s),
                             selectedColor: AppColors.primary,
-                            backgroundColor: AppColors.whiteOverlay(0.1),
+                            backgroundColor: Colors.white,
                             side: BorderSide(color: AppColors.slate300),
                           ),
                         ],
@@ -219,7 +219,7 @@ class CustomersListView extends GetView<CustomersListController> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Material(
-                            color: AppColors.whiteOverlay(0.08),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(16),
@@ -241,7 +241,7 @@ class CustomersListView extends GetView<CustomersListController> {
                                           Text(
                                             name,
                                             style: GoogleFonts.inter(
-                                              color: Colors.white,
+                                              color: AppColors.slate900,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 16,
                                             ),

@@ -205,7 +205,7 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
         children: [
           Text(
             'Share visit report with the customer',
-            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
@@ -227,18 +227,18 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
                   : null,
               decoration: InputDecoration(
                 filled: true,
-                fillColor: AppColors.whiteOverlay(0.06),
+                fillColor: Colors.white,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              dropdownColor: const Color(0xFF1E293B),
-              hint: Text('Select visit…', style: GoogleFonts.inter(color: Colors.white54)),
+              dropdownColor: Colors.white,
+              hint: Text('Select visit…', style: GoogleFonts.inter(color: AppColors.slate500)),
               items: [
                 for (final v in completed)
                   DropdownMenuItem<int?>(
                     value: (v['id'] as num?)?.toInt(),
                     child: Text(
                       _visitLabel(v),
-                      style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                     ),
                   ),
               ],
@@ -258,11 +258,11 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
           ],
           if (_options != null && _diaryEventId != null) ...[
             const SizedBox(height: 20),
-            Text('Job report answers', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+            Text('Job report answers', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             ..._answerTiles(),
             const SizedBox(height: 20),
-            Text('Extra photos & videos', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+            Text('Extra photos & videos', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             ..._extraTiles(),
             const SizedBox(height: 12),
@@ -271,10 +271,10 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
               onChanged: (v) => setState(() => _notifyOffice = v ?? false),
               title: Text(
                 'Email job owner when email is configured',
-                style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13),
+                style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13),
               ),
               activeColor: AppColors.primary,
-              tileColor: AppColors.whiteOverlay(0.04),
+              tileColor: AppColors.slate100,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             if (_submitErr != null) ...[
@@ -298,7 +298,7 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
                     children: [
                       Text('Latest link', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w800, fontSize: 12)),
                       const SizedBox(height: 6),
-                      SelectableText(_lastReportUrl!, style: GoogleFonts.inter(color: Colors.white, fontSize: 12)),
+                      SelectableText(_lastReportUrl!, style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12)),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -314,7 +314,7 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
             ],
           ],
           const SizedBox(height: 28),
-          Text('Shared reports', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+          Text('Shared reports', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 8),
           if (_loadingSubs)
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: AppColors.primary)))
@@ -331,10 +331,10 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Material(
-                  color: AppColors.whiteOverlay(0.06),
+                  color: AppColors.slate100,
                   borderRadius: BorderRadius.circular(14),
                   child: ListTile(
-                    title: Text(created, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+                    title: Text(created, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600, fontSize: 13)),
                     subtitle: name != null && name.isNotEmpty ? Text(name, style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)) : null,
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -409,9 +409,9 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
               });
             }
           : null,
-      title: Text(prompt, style: GoogleFonts.inter(color: has ? Colors.white : AppColors.slate500, fontSize: 13)),
+      title: Text(prompt, style: GoogleFonts.inter(color: has ? AppColors.slate900 : AppColors.slate500, fontSize: 13)),
       activeColor: AppColors.primary,
-      tileColor: AppColors.whiteOverlay(0.04),
+      tileColor: AppColors.slate100,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }
@@ -442,9 +442,9 @@ class _JobTabClientPanelState extends State<JobTabClientPanel> {
           }
         });
       },
-      title: Text(name, style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+      title: Text(name, style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13)),
       activeColor: AppColors.primary,
-      tileColor: AppColors.whiteOverlay(0.04),
+      tileColor: AppColors.slate100,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     );
   }

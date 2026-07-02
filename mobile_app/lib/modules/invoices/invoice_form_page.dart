@@ -415,7 +415,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         style: GoogleFonts.inter(color: AppColors.slate900),
                         decoration: InputDecoration(
                           labelText: 'Invoice number',
-                          labelStyle: TextStyle(color: Colors.white70),
+                          labelStyle: TextStyle(color: Colors.black54),
                         ),
                       ),
                     if (_editId != null) const SizedBox(height: 16),
@@ -486,10 +486,10 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       children: [
                         Expanded(
                           child: ListTile(
-                            title: Text('Invoice date', style: GoogleFonts.inter(color: Colors.white70, fontSize: 12)),
+                            title: Text('Invoice date', style: GoogleFonts.inter(color: Colors.black54, fontSize: 12)),
                             subtitle: Text(
                               _invoiceDate.toIso8601String().split('T').first,
-                              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                             ),
                             onTap: () async {
                               final d = await showDatePicker(
@@ -504,10 +504,10 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         ),
                         Expanded(
                           child: ListTile(
-                            title: Text('Due date', style: GoogleFonts.inter(color: Colors.white70, fontSize: 12)),
+                            title: Text('Due date', style: GoogleFonts.inter(color: Colors.black54, fontSize: 12)),
                             subtitle: Text(
                               _dueDate.toIso8601String().split('T').first,
-                              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                             ),
                             onTap: () async {
                               final d = await showDatePicker(
@@ -526,9 +526,9 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                     DropdownButtonFormField<String>(
                       isExpanded: true,
                       initialValue: _currency,
-                      dropdownColor: const Color(0xFF1e293b),
+                      dropdownColor: Colors.white,
                       style: GoogleFonts.inter(color: AppColors.slate900),
-                      decoration: InputDecoration(labelText: 'Currency', labelStyle: TextStyle(color: Colors.white70)),
+                      decoration: InputDecoration(labelText: 'Currency', labelStyle: TextStyle(color: Colors.black54)),
                       items: [for (final c in _currencies) DropdownMenuItem(value: c, child: Text(c))],
                       onChanged: (v) => setState(() => _currency = v ?? 'USD'),
                     ),
@@ -538,7 +538,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Customer reference (optional)',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -548,7 +548,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Project description',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -558,13 +558,13 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Internal notes',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        Text('Line items', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                        Text('Line items', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
                         const Spacer(),
                         TextButton(
                           onPressed: () => setState(() => _lines.add(_LineRow())),
@@ -583,7 +583,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         labelText: 'Tax %',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        labelStyle: TextStyle(color: Colors.black54),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -598,9 +598,9 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
                         isExpanded: true,
                         key: ValueKey<String>(_state),
                         initialValue: _state,
-                        dropdownColor: const Color(0xFF1e293b),
+                        dropdownColor: Colors.white,
                         style: GoogleFonts.inter(color: AppColors.slate900),
-                        decoration: InputDecoration(labelText: 'Status', labelStyle: TextStyle(color: Colors.white70)),
+                        decoration: InputDecoration(labelText: 'Status', labelStyle: TextStyle(color: Colors.black54)),
                         items: [
                           for (final s in invoiceStatesOrdered)
                             DropdownMenuItem(value: s, child: Text(InvoiceHelpers.stateLabel(s))),
@@ -624,8 +624,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           flex: 3,
           child: TextField(
             controller: l.descC,
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(hintText: 'Description', hintStyle: TextStyle(color: Colors.white38)),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
+            decoration: InputDecoration(hintText: 'Description', hintStyle: TextStyle(color: Colors.black38)),
           ),
         ),
         const SizedBox(width: 6),
@@ -634,8 +634,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           child: TextField(
             controller: l.qtyC,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(hintText: 'Qty', hintStyle: TextStyle(color: Colors.white38)),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
+            decoration: InputDecoration(hintText: 'Qty', hintStyle: TextStyle(color: Colors.black38)),
           ),
         ),
         const SizedBox(width: 6),
@@ -644,8 +644,8 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           child: TextField(
             controller: l.priceC,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-            decoration: InputDecoration(hintText: 'Price', hintStyle: TextStyle(color: Colors.white38)),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
+            decoration: InputDecoration(hintText: 'Price', hintStyle: TextStyle(color: Colors.black38)),
           ),
         ),
         IconButton(

@@ -28,6 +28,9 @@ class _UsersSheetState extends State<UsersSheet> {
   final _roleCtrl = TextEditingController();
   final _deptCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _bankNameCtrl = TextEditingController();
+  final _sortCodeCtrl = TextEditingController();
+  final _accountNumberCtrl = TextEditingController();
   String _state = 'active';
   String _accessLevel = 'standard';
 
@@ -45,6 +48,9 @@ class _UsersSheetState extends State<UsersSheet> {
     _roleCtrl.dispose();
     _deptCtrl.dispose();
     _passwordCtrl.dispose();
+    _bankNameCtrl.dispose();
+    _sortCodeCtrl.dispose();
+    _accountNumberCtrl.dispose();
     super.dispose();
   }
 
@@ -75,6 +81,9 @@ class _UsersSheetState extends State<UsersSheet> {
       _deptCtrl.text = u['department'] as String? ?? '';
       _state = u['state'] as String? ?? 'active';
       _accessLevel = u['system_access_level'] as String? ?? 'standard';
+      _bankNameCtrl.text = u['bank_name'] as String? ?? '';
+      _sortCodeCtrl.text = u['sort_code'] as String? ?? '';
+      _accountNumberCtrl.text = u['account_number'] as String? ?? '';
       _passwordCtrl.clear();
       _error = null;
     });
@@ -90,6 +99,9 @@ class _UsersSheetState extends State<UsersSheet> {
       _roleCtrl.clear();
       _deptCtrl.clear();
       _passwordCtrl.clear();
+      _bankNameCtrl.clear();
+      _sortCodeCtrl.clear();
+      _accountNumberCtrl.clear();
       _state = 'active';
       _accessLevel = 'standard';
       _error = null;
@@ -110,6 +122,9 @@ class _UsersSheetState extends State<UsersSheet> {
         'department': _deptCtrl.text.trim().isEmpty ? null : _deptCtrl.text.trim(),
         'state': _state,
         'system_access_level': _accessLevel,
+        'bank_name': _bankNameCtrl.text.trim().isEmpty ? null : _bankNameCtrl.text.trim(),
+        'sort_code': _sortCodeCtrl.text.trim().isEmpty ? null : _sortCodeCtrl.text.trim(),
+        'account_number': _accountNumberCtrl.text.trim().isEmpty ? null : _accountNumberCtrl.text.trim(),
       };
       final repo = Get.find<MobileRepository>();
       if (_editingId != null) {
@@ -232,6 +247,12 @@ class _UsersSheetState extends State<UsersSheet> {
               ),
             ),
           ),
+          sheetFieldLabel('Bank name'),
+          sheetTextField(_bankNameCtrl, hint: 'e.g. HSBC, Barclays'),
+          sheetFieldLabel('Sort code'),
+          sheetTextField(_sortCodeCtrl, hint: 'e.g. 12-34-56', keyboard: TextInputType.number),
+          sheetFieldLabel('Account number'),
+          sheetTextField(_accountNumberCtrl, hint: 'e.g. 12345678', keyboard: TextInputType.number),
           sheetFieldLabel(_editingId != null ? 'New password (optional)' : 'Password * (min 8 chars)'),
           sheetTextField(_passwordCtrl, hint: '••••••••', keyboard: TextInputType.visiblePassword),
           const SizedBox(height: 12),

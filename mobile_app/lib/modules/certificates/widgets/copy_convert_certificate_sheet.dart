@@ -128,10 +128,10 @@ Future<void> showCopyConvertCertificateOptionsSheet({
         InputDecoration inputDeco(String hint) {
           return InputDecoration(
             hintText: hint.isEmpty ? null : hint,
-            hintStyle: GoogleFonts.inter(color: Colors.white38),
-            labelStyle: GoogleFonts.inter(color: Colors.white70),
-            border: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-            enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+            hintStyle: GoogleFonts.inter(color: Colors.black38),
+            labelStyle: GoogleFonts.inter(color: Colors.black54),
+            border: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+            enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
           );
         }
 
@@ -147,7 +147,7 @@ Future<void> showCopyConvertCertificateOptionsSheet({
             children: [
               Text(
                 'Copy / convert certificate',
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               Row(
@@ -177,7 +177,7 @@ Future<void> showCopyConvertCertificateOptionsSheet({
                   style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     labelText: 'Target certificate type',
-                    labelStyle: TextStyle(color: Colors.white70),
+                    labelStyle: TextStyle(color: Colors.black54),
                   ),
                   items: certificateTypeCatalog
                       .map(

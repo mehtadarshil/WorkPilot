@@ -75,9 +75,9 @@ class JobCompletionContextPanel extends StatelessWidget {
       children.add(
         _infoCard(
           icon: Icons.people_outline_rounded,
-          color: AppColors.slate300,
-          background: AppColors.whiteOverlay(0.06),
-          border: AppColors.whiteOverlay(0.14),
+          color: AppColors.slate500,
+          background: AppColors.slate100,
+          border: AppColors.slate200,
           title: 'Other engineers',
           body: _siblingChoicesBody(this.context.otherSiblingsWithStageChoice),
         ),
@@ -129,9 +129,9 @@ class JobCompletionContextPanel extends StatelessWidget {
       const SizedBox(height: 10),
       _infoCard(
         icon: Icons.timeline_rounded,
-        color: AppColors.slate300,
-        background: AppColors.whiteOverlay(0.06),
-        border: AppColors.whiteOverlay(0.14),
+        color: AppColors.slate500,
+        background: AppColors.slate100,
+        border: AppColors.slate200,
         title: 'Current job stage',
         body: '**$currentStage** — this is what the office sees on this job right now.',
       ),
@@ -142,9 +142,9 @@ class JobCompletionContextPanel extends StatelessWidget {
       cards.add(
         _infoCard(
           icon: Icons.check_circle_outline_rounded,
-          color: AppColors.slate300,
-          background: AppColors.whiteOverlay(0.06),
-          border: AppColors.whiteOverlay(0.14),
+          color: AppColors.slate500,
+          background: AppColors.slate100,
+          border: AppColors.slate200,
           title: 'Engineers who already finished',
           body: _finishedChoicesBody(),
         ),
@@ -254,7 +254,7 @@ class JobCompletionContextPanel extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: AppColors.slate900,
                   ),
                 ),
                 const SizedBox(height: 4),

@@ -605,7 +605,7 @@ class _CustomerWorkAddressFormViewState extends State<CustomerWorkAddressFormVie
               CheckboxListTile(
                 value: _isActive,
                 onChanged: _saving ? null : (v) => setState(() => _isActive = v ?? true),
-                title: Text('Active work address', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                title: Text('Active work address', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                 activeColor: AppColors.primary,
                 contentPadding: EdgeInsets.zero,
               ),

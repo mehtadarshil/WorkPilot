@@ -224,14 +224,14 @@ class _EditJobViewState extends State<EditJobView> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
             title: Text(
               date != null ? date.toIso8601String().split('T').first : 'Not set',
-              style: GoogleFonts.inter(color: date != null ? Colors.white : AppColors.whiteOverlay(0.5)),
+              style: GoogleFonts.inter(color: date != null ? AppColors.slate900 : AppColors.whiteOverlay(0.5)),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (date != null)
                   IconButton(
-                    icon: Icon(Icons.clear_rounded, color: Colors.white54),
+                    icon: Icon(Icons.clear_rounded, color: Colors.black45),
                     onPressed: _saving ? null : onClear,
                   ),
                 IconButton(
@@ -521,7 +521,7 @@ class _EditJobViewState extends State<EditJobView> {
                         Text('ENGINEER ASSIGNMENT', style: _labelStyle()),
                         const SizedBox(height: 6),
                         if (_controller.officers.isEmpty)
-                          const Text('No engineers/officers available', style: TextStyle(color: Colors.white54))
+                          const Text('No engineers/officers available', style: TextStyle(color: Colors.black45))
                         else
                           Container(
                             decoration: BoxDecoration(

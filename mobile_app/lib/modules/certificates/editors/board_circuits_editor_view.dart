@@ -205,7 +205,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   ),
                   child: Text(
                     'Board is marked done — mark in progress to edit circuits and details.',
-                    style: GoogleFonts.inter(color: Colors.amber.shade100, fontSize: 11),
+                    style: GoogleFonts.inter(color: Colors.amber.shade900, fontSize: 11),
                   ),
                 ),
               Flexible(
@@ -245,7 +245,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: AppColors.whiteOverlay(0.04),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: AppColors.slate200),
                     ),
@@ -284,13 +284,13 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                             width: stickyCircuitColumnsWidth(),
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                color: const Color(0xFF0B1220),
+                                color: Colors.white,
                                 border: Border(
-                                  right: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                                  right: BorderSide(color: AppColors.slate200),
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.35),
+                                    color: Colors.black.withValues(alpha: 0.12),
                                     blurRadius: 8,
                                     offset: const Offset(2, 0),
                                   ),
@@ -349,12 +349,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               key: ValueKey('board-name-bar:${board['id']}:${board['name']}'),
               initialValue: board['name']?.toString() ?? '',
               readOnly: readOnly,
-              style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14, fontWeight: FontWeight.w700),
               decoration: InputDecoration(
                 labelText: 'Board name',
-                labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 11),
+                labelStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11),
                 filled: true,
-                fillColor: AppColors.whiteOverlay(0.06),
+                fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 enabledBorder: OutlineInputBorder(
@@ -385,7 +385,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     return Container(
       margin: EdgeInsets.fromLTRB(16, compact ? 4 : 8, 16, compact ? 4 : 8),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.04),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.slate200),
       ),
@@ -395,15 +395,15 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             dense: true,
             title: Text(
               'Board Specifications & Photos',
-              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold),
+              style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.bold),
             ),
             subtitle: Text(
               boardStatusLabel(board['status']?.toString()),
-              style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 11),
+              style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11),
             ),
             trailing: Icon(
               _detailsExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-              color: Colors.white,
+              color: AppColors.slate500,
             ),
             onTap: () => setState(() => _detailsExpanded = !_detailsExpanded),
           ),
@@ -502,7 +502,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                       ],
                     ),
                   ),
-                  const VerticalDivider(color: Colors.white24, width: 20),
+                  const VerticalDivider(color: Colors.black12, width: 20),
                   SizedBox(
                     width: 320,
                     child: Column(
@@ -513,7 +513,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                           children: [
                             Text(
                               'Board Photos',
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                             if (!readOnly)
                               Row(
@@ -603,7 +603,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
       initialValue: board[key]?.toString() ?? '',
       maxLines: maxLines,
       readOnly: readOnly,
-      style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
       decoration: _boardDecoration(label),
       onChanged: readOnly ? null : (val) => _patchBoardField(board, key, val, boards),
     );
@@ -622,7 +622,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     return DropdownButtonFormField<String>(
       value: safeVal,
       dropdownColor: AppColors.slate50,
-      style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
       decoration: _boardDecoration(label),
       items: options.map((o) => DropdownMenuItem(value: o.value, child: Text(o.label, overflow: TextOverflow.ellipsis))).toList(),
       onChanged: readOnly ? null : (nextVal) {
@@ -726,9 +726,9 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
   InputDecoration _boardDecoration(String label) {
     return InputDecoration(
       labelText: label,
-      labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 10),
+      labelStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 10),
       filled: true,
-      fillColor: AppColors.whiteOverlay(0.04),
+      fillColor: Colors.white,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
@@ -759,7 +759,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               IconButton(
                 tooltip: 'Quick add 6',
                 onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, 6),
-                icon: Icon(Icons.playlist_add_rounded, color: Colors.white, size: 20),
+                icon: Icon(Icons.playlist_add_rounded, color: AppColors.slate700, size: 20),
               ),
               IconButton(
                 tooltip: 'Add circuits',
@@ -769,7 +769,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               DropdownButton<int>(
                 value: _quickAddCount,
                 dropdownColor: AppColors.slate50,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
                 underline: const SizedBox.shrink(),
                 items: const [1, 6, 12, 18].map((c) => DropdownMenuItem(value: c, child: Text('× $c'))).toList(),
                 onChanged: readOnly
@@ -821,6 +821,20 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 icon: Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 20),
               ),
               IconButton(
+                tooltip: 'Fill blanks',
+                onPressed: readOnly || circuits.isEmpty
+                    ? null
+                    : () => _autofillBlanks(board, circuits, boards),
+                icon: Icon(Icons.grid_on_rounded, color: AppColors.primary, size: 20),
+              ),
+              IconButton(
+                tooltip: 'Fill column',
+                onPressed: readOnly || circuits.isEmpty
+                    ? null
+                    : () => _fillColumnDialog(board, circuits, boards),
+                icon: Icon(Icons.view_column_rounded, color: AppColors.primary, size: 20),
+              ),
+              IconButton(
                 tooltip: 'Renumber',
                 onPressed: readOnly ? null : () => _renumberCircuits(board, circuits, boards),
                 icon: Icon(Icons.format_list_numbered_rounded, color: AppColors.primary, size: 20),
@@ -839,7 +853,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: readOnly ? null : () => _addCircuits(board, circuits, boards, 6),
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.whiteOverlay(0.1), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.slate100, foregroundColor: AppColors.slate700),
               child: Text('Quick add 6', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
             const SizedBox(width: 8),
@@ -857,7 +871,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
             DropdownButton<int>(
               value: _quickAddCount,
               dropdownColor: AppColors.slate50,
-              style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
               items: const [1, 6, 12, 18].map((c) => DropdownMenuItem(value: c, child: Text('× $c'))).toList(),
               onChanged: readOnly ? null : (v) {
                 if (v != null) setState(() => _quickAddCount = v);
@@ -901,6 +915,18 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               onPressed: readOnly || circuits.length < 2 ? null : () => _autofillFromPrevious(board, circuits, boards),
               icon: Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 18),
               label: Text('Autofill', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: readOnly || circuits.isEmpty ? null : () => _autofillBlanks(board, circuits, boards),
+              icon: Icon(Icons.grid_on_rounded, color: AppColors.primary, size: 18),
+              label: Text('Fill blanks', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: readOnly || circuits.isEmpty ? null : () => _fillColumnDialog(board, circuits, boards),
+              icon: Icon(Icons.view_column_rounded, color: AppColors.primary, size: 18),
+              label: Text('Fill column', style: GoogleFonts.inter(color: AppColors.primary, fontSize: 12)),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
@@ -1000,12 +1026,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
               children: [
                 Icon(Icons.view_column_outlined, color: AppColors.slate400, size: 16),
                 const SizedBox(width: 8),
-                Text('Fill column', style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 12)),
+                Text('Fill column', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
                 const SizedBox(width: 8),
                 DropdownButton<String>(
                   value: _fillColumnKey,
                   dropdownColor: AppColors.slate50,
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
                   underline: const SizedBox.shrink(),
                   items: fillable
                       .map((col) => DropdownMenuItem(value: col.key, child: Text(col.label, overflow: TextOverflow.ellipsis)))
@@ -1022,7 +1048,7 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                   child: TextField(
                     controller: _fillValueController,
                     readOnly: readOnly,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
                     decoration: InputDecoration(
                       hintText: 'Value…',
                       hintStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12),
@@ -1231,12 +1257,12 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
                 children: [
                   _circuitRowActionButton(
                     icon: Icons.arrow_upward,
-                    color: Colors.white70,
+                    color: Colors.black54,
                     onPressed: readOnly || rowIndex <= 0 ? null : () => _moveCircuit(rowIndex, -1, board, circuits, boards),
                   ),
                   _circuitRowActionButton(
                     icon: Icons.arrow_downward,
-                    color: Colors.white70,
+                    color: Colors.black54,
                     onPressed: readOnly || rowIndex >= circuits.length - 1
                         ? null
                         : () => _moveCircuit(rowIndex, 1, board, circuits, boards),
@@ -1443,6 +1469,247 @@ class _BoardCircuitsEditorViewState extends State<BoardCircuitsEditorView> {
     nextCircuits[nextCircuits.length - 1] = filled;
     _saveCircuitsList(nextCircuits, board, boards);
     Get.snackbar('Autofill', 'Last circuit filled from previous row.');
+  }
+
+  Future<void> _autofillBlanks(
+    Map<String, dynamic> board,
+    List<Map<String, dynamic>> circuits,
+    List<Map<String, dynamic>> boards,
+  ) async {
+    final blanks = countBlankCells(circuits);
+    if (blanks == 0) {
+      Get.snackbar('Autofill', 'No empty cells to fill.');
+      return;
+    }
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Text(
+          'Autofill all blanks?',
+          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'This will fill all $blanks empty cell${blanks == 1 ? '' : 's'} in the table with the selected value. This action cannot be undone.',
+          style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w600)),
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: autofillBlankValues
+                .map(
+                  (v) => ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(v),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    ),
+                    child: Text('Autofill with $v', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    final next = autofillBlankCells(
+      circuits,
+      selected,
+      board,
+      board['maxZsUse100Percent'] == true,
+    );
+    _saveCircuitsList(next, board, boards);
+    Get.snackbar('Autofill', 'Filled $blanks empty cell${blanks == 1 ? '' : 's'} with "$selected".');
+  }
+
+  Future<void> _fillColumnDialog(
+    Map<String, dynamic> board,
+    List<Map<String, dynamic>> circuits,
+    List<Map<String, dynamic>> boards,
+  ) async {
+    if (circuits.isEmpty) {
+      Get.snackbar('Fill column', 'Add circuits first.');
+      return;
+    }
+    final fillable = fillableCircuitColumns();
+    var selKey = fillable.any((c) => c.key == _fillColumnKey) ? _fillColumnKey : fillable.first.key;
+    final valueCtrl = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final label = fillable.firstWhere((c) => c.key == selKey).label;
+          final suggestions = getColumnQuickOptions(selKey)
+              .where((o) => !autofillBlankValues.contains(o))
+              .toList();
+
+          void apply(List<Map<String, dynamic>> next, String msg) {
+            _saveCircuitsList(next, board, boards);
+            Navigator.of(ctx).pop();
+            Get.snackbar('Fill column', msg);
+          }
+
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: Text('Fill column', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Column', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.slate200),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selKey,
+                          isExpanded: true,
+                          dropdownColor: Colors.white,
+                          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
+                          items: fillable
+                              .map((c) => DropdownMenuItem(value: c.key, child: Text(c.label, overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setLocal(() => selKey = v);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text('Set $label to…', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: valueCtrl,
+                      autofocus: true,
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
+                      onChanged: (_) => setLocal(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Enter value to fill…',
+                        hintStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 14),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: autofillBlankValues
+                          .map(
+                            (v) => GestureDetector(
+                              onTap: () => setLocal(() => valueCtrl.text = v),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.slate900,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(v, style: GoogleFonts.inter(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    if (suggestions.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 160),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: suggestions
+                                .map(
+                                  (o) => InkWell(
+                                    onTap: () => setLocal(() => valueCtrl.text = o),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: valueCtrl.text == o ? AppColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+                                        border: Border(bottom: BorderSide(color: AppColors.slate100)),
+                                      ),
+                                      child: Text(
+                                        o,
+                                        style: GoogleFonts.inter(
+                                          color: valueCtrl.text == o ? AppColors.primary : AppColors.slate700,
+                                          fontSize: 13,
+                                          fontWeight: valueCtrl.text == o ? FontWeight.w700 : FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            actions: [
+              TextButton.icon(
+                onPressed: () {
+                  final next = clearColumnIntelligent(circuits, selKey, board, board['maxZsUse100Percent'] == true);
+                  apply(next, 'Cleared "$label".');
+                },
+                icon: Icon(Icons.backspace_outlined, color: AppColors.slate600, size: 16),
+                label: Text('Clear', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w600, fontSize: 12)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w600)),
+              ),
+              OutlinedButton(
+                onPressed: valueCtrl.text.trim().isEmpty
+                    ? null
+                    : () {
+                        final next = fillColumnBlanks(circuits, selKey, valueCtrl.text.trim(), board, board['maxZsUse100Percent'] == true);
+                        apply(next, 'Filled blanks in "$label".');
+                      },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: BorderSide(color: AppColors.primary),
+                ),
+                child: Text('Fill blanks', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+              ElevatedButton(
+                onPressed: valueCtrl.text.trim().isEmpty
+                    ? null
+                    : () {
+                        final next = fillColumnIntelligent(circuits, selKey, valueCtrl.text.trim(), board, board['maxZsUse100Percent'] == true);
+                        apply(next, 'Filled "$label".');
+                      },
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                child: Text('Fill all', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    valueCtrl.dispose();
+    if (fillable.any((c) => c.key == selKey)) {
+      setState(() => _fillColumnKey = selKey);
+    }
   }
 
   void _renumberCircuits(Map<String, dynamic> board, List<Map<String, dynamic>> circuits, List<Map<String, dynamic>> boards) {

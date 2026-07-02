@@ -147,7 +147,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                     Text(
                       'Create new report',
                       style: GoogleFonts.inter(
-                        color: Colors.white,
+                        color: AppColors.slate900,
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -166,7 +166,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                         child: Text(
                           error,
                           style: GoogleFonts.inter(
-                            color: Colors.red.shade300,
+                            color: Colors.red.shade700,
                             fontSize: 13,
                           ),
                         ),
@@ -189,16 +189,16 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                       const SizedBox(height: 6),
                       Container(
                         decoration: BoxDecoration(
-                          color: AppColors.whiteOverlay(0.06),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
                             value: selectedCustomerId,
-                            dropdownColor: const Color(0xFF1E293B),
+                            dropdownColor: AppColors.slate50,
                             isExpanded: true,
-                            icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
+                            icon: Icon(Icons.arrow_drop_down, color: AppColors.slate500),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             items: customers.map((c) {
                               final rawId = c['id'];
@@ -210,7 +210,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 value: cid,
                                 child: Text(
                                   name,
-                                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                                 ),
                               );
                             }).toList(),
@@ -241,23 +241,23 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                     const SizedBox(height: 6),
                     Container(
                       decoration: BoxDecoration(
-                        color: AppColors.whiteOverlay(0.06),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                        border: Border.all(color: AppColors.slate200),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int?>(
                           value: selectedWorkAddressId,
-                          dropdownColor: const Color(0xFF1E293B),
+                          dropdownColor: AppColors.slate50,
                           isExpanded: true,
-                          icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
+                          icon: Icon(Icons.arrow_drop_down, color: AppColors.slate500),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           items: [
                             DropdownMenuItem<int?>(
                               value: null,
                               child: Text(
                                 workAddresses.isEmpty ? 'No site selected' : 'No site selected (customer level)',
-                                style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                               ),
                             ),
                             ...workAddresses.map((wa) {
@@ -266,7 +266,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 value: wid,
                                 child: Text(
                                   siteLabel(wa),
-                                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -300,16 +300,16 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                       const SizedBox(height: 6),
                       Container(
                         decoration: BoxDecoration(
-                          color: AppColors.whiteOverlay(0.06),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<int>(
                             value: selectedTemplateId,
-                            dropdownColor: const Color(0xFF1E293B),
+                            dropdownColor: AppColors.slate50,
                             isExpanded: true,
-                            icon: Icon(Icons.arrow_drop_down, color: Colors.white54),
+                            icon: Icon(Icons.arrow_drop_down, color: AppColors.slate500),
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             items: templates.map((t) {
                               final rawId = t['id'];
@@ -321,7 +321,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 value: tid,
                                 child: Text(
                                   name,
-                                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                                 ),
                               );
                             }).toList(),
@@ -433,13 +433,21 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                   style: GoogleFonts.inter(color: AppColors.slate900),
                   decoration: InputDecoration(
                     hintText: 'Search by cert, address, customer...',
-                    hintStyle: GoogleFonts.inter(color: AppColors.slate400),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
+                    hintStyle: GoogleFonts.inter(color: AppColors.slate500),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.06),
+                    fillColor: Colors.white,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
+                      borderSide: const BorderSide(color: AppColors.slate200),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.slate200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary),
                     ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
@@ -463,7 +471,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                             Text(
                               controller.error.value,
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(color: AppColors.slate400),
+                              style: GoogleFonts.inter(color: AppColors.slate600),
                             ),
                             const SizedBox(height: 16),
                             FilledButton(
@@ -508,8 +516,11 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Material(
-                              color: AppColors.whiteOverlay(0.08),
-                              borderRadius: BorderRadius.circular(16),
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: const BorderSide(color: AppColors.slate200),
+                              ),
                               child: ListTile(
                                 onTap: () {
                                   final rawCid = row['customer_id'];
@@ -538,7 +549,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                 title: Text(
                                   _titleLine(row),
                                   style: GoogleFonts.inter(
-                                    color: Colors.white,
+                                    color: AppColors.slate900,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -565,7 +576,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                                   child: Text(
                                                     address,
                                                     style: GoogleFonts.inter(
-                                                      color: AppColors.slate300,
+                                                      color: AppColors.slate500,
                                                       fontSize: 12.5,
                                                     ),
                                                     maxLines: 1,
@@ -589,7 +600,7 @@ class SiteReportsListView extends GetView<SiteReportsListController> {
                                       ),
                                 trailing: Icon(
                                   Icons.chevron_right_rounded,
-                                  color: Colors.white54,
+                                  color: Colors.black45,
                                 ),
                               ),
                             ),

@@ -257,8 +257,8 @@ class _SettingsHero extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.whiteOverlay(0.18)),
-        color: AppColors.whiteOverlay(0.08),
+        border: Border.all(color: AppColors.slate200),
+        color: Colors.white,
       ),
       child: Row(
         children: [
@@ -279,7 +279,7 @@ class _SettingsHero extends StatelessWidget {
                 Text(
                   'Settings module',
                   style: GoogleFonts.inter(
-                    color: Colors.white,
+                    color: AppColors.slate900,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                   ),
@@ -325,9 +325,9 @@ class _SettingsTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: AppColors.whiteOverlay(allowed ? 0.2 : 0.08),
+              color: AppColors.slate200,
             ),
-            color: AppColors.whiteOverlay(allowed ? 0.1 : 0.04),
+            color: allowed ? Colors.white : AppColors.slate100,
           ),
           child: Row(
             children: [
@@ -340,7 +340,7 @@ class _SettingsTile extends StatelessWidget {
                 ),
                 child: Icon(
                   tab.icon,
-                  color: allowed ? Colors.white : AppColors.whiteOverlay(0.38),
+                  color: allowed ? tab.accent : AppColors.slate400,
                 ),
               ),
               const SizedBox(width: 14),
@@ -352,8 +352,8 @@ class _SettingsTile extends StatelessWidget {
                       tab.title,
                       style: GoogleFonts.inter(
                         color: allowed
-                            ? Colors.white
-                            : AppColors.whiteOverlay(0.45),
+                            ? AppColors.slate900
+                            : AppColors.slate400,
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
                       ),

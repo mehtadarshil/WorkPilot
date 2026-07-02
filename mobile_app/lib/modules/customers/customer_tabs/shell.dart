@@ -126,9 +126,9 @@ Widget metaChip(String label) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
-      border: Border.all(color: AppColors.whiteOverlay(0.22)),
+      border: Border.all(color: AppColors.slate200),
       borderRadius: BorderRadius.circular(8),
-      color: AppColors.whiteOverlay(0.05),
+      color: AppColors.slate100,
     ),
     child: Text(
       label,
@@ -164,7 +164,7 @@ Widget statusPill(String label, {bool compact = false}) {
   } else if (up == 'INACTIVE') {
     bg = AppColors.slate400;
   } else {
-    bg = AppColors.whiteOverlay(0.22);
+    bg = AppColors.slate400;
   }
   return Container(
     padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: compact ? 3 : 4),

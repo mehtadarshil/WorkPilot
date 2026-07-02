@@ -39,7 +39,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
         CheckboxListTile(
           value: isServiceJob,
           onChanged: saving ? null : (v) => onServiceJobChanged(v ?? false),
-          title: Text('Service job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          title: Text('Service job', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
           subtitle: Text(
             'Enable automatic service reminder scheduling for this job type.',
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.5)),
@@ -54,7 +54,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Service reminder frequency', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                Text('Service reminder frequency', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -109,7 +109,7 @@ class CustomerNewJobServiceSection extends StatelessWidget {
                         selected: selected,
                         onSelected: saving ? null : (on) => onServiceItemChanged(name, on),
                         selectedColor: AppColors.primary.withValues(alpha: 0.35),
-                        checkmarkColor: Colors.white,
+                        checkmarkColor: AppColors.primaryDark,
                       );
                     }).toList(),
                   ),

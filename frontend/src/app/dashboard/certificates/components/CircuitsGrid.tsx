@@ -38,9 +38,19 @@ type Props = {
   circuits: CircuitRow[];
   readOnly?: boolean;
   onMoveCircuit?: (circuitId: string, direction: -1 | 1) => void;
+  selectedColumn?: keyof CircuitRow | null;
+  onSelectColumn?: (key: keyof CircuitRow) => void;
 };
 
-export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMoveCircuit }: Props) {
+export function CircuitsGrid({
+  boardId,
+  board,
+  circuits,
+  readOnly = false,
+  onMoveCircuit,
+  selectedColumn = null,
+  onSelectColumn,
+}: Props) {
   const { setDocument } = useCertificateEditor();
 
   const focusCircuitCell = (grid: HTMLElement, rowIndex: number, colIndex: number) => {
@@ -205,21 +215,37 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
             <th className="w-16 bg-slate-50" rowSpan={2} />
           </tr>
           <tr className="border-b border-slate-200 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            {CIRCUIT_COLUMNS.map((col) => (
-              <th
-                key={col.key}
-                className={`border-r border-slate-100 px-1 py-1.5 text-left ${col.width} ${
-                  col.sticky ? 'sticky left-0 z-20 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]' : ''
-                } ${col.key === 'description' ? 'sticky left-11 z-20 bg-slate-50' : ''}`}
-              >
-                <span className="flex items-center gap-0.5">
-                  {col.label}
-                  {col.calculated && (
-                    <Calculator className="size-3 shrink-0 text-[#14B8A6]" aria-label="Auto-calculated" />
-                  )}
-                </span>
-              </th>
-            ))}
+            {CIRCUIT_COLUMNS.map((col) => {
+              const isSelected = selectedColumn === col.key;
+              const selectable = !!onSelectColumn;
+              return (
+                <th
+                  key={col.key}
+                  onClick={selectable ? () => onSelectColumn?.(col.key) : undefined}
+                  title={selectable ? 'Click to select this column for Fill column' : undefined}
+                  className={`border-r border-slate-100 px-1 py-1.5 text-left ${col.width} ${
+                    selectable ? 'cursor-pointer select-none hover:bg-[#14B8A6]/10' : ''
+                  } ${
+                    isSelected
+                      ? 'bg-[#14B8A6]/15 text-[#0f766e] ring-1 ring-inset ring-[#14B8A6]/40'
+                      : col.sticky
+                        ? 'bg-slate-50'
+                        : col.key === 'description'
+                          ? 'bg-slate-50'
+                          : ''
+                  } ${col.sticky ? 'sticky left-0 z-20 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]' : ''} ${
+                    col.key === 'description' ? 'sticky left-11 z-20' : ''
+                  }`}
+                >
+                  <span className="flex items-center gap-0.5">
+                    {col.label}
+                    {col.calculated && (
+                      <Calculator className="size-3 shrink-0 text-[#14B8A6]" aria-label="Auto-calculated" />
+                    )}
+                  </span>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -239,7 +265,11 @@ export function CircuitsGrid({ boardId, board, circuits, readOnly = false, onMov
                       col.sticky ? 'sticky left-0 z-[5] bg-white' : ''
                     } ${col.key === 'description' ? 'sticky left-11 z-[5] bg-white' : ''}`}
                   >
-                    <div className="relative flex items-center">
+                    <div
+                      className={`relative flex items-center ${
+                        selectedColumn === col.key ? 'bg-[#14B8A6]/10' : ''
+                      }`}
+                    >
                       <CircuitCellInput
                         value={cellValue}
                         options={options}

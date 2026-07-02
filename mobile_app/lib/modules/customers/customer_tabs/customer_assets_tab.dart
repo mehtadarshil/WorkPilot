@@ -131,7 +131,7 @@ class _CustomerAssetsTabState extends State<CustomerAssetsTab> {
                                     children: [
                                       Text(
                                         title,
-                                        style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15),
+                                        style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 15),
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),

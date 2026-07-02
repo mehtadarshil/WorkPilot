@@ -315,7 +315,7 @@ class WorkHubTab extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         color: Colors.white,
                         border: Border.all(
-                          color: AppColors.whiteOverlay(0.08),
+                          color: AppColors.slate200,
                           width: 0.8,
                         ),
                       ),

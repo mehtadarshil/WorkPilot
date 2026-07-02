@@ -953,7 +953,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                       Expanded(
                         child: Text(
                           'Site report',
-                          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                         ),
                       ),
                       FilledButton.tonal(onPressed: _downloadPdf, child: const Text('PDF')),
@@ -961,7 +961,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   ),
                   if (cert != null && cert.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text('Certificate: $cert', style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13)),
+                    Text('Certificate: $cert', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13)),
                   ],
                   if (updated != null && updated.isNotEmpty) ...[
                     const SizedBox(height: 4),
@@ -975,7 +975,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                       labelText: 'Report title',
                       labelStyle: GoogleFonts.inter(color: AppColors.slate400),
                       filled: true,
-                      fillColor: AppColors.whiteOverlay(0.06),
+                      fillColor: Colors.white,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
@@ -983,7 +983,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 ] else if (pageLabels.isNotEmpty) ...[
                   Text(
                     pageLabels[safePageIndex],
-                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 17),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -1190,36 +1190,36 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: AppColors.whiteOverlay(0.04),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.whiteOverlay(0.1)),
+              border: Border.all(color: AppColors.slate200),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ListTile(
                   dense: true,
-                  title: Text(cardTitle, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                  title: Text(cardTitle, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: Icon(Icons.arrow_upward_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.arrow_upward_rounded, color: AppColors.slate500, size: 20),
                         tooltip: 'Move Up',
                         onPressed: i == 0 ? null : () => _moveRepeatableInstance(sectionId, i, 'up'),
                       ),
                       IconButton(
-                        icon: Icon(Icons.arrow_downward_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.arrow_downward_rounded, color: AppColors.slate500, size: 20),
                         tooltip: 'Move Down',
                         onPressed: i == instances.length - 1 ? null : () => _moveRepeatableInstance(sectionId, i, 'down'),
                       ),
                       IconButton(
-                        icon: Icon(Icons.copy_rounded, color: AppColors.slate300, size: 20),
+                        icon: Icon(Icons.copy_rounded, color: AppColors.slate500, size: 20),
                         tooltip: 'Copy $repeatLabel',
                         onPressed: () => _copyRepeatableInstance(sectionId, inst, sectionFields),
                       ),
                       IconButton(
-                        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, color: AppColors.slate300),
+                        icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, color: AppColors.slate500),
                         onPressed: () => setState(() => _repeatableCollapsed[collapseKey] = !collapsed),
                       ),
                       IconButton(
@@ -1348,13 +1348,13 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.whiteOverlay(0.04),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.slate200),
             ),
             child: Text(
               content,
-              style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13, height: 1.4),
+              style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13, height: 1.4),
             ),
           ),
         ),
@@ -1366,7 +1366,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       child: Text(
         label,
         style: GoogleFonts.inter(
-          color: Colors.white,
+          color: AppColors.slate700,
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
@@ -1402,7 +1402,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.whiteOverlay(0.03),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.slate200),
                   ),
@@ -1422,7 +1422,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                       else
                         const SizedBox(
                           height: 100,
-                          child: Center(child: Text('Loading preview...', style: TextStyle(color: Colors.white60))),
+                          child: Center(child: Text('Loading preview...', style: TextStyle(color: Colors.black45))),
                         ),
                       const SizedBox(height: 8),
                       if (capCtr != null)
@@ -1430,12 +1430,12 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: TextField(
                             controller: capCtr,
-                            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Caption (e.g. Before work)',
                               labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
                               filled: true,
-                              fillColor: AppColors.whiteOverlay(0.03),
+                              fillColor: Colors.white,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                           ),
@@ -1445,12 +1445,12 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: TextField(
                             controller: noteCtr,
-                            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Short note (optional)',
                               labelStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
                               filled: true,
-                              fillColor: AppColors.whiteOverlay(0.03),
+                              fillColor: Colors.white,
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                             ),
                           ),
@@ -1467,8 +1467,8 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
               }(),
             OutlinedButton.icon(
               onPressed: () => _pickImageSource(context, key),
-              icon: Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 16),
-              label: Text('Add photo', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              icon: Icon(Icons.add_a_photo_rounded, color: AppColors.primary, size: 16),
+              label: Text('Add photo', style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(color: AppColors.whiteOverlay(0.25)),
               ),
@@ -1523,19 +1523,19 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                 value: null,
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: AppColors.whiteOverlay(0.06),
+                  fillColor: Colors.white,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                dropdownColor: const Color(0xFF1E293B),
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                hint: Text('-- Choose Profile --', style: GoogleFonts.inter(color: Colors.white70, fontSize: 13)),
+                dropdownColor: Colors.white,
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
+                hint: Text('-- Choose Profile --', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 13)),
                 items: [
                   DropdownMenuItem<int?>(
                     value: -99,
                     child: Text(
                       myName.isNotEmpty ? 'Myself ($myName)' : 'Myself',
-                      style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                     ),
                   ),
                   if (isAdmin)
@@ -1546,7 +1546,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
                       final label = role.isNotEmpty ? '$name ($role)' : name;
                       return DropdownMenuItem<int?>(
                         value: id,
-                        child: Text(label, style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                        child: Text(label, style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13)),
                       );
                     }),
                 ],
@@ -1594,7 +1594,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
       } else if (imageId != null) {
         content = const SizedBox(
           height: 120,
-          child: Center(child: Text('Loading signature...', style: TextStyle(color: Colors.white60))),
+          child: Center(child: Text('Loading signature...', style: TextStyle(color: Colors.black45))),
         );
       } else {
         final sig = _sigCtr.putIfAbsent(
@@ -1654,10 +1654,10 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             value: _yesNo[controlKey] != null && _yesNo[controlKey]!.isNotEmpty ? _yesNo[controlKey] : null,
             decoration: InputDecoration(
               filled: true,
-              fillColor: AppColors.whiteOverlay(0.06),
+              fillColor: Colors.white,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            dropdownColor: const Color(0xFF1E293B),
+            dropdownColor: Colors.white,
             style: GoogleFonts.inter(color: AppColors.slate900),
             items: [
               const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: AppColors.slate900))),
@@ -1680,10 +1680,10 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             value: _yesNo[controlKey] != null && _yesNo[controlKey]!.isNotEmpty ? _yesNo[controlKey] : null,
             decoration: InputDecoration(
               filled: true,
-              fillColor: AppColors.whiteOverlay(0.06),
+              fillColor: Colors.white,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            dropdownColor: const Color(0xFF1E293B),
+            dropdownColor: Colors.white,
             style: GoogleFonts.inter(color: AppColors.slate900),
             items: [
               const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(color: AppColors.slate900))),
@@ -1709,7 +1709,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
             style: GoogleFonts.inter(color: AppColors.slate900),
             decoration: InputDecoration(
               filled: true,
-              fillColor: AppColors.whiteOverlay(0.06),
+              fillColor: Colors.white,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               suffixIcon: Icon(Icons.calendar_month_rounded, color: AppColors.slate400),
             ),
@@ -1758,7 +1758,7 @@ class _JobTabSiteReportsState extends State<JobTabSiteReports> {
           style: GoogleFonts.inter(color: AppColors.slate900),
           decoration: InputDecoration(
             filled: true,
-            fillColor: AppColors.whiteOverlay(0.06),
+            fillColor: Colors.white,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),

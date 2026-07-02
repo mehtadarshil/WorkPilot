@@ -24,8 +24,12 @@ export function mountTenantTeamRoutes(
         permissions: unknown;
         status: string | null;
         created_at: Date;
+        bank_name: string | null;
+        sort_code: string | null;
+        account_number: string | null;
       }>(
-        `SELECT id, email, full_name, role, permissions, status, created_at
+        `SELECT id, email, full_name, role, permissions, status, created_at,
+                bank_name, sort_code, account_number
          FROM users
          WHERE (tenant_admin_id = $1 AND role = 'STAFF') OR (id = $1 AND role = 'ADMIN')
          ORDER BY role DESC, id ASC`,
@@ -41,8 +45,12 @@ export function mountTenantTeamRoutes(
         linked_user_id: number | null;
         password_hash: string | null;
         created_at: Date;
+        bank_name: string | null;
+        sort_code: string | null;
+        account_number: string | null;
       }>(
-        `SELECT id, email, full_name, state, permissions, linked_user_id, password_hash, created_at
+        `SELECT id, email, full_name, state, permissions, linked_user_id, password_hash, created_at,
+                bank_name, sort_code, account_number
          FROM officers WHERE created_by = $1 ORDER BY full_name ASC`,
         [owner.userId],
       );
@@ -58,6 +66,9 @@ export function mountTenantTeamRoutes(
         status: row.status ?? 'ACTIVE',
         created_at: row.created_at.toISOString(),
         access_label: row.role === 'ADMIN' ? 'Owner (web + mobile)' : 'Dashboard (web + mobile)',
+        bank_name: row.bank_name ?? null,
+        sort_code: row.sort_code ?? null,
+        account_number: row.account_number ?? null,
       }));
 
       const fieldRows = offs.rows.map((row) => ({
@@ -76,6 +87,9 @@ export function mountTenantTeamRoutes(
           row.linked_user_id != null
             ? 'Field profile (mobile via dashboard login)'
             : 'Field (mobile app only)',
+        bank_name: row.bank_name ?? null,
+        sort_code: row.sort_code ?? null,
+        account_number: row.account_number ?? null,
       }));
 
       return res.json({ members: [...dashboardRows, ...fieldRows] });

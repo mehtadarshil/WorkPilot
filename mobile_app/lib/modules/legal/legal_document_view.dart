@@ -16,9 +16,16 @@ class LegalDocumentView extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.slate50,
       appBar: AppBar(
-        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: AppColors.slate900,
+        title: Text(
+          title,
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.slate900),
+        ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.slate700),
           onPressed: Get.back,
         ),
       ),
@@ -35,7 +42,7 @@ class LegalDocumentView extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             child: SelectableText(
               body,
-              style: GoogleFonts.inter(fontSize: 14, height: 1.5, color: Colors.white.withValues(alpha: 0.92)),
+              style: GoogleFonts.inter(fontSize: 14, height: 1.5, color: AppColors.slate700),
             ),
           ),
         ),

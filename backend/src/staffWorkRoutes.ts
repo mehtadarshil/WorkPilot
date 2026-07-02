@@ -357,7 +357,7 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
     try {
       const officerResult = await pool.query(
-        `SELECT id, full_name, role_position, department, state
+        `SELECT id, full_name, role_position, department, state, bank_name, sort_code, account_number
          FROM officers
          ${isSuperAdmin ? '' : 'WHERE created_by = $1'}
          ORDER BY full_name ASC`,
@@ -565,6 +565,9 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
           role_position: (o.role_position as string | null) ?? null,
           department: (o.department as string | null) ?? null,
           state: o.state as string,
+          bank_name: (o as any).bank_name ?? null,
+          sort_code: (o as any).sort_code ?? null,
+          account_number: (o as any).account_number ?? null,
           days_worked: Number(ts?.days_worked ?? 0),
           total_seconds: Number(ts?.total_seconds ?? 0),
           travelling_seconds: Number(ts?.travelling_seconds ?? 0),

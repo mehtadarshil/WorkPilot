@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:glass_kit/glass_kit.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -37,37 +36,21 @@ class LoginView extends GetView<LoginController> {
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(20, 16, 20, inset.bottom + 20),
-                  child: GlassContainer.frostedGlass(
+                  child: Container(
                     height: cardH,
                     width: cardW,
-                    blur: 20,
-                    frostedOpacity: 0.04,
-                    borderRadius: BorderRadius.circular(28),
-                    borderWidth: 0.8,
-                    borderGradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.whiteOverlay(0.18),
-                        AppColors.whiteOverlay(0.02),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: AppColors.slate200, width: 0.8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.blackOverlay(0.08),
+                          blurRadius: 32,
+                          offset: const Offset(0, 16),
+                        ),
                       ],
                     ),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.whiteOverlay(0.02),
-                        const Color(0x331e293b),
-                        const Color(0x660f172a),
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.blackOverlay(0.3),
-                        blurRadius: 32,
-                        offset: const Offset(0, 16),
-                      ),
-                    ],
                     padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
@@ -326,7 +309,7 @@ class _EmailField extends GetView<LoginController> {
             hintStyle: GoogleFonts.inter(color: AppColors.slate500),
             prefixIcon: Icon(Icons.mail_outline_rounded, color: AppColors.slate400, size: 22),
             filled: true,
-            fillColor: AppColors.whiteOverlay(0.06),
+            fillColor: AppColors.slate100,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
@@ -390,7 +373,7 @@ class _PasswordField extends GetView<LoginController> {
                 ),
               ),
               filled: true,
-              fillColor: AppColors.whiteOverlay(0.06),
+              fillColor: AppColors.slate100,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -467,7 +450,7 @@ class _SignInButton extends GetView<LoginController> {
             shadowColor: AppColors.primary.withValues(alpha: 0.45),
             backgroundColor: AppColors.primary,
             disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.45),
-            foregroundColor: AppColors.slate900,
+            foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
           child: loading
@@ -534,7 +517,7 @@ class _RememberMeCheckbox extends GetView<LoginController> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   side: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: AppColors.slate300,
                     width: 1.5,
                   ),
                 ),

@@ -36,11 +36,18 @@ export function mountTenantStaffRoutes(
 ): void {
   const { pool, authenticate } = deps;
 
+  const cleanBank = (v: unknown): string | null => {
+    if (typeof v !== 'string') return null;
+    const t = v.trim();
+    return t.length ? t : null;
+  };
+
   app.get('/api/tenant-staff', authenticate, requireTenantOwner, async (req: Request, res: Response) => {
     const u = (req as AuthReq).user!;
     try {
       const r = await pool.query<DbStaffRow>(
-        `SELECT id, email, full_name, role, tenant_admin_id, permissions, status, created_at
+        `SELECT id, email, full_name, role, tenant_admin_id, permissions, status, created_at,
+                bank_name, sort_code, account_number
          FROM users
          WHERE (tenant_admin_id = $1 AND role = 'STAFF') OR (id = $1 AND role = 'ADMIN')
          ORDER BY role DESC, id ASC`,
@@ -55,6 +62,9 @@ export function mountTenantStaffRoutes(
         permissions: row.role === 'STAFF' ? permissionsFromDb(row.permissions) : null,
         status: row.status ?? 'ACTIVE',
         created_at: row.created_at.toISOString(),
+        bank_name: (row as any).bank_name ?? null,
+        sort_code: (row as any).sort_code ?? null,
+        account_number: (row as any).account_number ?? null,
       }));
       return res.json({ members });
     } catch (e) {
@@ -73,10 +83,16 @@ export function mountTenantStaffRoutes(
       permissions?: unknown;
       /** When true, creates a linked officers row (same email) so this person can use the mobile field app with the dashboard login. */
       link_field_profile?: boolean;
+      bank_name?: string;
+      sort_code?: string;
+      account_number?: string;
     };
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';
     const fullName = typeof body.full_name === 'string' ? body.full_name.trim() || null : null;
+    const bankName = cleanBank(body.bank_name);
+    const sortCode = cleanBank(body.sort_code);
+    const accountNumber = cleanBank(body.account_number);
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
@@ -119,10 +135,11 @@ export function mountTenantStaffRoutes(
         const ins = await client.query<DbStaffRow>(
           `INSERT INTO users (
            email, password_hash, role, created_by, tenant_admin_id, permissions,
-           full_name, company_name, phone, service_plan, status
-         ) VALUES ($1, $2, 'STAFF', $3, $4, $5::jsonb, $6, NULL, NULL, 'Standard', 'ACTIVE')
+           full_name, company_name, phone, service_plan, status,
+           bank_name, sort_code, account_number
+         ) VALUES ($1, $2, 'STAFF', $3, $4, $5::jsonb, $6, NULL, NULL, 'Standard', 'ACTIVE', $7, $8, $9)
          RETURNING id, email, full_name, role, tenant_admin_id, permissions, status, created_at`,
-          [email, hash, owner.userId, owner.userId, JSON.stringify(perms), fullName],
+          [email, hash, owner.userId, owner.userId, JSON.stringify(perms), fullName, bankName, sortCode, accountNumber],
         );
         const row = ins.rows[0];
         if (linkField) {
@@ -131,9 +148,10 @@ export function mountTenantStaffRoutes(
           await client.query(
             `INSERT INTO officers (
                full_name, role_position, department, phone, email, system_access_level,
-               certifications, assigned_responsibilities, state, created_by, password_hash, permissions, linked_user_id
-             ) VALUES ($1, NULL, NULL, NULL, $2, 'standard', NULL, NULL, 'active', $3, NULL, $4::jsonb, $5)`,
-            [displayName, email, owner.userId, JSON.stringify(fieldPerms), row.id],
+               certifications, assigned_responsibilities, state, created_by, password_hash, permissions, linked_user_id,
+               bank_name, sort_code, account_number
+             ) VALUES ($1, NULL, NULL, NULL, $2, 'standard', NULL, NULL, 'active', $3, NULL, $4::jsonb, $5, $6, $7, $8)`,
+            [displayName, email, owner.userId, JSON.stringify(fieldPerms), row.id, bankName, sortCode, accountNumber],
           );
         }
         await client.query('COMMIT');
@@ -180,6 +198,9 @@ export function mountTenantStaffRoutes(
       permissions?: unknown;
       preset?: string;
       password?: string;
+      bank_name?: string;
+      sort_code?: string;
+      account_number?: string;
     };
     try {
       const cur = await pool.query<{ id: number; role: string; tenant_admin_id: number | null }>(
@@ -209,6 +230,18 @@ export function mountTenantStaffRoutes(
         updates.push(`password_hash = $${i++}`);
         vals.push(await bcrypt.hash(body.password, 10));
       }
+      if ('bank_name' in body) {
+        updates.push(`bank_name = $${i++}`);
+        vals.push(cleanBank(body.bank_name));
+      }
+      if ('sort_code' in body) {
+        updates.push(`sort_code = $${i++}`);
+        vals.push(cleanBank(body.sort_code));
+      }
+      if ('account_number' in body) {
+        updates.push(`account_number = $${i++}`);
+        vals.push(cleanBank(body.account_number));
+      }
       let perms: Record<TenantPermissionKey, boolean> | null = null;
       if (body.preset === 'manager') perms = presetManagerPermissions();
       else if (body.preset === 'desk_officer' || body.preset === 'officer') perms = presetDeskOfficerPermissions();
@@ -236,6 +269,12 @@ export function mountTenantStaffRoutes(
           JSON.stringify(fieldSlice),
           id,
         ]);
+      }
+      if ('bank_name' in body || 'sort_code' in body || 'account_number' in body) {
+        await pool.query(
+          `UPDATE officers SET bank_name = $1, sort_code = $2, account_number = $3, updated_at = NOW() WHERE linked_user_id = $4`,
+          [cleanBank(body.bank_name), cleanBank(body.sort_code), cleanBank(body.account_number), id],
+        );
       }
       return res.json({
         member: {

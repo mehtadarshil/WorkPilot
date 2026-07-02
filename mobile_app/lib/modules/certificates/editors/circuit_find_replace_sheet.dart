@@ -38,7 +38,7 @@ Future<void> showCircuitFindReplaceSheet({
               children: [
                 Text(
                   'Find & replace',
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -119,9 +119,9 @@ Future<void> showCircuitFindReplaceSheet({
 InputDecoration _sheetDecoration(String label) {
   return InputDecoration(
     labelText: label,
-    labelStyle: GoogleFonts.inter(color: AppColors.slate400),
+    labelStyle: GoogleFonts.inter(color: AppColors.slate500),
     filled: true,
-    fillColor: AppColors.whiteOverlay(0.06),
+    fillColor: Colors.white,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
   );
 }

@@ -101,7 +101,7 @@ class CertSectionCard extends StatelessWidget {
             Text(
               title,
               style: GoogleFonts.inter(
-                color: Colors.white,
+                color: AppColors.slate900,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
@@ -150,7 +150,7 @@ class CertTextField extends StatelessWidget {
         initialValue: value,
         maxLines: maxLines,
         keyboardType: keyboardType,
-        style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+        style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
         decoration: _inputDecoration(label),
         onChanged: onChanged,
       ),
@@ -182,7 +182,7 @@ class CertSelectField extends StatelessWidget {
       child: DropdownButtonFormField<String>(
         initialValue: safeValue,
         dropdownColor: AppColors.slate50,
-        style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+        style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
         decoration: _inputDecoration(label),
         items: options
             .map(
@@ -227,8 +227,8 @@ class CertQuickSetTextField extends StatelessWidget {
               .map(
                 (option) => ActionChip(
                   label: Text(option, style: GoogleFonts.inter(fontSize: 11)),
-                  backgroundColor: AppColors.whiteOverlay(0.08),
-                  side: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                  backgroundColor: AppColors.slate100,
+                  side: BorderSide(color: AppColors.slate200),
                   onPressed: () => onChanged(option),
                 ),
               )
@@ -268,8 +268,8 @@ class CertQuickSetSelectField extends StatelessWidget {
               .map(
                 (option) => ActionChip(
                   label: Text(option, style: GoogleFonts.inter(fontSize: 11)),
-                  backgroundColor: AppColors.whiteOverlay(0.08),
-                  side: BorderSide(color: AppColors.whiteOverlay(0.14)),
+                  backgroundColor: AppColors.slate100,
+                  side: BorderSide(color: AppColors.slate200),
                   onPressed: () => onChanged(option.toLowerCase() == 'n/a' ? 'na' : option),
                 ),
               )
@@ -303,7 +303,7 @@ class OutcomeChipGroup extends StatelessWidget {
         children: [
           Text(
             label,
-            style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 12),
+            style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -315,16 +315,16 @@ class OutcomeChipGroup extends StatelessWidget {
                 label: Text(option.label),
                 selected: selected,
                 selectedColor: AppColors.primary,
-                backgroundColor: AppColors.whiteOverlay(0.08),
+                backgroundColor: AppColors.slate100,
                 labelStyle: GoogleFonts.inter(
-                  color: selected ? Colors.white : AppColors.slate300,
+                  color: selected ? Colors.white : AppColors.slate600,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
                 side: BorderSide(
                   color: selected
                       ? AppColors.primary
-                      : AppColors.whiteOverlay(0.14),
+                      : AppColors.slate200,
                 ),
                 onSelected: (_) => onChanged(option.value),
               );
@@ -374,9 +374,9 @@ class ScheduleItemsCard extends StatelessWidget {
 InputDecoration _inputDecoration(String label) {
   return InputDecoration(
     labelText: label,
-    labelStyle: GoogleFonts.inter(color: AppColors.slate400),
+    labelStyle: GoogleFonts.inter(color: AppColors.slate500),
     filled: true,
-    fillColor: AppColors.whiteOverlay(0.06),
+    fillColor: Colors.white,
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(14),
       borderSide: const BorderSide(color: AppColors.slate200),

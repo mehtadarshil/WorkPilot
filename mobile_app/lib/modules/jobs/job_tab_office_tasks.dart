@@ -36,11 +36,14 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
-          Text('Office reminders', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+          Text('Office reminders', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           Material(
-            color: AppColors.whiteOverlay(0.08),
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppColors.slate200),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -59,7 +62,7 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
                   DropdownButtonFormField<int?>(
                     isExpanded: true,
                     initialValue: _assigneeId,
-                    dropdownColor: const Color(0xFF1e293b),
+                    dropdownColor: Colors.white,
                     style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'Assignee (optional)',
@@ -117,7 +120,7 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
             ),
           ),
           const SizedBox(height: 20),
-          Text('Open', style: GoogleFonts.inter(color: AppColors.slate300, fontWeight: FontWeight.w700)),
+          Text('Open', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           if (open.isEmpty)
             Text('No open reminders.', style: GoogleFonts.inter(color: AppColors.slate500))
@@ -139,14 +142,14 @@ class _JobTabOfficeTasksState extends State<JobTabOfficeTasks> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AppColors.whiteOverlay(0.06),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(desc, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              Text(desc, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text('Assignee: $assignee', style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)),
               if (open && id != null)

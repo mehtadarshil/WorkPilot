@@ -100,7 +100,7 @@ class InvoicesListView extends GetView<InvoicesListController> {
                     hintStyle: GoogleFonts.inter(color: AppColors.slate400),
                     prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.08),
+                    fillColor: Colors.white,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
                       borderSide: const BorderSide(color: AppColors.slate200),
@@ -123,11 +123,11 @@ class InvoicesListView extends GetView<InvoicesListController> {
                     key: ValueKey<String?>(controller.stateFilter.value.isEmpty ? null : controller.stateFilter.value),
                     initialValue: controller.stateFilter.value.isEmpty ? null : controller.stateFilter.value,
                     hint: Text('All states', style: GoogleFonts.inter(color: AppColors.slate500)),
-                    dropdownColor: const Color(0xFF1e293b),
+                    dropdownColor: Colors.white,
                     style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: AppColors.whiteOverlay(0.08),
+                      fillColor: Colors.white,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     items: [
@@ -206,8 +206,11 @@ class InvoicesListView extends GetView<InvoicesListController> {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Material(
-                              color: AppColors.whiteOverlay(0.08),
-                              borderRadius: BorderRadius.circular(16),
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: const BorderSide(color: AppColors.slate200),
+                              ),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(16),
                                 onTap: () async {
@@ -225,7 +228,7 @@ class InvoicesListView extends GetView<InvoicesListController> {
                                             child: Text(
                                               invNo,
                                               style: GoogleFonts.inter(
-                                                color: Colors.white,
+                                                color: AppColors.slate900,
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 16,
                                               ),
@@ -310,8 +313,11 @@ class _CountChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? AppColors.primary.withValues(alpha: 0.35) : AppColors.whiteOverlay(0.08),
-      borderRadius: BorderRadius.circular(12),
+      color: selected ? AppColors.primary : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: selected ? AppColors.primary : AppColors.slate200),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
@@ -320,9 +326,9 @@ class _CountChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(label, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+              Text(label, style: GoogleFonts.inter(color: selected ? Colors.white : AppColors.slate700, fontWeight: FontWeight.w600, fontSize: 12)),
               const SizedBox(width: 6),
-              Text('$count', style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w800)),
+              Text('$count', style: GoogleFonts.inter(color: selected ? Colors.white : AppColors.slate600, fontWeight: FontWeight.w800)),
             ],
           ),
         ),

@@ -96,6 +96,11 @@ class ProfileEditView extends GetView<ProfileEditController> {
                 _field(controller.kinNameC, 'Name', capitalizeWords: true),
                 _field(controller.kinPhoneC, 'Phone', keyboard: TextInputType.phone),
                 _field(controller.kinRelC, 'Relationship'),
+                const SizedBox(height: 16),
+                _sectionTitle('Bank details'),
+                _field(controller.bankNameC, 'Bank name', capitalizeWords: true),
+                _field(controller.sortCodeC, 'Sort code', keyboard: TextInputType.number),
+                _field(controller.accountNumberC, 'Account number', keyboard: TextInputType.number),
                 if (controller.error.value.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(controller.error.value, style: GoogleFonts.inter(color: Colors.redAccent, fontSize: 13)),
@@ -142,7 +147,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
               children: [
                 CircleAvatar(
                   radius: 48,
-                  backgroundColor: AppColors.whiteOverlay(0.12),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                   backgroundImage: bytes != null ? MemoryImage(bytes) : null,
                   child: bytes == null && !loading
                       ? Text(initial, style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.slate900))
@@ -210,7 +215,7 @@ class ProfileEditView extends GetView<ProfileEditController> {
           labelText: label,
           labelStyle: GoogleFonts.inter(color: AppColors.slate400),
           filled: true,
-          fillColor: AppColors.whiteOverlay(0.06),
+          fillColor: AppColors.slate100,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),

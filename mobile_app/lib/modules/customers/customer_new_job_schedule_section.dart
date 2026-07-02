@@ -49,7 +49,7 @@ class CustomerNewJobScheduleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Divider(color: AppColors.whiteOverlay(0.1)),
+        Divider(color: AppColors.slate200),
         const SizedBox(height: 12),
         Text('EXPECTED COMPLETION / DIARY VISIT DATE', style: _labelStyle()),
         const SizedBox(height: 8),
@@ -128,7 +128,7 @@ class CustomerNewJobScheduleSection extends StatelessWidget {
         CheckboxListTile(
           value: bookIntoDiary,
           onChanged: saving ? null : onBookIntoDiaryChanged,
-          title: Text('Book diary visit when adding job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          title: Text('Book diary visit when adding job', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
           subtitle: Text(
             'Creates a 1 hour diary visit at the selected date and time.',
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.5)),

@@ -15,6 +15,9 @@ export interface UserDetailSubject {
   system_access_level: string | null;
   state: string;
   has_mobile_login?: boolean;
+  bank_name?: string | null;
+  sort_code?: string | null;
+  account_number?: string | null;
 }
 
 interface TimesheetEntry {
@@ -294,6 +297,31 @@ export function UserDetailModal({
                   )}
                 </dd>
               </div>
+              {(user.bank_name || user.sort_code || user.account_number) && (
+                <div className="sm:col-span-2 border-t border-slate-100 pt-4 mt-2">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Bank Details</dt>
+                  <dd className="grid gap-2 sm:grid-cols-3">
+                    {user.bank_name && (
+                      <div>
+                        <span className="text-xs text-slate-500">Bank name</span>
+                        <p className="text-sm text-slate-900">{user.bank_name}</p>
+                      </div>
+                    )}
+                    {user.sort_code && (
+                      <div>
+                        <span className="text-xs text-slate-500">Sort code</span>
+                        <p className="text-sm text-slate-900">{user.sort_code}</p>
+                      </div>
+                    )}
+                    {user.account_number && (
+                      <div>
+                        <span className="text-xs text-slate-500">Account number</span>
+                        <p className="text-sm text-slate-900">{user.account_number}</p>
+                      </div>
+                    )}
+                  </dd>
+                </div>
+              )}
             </dl>
           )}
 

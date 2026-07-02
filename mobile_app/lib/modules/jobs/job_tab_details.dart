@@ -99,7 +99,7 @@ Widget _ppmBanner(Map<String, dynamic> ppm) {
           ),
           if (due != null) ...[
             const SizedBox(height: 4),
-            Text('Task due: ${_formatIsoShort(due)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate300)),
+            Text('Task due: ${_formatIsoShort(due)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate600)),
           ],
           if (breached)
             Padding(
@@ -121,7 +121,7 @@ class JobTabDetails extends StatelessWidget {
     return Obx(() {
       final j = c.job.value;
       if (j == null) {
-        return const Center(child: Text('—', style: TextStyle(color: Colors.white54)));
+        return const Center(child: Text('—', style: TextStyle(color: Colors.black45)));
       }
       return ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -159,11 +159,11 @@ class JobTabDetails extends StatelessWidget {
             return DropdownButtonFormField<String>(
               isExpanded: true,
               initialValue: _str(j, 'state').isEmpty ? 'draft' : _str(j, 'state'),
-              dropdownColor: const Color(0xFF1e293b),
+              dropdownColor: Colors.white,
               style: GoogleFonts.inter(color: AppColors.slate900),
               decoration: InputDecoration(
                 labelText: 'Status',
-                labelStyle: TextStyle(color: Colors.white70),
+                labelStyle: TextStyle(color: Colors.black54),
               ),
               items: [
                 for (final s in kJobStatesOrdered)
@@ -327,8 +327,8 @@ class JobTabDetails extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('$category · ${_formatMoney(e['amount'])}', style: GoogleFonts.inter(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w700)),
-                                  Text('Claimed by: $claimer', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate300, fontWeight: FontWeight.w600)),
+                                  Text('$category · ${_formatMoney(e['amount'])}', style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate900, fontWeight: FontWeight.w700)),
+                                  Text('Claimed by: $claimer', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate600, fontWeight: FontWeight.w600)),
                                   Text('Status: $status', style: GoogleFonts.inter(fontSize: 12, color: status == 'approved' ? AppColors.primary : AppColors.slate400, fontWeight: FontWeight.w600)),
                                   if (proofCount > 0) Text('Receipt attached', style: GoogleFonts.inter(fontSize: 12, color: AppColors.primary)),
                                   if (description.isNotEmpty) Text(description, style: _bodyStyle),
@@ -351,7 +351,7 @@ class JobTabDetails extends StatelessWidget {
             }),
           ),
           const SizedBox(height: 20),
-          Text('Diary events', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+          Text('Diary events', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: () => _showAddVisit(context, c),
@@ -365,7 +365,7 @@ class JobTabDetails extends StatelessWidget {
     });
   }
 
-  static TextStyle get _bodyStyle => GoogleFonts.inter(fontSize: 14, height: 1.45, color: AppColors.slate300);
+  static TextStyle get _bodyStyle => GoogleFonts.inter(fontSize: 14, height: 1.45, color: AppColors.slate600);
 
   List<Widget> _officersSection(Map<String, dynamic> j) {
     final raw = j['officers'];
@@ -456,13 +456,13 @@ class JobTabDetails extends StatelessWidget {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Officers',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
                       ),
                     ),
                     if (officers.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text('No officers available', style: TextStyle(color: Colors.white54)),
+                        child: Text('No officers available', style: TextStyle(color: Colors.black45)),
                       )
                     else
                       ...officers.map((o) {
@@ -559,12 +559,12 @@ class JobTabDetails extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AppColors.whiteOverlay(0.06),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
           title: Text(
             officerLabel,
-            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -615,8 +615,8 @@ class JobTabDetails extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: AppColors.whiteOverlay(0.08),
-        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+        color: Colors.white,
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -638,7 +638,7 @@ class JobTabDetails extends StatelessWidget {
       children: [
         Icon(icon, size: 18, color: link ? AppColors.primary : AppColors.slate400),
         const SizedBox(width: 8),
-        Expanded(child: Text(text, style: GoogleFonts.inter(fontSize: 14, color: link ? AppColors.primary : AppColors.slate300))),
+        Expanded(child: Text(text, style: GoogleFonts.inter(fontSize: 14, color: link ? AppColors.primary : AppColors.slate600))),
       ],
     );
   }
@@ -655,16 +655,16 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: emphasized ? AppColors.primary.withValues(alpha: 0.22) : AppColors.whiteOverlay(0.08),
+        color: emphasized ? AppColors.primary.withValues(alpha: 0.22) : AppColors.slate100,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: emphasized ? AppColors.primary.withValues(alpha: 0.45) : AppColors.whiteOverlay(0.12)),
+        border: Border.all(color: emphasized ? AppColors.primary.withValues(alpha: 0.45) : AppColors.slate200),
       ),
       child: Text(
         label,
         style: GoogleFonts.inter(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: emphasized ? AppColors.primary : AppColors.slate300,
+          color: emphasized ? AppColors.primary : AppColors.slate600,
         ),
       ),
     );

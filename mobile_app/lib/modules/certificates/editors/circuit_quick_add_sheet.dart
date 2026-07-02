@@ -78,7 +78,7 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                     const Spacer(),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded, color: Colors.white70),
+                      icon: Icon(Icons.close_rounded, color: Colors.black54),
                     ),
                   ],
                 ),
@@ -95,12 +95,12 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                       label: Text(tab['label']!),
                       selected: selected,
                       onSelected: (_) => setState(() => _tab = id),
-                      selectedColor: Colors.white,
+                      selectedColor: AppColors.primary,
                       labelStyle: GoogleFonts.inter(
                         fontWeight: FontWeight.w600,
-                        color: selected ? Colors.black : Colors.white70,
+                        color: selected ? Colors.white : AppColors.slate600,
                       ),
-                      backgroundColor: AppColors.whiteOverlay(0.08),
+                      backgroundColor: AppColors.slate100,
                     );
                   }).toList(),
                 ),
@@ -114,13 +114,13 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.whiteOverlay(0.12), style: BorderStyle.solid),
-                            color: AppColors.whiteOverlay(0.04),
+                            border: Border.all(color: AppColors.slate200, style: BorderStyle.solid),
+                            color: Colors.white,
                           ),
                           child: Text(
                             'No custom presets configured yet. Use Domestic or Commercial presets, or add circuits manually with Add.',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13, height: 1.4),
+                            style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13, height: 1.4),
                           ),
                         ),
                       )
@@ -133,7 +133,7 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.white54,
+                                color: Colors.black45,
                                 letterSpacing: 0.6,
                               ),
                             ),
@@ -143,8 +143,8 @@ class _CircuitQuickAddSheetState extends State<_CircuitQuickAddSheet> {
                               runSpacing: 8,
                               children: presets.where((p) => p.category == category).map((preset) {
                                 final added = _added.contains(preset.id);
-                                final bg = _categoryChipBg[category] ?? AppColors.whiteOverlay(0.1);
-                                final fg = _categoryChipFg[category] ?? Colors.white;
+                                final bg = _categoryChipBg[category] ?? AppColors.slate100;
+                                final fg = _categoryChipFg[category] ?? AppColors.slate900;
                                 return ActionChip(
                                   label: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,

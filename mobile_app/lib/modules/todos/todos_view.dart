@@ -128,12 +128,12 @@ class TodosView extends GetView<TodosController> {
         decoration: BoxDecoration(
           color: selected
               ? AppColors.primary.withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.08),
+              : AppColors.slate100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected
                 ? AppColors.primary.withValues(alpha: 0.5)
-                : Colors.white.withValues(alpha: 0.12),
+                : AppColors.slate200,
           ),
         ),
         child: Text(
@@ -165,14 +165,14 @@ class TodosView extends GetView<TodosController> {
         return await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1e293b),
-            title: Text('Delete todo?', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
-            content: Text('This cannot be undone.', style: GoogleFonts.inter(color: AppColors.slate300)),
+            backgroundColor: Colors.white,
+            title: Text('Delete todo?', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
+            content: Text('This cannot be undone.', style: GoogleFonts.inter(color: AppColors.slate600)),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.slate300))),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.slate600))),
               TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: Text('Delete', style: GoogleFonts.inter(color: Colors.red.shade300, fontWeight: FontWeight.w700)),
+                child: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFDC2626), fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -184,12 +184,12 @@ class TodosView extends GetView<TodosController> {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: todo.isOverdue
                   ? Colors.red.shade400.withValues(alpha: 0.5)
-                  : Colors.white.withValues(alpha: 0.1),
+                  : AppColors.slate200,
             ),
           ),
           child: Row(
@@ -221,7 +221,7 @@ class TodosView extends GetView<TodosController> {
                         fontWeight: FontWeight.w700,
                         color: todo.completed
                             ? AppColors.slate500
-                            : Colors.white,
+                            : AppColors.slate900,
                         decoration: todo.completed
                             ? TextDecoration.lineThrough
                             : null,
@@ -296,7 +296,7 @@ class TodosView extends GetView<TodosController> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1e293b),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -315,31 +315,47 @@ class TodosView extends GetView<TodosController> {
               TextField(
                 controller: titleCtrl,
                 autofocus: true,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'What needs to be done?',
                   hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  fillColor: Colors.white,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: descCtrl,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                 maxLines: 2,
                 decoration: InputDecoration(
                   hintText: 'Description (optional)',
                   hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  fillColor: Colors.white,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                   ),
                 ),
               ),
@@ -356,7 +372,7 @@ class TodosView extends GetView<TodosController> {
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                           builder: (context, child) => Theme(
                             data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(primary: AppColors.primary),
+                              colorScheme: ColorScheme.light(primary: AppColors.primary),
                             ),
                             child: child!,
                           ),
@@ -366,8 +382,9 @@ class TodosView extends GetView<TodosController> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: Row(
                           children: [
@@ -378,7 +395,7 @@ class TodosView extends GetView<TodosController> {
                                   ? '${dueDate!.day}/${dueDate!.month}/${dueDate!.year}'
                                   : 'Due date',
                               style: GoogleFonts.inter(
-                                color: dueDate != null ? Colors.white : AppColors.slate500,
+                                color: dueDate != null ? AppColors.slate900 : AppColors.slate500,
                                 fontSize: 14,
                               ),
                             ),
@@ -396,7 +413,7 @@ class TodosView extends GetView<TodosController> {
                           initialTime: dueTime ?? TimeOfDay.now(),
                           builder: (context, child) => Theme(
                             data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(primary: AppColors.primary),
+                              colorScheme: ColorScheme.light(primary: AppColors.primary),
                             ),
                             child: child!,
                           ),
@@ -406,8 +423,9 @@ class TodosView extends GetView<TodosController> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: Row(
                           children: [
@@ -418,7 +436,7 @@ class TodosView extends GetView<TodosController> {
                                   ? '${dueTime!.hour.toString().padLeft(2, '0')}:${dueTime!.minute.toString().padLeft(2, '0')}'
                                   : 'Due time',
                               style: GoogleFonts.inter(
-                                color: dueTime != null ? Colors.white : AppColors.slate500,
+                                color: dueTime != null ? AppColors.slate900 : AppColors.slate500,
                                 fontSize: 14,
                               ),
                             ),
@@ -485,7 +503,7 @@ class TodosView extends GetView<TodosController> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1e293b),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -504,31 +522,47 @@ class TodosView extends GetView<TodosController> {
               TextField(
                 controller: titleCtrl,
                 autofocus: true,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'Title',
                   hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  fillColor: Colors.white,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                   ),
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: descCtrl,
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                 maxLines: 2,
                 decoration: InputDecoration(
                   hintText: 'Description (optional)',
                   hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.08),
+                  fillColor: Colors.white,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.slate200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
                   ),
                 ),
               ),
@@ -545,7 +579,7 @@ class TodosView extends GetView<TodosController> {
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                           builder: (context, child) => Theme(
                             data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(primary: AppColors.primary),
+                              colorScheme: ColorScheme.light(primary: AppColors.primary),
                             ),
                             child: child!,
                           ),
@@ -555,8 +589,9 @@ class TodosView extends GetView<TodosController> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: Row(
                           children: [
@@ -567,7 +602,7 @@ class TodosView extends GetView<TodosController> {
                                   ? '${dueDate!.day}/${dueDate!.month}/${dueDate!.year}'
                                   : 'Due date',
                               style: GoogleFonts.inter(
-                                color: dueDate != null ? Colors.white : AppColors.slate500,
+                                color: dueDate != null ? AppColors.slate900 : AppColors.slate500,
                                 fontSize: 14,
                               ),
                             ),
@@ -585,7 +620,7 @@ class TodosView extends GetView<TodosController> {
                           initialTime: dueTime ?? TimeOfDay.now(),
                           builder: (context, child) => Theme(
                             data: Theme.of(context).copyWith(
-                              colorScheme: const ColorScheme.dark(primary: AppColors.primary),
+                              colorScheme: ColorScheme.light(primary: AppColors.primary),
                             ),
                             child: child!,
                           ),
@@ -595,8 +630,9 @@ class TodosView extends GetView<TodosController> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.slate200),
                         ),
                         child: Row(
                           children: [
@@ -607,7 +643,7 @@ class TodosView extends GetView<TodosController> {
                                   ? '${dueTime!.hour.toString().padLeft(2, '0')}:${dueTime!.minute.toString().padLeft(2, '0')}'
                                   : 'Due time',
                               style: GoogleFonts.inter(
-                                color: dueTime != null ? Colors.white : AppColors.slate500,
+                                color: dueTime != null ? AppColors.slate900 : AppColors.slate500,
                                 fontSize: 14,
                               ),
                             ),

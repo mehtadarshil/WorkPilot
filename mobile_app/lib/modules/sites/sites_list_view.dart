@@ -61,9 +61,9 @@ class SitesListView extends GetView<SitesListController> {
                   decoration: InputDecoration(
                     hintText: 'Search site, address, customer…',
                     hintStyle: GoogleFonts.inter(color: AppColors.slate400),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.whiteOverlay(0.5)),
+                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.08),
+                    fillColor: Colors.white,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: const BorderSide(color: AppColors.slate200),
@@ -151,8 +151,11 @@ class SitesListView extends GetView<SitesListController> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Material(
-                            color: AppColors.whiteOverlay(0.08),
-                            borderRadius: BorderRadius.circular(16),
+                            color: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: const BorderSide(color: AppColors.slate200),
+                            ),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(16),
                               onTap: () {
@@ -182,7 +185,7 @@ class SitesListView extends GetView<SitesListController> {
                                           Text(
                                             name,
                                             style: GoogleFonts.inter(
-                                              color: Colors.white,
+                                              color: AppColors.slate900,
                                               fontWeight: FontWeight.w700,
                                               fontSize: 16,
                                             ),

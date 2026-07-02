@@ -100,7 +100,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                     Expanded(
                       child: TextField(
                         controller: _search,
-                        style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                        style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                         decoration: customerInputDecoration('Search').copyWith(
                           isDense: true,
                           prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400, size: 22),
@@ -201,7 +201,7 @@ class _CustomerSitesTabState extends State<CustomerSitesTab> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(ctStr(r, 'name'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                                            Text(ctStr(r, 'name'), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 15)),
                                             const SizedBox(height: 6),
                                             Text(sub, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500, height: 1.3)),
                                             if (ctStr(r, 'site_notes').isNotEmpty) ...[
@@ -537,7 +537,7 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
                                               Expanded(
                                                 child: Text(
                                                   ctStr(r, 'subject').isEmpty ? '(no subject)' : ctStr(r, 'subject'),
-                                                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                                                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 14),
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
@@ -583,8 +583,8 @@ class _CustomerCommsTabState extends State<CustomerCommsTab> {
       },
       selectedColor: AppColors.primary,
       checkmarkColor: AppColors.gradientStart,
-      backgroundColor: AppColors.whiteOverlay(0.08),
-      side: BorderSide(color: AppColors.whiteOverlay(0.15)),
+      backgroundColor: Colors.white,
+      side: BorderSide(color: AppColors.slate200),
     );
   }
 }

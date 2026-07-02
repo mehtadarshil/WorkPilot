@@ -5399,7 +5399,8 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
     const listResult = await pool.query<DbOfficer & { has_mobile_login: boolean; permissions: unknown; linked_user_id: number | null; signature_data_url?: string | null }>(
       `SELECT id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, calendar_color, created_at, updated_at, created_by,
               permissions, linked_user_id, signature_data_url,
-              (password_hash IS NOT NULL OR linked_user_id IS NOT NULL) AS has_mobile_login
+              (password_hash IS NOT NULL OR linked_user_id IS NOT NULL) AS has_mobile_login,
+              bank_name, sort_code, account_number
        FROM officers ${whereClause}
        ORDER BY full_name ASC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -5439,6 +5440,9 @@ app.get('/api/officers', authenticate, requireAdmin, requirePermission('field_us
       permissions: permissionsFromDb(r.permissions),
       linked_user_id: r.linked_user_id ?? null,
       signature_data_url: (r as { signature_data_url?: string | null }).signature_data_url ?? null,
+      bank_name: (r as { bank_name?: string | null }).bank_name ?? null,
+      sort_code: (r as { sort_code?: string | null }).sort_code ?? null,
+      account_number: (r as { account_number?: string | null }).account_number ?? null,
     }));
 
     return res.json({
@@ -5502,6 +5506,9 @@ app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_u
     initial_password?: string;
     permissions?: unknown;
     preset?: string;
+    bank_name?: string;
+    sort_code?: string;
+    account_number?: string;
   };
   const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : '';
   if (!fullName) return res.status(400).json({ message: 'Officer name is required' });
@@ -5519,6 +5526,9 @@ app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_u
   const certifications = typeof body.certifications === 'string' ? body.certifications.trim() || null : null;
   const assignedResponsibilities = typeof body.assigned_responsibilities === 'string' ? body.assigned_responsibilities.trim() || null : null;
   const createdBy = getTenantScopeUserId(req.user!);
+  const bankName = typeof body.bank_name === 'string' ? body.bank_name.trim() || null : null;
+  const sortCode = typeof body.sort_code === 'string' ? body.sort_code.trim() || null : null;
+  const accountNumber = typeof body.account_number === 'string' ? body.account_number.trim() || null : null;
 
   const initialPassword = typeof body.initial_password === 'string' ? body.initial_password.trim() : '';
   if (!email) {
@@ -5549,9 +5559,9 @@ app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_u
     const passwordHash = await bcrypt.hash(initialPassword, 10);
 
     const result = await pool.query<DbOfficer>(
-      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by, password_hash, permissions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
-       RETURNING id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by`,
+      `INSERT INTO officers (full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_by, password_hash, permissions, bank_name, sort_code, account_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15)
+       RETURNING id, full_name, role_position, department, phone, email, system_access_level, certifications, assigned_responsibilities, state, created_at, updated_at, created_by, bank_name, sort_code, account_number`,
       [
         fullName,
         rolePosition,
@@ -5565,6 +5575,9 @@ app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_u
         createdBy,
         passwordHash,
         JSON.stringify(offPerms),
+        bankName,
+        sortCode,
+        accountNumber,
       ],
     );
     const r = result.rows[0];
@@ -5585,6 +5598,9 @@ app.post('/api/officers', authenticate, requireAdmin, requirePermission('field_u
         created_by: r.created_by,
         has_mobile_login: !!(initialPassword && email),
         permissions: offPerms,
+        bank_name: (r as any).bank_name ?? null,
+        sort_code: (r as any).sort_code ?? null,
+        account_number: (r as any).account_number ?? null,
       },
     });
   } catch (error) {
@@ -5662,6 +5678,9 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
     updates.push(`signature_data_url = $${idx++}`);
     values.push(body.signature_data_url || null);
   }
+  if (str('bank_name') !== undefined) { updates.push(`bank_name = $${idx++}`); values.push(str('bank_name')); }
+  if (str('sort_code') !== undefined) { updates.push(`sort_code = $${idx++}`); values.push(str('sort_code')); }
+  if (str('account_number') !== undefined) { updates.push(`account_number = $${idx++}`); values.push(str('account_number')); }
   if (body.permissions != null) {
     const parsed = parsePermissionsBody(body.permissions);
     if (parsed == null || !Object.values(parsed).some(Boolean)) {
@@ -5725,6 +5744,9 @@ app.patch('/api/officers/:id', authenticate, requireAdmin, requirePermission('fi
         permissions: permissionsFromDb((r as { permissions?: unknown }).permissions),
         linked_user_id: r.linked_user_id ?? null,
         signature_data_url: r.signature_data_url ?? null,
+        bank_name: (r as any).bank_name ?? null,
+        sort_code: (r as any).sort_code ?? null,
+        account_number: (r as any).account_number ?? null,
       },
     });
   } catch (error) {
@@ -14259,10 +14281,20 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     const uniqueOverallJobIds = Array.from(new Set(overallJobIds));
     const overallCostsMap = await calculateJobsCosts(pool, uniqueOverallJobIds);
 
+    // A job's cost is split evenly across every invoice linked to it, so a job
+    // with multiple invoices does not have its full cost counted more than once.
+    const overallInvoiceCountByJob: Record<number, number> = {};
+    for (const r of overallInvoicesRes.rows) {
+      if (r.job_id != null) {
+        overallInvoiceCountByJob[r.job_id] = (overallInvoiceCountByJob[r.job_id] ?? 0) + 1;
+      }
+    }
+
     let overallProfit = 0;
     for (const r of overallInvoicesRes.rows) {
       const sub = parseFloat(r.subtotal || '0');
-      const cost = r.job_id ? (overallCostsMap[r.job_id] ?? 0) : 0;
+      const invoiceCount = r.job_id ? (overallInvoiceCountByJob[r.job_id] ?? 1) : 1;
+      const cost = r.job_id ? (overallCostsMap[r.job_id] ?? 0) / (invoiceCount || 1) : 0;
       overallProfit += (sub - cost);
     }
     overallProfit = Math.round(overallProfit * 100) / 100;
@@ -14317,9 +14349,24 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     const uniquePageJobIds = Array.from(new Set(pageJobIds));
     const pageCostsMap = await calculateJobsCosts(pool, uniquePageJobIds);
 
+    // Count every invoice linked to each job on this page (not just the ones on
+    // the current page) so the job cost can be split evenly between them.
+    const pageInvoiceCountByJob: Record<number, number> = {};
+    if (uniquePageJobIds.length > 0) {
+      const invoiceCountRes = await pool.query<{ job_id: number; cnt: string }>(
+        `SELECT job_id, COUNT(*)::int AS cnt FROM invoices WHERE job_id = ANY($1::int[]) GROUP BY job_id`,
+        [uniquePageJobIds],
+      );
+      for (const row of invoiceCountRes.rows) {
+        pageInvoiceCountByJob[row.job_id] = Number(row.cnt);
+      }
+    }
+
     const invoices = listResult.rows.map((r) => {
       const sub = parseFloat(r.subtotal || '0');
-      const cost = r.job_id ? (pageCostsMap[r.job_id] ?? 0) : 0;
+      const totalJobCost = r.job_id ? (pageCostsMap[r.job_id] ?? 0) : 0;
+      const invoiceCount = r.job_id ? (pageInvoiceCountByJob[r.job_id] ?? 1) : 1;
+      const cost = totalJobCost / (invoiceCount || 1);
       const profit = Math.round((sub - cost) * 100) / 100;
       return {
         id: r.id,

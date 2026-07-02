@@ -312,7 +312,7 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
             hintStyle: GoogleFonts.inter(color: AppColors.slate400),
             prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate500),
             filled: true,
-            fillColor: AppColors.whiteOverlay(0.08),
+            fillColor: Colors.white,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
@@ -337,7 +337,7 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
                   decoration: InputDecoration(
                     labelText: 'Filter by date',
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.08),
+                    fillColor: Colors.white,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Text(
@@ -350,7 +350,7 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
             if (_dateFilter.isNotEmpty)
               IconButton(
                 onPressed: () => setState(() => _dateFilter = ''),
-                icon: Icon(Icons.clear_rounded, color: Colors.white70),
+                icon: Icon(Icons.clear_rounded, color: Colors.black54),
               ),
             FilterChip(
               label: const Text('Timeline'),
@@ -434,8 +434,11 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: AppColors.whiteOverlay(0.06),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.slate200),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -458,7 +461,7 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
                     ],
                     if (e.kind == QuotationCommKind.sms && (e.toLabel ?? '').isNotEmpty)
                       Text('To: ${e.toLabel}', style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 12)),
-                    Text(e.title, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                    Text(e.title, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
                     if (e.body.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
@@ -485,11 +488,14 @@ class _QuotationNotesTabState extends State<QuotationNotesTab> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: AppColors.whiteOverlay(0.06),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.slate200),
+        ),
         child: ListTile(
           leading: Icon(_icon(e.kind), color: AppColors.primary),
-          title: Text(e.title, style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+          title: Text(e.title, style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600)),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

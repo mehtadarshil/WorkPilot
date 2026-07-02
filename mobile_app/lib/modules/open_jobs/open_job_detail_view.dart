@@ -55,7 +55,7 @@ class OpenJobDetailView extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: AppColors.slate900,
                   height: 1.2,
                   letterSpacing: -0.4,
                 ),
@@ -162,7 +162,7 @@ class OpenJobDetailView extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.5,
-                      color: AppColors.slate300,
+                      color: AppColors.slate600,
                     ),
                   ),
                 ),
@@ -177,7 +177,7 @@ class OpenJobDetailView extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.5,
-                      color: AppColors.slate300,
+                      color: AppColors.slate600,
                     ),
                   ),
                 ),
@@ -191,7 +191,7 @@ class OpenJobDetailView extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       height: 1.5,
-                      color: AppColors.slate300,
+                      color: AppColors.slate600,
                     ),
                   ),
                 ),
@@ -224,12 +224,12 @@ class _Chip extends StatelessWidget {
       decoration: BoxDecoration(
         color: emphasized
             ? AppColors.primary.withValues(alpha: 0.22)
-            : AppColors.whiteOverlay(0.08),
+            : AppColors.slate100,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: emphasized
               ? AppColors.primary.withValues(alpha: 0.5)
-              : AppColors.whiteOverlay(0.15),
+              : AppColors.slate200,
         ),
       ),
       child: Text(
@@ -237,7 +237,7 @@ class _Chip extends StatelessWidget {
         style: GoogleFonts.inter(
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: emphasized ? AppColors.primary : AppColors.slate300,
+          color: emphasized ? AppColors.primary : AppColors.slate600,
         ),
       ),
     );
@@ -256,7 +256,7 @@ class _Section extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         color: Colors.white,
-        border: Border.all(color: AppColors.whiteOverlay(0.1)),
+        border: Border.all(color: AppColors.slate200),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -300,7 +300,7 @@ class _DetailRow extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 14,
               height: 1.45,
-              color: AppColors.slate300,
+              color: AppColors.slate600,
             ),
           ),
         ),

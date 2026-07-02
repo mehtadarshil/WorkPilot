@@ -152,6 +152,76 @@ export function fillColumnIntelligent(
   });
 }
 
+export const AUTOFILL_BLANK_VALUES = ['LIM', 'N/A', 'N/V', '---'] as const;
+
+const AUTOFILL_BLANK_COLUMNS = CIRCUIT_COLUMNS.filter(
+  (c) => c.key !== 'id' && c.key !== 'circuitNumber' && c.key !== 'description',
+);
+
+/** Number of empty fillable cells across all circuits, ignoring spare/unknown rows. */
+export function countBlankCells(circuits: CircuitRow[]) {
+  let count = 0;
+  for (const circuit of circuits) {
+    if (isSpareOrUnknownCircuit(circuit)) continue;
+    for (const col of AUTOFILL_BLANK_COLUMNS) {
+      const current = String(circuit[col.key] ?? '').trim();
+      if (!current) count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Fills every empty cell across all circuits with `value` (e.g. LIM / N/A / N/V / ---).
+ * Skips the circuit number, description and spare/unknown rows. Calculated columns
+ * that get filled are marked as manual overrides so the placeholder survives recalculation.
+ */
+export function autofillBlankCells(
+  circuits: CircuitRow[],
+  value: string,
+  board: BoardRecord,
+  use100Percent: boolean,
+) {
+  const trimmed = value.trim();
+  if (!trimmed) return circuits;
+  return circuits.map((circuit) => {
+    if (isSpareOrUnknownCircuit(circuit)) return circuit;
+    const overrides = { ...(circuit.calcOverrides ?? {}) };
+    const next = { ...circuit } as CircuitRow;
+    let changed = false;
+    for (const col of AUTOFILL_BLANK_COLUMNS) {
+      const current = String(next[col.key] ?? '').trim();
+      if (!current) {
+        next[col.key] = clampCircuitField(col.key, trimmed) as never;
+        if (col.calculated) (overrides as Record<string, boolean>)[col.key] = true;
+        changed = true;
+      }
+    }
+    if (!changed) return circuit;
+    next.calcOverrides = overrides;
+    return applyCircuitCalculations(next, board, use100Percent);
+  });
+}
+
+/** Fills only the empty cells of a single column (skips spare/unknown rows and non-empty cells). */
+export function fillColumnBlanks(
+  circuits: CircuitRow[],
+  column: keyof CircuitRow,
+  value: string,
+  board: BoardRecord,
+  use100Percent: boolean,
+) {
+  const trimmed = clampCircuitField(column, value.trim());
+  if (!trimmed) return circuits;
+  return circuits.map((circuit) => {
+    if (isSpareOrUnknownCircuit(circuit)) return circuit;
+    const current = String(circuit[column] ?? '').trim();
+    if (current) return circuit;
+    const next = { ...circuit, [column]: trimmed } as CircuitRow;
+    return applyCircuitCalculations(next, board, use100Percent);
+  });
+}
+
 export function clearColumnIntelligent(
   circuits: CircuitRow[],
   column: keyof CircuitRow,

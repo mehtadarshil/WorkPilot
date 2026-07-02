@@ -78,7 +78,7 @@ class SearchableSelectField<T> extends StatelessWidget {
     final baseDeco = decoration ??
         InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: Colors.white70),
+          labelStyle: TextStyle(color: Colors.black54),
           floatingLabelBehavior: FloatingLabelBehavior.always,
         );
 
@@ -87,7 +87,7 @@ class SearchableSelectField<T> extends StatelessWidget {
         enabled: enabled,
         suffixIcon: Icon(
           Icons.unfold_more_rounded,
-          color: enabled ? Colors.white70 : Colors.white38,
+          color: enabled ? Colors.black54 : Colors.black38,
         ),
       ),
       child: InkWell(
@@ -98,8 +98,8 @@ class SearchableSelectField<T> extends StatelessWidget {
             display ?? hint,
             style: GoogleFonts.inter(
               color: display != null
-                  ? (enabled ? Colors.white : Colors.white54)
-                  : AppColors.whiteOverlay(0.45),
+                  ? (enabled ? AppColors.slate900 : Colors.black45)
+                  : AppColors.slate400,
               fontWeight: display != null ? FontWeight.w500 : FontWeight.w400,
             ),
             maxLines: 2,
@@ -183,7 +183,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ),
@@ -201,7 +201,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                     hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                     prefixIcon: Icon(Icons.search_rounded, color: AppColors.slate400),
                     filled: true,
-                    fillColor: AppColors.whiteOverlay(0.06),
+                    fillColor: AppColors.slate100,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(color: AppColors.slate200),
@@ -242,7 +242,7 @@ class _SearchablePickerSheetState<T> extends State<_SearchablePickerSheet<T>> {
                             title: Text(
                               opt.label,
                               style: GoogleFonts.inter(
-                                color: Colors.white,
+                                color: AppColors.slate900,
                                 fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
                               ),
                             ),

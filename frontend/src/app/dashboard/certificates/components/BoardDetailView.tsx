@@ -10,8 +10,12 @@ import { cloneBoard, replaceInCircuits } from '@/lib/electricalCertificates/docu
 import type { BoardRecord, CircuitRow } from '@/lib/electricalCertificates/types';
 import { recalculateAllCircuits } from '@/lib/electricalCertificates/circuitCalculations';
 import {
+  AUTOFILL_BLANK_VALUES,
+  autofillBlankCells,
   clearColumnIntelligent,
+  countBlankCells,
   FILLABLE_CIRCUIT_COLUMNS,
+  fillColumnBlanks,
   fillColumnIntelligent,
   parsePastedGrid,
   pasteIntoCircuits,
@@ -100,6 +104,8 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
   const [findReplaceOpen, setFindReplaceOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [autofillBlanksOpen, setAutofillBlanksOpen] = useState(false);
+  const [selectedColumn, setSelectedColumn] = useState<keyof CircuitRow | null>(null);
   const readOnly = board?.status === 'done';
 
   if (!board) {
@@ -303,6 +309,7 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
           <CircuitsToolbar
           board={board}
           readOnly={readOnly}
+          selectedColumn={selectedColumn}
           onFindReplace={() => setFindReplaceOpen(true)}
           onPaste={() => setPasteOpen(true)}
           onOpenQuickAdd={() => setQuickAddOpen(true)}
@@ -323,9 +330,13 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
           onFillColumn={(key, value) => {
             setCircuits(fillColumnIntelligent(board.circuits, key, value, board, board.maxZsUse100Percent));
           }}
+          onFillColumnBlanks={(key, value) => {
+            setCircuits(fillColumnBlanks(board.circuits, key, value, board, board.maxZsUse100Percent));
+          }}
           onClearColumn={(key) => {
             setCircuits(clearColumnIntelligent(board.circuits, key, board, board.maxZsUse100Percent));
           }}
+          onAutofillBlanks={() => setAutofillBlanksOpen(true)}
           onAutofillFromPrevious={() => {
             if (board.circuits.length < 2) return;
             const prev = board.circuits[board.circuits.length - 2];
@@ -354,6 +365,8 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
             circuits={board.circuits}
             readOnly={readOnly}
             onMoveCircuit={moveCircuit}
+            selectedColumn={selectedColumn}
+            onSelectColumn={(key) => setSelectedColumn((prev) => (prev === key ? null : key))}
           />
         </div>
       </TradecertPanel>
@@ -388,6 +401,48 @@ export function BoardDetailView({ boardId }: { boardId: string }) {
           );
         }}
       />
+      {autofillBlanksOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setAutofillBlanksOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-slate-900">Autofill all blanks?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This will fill all {countBlankCells(board.circuits)} empty cell
+              {countBlankCells(board.circuits) === 1 ? '' : 's'} in the table with the selected value. This
+              action cannot be undone.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setAutofillBlanksOpen(false)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              {AUTOFILL_BLANK_VALUES.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setCircuits(
+                      autofillBlankCells(board.circuits, value, board, board.maxZsUse100Percent),
+                    );
+                    setAutofillBlanksOpen(false);
+                  }}
+                  className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488]"
+                >
+                  Autofill with {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </TradecertFormLayout>
   );

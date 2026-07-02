@@ -58,10 +58,10 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                   Expanded(
                     child: Text(
                       'Customer behaviour & notes',
-                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                     ),
                   ),
-                  IconButton(onPressed: () => Navigator.pop(ctx, false), icon: Icon(Icons.close_rounded, color: Colors.white54)),
+                  IconButton(onPressed: () => Navigator.pop(ctx, false), icon: Icon(Icons.close_rounded, color: Colors.black45)),
                 ],
               ),
               const SizedBox(height: 10),
@@ -120,7 +120,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
             children: [
               Text(
                 noteId == null ? 'New technical note' : 'Edit technical note',
-                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
               ),
               const SizedBox(height: 14),
               TextField(controller: titleC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: customerInputDecoration('Title *')),
@@ -244,7 +244,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                       Expanded(
                         child: Text(
                           'Customer behaviour & notes',
-                          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+                          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16),
                         ),
                       ),
                       TextButton.icon(
@@ -299,7 +299,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(ctStr(n, 'title'), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+                child: Text(ctStr(n, 'title'), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
               ),
               IconButton(icon: Icon(Icons.edit_outlined, size: 20), color: AppColors.primary, onPressed: () => _noteDialog(existing: n)),
               IconButton(icon: Icon(Icons.delete_outline_rounded, size: 20), color: const Color(0xFFFCA5A5), onPressed: () => _deleteNote(id)),
@@ -347,7 +347,7 @@ class _CustomerNotesTabState extends State<CustomerNotesTab> {
                 return Container(
                   width: 92,
                   height: 72,
-                  color: AppColors.whiteOverlay(0.08),
+                  color: AppColors.slate100,
                   child: Icon(Icons.image_outlined, color: AppColors.slate400),
                 );
               }

@@ -417,13 +417,13 @@ class _JobTabFilesState extends State<JobTabFiles> {
                         Expanded(
                           child: Text(
                             'Email from job',
-                            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                           ),
                         ),
                         IconButton(
                           tooltip: 'Close',
                           onPressed: sending ? null : () => Navigator.pop(ctx),
-                          icon: Icon(Icons.close_rounded, color: Colors.white70),
+                          icon: Icon(Icons.close_rounded, color: Colors.black54),
                         ),
                       ],
                     ),
@@ -451,25 +451,25 @@ class _JobTabFilesState extends State<JobTabFiles> {
                       ),
                       const SizedBox(height: 12),
                     ],
-                    TextField(controller: toC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'To', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: toC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'To', labelStyle: TextStyle(color: Colors.black54))),
                     TextButton(
                       style: TextButton.styleFrom(alignment: Alignment.centerLeft),
                       onPressed: () => setS(() => showCc = !showCc),
                       child: Text(showCc ? 'Hide CC' : 'Add CC', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                     if (showCc)
-                      TextField(controller: ccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70))),
+                      TextField(controller: ccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.black54))),
                     TextButton(
                       style: TextButton.styleFrom(alignment: Alignment.centerLeft),
                       onPressed: () => setS(() => showBcc = !showBcc),
                       child: Text(showBcc ? 'Hide BCC' : 'Add BCC', style: GoogleFonts.inter(color: AppColors.primary)),
                     ),
                     if (showBcc)
-                      TextField(controller: bccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70))),
+                      TextField(controller: bccC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.black54))),
                     const SizedBox(height: 12),
-                    TextField(controller: subC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: subC, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.black54))),
                     const SizedBox(height: 12),
-                    TextField(controller: bodyC, maxLines: 8, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Message', labelStyle: TextStyle(color: Colors.white70))),
+                    TextField(controller: bodyC, maxLines: 8, style: GoogleFonts.inter(color: AppColors.slate900), decoration: InputDecoration(labelText: 'Message', labelStyle: TextStyle(color: Colors.black54))),
                     const SizedBox(height: 12),
                     SwitchListTile(
                       value: appendSig,
@@ -488,7 +488,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          title: Text(entry.value['filename'] ?? '', style: GoogleFonts.inter(color: Colors.white70, fontSize: 13)),
+                          title: Text(entry.value['filename'] ?? '', style: GoogleFonts.inter(color: Colors.black54, fontSize: 13)),
                           trailing: IconButton(
                             icon: Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
                             onPressed: () => setS(() => attachments.removeAt(entry.key)),
@@ -523,7 +523,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Material(
-        color: AppColors.whiteOverlay(0.06),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -535,7 +535,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                   Icon(Icons.folder_open_rounded, color: AppColors.primary, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Pick files from linked job', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800)),
+                    child: Text('Pick files from linked job', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800)),
                   ),
                   TextButton(
                     onPressed: attachable.isEmpty
@@ -569,7 +569,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                           });
                           setSheetState(() {});
                         },
-                  title: Text(_label(f), style: GoogleFonts.inter(color: Colors.white70, fontSize: 13)),
+                  title: Text(_label(f), style: GoogleFonts.inter(color: Colors.black54, fontSize: 13)),
                   subtitle: Text(_formatBytes(f['byte_size']), style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11)),
                 ),
               Align(
@@ -632,7 +632,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
         children: [
           _toolbar(),
           const SizedBox(height: 12),
-          Text('Files & media', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+          Text('Files & media', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 8),
           if (_files.isEmpty)
             _emptyState()
@@ -646,14 +646,17 @@ class _JobTabFilesState extends State<JobTabFiles> {
   Widget _toolbar() {
     final attachable = _files.where(_canAttach).toList();
     return Material(
-      color: AppColors.whiteOverlay(0.08),
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.slate200),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('All job files', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w900)),
+            Text('All job files', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
             Text(
               'Photos, videos, PDFs, customer files, invoices and quotations linked to this job.',
@@ -684,8 +687,11 @@ class _JobTabFilesState extends State<JobTabFiles> {
 
   Widget _emptyState() {
     return Material(
-      color: AppColors.whiteOverlay(0.06),
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.slate200),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
@@ -703,8 +709,11 @@ class _JobTabFilesState extends State<JobTabFiles> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
-        color: AppColors.whiteOverlay(selected ? 0.14 : 0.08),
-        borderRadius: BorderRadius.circular(14),
+        color: selected ? AppColors.primarySurface : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: selected ? AppColors.primaryBorder : AppColors.slate200),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
           child: Row(
@@ -727,7 +736,7 @@ class _JobTabFilesState extends State<JobTabFiles> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_label(f), style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                    Text(_label(f), style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 3),
                     Text(_sourceDetail(f), style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 3),

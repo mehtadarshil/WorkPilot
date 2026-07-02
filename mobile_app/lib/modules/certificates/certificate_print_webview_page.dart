@@ -97,7 +97,7 @@ class _CertificatePrintWebViewPageState extends State<CertificatePrintWebViewPag
               children: [
                 WebViewWidget(controller: _controller),
                 if (_progress < 1)
-                  LinearProgressIndicator(value: _progress, backgroundColor: Colors.white24),
+                  LinearProgressIndicator(value: _progress, backgroundColor: Colors.black12),
                 if (_pageError != null && _printUrl != null)
                   Align(
                     alignment: Alignment.bottomCenter,

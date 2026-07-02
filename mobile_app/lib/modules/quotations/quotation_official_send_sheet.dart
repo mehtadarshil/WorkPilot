@@ -105,14 +105,14 @@ Future<void> showQuotationOfficialSendSheet(
                       Expanded(
                         child: Text(
                           'Send quotation',
-                          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                         ),
                       ),
                       IconButton(
                         tooltip: 'Close',
                         visualDensity: VisualDensity.compact,
                         onPressed: () => Navigator.pop(ctx),
-                        icon: Icon(Icons.close_rounded, color: Colors.white70),
+                        icon: Icon(Icons.close_rounded, color: Colors.black54),
                       ),
                     ],
                   ),
@@ -147,7 +147,7 @@ Future<void> showQuotationOfficialSendSheet(
                     style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'To',
-                      labelStyle: TextStyle(color: Colors.white70),
+                      labelStyle: TextStyle(color: Colors.black54),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -161,7 +161,7 @@ Future<void> showQuotationOfficialSendSheet(
                     TextField(
                       controller: ccC,
                       style: GoogleFonts.inter(color: AppColors.slate900),
-                      decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.white70)),
+                      decoration: InputDecoration(labelText: 'CC', labelStyle: TextStyle(color: Colors.black54)),
                     ),
                   ],
                   const SizedBox(height: 4),
@@ -175,14 +175,14 @@ Future<void> showQuotationOfficialSendSheet(
                     TextField(
                       controller: bccC,
                       style: GoogleFonts.inter(color: AppColors.slate900),
-                      decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.white70)),
+                      decoration: InputDecoration(labelText: 'BCC', labelStyle: TextStyle(color: Colors.black54)),
                     ),
                   ],
                   const SizedBox(height: 16),
                   TextField(
                     controller: subC,
                     style: GoogleFonts.inter(color: AppColors.slate900),
-                    decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.white70)),
+                    decoration: InputDecoration(labelText: 'Subject', labelStyle: TextStyle(color: Colors.black54)),
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -191,7 +191,7 @@ Future<void> showQuotationOfficialSendSheet(
                     style: GoogleFonts.inter(color: AppColors.slate900),
                     decoration: InputDecoration(
                       labelText: 'Message',
-                      labelStyle: TextStyle(color: Colors.white70),
+                      labelStyle: TextStyle(color: Colors.black54),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -205,7 +205,7 @@ Future<void> showQuotationOfficialSendSheet(
                   SwitchListTile(
                     value: scheduleFollowUp,
                     onChanged: (v) => setS(() => scheduleFollowUp = v),
-                    title: Text('Add follow-up note after send', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                    title: Text('Add follow-up note after send', style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13)),
                     activeThumbColor: AppColors.primary,
                   ),
                   const SizedBox(height: 12),
@@ -247,7 +247,7 @@ Future<void> showQuotationOfficialSendSheet(
                           contentPadding: EdgeInsets.zero,
                           title: Text(
                             e.value['filename'] ?? '',
-                            style: GoogleFonts.inter(color: Colors.white70, fontSize: 13),
+                            style: GoogleFonts.inter(color: Colors.black54, fontSize: 13),
                           ),
                           trailing: IconButton(
                             icon: Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),

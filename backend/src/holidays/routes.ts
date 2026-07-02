@@ -59,12 +59,14 @@ function holidayRequestRow(row: Record<string, unknown>) {
     ? row.end_date.toISOString()
     : String(row.end_date ?? '');
   const sqlDays = row.days_count != null ? Number(row.days_count) : null;
+  const allDay = row.all_day == null ? true : row.all_day === true;
   return {
     id: Number(row.id),
     officer_id: row.officer_id == null ? null : Number(row.officer_id),
     officer_name: (row.officer_name as string | null) ?? null,
     start_date: startRaw,
     end_date: endRaw,
+    all_day: allDay,
     leave_type: (row.leave_type as string) ?? 'annual',
     reason: (row.reason as string | null) ?? null,
     status: (row.status as string) ?? 'pending',
@@ -73,7 +75,7 @@ function holidayRequestRow(row: Record<string, unknown>) {
     approved_at: row.approved_at instanceof Date ? row.approved_at.toISOString() : null,
     rejection_reason: (row.rejection_reason as string | null) ?? null,
     created_at: row.created_at instanceof Date ? row.created_at.toISOString() : null,
-    days_count: computeHolidayDaysCount(startRaw, endRaw, sqlDays),
+    days_count: computeHolidayDaysCount(startRaw, endRaw, sqlDays, allDay),
   };
 }
 
@@ -81,6 +83,7 @@ function computeHolidayDaysCount(
   startDateStr: string,
   endDateStr: string,
   sqlDays: number | null,
+  allDay = true,
 ): number | null {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
@@ -88,6 +91,12 @@ function computeHolidayDaysCount(
     return sqlDays;
   }
   const diffMs = end.getTime() - start.getTime();
+  // Partial-day (timed) leave: report the fraction of a day it covers.
+  if (!allDay) {
+    const hours = diffMs / (1000 * 60 * 60);
+    if (hours <= 0) return null;
+    return Math.round((hours / 24) * 100) / 100;
+  }
   const sameDay =
     start.getFullYear() === end.getFullYear() &&
     start.getMonth() === end.getMonth() &&
@@ -156,6 +165,21 @@ export async function ensureHolidaySchema(pool: Pool): Promise<void> {
   `);
   await pool.query('ALTER TABLE holiday_requests ALTER COLUMN start_date TYPE TIMESTAMPTZ USING start_date::timestamp WITH TIME ZONE');
   await pool.query('ALTER TABLE holiday_requests ALTER COLUMN end_date TYPE TIMESTAMPTZ USING end_date::timestamp WITH TIME ZONE');
+
+  // Explicit all-day flag so partial-day (timed) leave is stored reliably
+  // instead of being inferred from the timestamps. Backfill once on first add.
+  const allDayCol = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'holiday_requests' AND column_name = 'all_day'`,
+  );
+  if ((allDayCol.rowCount ?? 0) === 0) {
+    await pool.query('ALTER TABLE holiday_requests ADD COLUMN all_day BOOLEAN NOT NULL DEFAULT true');
+    // Existing rows shorter than ~a full day are partial-day leave.
+    await pool.query(
+      `UPDATE holiday_requests SET all_day = false WHERE (end_date - start_date) < interval '20 hours'`,
+    );
+  }
+
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_officer ON holiday_requests(officer_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_status ON holiday_requests(status)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_holiday_requests_dates ON holiday_requests(start_date, end_date)');
@@ -334,6 +358,7 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
     if (startDate > endDate) return res.status(400).json({ message: 'start_date must be before or equal to end_date' });
     const leaveType = str(body.leave_type, 50) || 'annual';
     const reason = str(body.reason, 2000);
+    const allDay = body.all_day === undefined ? true : body.all_day === true;
     const officerId = parseId(body.officer_id);
     let targetOfficerId: number;
     if (officerId && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || user.role === 'STAFF')) {
@@ -347,10 +372,10 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
     }
     try {
       const result = await pool.query(
-        `INSERT INTO holiday_requests (officer_id, start_date, end_date, leave_type, reason, created_by)
-         VALUES ($1, $2::timestamptz, $3::timestamptz, $4, $5, $6)
+        `INSERT INTO holiday_requests (officer_id, start_date, end_date, all_day, leave_type, reason, created_by)
+         VALUES ($1, $2::timestamptz, $3::timestamptz, $4, $5, $6, $7)
          RETURNING *`,
-        [targetOfficerId, startDate, endDate, leaveType, reason, user.userId],
+        [targetOfficerId, startDate, endDate, allDay, leaveType, reason, user.userId],
       );
       return res.status(201).json({ request: holidayRequestRow(result.rows[0] as Record<string, unknown>) });
     } catch (error) {
@@ -369,10 +394,12 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
     const startDate = body.start_date !== undefined ? parseTimestamp(body.start_date) : null;
     const endDate = body.end_date !== undefined ? parseTimestamp(body.end_date) : null;
     const leaveType = body.leave_type !== undefined ? (str(body.leave_type, 50) || 'annual') : null;
+    const allDay = body.all_day !== undefined ? (body.all_day === true) : null;
     const hasFieldUpdate =
       startDate != null ||
       endDate != null ||
       leaveType != null ||
+      allDay != null ||
       body.reason !== undefined;
 
     if (!hasStatusUpdate && !hasFieldUpdate) {
@@ -419,6 +446,11 @@ export function mountHolidayRoutes(app: Application, deps: HolidayRouteDeps): vo
       if (leaveType != null) {
         sets.push(`leave_type = $${idx}`);
         params.push(leaveType);
+        idx += 1;
+      }
+      if (allDay != null) {
+        sets.push(`all_day = $${idx}`);
+        params.push(allDay);
         idx += 1;
       }
       if (body.reason !== undefined) {

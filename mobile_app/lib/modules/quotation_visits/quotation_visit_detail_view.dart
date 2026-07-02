@@ -143,7 +143,7 @@ class QuotationVisitDetailView extends GetView<QuotationVisitDetailController> {
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: AppColors.slate900,
                             ),
                           ),
                         ),
@@ -396,8 +396,8 @@ class _DiaryEventCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.whiteOverlay(0.04),
-              border: Border(bottom: BorderSide(color: AppColors.whiteOverlay(0.08))),
+              color: AppColors.slate100,
+              border: Border(bottom: BorderSide(color: AppColors.slate200)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -416,7 +416,7 @@ class _DiaryEventCard extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             if (duration != null)
@@ -431,7 +431,7 @@ class _DiaryEventCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppColors.whiteOverlay(0.08),
+                        color: AppColors.slate100,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -439,7 +439,7 @@ class _DiaryEventCard extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.slate300,
+                          color: AppColors.slate700,
                         ),
                       ),
                     ),
@@ -447,7 +447,7 @@ class _DiaryEventCard extends StatelessWidget {
                 ),
                 if (notes != null && notes.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  Text(notes, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate300, height: 1.4)),
+                  Text(notes, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600, height: 1.4)),
                 ],
               ],
             ),
@@ -467,7 +467,7 @@ class _DiaryEventCard extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                         ),
                       ),
                     ],
@@ -546,7 +546,7 @@ class _TimesheetRow extends StatelessWidget {
 
     return Text(
       '$name · $segment · $duration · $range',
-      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate300, height: 1.4),
+      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate600, height: 1.4),
     );
   }
 }
@@ -567,7 +567,7 @@ class _NoteBlock extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.04),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.slate200),
       ),
@@ -575,7 +575,7 @@ class _NoteBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (text.isNotEmpty)
-            Text(text, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate50, height: 1.45)),
+            Text(text, style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate900, height: 1.45)),
           const SizedBox(height: 8),
           Text(
             '$author · $when',

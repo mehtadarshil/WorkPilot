@@ -25,7 +25,7 @@ Future<void> showValidateIssuesSheet(CertificateEditorController controller) asy
                   Expanded(
                     child: Text(
                       issues.isEmpty ? 'Validation passed' : '${issues.length} validation issue(s)',
-                      style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ),
                   IconButton(
@@ -40,7 +40,7 @@ Future<void> showValidateIssuesSheet(CertificateEditorController controller) asy
                   ? Center(
                       child: Text(
                         'No issues found.',
-                        style: GoogleFonts.inter(color: AppColors.slate400),
+                        style: GoogleFonts.inter(color: AppColors.slate600),
                       ),
                     )
                   : ListView.separated(
@@ -50,11 +50,14 @@ Future<void> showValidateIssuesSheet(CertificateEditorController controller) asy
                       itemBuilder: (context, index) {
                         final issue = issues[index];
                         return ListTile(
-                          tileColor: AppColors.whiteOverlay(0.06),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          tileColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: AppColors.slate200),
+                          ),
                           title: Text(
                             issue.label,
-                            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                           ),
                           subtitle: Text(
                             issue.section,

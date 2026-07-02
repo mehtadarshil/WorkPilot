@@ -9,6 +9,7 @@ class HolidayRequest {
   final String? officerName;
   final String startDate;
   final String endDate;
+  final bool allDay;
   final String leaveType;
   final String? reason;
   final String status;
@@ -17,7 +18,7 @@ class HolidayRequest {
   final String? approvedAt;
   final String? rejectionReason;
   final String? createdAt;
-  final int? daysCount;
+  final num? daysCount;
 
   HolidayRequest({
     required this.id,
@@ -25,6 +26,7 @@ class HolidayRequest {
     this.officerName,
     required this.startDate,
     required this.endDate,
+    this.allDay = true,
     required this.leaveType,
     this.reason,
     required this.status,
@@ -43,6 +45,7 @@ class HolidayRequest {
       officerName: json['officer_name'] as String?,
       startDate: json['start_date'] as String? ?? '',
       endDate: json['end_date'] as String? ?? '',
+      allDay: json['all_day'] as bool? ?? true,
       leaveType: json['leave_type'] as String? ?? 'annual',
       reason: json['reason'] as String?,
       status: json['status'] as String? ?? 'pending',
@@ -51,7 +54,7 @@ class HolidayRequest {
       approvedAt: json['approved_at'] as String?,
       rejectionReason: json['rejection_reason'] as String?,
       createdAt: json['created_at'] as String?,
-      daysCount: json['days_count'] as int?,
+      daysCount: json['days_count'] as num?,
     );
   }
 }
@@ -148,6 +151,7 @@ class HolidaysController extends GetxController {
     int? officerId,
     required String startDate,
     required String endDate,
+    bool allDay = true,
     required String leaveType,
     String? reason,
   }) async {
@@ -156,6 +160,7 @@ class HolidaysController extends GetxController {
       final payload = <String, dynamic>{
         'start_date': startDate,
         'end_date': endDate,
+        'all_day': allDay,
         'leave_type': leaveType,
       };
       if (officerId != null) payload['officer_id'] = officerId;

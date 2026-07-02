@@ -36,6 +36,9 @@ class ProfileEditController extends GetxController {
   late final TextEditingController kinNameC;
   late final TextEditingController kinPhoneC;
   late final TextEditingController kinRelC;
+  late final TextEditingController bankNameC;
+  late final TextEditingController sortCodeC;
+  late final TextEditingController accountNumberC;
 
   @override
   void onInit() {
@@ -52,6 +55,9 @@ class ProfileEditController extends GetxController {
     kinNameC = TextEditingController();
     kinPhoneC = TextEditingController();
     kinRelC = TextEditingController();
+    bankNameC = TextEditingController();
+    sortCodeC = TextEditingController();
+    accountNumberC = TextEditingController();
     load();
   }
 
@@ -69,6 +75,9 @@ class ProfileEditController extends GetxController {
     kinNameC.dispose();
     kinPhoneC.dispose();
     kinRelC.dispose();
+    bankNameC.dispose();
+    sortCodeC.dispose();
+    accountNumberC.dispose();
     super.onClose();
   }
 
@@ -85,6 +94,9 @@ class ProfileEditController extends GetxController {
     kinNameC.text = p.nextOfKinName ?? '';
     kinPhoneC.text = p.nextOfKinPhone ?? '';
     kinRelC.text = p.nextOfKinRelationship ?? '';
+    bankNameC.text = p.bankName ?? '';
+    sortCodeC.text = p.sortCode ?? '';
+    accountNumberC.text = p.accountNumber ?? '';
   }
 
   Future<void> load() async {
@@ -168,6 +180,9 @@ class ProfileEditController extends GetxController {
         'next_of_kin_name': _emptyToNull(kinNameC.text),
         'next_of_kin_phone': _emptyToNull(kinPhoneC.text),
         'next_of_kin_relationship': _emptyToNull(kinRelC.text),
+        'bank_name': _emptyToNull(bankNameC.text),
+        'sort_code': _emptyToNull(sortCodeC.text),
+        'account_number': _emptyToNull(accountNumberC.text),
       };
       if (p?.isOfficer == true) {
         body['department'] = _emptyToNull(departmentC.text);

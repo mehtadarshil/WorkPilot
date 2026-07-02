@@ -24,6 +24,9 @@ interface Officer {
   created_at: string;
   updated_at: string;
   signature_data_url?: string | null;
+  bank_name?: string | null;
+  sort_code?: string | null;
+  account_number?: string | null;
 }
 
 interface OfficersResponse {
@@ -78,6 +81,9 @@ export default function OfficersPage() {
   const [formAssignedResponsibilities, setFormAssignedResponsibilities] = useState('');
   const [formState, setFormState] = useState('active');
   const [formSignatureDataUrl, setFormSignatureDataUrl] = useState<string | null>(null);
+  const [formBankName, setFormBankName] = useState('');
+  const [formSortCode, setFormSortCode] = useState('');
+  const [formAccountNumber, setFormAccountNumber] = useState('');
 
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
@@ -141,6 +147,9 @@ export default function OfficersPage() {
     setFormAssignedResponsibilities('');
     setFormState('active');
     setFormSignatureDataUrl(null);
+    setFormBankName('');
+    setFormSortCode('');
+    setFormAccountNumber('');
   };
 
   const openAdd = () => {
@@ -162,6 +171,9 @@ export default function OfficersPage() {
     setFormAssignedResponsibilities(o.assigned_responsibilities ?? '');
     setFormState(o.state);
     setFormSignatureDataUrl(o.signature_data_url ?? null);
+    setFormBankName(o.bank_name ?? '');
+    setFormSortCode(o.sort_code ?? '');
+    setFormAccountNumber(o.account_number ?? '');
     setActionMenu(null);
     setEditModalOpen(true);
   };
@@ -188,6 +200,9 @@ export default function OfficersPage() {
           assigned_responsibilities: formAssignedResponsibilities.trim() || undefined,
           state: formState,
           signature_data_url: formSignatureDataUrl || undefined,
+          bank_name: formBankName.trim() || undefined,
+          sort_code: formSortCode.trim() || undefined,
+          account_number: formAccountNumber.trim() || undefined,
         },
         token,
       );
@@ -217,6 +232,9 @@ export default function OfficersPage() {
           assigned_responsibilities: formAssignedResponsibilities.trim() || null,
           state: formState,
           signature_data_url: formSignatureDataUrl,
+          bank_name: formBankName.trim() || null,
+          sort_code: formSortCode.trim() || null,
+          account_number: formAccountNumber.trim() || null,
         },
         token,
       );
@@ -485,6 +503,12 @@ export default function OfficersPage() {
           setFormState={setFormState}
           formSignatureDataUrl={formSignatureDataUrl}
           setFormSignatureDataUrl={setFormSignatureDataUrl}
+          formBankName={formBankName}
+          setFormBankName={setFormBankName}
+          formSortCode={formSortCode}
+          setFormSortCode={setFormSortCode}
+          formAccountNumber={formAccountNumber}
+          setFormAccountNumber={setFormAccountNumber}
           submitLabel="Add"
         />
       )}
@@ -515,6 +539,12 @@ export default function OfficersPage() {
           setFormState={setFormState}
           formSignatureDataUrl={formSignatureDataUrl}
           setFormSignatureDataUrl={setFormSignatureDataUrl}
+          formBankName={formBankName}
+          setFormBankName={setFormBankName}
+          formSortCode={formSortCode}
+          setFormSortCode={setFormSortCode}
+          formAccountNumber={formAccountNumber}
+          setFormAccountNumber={setFormAccountNumber}
           submitLabel="Save Changes"
         />
       )}
@@ -530,6 +560,9 @@ export default function OfficersPage() {
             email: detailOfficer.email,
             system_access_level: detailOfficer.system_access_level,
             state: detailOfficer.state,
+            bank_name: detailOfficer.bank_name,
+            sort_code: detailOfficer.sort_code,
+            account_number: detailOfficer.account_number,
           }}
           token={token}
           onClose={() => setDetailOfficer(null)}
@@ -566,6 +599,12 @@ function OfficerModal({
   submitLabel,
   formSignatureDataUrl,
   setFormSignatureDataUrl,
+  formBankName,
+  setFormBankName,
+  formSortCode,
+  setFormSortCode,
+  formAccountNumber,
+  setFormAccountNumber,
 }: {
   title: string;
   onSubmit: (e: React.FormEvent) => void;
@@ -592,6 +631,12 @@ function OfficerModal({
   submitLabel: string;
   formSignatureDataUrl: string | null;
   setFormSignatureDataUrl: (v: string | null) => void;
+  formBankName: string;
+  setFormBankName: (v: string) => void;
+  formSortCode: string;
+  setFormSortCode: (v: string) => void;
+  formAccountNumber: string;
+  setFormAccountNumber: (v: string) => void;
 }) {
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
   return (
@@ -654,6 +699,23 @@ function OfficerModal({
           <div>
             <label className="block text-sm font-medium text-slate-700">Assigned responsibilities</label>
             <textarea rows={2} value={formAssignedResponsibilities} onChange={(e) => setFormAssignedResponsibilities(e.target.value)} placeholder="Areas, teams, or job categories overseen" className={inputClass} />
+          </div>
+          <div className="border-t border-slate-100 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Bank Details</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Bank name</label>
+                <input type="text" value={formBankName} onChange={(e) => setFormBankName(e.target.value)} placeholder="e.g. HSBC, Barclays" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Sort code</label>
+                <input type="text" value={formSortCode} onChange={(e) => setFormSortCode(e.target.value)} placeholder="e.g. 12-34-56" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Account number</label>
+                <input type="text" value={formAccountNumber} onChange={(e) => setFormAccountNumber(e.target.value)} placeholder="e.g. 12345678" className={inputClass} />
+              </div>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700">Signature</label>

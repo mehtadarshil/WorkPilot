@@ -458,9 +458,7 @@ class _OfflineSyncBanner extends StatelessWidget {
       final errColor = blocking ? Colors.red.shade300 : AppColors.slate400;
 
       return Material(
-        color: blocking
-            ? AppColors.whiteOverlay(0.12)
-            : AppColors.whiteOverlay(0.08),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -499,7 +497,7 @@ class _OfflineSyncBanner extends StatelessWidget {
                           const SizedBox(
                             height: 3,
                             child: LinearProgressIndicator(
-                              backgroundColor: Colors.white12,
+                              backgroundColor: Colors.black12,
                               color: AppColors.primary,
                             ),
                           ),
@@ -1504,7 +1502,7 @@ class _DiaryScopeToggle extends StatelessWidget {
     return Container(
       height: 38,
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.04),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.slate200),
       ),
@@ -2115,7 +2113,7 @@ class _DiaryTab extends GetView<HomeController> {
                             IconButton(
                               icon: Icon(
                                 showMonthly ? Icons.calendar_view_week_rounded : Icons.calendar_month_rounded,
-                                color: Colors.white70,
+                                color: Colors.black54,
                               ),
                               onPressed: () {
                                 controller.showMonthlyCalendar.value = !showMonthly;
@@ -2169,7 +2167,7 @@ class _DiaryTab extends GetView<HomeController> {
                                   Icon(
                                     Icons.calendar_month_rounded,
                                     size: 48,
-                                    color: AppColors.whiteOverlay(0.15),
+                                    color: AppColors.slate300,
                                   ),
                                   const SizedBox(height: 12),
                                   Text(
@@ -2215,7 +2213,7 @@ class _DiaryTab extends GetView<HomeController> {
                       Icon(
                         Icons.calendar_month_rounded,
                         size: 64,
-                        color: AppColors.whiteOverlay(0.25),
+                        color: AppColors.slate300,
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -2266,7 +2264,7 @@ class _DiaryViewModeToggle extends StatelessWidget {
     return Container(
       height: 38,
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.04),
+        color: AppColors.slate100,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.slate200),
       ),
@@ -2401,12 +2399,12 @@ class _DiaryFilterBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: active
                 ? AppColors.primary.withValues(alpha: 0.15)
-                : AppColors.whiteOverlay(0.04),
+                : AppColors.slate100,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: active
                   ? AppColors.primary.withValues(alpha: 0.45)
-                  : AppColors.whiteOverlay(0.08),
+                  : AppColors.slate200,
             ),
           ),
           child: Text(
@@ -2527,10 +2525,10 @@ class _HorizontalDateSelectorState extends State<_HorizontalDateSelector> {
               decoration: BoxDecoration(
                 color: isSelected
                     ? AppColors.primary.withValues(alpha: 0.15)
-                    : AppColors.whiteOverlay(0.04),
+                    : AppColors.slate100,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? AppColors.primary : AppColors.whiteOverlay(0.1),
+                  color: isSelected ? AppColors.primary : AppColors.slate200,
                   width: isSelected ? 2.0 : 1.0,
                 ),
               ),
@@ -2805,7 +2803,7 @@ class _MonthNavButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.whiteOverlay(0.04),
+      color: AppColors.slate100,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -2819,7 +2817,7 @@ class _MonthNavButton extends StatelessWidget {
           ),
           child: Icon(
             icon,
-            color: Colors.white,
+            color: AppColors.slate700,
             size: 20,
           ),
         ),
@@ -3085,9 +3083,7 @@ class _ProfileTab extends GetView<HomeController> {
                                 },
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.primary,
-                            disabledBackgroundColor: AppColors.whiteOverlay(
-                              0.06,
-                            ),
+                            disabledBackgroundColor: AppColors.slate200,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 10,

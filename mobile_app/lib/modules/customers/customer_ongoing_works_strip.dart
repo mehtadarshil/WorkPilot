@@ -93,85 +93,102 @@ class _CustomerOngoingWorksStripState extends State<CustomerOngoingWorksStrip> {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.slate50,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Text(
-                  'ONGOING WORKS',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                    color: AppColors.slate500,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.34,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'ONGOING WORKS',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.1,
+                      color: AppColors.slate500,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: _loading ? null : _addJob,
-                  icon: Icon(Icons.add_rounded, size: 18),
-                  label: Text('Add job', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            ),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
-              )
-            else if (_jobs.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No ongoing works at this site.',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
-                ),
-              )
-            else
-              ..._jobs.map(
-                (j) => Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Material(
-                    color: AppColors.whiteOverlay(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      onTap: () => _openJob(j),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _loading ? null : _addJob,
+                    icon: Icon(Icons.add_rounded, size: 18),
+                    label: Text('Add job', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
+                )
+              else if (_jobs.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No ongoing works at this site.',
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _jobs.length,
+                    itemBuilder: (context, i) {
+                      final j = _jobs[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Material(
+                          color: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: const BorderSide(color: AppColors.slate200),
+                          ),
+                          child: InkWell(
+                            onTap: () => _openJob(j),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              child: Row(
                                 children: [
-                                  Text(
-                                    ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
-                                    style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          ctStr(j, 'description_name').isEmpty ? ctStr(j, 'title') : ctStr(j, 'description_name'),
+                                          style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 14),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '#${(j['id'] as num?)?.toInt().toString().padLeft(4, '0') ?? '—'} · ${formatIsoDateWeekday(ctStr(j, 'created_at'))}',
+                                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '#${(j['id'] as num?)?.toInt().toString().padLeft(4, '0') ?? '—'} · ${formatIsoDateWeekday(ctStr(j, 'created_at'))}',
-                                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.whiteOverlay(0.5)),
+                                  TextButton(
+                                    onPressed: () => _openJob(j),
+                                    child: Text('View', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
                                   ),
                                 ],
                               ),
                             ),
-                            TextButton(
-                              onPressed: () => _openJob(j),
-                              child: Text('View', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.primary)),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

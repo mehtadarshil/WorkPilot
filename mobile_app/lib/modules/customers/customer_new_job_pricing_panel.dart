@@ -52,7 +52,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
-                headingRowColor: WidgetStateProperty.all(AppColors.whiteOverlay(0.06)),
+                headingRowColor: WidgetStateProperty.all(AppColors.slate100),
                 columns: const [
                   DataColumn(label: Text('#')),
                   DataColumn(label: Text('Pricing item')),
@@ -76,7 +76,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                             child: TextField(
                               controller: r.itemNameC,
                               enabled: !saving,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
@@ -89,7 +89,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               controller: r.timeC,
                               enabled: !saving,
                               keyboardType: TextInputType.number,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
@@ -102,7 +102,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               controller: r.unitC,
                               enabled: !saving,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
@@ -115,7 +115,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               controller: r.vatC,
                               enabled: !saving,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
@@ -128,7 +128,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                               controller: r.qtyC,
                               enabled: !saving,
                               keyboardType: TextInputType.number,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
                               decoration: InputDecoration(isDense: true, border: OutlineInputBorder()),
                               onChanged: (_) => onAnyFieldChanged(),
                             ),
@@ -137,7 +137,7 @@ class CustomerNewJobPricingPanel extends StatelessWidget {
                         DataCell(
                           Text(
                             r.lineTotal.toStringAsFixed(2),
-                            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700),
                           ),
                         ),
                         DataCell(

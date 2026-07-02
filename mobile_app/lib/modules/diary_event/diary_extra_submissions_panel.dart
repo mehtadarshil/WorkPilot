@@ -41,7 +41,7 @@ class DiaryExtraSubmissionsPanel extends StatelessWidget {
                   child: _accentTitleLocal('Extra photos, videos & notes'),
                 ),
                 Material(
-                  color: AppColors.primary.withValues(alpha: 0.4),
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     onTap: controller.submittingExtra.value
@@ -302,7 +302,7 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: AppColors.slate900,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -310,16 +310,16 @@ class _AddExtraSubmissionSheetState extends State<_AddExtraSubmissionSheet> {
                     controller: _notes,
                     minLines: 2,
                     maxLines: 6,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 15),
                     decoration: InputDecoration(
                       hintText: 'Notes (optional if you add media)',
                       hintStyle: GoogleFonts.inter(color: AppColors.slate500),
                       filled: true,
-                      fillColor: AppColors.whiteOverlay(0.06),
+                      fillColor: AppColors.slate100,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: AppColors.whiteOverlay(0.12),
+                          color: AppColors.slate200,
                         ),
                       ),
                     ),
@@ -467,8 +467,8 @@ class _SubmissionCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          color: AppColors.whiteOverlay(0.06),
-          border: Border.all(color: AppColors.whiteOverlay(0.1)),
+          color: AppColors.slate100,
+          border: Border.all(color: AppColors.slate200),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -525,7 +525,7 @@ class _SubmissionCard extends StatelessWidget {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   height: 1.4,
-                  color: AppColors.slate50,
+                  color: AppColors.slate900,
                 ),
               ),
             ],
@@ -558,9 +558,9 @@ class _SubmissionCard extends StatelessWidget {
                           width: 88,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
-                            color: AppColors.whiteOverlay(0.08),
+                            color: AppColors.slate100,
                             border: Border.all(
-                              color: AppColors.whiteOverlay(0.12),
+                              color: AppColors.slate200,
                             ),
                           ),
                           child: Icon(
@@ -574,7 +574,7 @@ class _SubmissionCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: AppColors.whiteOverlay(0.12),
+                            color: AppColors.slate200,
                           ),
                         ),
                         child: AuthVideoPosterTile(
@@ -650,7 +650,7 @@ Widget _accentTitleLocal(String t) {
           style: GoogleFonts.inter(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: AppColors.slate900,
           ),
         ),
       ),

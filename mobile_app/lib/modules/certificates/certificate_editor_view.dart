@@ -74,7 +74,7 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: AppColors.primary,
                         ),
                       )
                     : Icon(Icons.picture_as_pdf_rounded),
@@ -98,7 +98,7 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
                       ? 'Certificate not found.'
                       : controller.errorMessage.value,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(color: AppColors.slate300),
+                  style: GoogleFonts.inter(color: AppColors.slate600),
                 ),
               ),
             );
@@ -146,16 +146,16 @@ class CertificateEditorView extends GetView<CertificateEditorController> {
                       ),
                       selected: selected,
                       selectedColor: AppColors.primary,
-                      backgroundColor: AppColors.whiteOverlay(0.08),
+                      backgroundColor: AppColors.slate100,
                       labelStyle: GoogleFonts.inter(
-                        color: selected ? Colors.white : AppColors.slate300,
+                        color: selected ? Colors.white : AppColors.slate600,
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
                       side: BorderSide(
                         color: selected
                             ? AppColors.primary
-                            : AppColors.whiteOverlay(0.14),
+                            : AppColors.slate200,
                       ),
                       onSelected: (_) =>
                           controller.activeSectionKey.value = section.key,
@@ -263,7 +263,7 @@ class _Header extends StatelessWidget {
                     Text(
                       type.title,
                       style: GoogleFonts.inter(
-                        color: Colors.white,
+                        color: AppColors.slate900,
                         fontWeight: FontWeight.w800,
                       ),
                     ),

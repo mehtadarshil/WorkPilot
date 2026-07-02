@@ -66,7 +66,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
       padding: const EdgeInsets.all(14),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppColors.whiteOverlay(0.08),
+        color: Colors.white,
         border: Border.all(color: AppColors.slate200),
         borderRadius: BorderRadius.circular(18),
       ),
@@ -106,7 +106,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
               Expanded(
                 child: Text(
                   'Submitted Job Reports',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w800, fontSize: 18),
                 ),
               ),
               if (_submissions.isNotEmpty)
@@ -130,7 +130,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
                 children: [
                   Text(
                     'No submitted job reports yet',
-                    style: GoogleFonts.inter(color: AppColors.slate300, fontWeight: FontWeight.w700, fontSize: 15),
+                    style: GoogleFonts.inter(color: AppColors.slate600, fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -267,13 +267,13 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
     if (type == 'textarea') {
       return Text(
         value,
-        style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 13),
+        style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
       );
     }
 
     return Text(
       value,
-      style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 13),
+      style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13),
     );
   }
 
@@ -299,7 +299,7 @@ class _JobTabJobReportState extends State<JobTabJobReport> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (notes.isNotEmpty)
-            Text(notes, style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 13)),
+            Text(notes, style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 13)),
           if (notes.isNotEmpty) const SizedBox(height: 6),
           Text(author, style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 11)),
           if (media.isNotEmpty) ...[

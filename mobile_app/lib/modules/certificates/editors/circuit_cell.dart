@@ -209,7 +209,7 @@ class _CircuitCellState extends State<CircuitCell> {
                           focusNode: focusNode,
                           readOnly: widget.readOnly,
                           style: GoogleFonts.inter(
-                            color: widget.isCalc ? const Color(0xFF134E4A) : Colors.white,
+                            color: widget.isCalc ? const Color(0xFF134E4A) : AppColors.slate900,
                             fontSize: 13,
                           ),
                           decoration: cellDecoration,
@@ -222,7 +222,7 @@ class _CircuitCellState extends State<CircuitCell> {
                       focusNode: _focusNode,
                       readOnly: widget.readOnly,
                       style: GoogleFonts.inter(
-                        color: widget.isCalc ? const Color(0xFF134E4A) : Colors.white,
+                        color: widget.isCalc ? const Color(0xFF134E4A) : AppColors.slate900,
                         fontSize: 13,
                       ),
                       decoration: cellDecoration,

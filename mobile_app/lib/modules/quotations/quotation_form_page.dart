@@ -527,9 +527,9 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                               title: Text('Quotation date', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                               subtitle: Text(
                                 QuotationHelpers.formatDateIso(_quotationDate.toIso8601String()),
-                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                                style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                               ),
-                              trailing: Icon(Icons.calendar_today_rounded, color: Colors.white70, size: 20),
+                              trailing: Icon(Icons.calendar_today_rounded, color: Colors.black54, size: 20),
                               onTap: _saving
                                   ? null
                                   : () async {
@@ -551,9 +551,9 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                               title: Text('Valid until', style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12)),
                               subtitle: Text(
                                 QuotationHelpers.formatDateIso(_validUntil.toIso8601String()),
-                                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                                style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w600),
                               ),
-                              trailing: Icon(Icons.event_rounded, color: Colors.white70, size: 20),
+                              trailing: Icon(Icons.event_rounded, color: Colors.black54, size: 20),
                               onTap: _saving
                                   ? null
                                   : () async {
@@ -576,7 +576,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                         isExpanded: true,
                         initialValue: _currency,
                         decoration: _inputDeco('Currency'),
-                        dropdownColor: const Color(0xFF1e293b),
+                        dropdownColor: Colors.white,
                         style: GoogleFonts.inter(color: AppColors.slate900),
                         items: [for (final c in _currencies) DropdownMenuItem(value: c, child: Text(c))],
                         onChanged: _saving ? null : (v) => setState(() => _currency = v ?? 'USD'),
@@ -589,7 +589,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                           isExpanded: true,
                           initialValue: _state,
                           decoration: _inputDeco('Status'),
-                          dropdownColor: const Color(0xFF1e293b),
+                          dropdownColor: Colors.white,
                           style: GoogleFonts.inter(color: AppColors.slate900),
                           items: [
                             for (final s in QuotationsListController.states)
@@ -610,7 +610,7 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Text('Line items', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
+                    Text('Line items', style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 12),
                     for (var i = 0; i < _lines.length; i++) ...[
                       _lineEditor(i),
@@ -697,8 +697,11 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
 
   Widget _panel({required Widget child}) {
     return Material(
-      color: AppColors.whiteOverlay(0.08),
-      borderRadius: BorderRadius.circular(14),
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: AppColors.slate200),
+      ),
       child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: child),
     );
   }
@@ -788,8 +791,8 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
                       imageWidget = Container(
                         width: 80,
                         height: 60,
-                        color: Colors.white12,
-                        child: Icon(Icons.image_outlined, color: Colors.white38),
+                        color: Colors.black12,
+                        child: Icon(Icons.image_outlined, color: Colors.black38),
                       );
                     }
                   }
@@ -828,14 +831,14 @@ class _QuotationFormPageState extends State<QuotationFormPage> {
             children: [
               TextButton.icon(
                 onPressed: _saving ? null : () => _addLinePhotoCamera(i),
-                icon: Icon(Icons.camera_alt_outlined, size: 16, color: Colors.white70),
-                label: Text('Camera', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
+                icon: Icon(Icons.camera_alt_outlined, size: 16, color: Colors.black54),
+                label: Text('Camera', style: GoogleFonts.inter(color: Colors.black54, fontSize: 11)),
               ),
               const SizedBox(width: 8),
               TextButton.icon(
                 onPressed: _saving ? null : () => _addLinePhotoGallery(i),
-                icon: Icon(Icons.photo_library_outlined, size: 16, color: Colors.white70),
-                label: Text('Gallery', style: GoogleFonts.inter(color: Colors.white70, fontSize: 11)),
+                icon: Icon(Icons.photo_library_outlined, size: 16, color: Colors.black54),
+                label: Text('Gallery', style: GoogleFonts.inter(color: Colors.black54, fontSize: 11)),
               ),
             ],
           ),

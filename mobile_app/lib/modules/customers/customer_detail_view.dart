@@ -190,8 +190,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                 selected: sel,
                                 onSelected: (_) => _c.selectedTabIndex.value = i,
                                 selectedColor: AppColors.primary,
-                                backgroundColor: AppColors.whiteOverlay(0.08),
-                                side: BorderSide(color: sel ? AppColors.primary : AppColors.whiteOverlay(0.15)),
+                                backgroundColor: Colors.white,
+                                side: BorderSide(color: sel ? AppColors.primary : AppColors.slate200),
                                 visualDensity: VisualDensity.compact,
                                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
@@ -269,6 +269,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                     Text(
                       behavNotes,
                       style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate700, height: 1.4),
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -310,8 +312,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     width: 80,
                                     headers: tok.isNotEmpty ? {'Authorization': 'Bearer $tok'} : null,
                                     errorBuilder: (_, __, ___) => Container(
-                                      color: AppColors.whiteOverlay(0.08),
-                                      child: Icon(Icons.broken_image_outlined, color: Colors.white38),
+                                      color: AppColors.slate100,
+                                      child: Icon(Icons.broken_image_outlined, color: Colors.black38),
                                     ),
                                   ),
                                 ),
@@ -338,7 +340,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                           ),
                           Text(
                             preview != null && ctStr(preview, 'name').isNotEmpty ? ctStr(preview, 'name') : 'Work address #$scoped',
-                            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                            style: GoogleFonts.inter(color: AppColors.slate900, fontWeight: FontWeight.w700, fontSize: 14),
                           ),
                           if (preview != null) ...[
                             const SizedBox(height: 2),
@@ -354,7 +356,7 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: AppColors.whiteOverlay(0.08),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(color: AppColors.slate200),
                                 ),
@@ -374,6 +376,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     Text(
                                       ctStr(preview, 'key_info'),
                                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate700, height: 1.35),
+                                      maxLines: 4,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -405,6 +409,8 @@ class _CustomerDetailShellState extends State<_CustomerDetailShell> {
                                     Text(
                                       ctStr(preview, 'site_notes'),
                                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate700, height: 1.35),
+                                      maxLines: 4,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),

@@ -51,14 +51,14 @@ class SiteReportPageNav extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: active ? Colors.white : AppColors.slate300,
+                    color: active ? Colors.white : AppColors.slate600,
                   ),
                 ),
                 selected: active,
                 onSelected: (_) => onSelectPage(i),
                 selectedColor: AppColors.primary,
-                backgroundColor: AppColors.whiteOverlay(0.08),
-                side: BorderSide(color: active ? AppColors.primary : AppColors.whiteOverlay(0.12)),
+                backgroundColor: AppColors.slate100,
+                side: BorderSide(color: active ? AppColors.primary : AppColors.slate200),
                 padding: const EdgeInsets.symmetric(horizontal: 4),
               );
             },
@@ -74,7 +74,7 @@ class SiteReportPageNav extends StatelessWidget {
                 child: Text(
                   'Back',
                   style: GoogleFonts.inter(
-                    color: isFirstPage ? AppColors.slate500 : Colors.white,
+                    color: isFirstPage ? AppColors.slate400 : AppColors.slate700,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

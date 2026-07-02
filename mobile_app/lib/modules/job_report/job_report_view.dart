@@ -157,7 +157,7 @@ class JobReportView extends GetView<JobReportController> {
                   child: Text(
                     controller.errorMessage.value,
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(color: AppColors.slate300),
+                    style: GoogleFonts.inter(color: AppColors.slate600),
                   ),
                 ),
               );
@@ -171,7 +171,7 @@ class JobReportView extends GetView<JobReportController> {
                         ? 'No job report answers are stored for this visit (the checklist may have been removed from the job after completion).'
                         : 'No job report questions are configured for this job. Ask your office to add them on the job’s Job report tab.',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(color: AppColors.slate300, height: 1.4),
+                    style: GoogleFonts.inter(color: AppColors.slate600, height: 1.4),
                   ),
                 ),
               );
@@ -197,7 +197,7 @@ class JobReportView extends GetView<JobReportController> {
                         Text(
                           activePage.title,
                           style: GoogleFonts.inter(
-                            color: Colors.white,
+                            color: AppColors.slate900,
                             fontWeight: FontWeight.w800,
                             fontSize: 18,
                           ),
@@ -303,7 +303,7 @@ class _QuestionCard extends StatelessWidget {
               style: GoogleFonts.inter(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: AppColors.slate900,
               ),
             ),
             if (q.required)
@@ -332,7 +332,7 @@ class _QuestionCard extends StatelessWidget {
   InputDecoration _fieldDecoration() {
     return InputDecoration(
       filled: true,
-      fillColor: AppColors.whiteOverlay(0.06),
+      fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -352,7 +352,7 @@ class _QuestionCard extends StatelessWidget {
         return TextField(
           controller: tc,
           maxLines: 5,
-          style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 14),
+          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );
       case 'text':
@@ -360,7 +360,7 @@ class _QuestionCard extends StatelessWidget {
         if (tc == null) return const SizedBox.shrink();
         return TextField(
           controller: tc,
-          style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 14),
+          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );
       case 'customer_signature':
@@ -405,10 +405,10 @@ class _QuestionCard extends StatelessWidget {
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: onPickImage,
-                icon: Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 20),
+                icon: Icon(Icons.add_a_photo_rounded, color: AppColors.primary, size: 20),
                 label: Text(
                   bytes == null ? 'Add photo' : 'Replace photo',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.w600),
                 ),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: AppColors.whiteOverlay(0.25)),
@@ -422,7 +422,7 @@ class _QuestionCard extends StatelessWidget {
         if (tc == null) return const SizedBox.shrink();
         return TextField(
           controller: tc,
-          style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 14),
+          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );
     }
@@ -438,7 +438,7 @@ class _QuestionCard extends StatelessWidget {
         }
         return Text(
           text,
-          style: GoogleFonts.inter(color: AppColors.slate50, fontSize: 14, height: 1.4),
+          style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14, height: 1.4),
         );
       case 'customer_signature':
       case 'officer_signature':
@@ -536,7 +536,7 @@ class _CompletionActionsBody extends StatelessWidget {
                     Text(
                       'Choose site report template',
                       style: GoogleFonts.inter(
-                        color: Colors.white,
+                        color: AppColors.slate900,
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
                       ),
@@ -544,11 +544,11 @@ class _CompletionActionsBody extends StatelessWidget {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
                       value: selectedId,
-                      dropdownColor: const Color(0xFF1E293B),
+                      dropdownColor: Colors.white,
                       style: GoogleFonts.inter(color: AppColors.slate900),
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: AppColors.whiteOverlay(0.08),
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       items: templates.map((t) {
@@ -599,7 +599,7 @@ class _CompletionActionsBody extends StatelessWidget {
                 'Job report submitted successfully. You can optionally generate linked documents for this job.',
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  color: AppColors.slate300,
+                  color: AppColors.slate600,
                   height: 1.45,
                 ),
               ),
@@ -629,7 +629,7 @@ class _CompletionActionsBody extends StatelessWidget {
                           : 'Completed job',
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w800,
-                        color: Colors.white,
+                        color: AppColors.slate900,
                         fontSize: 16,
                       ),
                     ),
@@ -637,7 +637,7 @@ class _CompletionActionsBody extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         bundle!.jobTitle!,
-                        style: GoogleFonts.inter(color: AppColors.slate300, fontSize: 13),
+                        style: GoogleFonts.inter(color: AppColors.slate600, fontSize: 13),
                       ),
                     ],
                     if (bundle?.customerFullName?.trim().isNotEmpty == true) ...[
@@ -717,7 +717,7 @@ class _CompletionActionCard extends StatelessWidget {
                         title,
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: AppColors.slate900,
                           fontSize: 15,
                         ),
                       ),
@@ -760,7 +760,7 @@ class _ChangeJobStageBody extends StatelessWidget {
                 'Choose what happens next for this job. Your choice is saved when you confirm — the job stage updates only after you complete your visit.',
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  color: AppColors.slate300,
+                  color: AppColors.slate600,
                   height: 1.45,
                 ),
               ),
@@ -804,7 +804,7 @@ class _ChangeJobStageBody extends StatelessWidget {
                               style: GoogleFonts.inter(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                                color: AppColors.slate900,
                               ),
                             ),
                             subtitle: Padding(

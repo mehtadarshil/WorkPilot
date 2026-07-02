@@ -33,7 +33,7 @@ class ObservationsSectionEditor extends StatelessWidget {
               CheckboxListTile(
                 title: Text(
                   'No remedial action required',
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+                  style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
                 ),
                 value: noRemedial,
                 activeColor: AppColors.primary,
@@ -94,7 +94,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: Text(
                     'No observations recorded.',
-                    style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13),
+                    style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -112,7 +112,7 @@ class ObservationsSectionEditor extends StatelessWidget {
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
-                        color: AppColors.whiteOverlay(0.04),
+                        color: AppColors.slate100,
                         border: Border.all(color: AppColors.slate200),
                       ),
                       child: Column(
@@ -232,7 +232,7 @@ class AppendixSectionEditor extends StatelessWidget {
                 children: [
                   Text(
                     'Photographs',
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   Row(
                     children: [
@@ -293,7 +293,7 @@ class AppendixSectionEditor extends StatelessWidget {
                     return Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        color: AppColors.whiteOverlay(0.04),
+                        color: AppColors.slate100,
                         border: Border.all(color: AppColors.slate200),
                       ),
                       child: Column(
@@ -337,7 +337,7 @@ class AppendixSectionEditor extends StatelessWidget {
                             child: TextFormField(
                               key: ValueKey(id),
                               initialValue: caption,
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                              style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 12),
                               decoration: InputDecoration(
                                 hintText: 'Caption',
                                 hintStyle: GoogleFonts.inter(color: AppColors.slate500, fontSize: 12),
@@ -449,7 +449,7 @@ class SignatoriesSectionEditor extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
                     'Designer No. 2 is marked N/A.',
-                    style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13),
+                    style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 13),
                   ),
                 ),
               ],
