@@ -639,8 +639,8 @@ export default function StockToolsPage() {
     }
 
     const qty = parsedLocations.reduce((sum, loc) => sum + loc.quantity, 0);
-    if (qty < 1) {
-      setErrorMsg('Total quantity must be at least 1');
+    if (qty < 0) {
+      setErrorMsg('Total quantity must be at least 0');
       return;
     }
 
