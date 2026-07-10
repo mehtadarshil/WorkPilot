@@ -168,6 +168,8 @@ export default function DiaryPage() {
   const [highlightedJob, setHighlightedJob] = useState<JobDetails | null>(null);
 
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
   const [generalModalOpen, setGeneralModalOpen] = useState(false);
   const [generalForm, setGeneralForm] = useState<GeneralDiaryEventForm>({
     title: '',
@@ -329,6 +331,7 @@ export default function DiaryPage() {
         officer_ids: [officer.id],
         notes: ''
       });
+      setScheduleError(null);
       setScheduleModalOpen(true);
       return;
     }
@@ -346,13 +349,29 @@ export default function DiaryPage() {
 
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token || !highlightedJob) return;
+    if (!token || !highlightedJob || scheduleSaving) return;
 
+    if (!scheduleForm.officer_ids.length) {
+      setScheduleError('Select at least one engineer.');
+      return;
+    }
+
+    // datetime-local is "YYYY-MM-DDTHH:mm" (local). Append seconds so Safari parses reliably.
+    const rawStart = scheduleForm.start_time.trim();
+    const localStart = rawStart.length === 16 ? `${rawStart}:00` : rawStart;
+    const startDate = new Date(localStart);
+    if (Number.isNaN(startDate.getTime())) {
+      setScheduleError('Invalid date & time. Please pick a valid start time.');
+      return;
+    }
+
+    setScheduleSaving(true);
+    setScheduleError(null);
     try {
       await postJson(
         `/jobs/${highlightedJob.id}/diary-events`,
         {
-          start_time: new Date(scheduleForm.start_time).toISOString(),
+          start_time: startDate.toISOString(),
           duration_minutes: scheduleForm.duration_minutes,
           officer_ids: scheduleForm.officer_ids,
           notes: scheduleForm.notes
@@ -363,7 +382,13 @@ export default function DiaryPage() {
       fetchData(); // Reload events
     } catch (error) {
       console.error(error);
-      alert("Failed to schedule diary event");
+      setScheduleError(
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : 'Failed to schedule diary event',
+      );
+    } finally {
+      setScheduleSaving(false);
     }
   };
 
@@ -814,9 +839,14 @@ export default function DiaryPage() {
 
       {scheduleModalOpen && highlightedJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded shadow-xl w-[400px] p-6">
+          <div className="bg-white rounded shadow-xl w-[400px] max-h-[90vh] overflow-y-auto p-6">
             <h3 className="text-lg font-bold text-slate-800 mb-4">Add Diary Event</h3>
             <p className="text-sm font-semibold text-slate-600 mb-4 bg-slate-100 p-2 rounded">Job: {highlightedJob.description_name || highlightedJob.title}</p>
+            {scheduleError && (
+              <p className="mb-3 text-sm text-red-700 bg-red-50 border border-red-100 rounded px-3 py-2 whitespace-pre-wrap">
+                {scheduleError}
+              </p>
+            )}
             <form onSubmit={handleSaveEvent} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700">Date & Time</label>
@@ -902,8 +932,23 @@ export default function DiaryPage() {
                 )}
               </div>
               <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={() => setScheduleModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-sm font-bold text-white bg-[#14B8A6] rounded hover:brightness-110">Save Event</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScheduleModalOpen(false);
+                    setScheduleError(null);
+                  }}
+                  className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={scheduleSaving}
+                  className="px-4 py-2 text-sm font-bold text-white bg-[#14B8A6] rounded hover:brightness-110 disabled:opacity-60"
+                >
+                  {scheduleSaving ? 'Saving…' : 'Save Event'}
+                </button>
               </div>
             </form>
           </div>
