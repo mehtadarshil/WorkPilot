@@ -2901,7 +2901,7 @@ async function seedJobReportQuestionsForNewJob(jobId: number, jobDescriptionId: 
   }
 }
 
-async function closeOpenTimesheetSegments(client: PoolClient, officerId: number): Promise<void> {
+async function closeOpenTimesheetSegments(client: PoolClient | Pool, officerId: number): Promise<void> {
   await client.query(
     `UPDATE timesheet_entries SET clock_out = NOW(), updated_at = NOW()
      WHERE officer_id = $1 AND clock_out IS NULL`,
@@ -2910,7 +2910,7 @@ async function closeOpenTimesheetSegments(client: PoolClient, officerId: number)
 }
 
 async function openTimesheetSegment(
-  client: PoolClient,
+  client: PoolClient | Pool,
   officerId: number,
   segmentType: 'travelling' | 'on_site',
   diaryEventId: number,
@@ -2923,7 +2923,7 @@ async function openTimesheetSegment(
 }
 
 async function applyDiaryStatusToTimesheet(
-  client: PoolClient,
+  client: PoolClient | Pool,
   officerId: number,
   diaryEventId: number,
   normalized: 'travelling_to_site' | 'arrived_at_site' | 'completed' | 'cancelled' | null,
@@ -3010,6 +3010,48 @@ async function shouldFinalizeJobAfterVisitComplete(
     return false;
   }
   return !(await jobHasOtherOpenDiaryVisits(client, jobId, diaryEventId));
+}
+
+/**
+ * When a job is marked completed/closed (manual status change or auto-finalize),
+ * close any leftover open diary visits so Staff Work / Diary don't stay on
+ * "arrived_at_site" / "No status".
+ */
+async function completeOpenDiaryEventsForJob(
+  db: Pool | PoolClient,
+  jobId: number,
+  userId: number | null,
+): Promise<number> {
+  const open = await db.query<{ id: number; officer_id: number | null }>(
+    `SELECT d.id, d.officer_id
+     FROM diary_events d
+     WHERE d.job_id = $1
+       AND ${sqlDiaryTerminalStatusExpr('d.status')} NOT IN ('completed', 'cancelled', 'aborted')`,
+    [jobId],
+  );
+  if ((open.rowCount ?? 0) === 0) return 0;
+
+  for (const row of open.rows) {
+    await db.query(
+      `UPDATE diary_events SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+      [row.id],
+    );
+    await db.query(
+      `UPDATE diary_event_officers SET status = 'completed'
+       WHERE diary_event_id = $1
+         AND ${sqlDiaryTerminalStatusExpr('status')} NOT IN ('completed', 'cancelled', 'aborted')`,
+      [row.id],
+    );
+    await logDiaryEventStatusTransition(db, row.id, 'completed', null, null, null, userId, row.officer_id);
+    if (row.officer_id != null) {
+      try {
+        await applyDiaryStatusToTimesheet(db, row.officer_id, row.id, 'completed');
+      } catch (tsErr) {
+        console.error('completeOpenDiaryEventsForJob timesheet:', tsErr);
+      }
+    }
+  }
+  return open.rows.length;
 }
 
 app.get('/api/health', async (req: Request, res: Response) => {
@@ -6760,6 +6802,11 @@ app.patch('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (
     }
 
     if (body.state === 'completed' || body.state === 'closed') {
+      try {
+        await completeOpenDiaryEventsForJob(pool, id, userId);
+      } catch (diaryCloseErr) {
+        console.error('completeOpenDiaryEventsForJob after job patch:', diaryCloseErr);
+      }
       await handlePpmJobCompletion(pool, id, userId, createInvoiceFromJob);
     }
 
@@ -9206,6 +9253,7 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
         [diaryEventId],
       );
       await client.query(`UPDATE jobs SET state = 'completed', updated_at = NOW() WHERE id = $1`, [ev.job_id]);
+      await completeOpenDiaryEventsForJob(client, ev.job_id, userId);
 
       await logDiaryEventStatusTransition(client, diaryEventId, 'completed', latVal, lngVal, tsVal, userId, tokenOfficerId);
 
@@ -12490,6 +12538,11 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
         }
         await pool.query(`UPDATE jobs SET state = $1, updated_at = NOW() WHERE id = $2`, [nextState, row.job_id]);
         if (nextState === 'completed' || nextState === 'closed') {
+          try {
+            await completeOpenDiaryEventsForJob(pool, row.job_id, userId);
+          } catch (diaryCloseErr) {
+            console.error('completeOpenDiaryEventsForJob after visit finalize:', diaryCloseErr);
+          }
           await handlePpmJobCompletion(pool, row.job_id, userId, createInvoiceFromJob);
         }
       }

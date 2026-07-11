@@ -25,6 +25,7 @@ import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, sta
 import { getBlob, getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { StaffWorkDiaryCalendar } from './StaffWorkDiaryCalendar';
 import SearchableSelect from '../SearchableSelect';
+import { visitStatusLabel } from '../jobs/[id]/visitStatusLabels';
 
 // --- Type Definitions ---
 type OfficerWorkRow = {
@@ -1002,6 +1003,22 @@ export default function StaffWorkPage() {
     }
   };
 
+  const deleteHolidayRequest = async (id: number) => {
+    if (!token || !confirm('Delete this leave request? You will be able to book this engineer on those dates again.')) return;
+    setUpdatingHolidayId(id);
+    setHolidayError(null);
+    try {
+      await deleteRequest(`/holiday-requests/${id}`, token);
+      setShowDetailModal(false);
+      setSelectedEvent(null);
+      void fetchHolidaysData();
+    } catch (err) {
+      setHolidayError(err instanceof Error ? err.message : 'Could not delete leave request');
+    } finally {
+      setUpdatingHolidayId(null);
+    }
+  };
+
   // Lists & Computations
   const sortedOfficers = useMemo(
     () => [...(summary?.officers ?? [])].sort((a, b) => b.total_seconds - a.total_seconds),
@@ -1941,6 +1958,14 @@ export default function StaffWorkPage() {
                                 >
                                   <CheckCircle className="mr-1 inline size-3" /> Approve
                                 </button>
+                                <button
+                                  type="button"
+                                  disabled={updatingHolidayId === r.id}
+                                  onClick={() => void deleteHolidayRequest(r.id)}
+                                  className="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                                >
+                                  <Trash2 className="mr-1 inline size-3" /> Delete
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1967,11 +1992,12 @@ export default function StaffWorkPage() {
                         <th className="px-5 py-3">Reason</th>
                         <th className="px-5 py-3">Status</th>
                         <th className="px-5 py-3">Reviewed By</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {processedHolidays.length === 0 ? (
-                        <tr><td className="px-5 py-6 text-slate-500" colSpan={7}>No processed requests yet.</td></tr>
+                        <tr><td className="px-5 py-6 text-slate-500" colSpan={8}>No processed requests yet.</td></tr>
                       ) : (
                         processedHolidays.map((r) => (
                           <tr key={r.id} className="hover:bg-slate-50">
@@ -1988,6 +2014,25 @@ export default function StaffWorkPage() {
                               </span>
                             </td>
                             <td className="px-5 py-4 text-slate-600">{r.approved_by_name || '–'}</td>
+                            <td className="px-5 py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditRequest(r)}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  <Edit2 className="mr-1 inline size-3" /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={updatingHolidayId === r.id}
+                                  onClick={() => void deleteHolidayRequest(r.id)}
+                                  className="rounded-md border border-rose-200 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                                >
+                                  <Trash2 className="mr-1 inline size-3" /> Delete
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -2379,11 +2424,11 @@ export default function StaffWorkPage() {
                       <span className={`inline-block mt-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                         selectedEvent.raw.event_status === 'completed'
                           ? 'bg-emerald-100 text-emerald-800'
-                          : selectedEvent.raw.event_status === 'aborted'
+                          : selectedEvent.raw.event_status === 'aborted' || selectedEvent.raw.event_status === 'cancelled'
                           ? 'bg-rose-100 text-rose-800'
                           : 'bg-amber-100 text-amber-800'
                       }`}>
-                        {selectedEvent.raw.event_status}
+                        {visitStatusLabel(String(selectedEvent.raw.event_status))}
                       </span>
                       {selectedEvent.raw.abort_reason && (
                         <p className="text-xs text-rose-600 mt-1">Reason: {selectedEvent.raw.abort_reason}</p>
@@ -2512,6 +2557,14 @@ export default function StaffWorkPage() {
                     className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"
                   >
                     <Edit2 className="size-4" /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={updatingHolidayId === selectedEvent.raw.id}
+                    onClick={() => void deleteHolidayRequest(selectedEvent.raw.id as number)}
+                    className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 transition inline-flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Trash2 className="size-4" /> Delete
                   </button>
                   <button
                     onClick={() => setShowDetailModal(false)}
