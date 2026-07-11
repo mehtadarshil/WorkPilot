@@ -76,7 +76,7 @@ import {
   requireTenantCrmOrMobileJobDocs,
 } from './mobileFieldAccess';
 import { officerAssignedToJob } from './jobAssignment';
-import { syncJobDatesFromDiaryEvents } from './jobDiaryDateSync';
+import { syncJobDatesFromDiaryEvents, syncJobOfficersFromDiaryEvents } from './jobDiaryDateSync';
 import { buildJobCompletionContext } from './jobCompletionContext';
 import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
@@ -11990,6 +11990,7 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
     // Update the job status to scheduled if it was created/draft
     await pool.query('UPDATE jobs SET state = \'scheduled\' WHERE id = $1 AND state IN (\'draft\', \'created\', \'unscheduled\')', [jobId]);
     await syncJobDatesFromDiaryEvents(pool, jobId);
+    await syncJobOfficersFromDiaryEvents(pool, jobId);
 
     res.status(201).json({ events: createdEvents, event: createdEvents[0] ?? null });
   } catch (error) {
@@ -12227,6 +12228,9 @@ app.patch(
         };
         if (row.job_id != null) {
           await syncJobDatesFromDiaryEvents(pool, row.job_id);
+          if (officerIdsUpdated) {
+            await syncJobOfficersFromDiaryEvents(pool, row.job_id);
+          }
         }
         return res.json({
           event: {
@@ -12605,6 +12609,7 @@ app.delete('/api/diary-events/:id', authenticate, requireAdmin, requirePermissio
     await pool.query('DELETE FROM diary_events WHERE id = $1', [id]);
     if (row.job_id != null) {
       await syncJobDatesFromDiaryEvents(pool, row.job_id);
+      await syncJobOfficersFromDiaryEvents(pool, row.job_id);
     }
     return res.status(204).send();
   } catch (error) {
