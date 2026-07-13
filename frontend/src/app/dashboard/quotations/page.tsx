@@ -18,6 +18,8 @@ interface Quotation {
   customer_full_name: string | null;
   job_id: number | null;
   job_title: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
   quotation_date: string;
   valid_until: string;
   subtotal: number;
@@ -65,6 +67,16 @@ function formatDate(iso: string | null): string {
 
 function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+}
+
+function siteWorkAddressLabel(row: {
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+}): string {
+  const name = row.work_site_name?.trim() || '';
+  const address = row.work_site_address?.trim() || '';
+  if (name && address) return `${name} — ${address}`;
+  return name || address || '—';
 }
 
 export default function QuotationsPage() {
@@ -371,6 +383,7 @@ export default function QuotationsPage() {
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Quotation</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Site / work address</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Valid until</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Amount</th>
@@ -381,7 +394,7 @@ export default function QuotationsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {quotations.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                         No quotations yet. Create one to get started.
                       </td>
                     </tr>
@@ -404,6 +417,11 @@ export default function QuotationsPage() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{q.customer_full_name || '—'}</td>
+                          <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">
+                            <span className="line-clamp-2" title={siteWorkAddressLabel(q)}>
+                              {siteWorkAddressLabel(q)}
+                            </span>
+                          </td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatDate(q.quotation_date)}</td>
                           <td className="px-6 py-4 text-sm text-slate-500">{formatDate(q.valid_until)}</td>
                           <td className="px-6 py-4 text-sm font-medium text-slate-900">{formatCurrency(q.total_amount, q.currency)}</td>

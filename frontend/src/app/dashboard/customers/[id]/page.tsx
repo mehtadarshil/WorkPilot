@@ -16,7 +16,7 @@ import CustomerFilesTab from './CustomerFilesTab';
 import CustomerSiteImagesTab from './CustomerSiteImagesTab';
 import CustomerSiteReportTab from './CustomerSiteReportTab';
 import CustomerPpmContractsTab from './CustomerPpmContractsTab';
-import { canViewCustomerTab, canViewInvoicesModule, type TenantPermissionKey } from '@/lib/tenantPermissions';
+import { canViewCustomerTab, canViewInvoicesModule, canViewQuotationsModule, type TenantPermissionKey } from '@/lib/tenantPermissions';
 import CustomerOverviewMapTab from './CustomerOverviewMapTab';
 import CustomerTechnicalNoteMedia, { type TechnicalNoteMediaItem } from './CustomerTechnicalNoteMedia';
 import { IMAGE_MAX_BYTES, prepareImageFileForUpload, readFileAsBase64 } from './customerSiteReportShared';
@@ -292,6 +292,8 @@ interface Job {
   description_name: string | null;
   expected_completion: string | null;
   site_contact_name?: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
 }
 
 interface CustomerInvoice {
@@ -302,6 +304,21 @@ interface CustomerInvoice {
   total_paid: number;
   state: string;
   job_title: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  work_address_name?: string | null;
+}
+
+interface CustomerQuotation {
+  id: number;
+  quotation_number: string;
+  quotation_date: string;
+  total_amount: number;
+  currency: string;
+  state: string;
+  job_title: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
 }
 
 interface WorkAddressDetails {
@@ -330,6 +347,17 @@ function buildOsmEmbedUrl(lat: number, lon: number): string {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(`${lat},${lon}`)}`;
 }
 
+function siteWorkAddressLabel(row: {
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  work_address_name?: string | null;
+}): string {
+  const name = row.work_site_name?.trim() || row.work_address_name?.trim() || '';
+  const address = row.work_site_address?.trim() || '';
+  if (name && address) return `${name} — ${address}`;
+  return name || address || '';
+}
+
 export default function CustomerDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -340,6 +368,7 @@ export default function CustomerDetailsPage() {
   const [data, setData] = useState<CustomerDetails | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<CustomerInvoice[]>([]);
+  const [quotations, setQuotations] = useState<CustomerQuotation[]>([]);
   const [workAddressDetails, setWorkAddressDetails] = useState<WorkAddressDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -363,7 +392,7 @@ export default function CustomerDetailsPage() {
   const [noteUploadError, setNoteUploadError] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [historyType, setHistoryType] = useState<'' | 'jobs' | 'invoices' | 'credit_notes'>('');
+  const [historyType, setHistoryType] = useState<'' | 'jobs' | 'invoices' | 'quotations' | 'credit_notes'>('');
   const [mapEmbedSrc, setMapEmbedSrc] = useState<string>(() => buildOsmEmbedUrl(DEFAULT_MAP_CENTER.lat, DEFAULT_MAP_CENTER.lon));
   const [mapGeocoding, setMapGeocoding] = useState(false);
   const [invoiceReminderPrefSaving, setInvoiceReminderPrefSaving] = useState(false);
@@ -432,6 +461,19 @@ export default function CustomerDetailsPage() {
     }
   }, [id, token, workAddressId]);
 
+  const fetchQuotations = useCallback(async () => {
+    if (!token || !id) return;
+    try {
+      const qp = new URLSearchParams({ customer_id: id, limit: '100' });
+      if (workAddressId) qp.set('quotation_work_address_id', workAddressId);
+      const res = await getJson<{ quotations: CustomerQuotation[] }>(`/quotations?${qp.toString()}`, token);
+      setQuotations(res.quotations || []);
+    } catch (err) {
+      console.error('Failed to fetch quotations', err);
+      setQuotations([]);
+    }
+  }, [id, token, workAddressId]);
+
   const fetchServiceReminderSchedule = useCallback(async () => {
     if (!token || !id) return;
     setSvcScheduleLoading(true);
@@ -494,8 +536,9 @@ export default function CustomerDetailsPage() {
     fetchDetails();
     fetchJobs();
     fetchInvoices();
+    fetchQuotations();
     fetchWorkAddressDetails();
-  }, [fetchDetails, fetchJobs, fetchInvoices, fetchWorkAddressDetails]);
+  }, [fetchDetails, fetchJobs, fetchInvoices, fetchQuotations, fetchWorkAddressDetails]);
 
   useEffect(() => {
     if (!data) return;
@@ -590,7 +633,8 @@ export default function CustomerDetailsPage() {
     const invoices =
       canViewInvoicesModule(perms, userRole) &&
       (!workAddressId || canViewCustomerTab(perms, 'customer_tab_invoices', userRole));
-    return { invoices };
+    const quotations = canViewQuotationsModule(perms, userRole);
+    return { invoices, quotations };
   }, [workAddressId]);
 
   const historyRows = useMemo(() => {
@@ -602,6 +646,7 @@ export default function CustomerDetailsPage() {
         typeLabel: 'Job',
         recordNo: j.id.toString().padStart(4, '0'),
         description: j.description_name || j.title,
+        siteAddress: siteWorkAddressLabel(j),
         contactName: j.site_contact_name ?? null,
         total: '-',
         balance: '-',
@@ -611,17 +656,41 @@ export default function CustomerDetailsPage() {
 
     const invoiceRows = historyAccess.invoices
       ? invoices.map((inv) => ({
-      id: `invoice-${inv.id}`,
-      date: inv.invoice_date,
-      typeLabel: 'Invoice',
-      recordNo: inv.invoice_number,
-      description: inv.job_title || 'Invoice',
-      contactName: null,
-      total: `£${Number(inv.total_amount).toFixed(2)}`,
-      balance: `£${Math.max(0, Number(inv.total_amount) - Number(inv.total_paid)).toFixed(2)}`,
-      viewPath: `/dashboard/invoices/${inv.id}`,
-      badgeClass: inv.state === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
-    }))
+          id: `invoice-${inv.id}`,
+          date: inv.invoice_date,
+          typeLabel: 'Invoice',
+          recordNo: inv.invoice_number,
+          description: inv.job_title || 'Invoice',
+          siteAddress: siteWorkAddressLabel(inv),
+          contactName: null,
+          total: `£${Number(inv.total_amount).toFixed(2)}`,
+          balance: `£${Math.max(0, Number(inv.total_amount) - Number(inv.total_paid)).toFixed(2)}`,
+          viewPath: `/dashboard/invoices/${inv.id}`,
+          badgeClass: inv.state === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+        }))
+      : [];
+
+    const quotationRows = historyAccess.quotations
+      ? quotations.map((q) => ({
+          id: `quotation-${q.id}`,
+          date: q.quotation_date,
+          typeLabel: 'Quotation',
+          recordNo: q.quotation_number,
+          description: q.job_title || 'Quotation',
+          siteAddress: siteWorkAddressLabel(q),
+          contactName: null,
+          total: `£${Number(q.total_amount).toFixed(2)}`,
+          balance: '-',
+          viewPath: `/dashboard/quotations/${q.id}`,
+          badgeClass:
+            q.state === 'accepted'
+              ? 'bg-emerald-100 text-emerald-700'
+              : q.state === 'rejected'
+                ? 'bg-rose-100 text-rose-700'
+                : q.state === 'sent'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-violet-100 text-violet-700',
+        }))
       : [];
 
     const rows =
@@ -629,14 +698,16 @@ export default function CustomerDetailsPage() {
         ? jobRows
         : historyType === 'invoices'
           ? invoiceRows
-          : historyType === 'credit_notes'
-            ? []
-            : [...jobRows, ...invoiceRows];
+          : historyType === 'quotations'
+            ? quotationRows
+            : historyType === 'credit_notes'
+              ? []
+              : [...jobRows, ...invoiceRows, ...quotationRows];
 
     return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [historyType, jobs, invoices, historyAccess.invoices]).filter((row) => {
+  }, [historyType, jobs, invoices, quotations, historyAccess.invoices, historyAccess.quotations]).filter((row) => {
     if (!historySearch.trim()) return true;
-    const text = `${row.recordNo} ${row.description} ${row.typeLabel}`.toLowerCase();
+    const text = `${row.recordNo} ${row.description} ${row.typeLabel} ${row.siteAddress}`.toLowerCase();
     return text.includes(historySearch.trim().toLowerCase());
   });
 
@@ -644,7 +715,10 @@ export default function CustomerDetailsPage() {
     if (!historyAccess.invoices && (historyType === 'invoices' || historyType === 'credit_notes')) {
       setHistoryType('');
     }
-  }, [historyAccess.invoices, historyType]);
+    if (!historyAccess.quotations && historyType === 'quotations') {
+      setHistoryType('');
+    }
+  }, [historyAccess.invoices, historyAccess.quotations, historyType]);
 
   const specificNotes = useMemo(() => {
     const all = data?.specific_notes ?? [];
@@ -1564,6 +1638,9 @@ export default function CustomerDetailsPage() {
                                <th className="px-5 py-3 border-b border-slate-200">Type</th>
                                <th className="px-5 py-3 border-b border-slate-200">Record no</th>
                                <th className="px-5 py-3 border-b border-slate-200">Description</th>
+                              {!workAddressId && (
+                                <th className="px-5 py-3 border-b border-slate-200">Site / work address</th>
+                              )}
                               <th className="px-5 py-3 border-b border-slate-200">Contact</th>
                               <th className="px-5 py-3 border-b border-slate-200">Next visit booked</th>
                                <th className="px-5 py-3 border-b border-slate-200 text-right">Actions</th>
@@ -1572,10 +1649,12 @@ export default function CustomerDetailsPage() {
                            <tbody className="divide-y divide-slate-100 text-slate-700">
                              {jobs.filter(j => !['completed', 'closed'].includes(j.state)).length === 0 ? (
                                <tr>
-                                 <td colSpan={7} className="px-5 py-8 text-center text-slate-400">No ongoing works found.</td>
+                                 <td colSpan={workAddressId ? 7 : 8} className="px-5 py-8 text-center text-slate-400">No ongoing works found.</td>
                                </tr>
                              ) : (
-                               jobs.filter(j => !['completed', 'closed'].includes(j.state)).map(j => (
+                               jobs.filter(j => !['completed', 'closed'].includes(j.state)).map(j => {
+                                 const siteLabel = siteWorkAddressLabel(j);
+                                 return (
                                  <tr key={j.id} className="hover:bg-slate-50 transition-colors">
                                    <td className="px-5 py-4">{dayjs(j.created_at).format('ddd D MMM YYYY')}</td>
                                    <td className="px-5 py-4 font-medium uppercase text-[11px] text-[#14B8A6] tracking-wide">
@@ -1583,6 +1662,13 @@ export default function CustomerDetailsPage() {
                                    </td>
                                    <td className="px-5 py-4 text-slate-500">{j.id.toString().padStart(4, '0')}</td>
                                    <td className="px-5 py-4 w-64 max-w-[300px] truncate font-medium">{j.description_name || j.title}</td>
+                                   {!workAddressId && (
+                                     <td className="px-5 py-4 max-w-[220px] text-slate-600">
+                                       <span className="line-clamp-2 whitespace-normal" title={siteLabel || undefined}>
+                                         {siteLabel || '—'}
+                                       </span>
+                                     </td>
+                                   )}
                                    <td className="px-5 py-4 text-slate-600">{j.site_contact_name || '—'}</td>
                                    <td className="px-5 py-4 text-slate-500">
                                       {j.expected_completion ? dayjs(j.expected_completion).format('DD/MM/YYYY HH:mm') : 'No date set'}
@@ -1591,7 +1677,8 @@ export default function CustomerDetailsPage() {
                                      <button onClick={() => router.push(`/dashboard/jobs/${j.id}`)} className="text-[#14B8A6] font-semibold hover:underline">View</button>
                                    </td>
                                  </tr>
-                               ))
+                                 );
+                               })
                              )}
                            </tbody>
                          </table>
@@ -1629,6 +1716,9 @@ export default function CustomerDetailsPage() {
                        <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg p-0.5">
                           <span className="text-xs font-medium text-slate-500 px-3 uppercase tracking-wide">Filter by type:</span>
                           <button onClick={() => setHistoryType(historyType === 'jobs' ? '' : 'jobs')} className={`${historyType === 'jobs' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Jobs</button>
+                          {historyAccess.quotations && (
+                            <button onClick={() => setHistoryType(historyType === 'quotations' ? '' : 'quotations')} className={`${historyType === 'quotations' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Quotations</button>
+                          )}
                           {historyAccess.invoices && (
                             <>
                               <button onClick={() => setHistoryType(historyType === 'invoices' ? '' : 'invoices')} className={`${historyType === 'invoices' ? 'bg-white text-[#14B8A6] shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'} text-sm font-semibold rounded-md px-3 py-1`}>Invoices</button>
@@ -1652,6 +1742,9 @@ export default function CustomerDetailsPage() {
                                <th className="px-5 py-3 border-b border-slate-200">Type</th>
                                <th className="px-5 py-3 border-b border-slate-200">Record no</th>
                                <th className="px-5 py-3 border-b border-slate-200">Description</th>
+                               {!workAddressId && (
+                                 <th className="px-5 py-3 border-b border-slate-200">Site / work address</th>
+                               )}
                                <th className="px-5 py-3 border-b border-slate-200">Contact</th>
                                <th className="px-5 py-3 border-b border-slate-200">Total</th>
                                <th className="px-5 py-3 border-b border-slate-200">Balance</th>
@@ -1661,11 +1754,11 @@ export default function CustomerDetailsPage() {
                            <tbody className="divide-y divide-slate-100 text-slate-700">
                              {historyType === 'credit_notes' ? (
                                <tr>
-                                 <td colSpan={8} className="px-5 py-8 text-center text-slate-400">Credit notes are not available yet.</td>
+                                 <td colSpan={workAddressId ? 8 : 9} className="px-5 py-8 text-center text-slate-400">Credit notes are not available yet.</td>
                                </tr>
                              ) : historyRows.length === 0 ? (
                                <tr>
-                                 <td colSpan={8} className="px-5 py-8 text-center text-slate-400">No history found.</td>
+                                 <td colSpan={workAddressId ? 8 : 9} className="px-5 py-8 text-center text-slate-400">No history found.</td>
                                </tr>
                              ) : (
                                historyRows.map((r) => (
@@ -1676,6 +1769,13 @@ export default function CustomerDetailsPage() {
                                    </td>
                                    <td className="px-5 py-4 text-slate-500">{r.recordNo}</td>
                                    <td className="px-5 py-4 w-64 max-w-[300px] truncate">{r.description}</td>
+                                   {!workAddressId && (
+                                     <td className="px-5 py-4 max-w-[220px] text-slate-600">
+                                       <span className="line-clamp-2 whitespace-normal" title={r.siteAddress || undefined}>
+                                         {r.siteAddress || '—'}
+                                       </span>
+                                     </td>
+                                   )}
                                    <td className="px-5 py-4 text-slate-600">{r.contactName || '—'}</td>
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.total}</td>
                                    <td className="px-5 py-4 font-semibold text-slate-800">{r.balance}</td>

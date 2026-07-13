@@ -15,6 +15,9 @@ interface Invoice {
   customer_full_name: string | null;
   job_id: number | null;
   job_title: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  work_address_name?: string | null;
   invoice_date: string;
   due_date: string;
   subtotal: number;
@@ -121,6 +124,17 @@ function formatDate(iso: string | null): string {
 
 function formatCurrency(amount: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+}
+
+function siteWorkAddressLabel(row: {
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  work_address_name?: string | null;
+}): string {
+  const name = row.work_site_name?.trim() || row.work_address_name?.trim() || '';
+  const address = row.work_site_address?.trim() || '';
+  if (name && address) return `${name} — ${address}`;
+  return name || address || '—';
 }
 
 export default function InvoicesPage() {
@@ -444,6 +458,7 @@ export default function InvoicesPage() {
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoice</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Site / work address</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Job</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Due</th>
@@ -456,12 +471,12 @@ export default function InvoicesPage() {
                 <tbody className="divide-y divide-slate-200">
                   {invoices.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={10} className="px-6 py-12 text-center text-slate-500">
                         No invoices yet. Create one to get started.
                       </td>
                     </tr>
                   ) : (
-                    invoices.map((inv, i) => (
+                    invoices.map((inv) => (
                       <tr
                         key={inv.id}
                         className="group transition-colors outline-none hover:bg-slate-50 border-b border-slate-50 last:border-0"
@@ -475,6 +490,11 @@ export default function InvoicesPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-700">{inv.customer_full_name || '—'}</td>
+                        <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">
+                          <span className="line-clamp-2" title={siteWorkAddressLabel(inv)}>
+                            {siteWorkAddressLabel(inv)}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-sm text-slate-500">{inv.job_id && inv.job_title ? inv.job_title : '—'}</td>
                         <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.invoice_date)}</td>
                         <td className="px-6 py-4 text-sm text-slate-500">{formatDate(inv.due_date)}</td>

@@ -14289,10 +14289,45 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbInvoice & { customer_full_name?: string; job_title?: string; work_address_name?: string | null }>(
+    const listResult = await pool.query<
+      DbInvoice & {
+        customer_full_name?: string;
+        job_title?: string;
+        work_address_name?: string | null;
+        work_site_name?: string | null;
+        work_site_address?: string | null;
+      }
+    >(
       `SELECT i.id, i.invoice_number, i.customer_id, i.job_id, i.invoice_date, i.due_date, i.subtotal, i.tax_amount, i.total_amount, i.total_paid, i.currency, i.state, i.created_at,
         c.full_name AS customer_full_name, j.title AS job_title,
-        COALESCE(NULLIF(TRIM(iwa.name), ''), NULLIF(TRIM(jwa.name), '')) AS work_address_name
+        CASE
+          WHEN i.invoice_work_address_id IS NOT NULL THEN NULLIF(TRIM(iwa.name), '')
+          ELSE NULLIF(TRIM(jwa.name), '')
+        END AS work_site_name,
+        CASE
+          WHEN i.invoice_work_address_id IS NOT NULL THEN NULLIF(TRIM(CONCAT_WS(', ',
+            NULLIF(TRIM(iwa.branch_name), ''),
+            NULLIF(TRIM(iwa.address_line_1), ''),
+            NULLIF(TRIM(iwa.address_line_2), ''),
+            NULLIF(TRIM(iwa.address_line_3), ''),
+            NULLIF(TRIM(iwa.town), ''),
+            NULLIF(TRIM(iwa.county), ''),
+            NULLIF(TRIM(iwa.postcode), '')
+          )), '')
+          ELSE NULLIF(TRIM(CONCAT_WS(', ',
+            NULLIF(TRIM(jwa.branch_name), ''),
+            NULLIF(TRIM(jwa.address_line_1), ''),
+            NULLIF(TRIM(jwa.address_line_2), ''),
+            NULLIF(TRIM(jwa.address_line_3), ''),
+            NULLIF(TRIM(jwa.town), ''),
+            NULLIF(TRIM(jwa.county), ''),
+            NULLIF(TRIM(jwa.postcode), '')
+          )), '')
+        END AS work_site_address,
+        CASE
+          WHEN i.invoice_work_address_id IS NOT NULL THEN NULLIF(TRIM(iwa.name), '')
+          ELSE NULLIF(TRIM(jwa.name), '')
+        END AS work_address_name
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        LEFT JOIN jobs j ON j.id = i.job_id
@@ -14433,7 +14468,9 @@ app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async
         customer_full_name: r.customer_full_name ?? null,
         job_id: r.job_id ?? null,
         job_title: r.job_title ?? null,
-        work_address_name: r.work_address_name ?? null,
+        work_address_name: r.work_address_name ?? r.work_site_name ?? null,
+        work_site_name: r.work_site_name ?? null,
+        work_site_address: r.work_site_address ?? null,
         invoice_date: formatInvoiceDateFromDb(r.invoice_date),
         due_date: formatInvoiceDateFromDb(r.due_date),
         subtotal: sub,
@@ -15959,6 +15996,8 @@ app.get('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), a
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
     const stateFilter = typeof req.query.state === 'string' && QUOTATION_STATES.includes(req.query.state as typeof QUOTATION_STATES[number]) ? req.query.state : '';
     const customerId = typeof req.query.customer_id === 'string' ? parseInt(req.query.customer_id, 10) : null;
+    const quotationWorkAddressId =
+      typeof req.query.quotation_work_address_id === 'string' ? parseInt(req.query.quotation_work_address_id, 10) : null;
     const offset = (page - 1) * limit;
     const userId = getTenantScopeUserId(req.user!);
     const isSuperAdmin = req.user!.role === 'SUPER_ADMIN';
@@ -15988,6 +16027,17 @@ app.get('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), a
       countParams.push(customerId);
       listParams.push(customerId);
     }
+    if (quotationWorkAddressId && Number.isFinite(quotationWorkAddressId)) {
+      conditions.push(
+        `(q.quotation_work_address_id = $${p} OR EXISTS (
+           SELECT 1 FROM jobs jfilter
+           WHERE jfilter.id = q.job_id AND jfilter.work_address_id = $${p}
+         ))`,
+      );
+      countParams.push(quotationWorkAddressId);
+      listParams.push(quotationWorkAddressId);
+      p++;
+    }
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     listParams.push(limit, offset);
 
@@ -15997,12 +16047,45 @@ app.get('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), a
     );
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
-    const listResult = await pool.query<DbQuotation & { customer_full_name?: string; job_title?: string }>(
+    const listResult = await pool.query<
+      DbQuotation & {
+        customer_full_name?: string;
+        job_title?: string;
+        work_site_name?: string | null;
+        work_site_address?: string | null;
+      }
+    >(
       `SELECT q.id, q.quotation_number, q.customer_id, q.job_id, q.quotation_date, q.valid_until, q.subtotal, q.tax_amount, q.total_amount, q.currency, q.state, q.created_at,
-        c.full_name AS customer_full_name, j.title AS job_title
+        c.full_name AS customer_full_name, j.title AS job_title,
+        CASE
+          WHEN q.quotation_work_address_id IS NOT NULL THEN NULLIF(TRIM(qwa.name), '')
+          ELSE NULLIF(TRIM(jwa.name), '')
+        END AS work_site_name,
+        CASE
+          WHEN q.quotation_work_address_id IS NOT NULL THEN NULLIF(TRIM(CONCAT_WS(', ',
+            NULLIF(TRIM(qwa.branch_name), ''),
+            NULLIF(TRIM(qwa.address_line_1), ''),
+            NULLIF(TRIM(qwa.address_line_2), ''),
+            NULLIF(TRIM(qwa.address_line_3), ''),
+            NULLIF(TRIM(qwa.town), ''),
+            NULLIF(TRIM(qwa.county), ''),
+            NULLIF(TRIM(qwa.postcode), '')
+          )), '')
+          ELSE NULLIF(TRIM(CONCAT_WS(', ',
+            NULLIF(TRIM(jwa.branch_name), ''),
+            NULLIF(TRIM(jwa.address_line_1), ''),
+            NULLIF(TRIM(jwa.address_line_2), ''),
+            NULLIF(TRIM(jwa.address_line_3), ''),
+            NULLIF(TRIM(jwa.town), ''),
+            NULLIF(TRIM(jwa.county), ''),
+            NULLIF(TRIM(jwa.postcode), '')
+          )), '')
+        END AS work_site_address
        FROM quotations q
        JOIN customers c ON c.id = q.customer_id
        LEFT JOIN jobs j ON j.id = q.job_id
+       LEFT JOIN customer_work_addresses qwa ON qwa.id = q.quotation_work_address_id AND qwa.customer_id = q.customer_id
+       LEFT JOIN customer_work_addresses jwa ON jwa.id = j.work_address_id AND jwa.customer_id = q.customer_id
        ${whereClause}
        ORDER BY q.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -16030,6 +16113,8 @@ app.get('/api/quotations', authenticate, requireTenantCrmAccess('quotations'), a
       customer_full_name: r.customer_full_name ?? null,
       job_id: r.job_id ?? null,
       job_title: r.job_title ?? null,
+      work_site_name: r.work_site_name ?? null,
+      work_site_address: r.work_site_address ?? null,
       quotation_date: (r.quotation_date as Date).toISOString().slice(0, 10),
       valid_until: (r.valid_until as Date).toISOString().slice(0, 10),
       subtotal: parseFloat(r.subtotal),
@@ -19752,11 +19837,22 @@ app.get('/api/customers/:customerId/jobs', authenticate, async (req: Authenticat
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
                 NULLIF(TRIM(j.contact_name), ''),
                 c.full_name
-              ) AS site_contact_name
+              ) AS site_contact_name,
+              NULLIF(TRIM(wa.name), '') AS work_site_name,
+              NULLIF(TRIM(CONCAT_WS(', ',
+                NULLIF(TRIM(wa.branch_name), ''),
+                NULLIF(TRIM(wa.address_line_1), ''),
+                NULLIF(TRIM(wa.address_line_2), ''),
+                NULLIF(TRIM(wa.address_line_3), ''),
+                NULLIF(TRIM(wa.town), ''),
+                NULLIF(TRIM(wa.county), ''),
+                NULLIF(TRIM(wa.postcode), '')
+              )), '') AS work_site_address
        FROM jobs j 
        LEFT JOIN customers c ON c.id = j.customer_id
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id AND jc.customer_id = j.customer_id
        LEFT JOIN job_descriptions jd ON j.job_description_id = jd.id
+       LEFT JOIN customer_work_addresses wa ON wa.id = j.work_address_id AND wa.customer_id = j.customer_id
        ${whereClause} ORDER BY j.created_at DESC`,
       params
     );

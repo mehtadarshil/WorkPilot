@@ -15,11 +15,24 @@ interface Invoice {
   state: string;
   job_title: string | null;
   work_address_name?: string | null;
+  work_site_name?: string | null;
+  work_site_address?: string | null;
 }
 
 interface CustomerInvoicesTabProps {
   customerId: string;
   workAddressId?: string;
+}
+
+function siteWorkAddressLabel(row: {
+  work_site_name?: string | null;
+  work_site_address?: string | null;
+  work_address_name?: string | null;
+}): string {
+  const name = row.work_site_name?.trim() || row.work_address_name?.trim() || '';
+  const address = row.work_site_address?.trim() || '';
+  if (name && address) return `${name} — ${address}`;
+  return name || address || '';
 }
 
 export default function CustomerInvoicesTab({ customerId, workAddressId }: CustomerInvoicesTabProps) {
@@ -107,7 +120,7 @@ export default function CustomerInvoicesTab({ customerId, workAddressId }: Custo
                 <th className="px-5 py-3 border-b border-slate-200">Invoice No</th>
                 <th className="px-5 py-3 border-b border-slate-200">Date</th>
                 <th className="px-5 py-3 border-b border-slate-200">Description / Job</th>
-                {!workAddressId && <th className="px-5 py-3 border-b border-slate-200">Work Address</th>}
+                {!workAddressId && <th className="px-5 py-3 border-b border-slate-200">Site / work address</th>}
                 <th className="px-5 py-3 border-b border-slate-200">Total</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-center">Status</th>
                 <th className="px-5 py-3 border-b border-slate-200 text-right">Actions</th>
@@ -135,8 +148,10 @@ export default function CustomerInvoicesTab({ customerId, workAddressId }: Custo
                       </div>
                     </td>
                     {!workAddressId && (
-                      <td className="px-5 py-4 text-slate-500 max-w-[200px] truncate">
-                        {inv.work_address_name || '--'}
+                      <td className="px-5 py-4 text-slate-500 max-w-[220px]">
+                        <span className="line-clamp-2 whitespace-normal" title={siteWorkAddressLabel(inv) || undefined}>
+                          {siteWorkAddressLabel(inv) || '—'}
+                        </span>
                       </td>
                     )}
                     <td className="px-5 py-4 font-bold text-slate-900">
