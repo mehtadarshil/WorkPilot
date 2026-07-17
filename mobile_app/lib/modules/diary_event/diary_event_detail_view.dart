@@ -2774,12 +2774,17 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
     _notesCtrl = TextEditingController(
       text: widget.detail.notes?.trim() ?? '',
     );
-    for (final o in widget.detail.officers) {
+    // Prefer appointment-wide engineers so multi-engineer jobs show everyone assigned
+    // to this slot (not only the single split visit row being viewed).
+    final engineerSource = widget.detail.appointmentOfficers.isNotEmpty
+        ? widget.detail.appointmentOfficers
+        : widget.detail.officers;
+    for (final o in engineerSource) {
       if (o['is_primary'] != true) continue;
       final id = (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
       if (id != null) _selectedOfficerIds.add(id);
     }
-    for (final o in widget.detail.officers) {
+    for (final o in engineerSource) {
       final id = (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
       if (id != null) _selectedOfficerIds.add(id);
     }
@@ -3207,9 +3212,7 @@ class _EditVisitSheetState extends State<_EditVisitSheet> {
                                 await widget.controller.rescheduleVisit(
                                   startTime: _combinedStart,
                                   durationMinutes: _durationMinutes,
-                                  notes: _notesCtrl.text.trim().isEmpty
-                                      ? null
-                                      : _notesCtrl.text.trim(),
+                                  notes: _notesCtrl.text,
                                   officerIds: officerIds,
                                 );
                               },

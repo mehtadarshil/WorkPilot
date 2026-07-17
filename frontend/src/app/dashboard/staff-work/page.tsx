@@ -429,6 +429,16 @@ function diaryEventOfficerLabel(e: Record<string, unknown>): string {
 export default function StaffWorkPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('wp_user');
+      const user = raw ? (JSON.parse(raw) as { role?: string }) : null;
+      setIsExpenseAdmin(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN');
+    } catch {
+      setIsExpenseAdmin(false);
+    }
+  }, []);
+
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'summary' | 'calendar' | 'holidays'>('calendar');
 
@@ -449,6 +459,14 @@ export default function StaffWorkPage() {
   const [editingOverheadId, setEditingOverheadId] = useState<number | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(true);
   const [updatingExpenseId, setUpdatingExpenseId] = useState<number | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
+  const [expenseEditForm, setExpenseEditForm] = useState({
+    category: '',
+    description: '',
+    amount: '',
+    expense_date: '',
+  });
+  const [isExpenseAdmin, setIsExpenseAdmin] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [proofPreviewUrl, setProofPreviewUrl] = useState<string | null>(null);
   const [paymentModalOfficer, setPaymentModalOfficer] = useState<OfficerWorkRow | null>(null);
@@ -584,10 +602,18 @@ export default function StaffWorkPage() {
     try {
       const startIso = dateRange.start.toISOString();
       const endIso = dateRange.end.toISOString();
-      const startYmd = dateRange.start.toISOString().slice(0, 10);
-      const endYmd = dateRange.end.toISOString().slice(0, 10);
+      // Local calendar Y-M-D (not UTC slice) so holidays don't shift a day in IST/BST.
+      const startYmd = format(dateRange.start, 'yyyy-MM-dd');
+      const endYmd = format(dateRange.end, 'yyyy-MM-dd');
 
-      const diaryQ = new URLSearchParams({ range_start: startIso, range_end: endIso }).toString();
+      // include_completed: job page shows finished visits; Work calendar must too.
+      // scope=team: admin/office see all engineers' job visits, not only "mine".
+      const diaryQ = new URLSearchParams({
+        range_start: startIso,
+        range_end: endIso,
+        include_completed: '1',
+        scope: 'team',
+      }).toString();
       const holQ = new URLSearchParams({ from: startYmd, to: endYmd }).toString();
 
       const [eventsRes, reqRes, holRes, offRes] = await Promise.all([
@@ -735,6 +761,51 @@ export default function StaffWorkPage() {
       await fetchSummaryData();
     } catch (err) {
       setSummaryError(err instanceof Error ? err.message : 'Could not update expense officer');
+    } finally {
+      setUpdatingExpenseId(null);
+    }
+  };
+
+  const startEditExpenseDetails = (expense: ExpenseRow) => {
+    setEditingExpenseId(expense.id);
+    setExpenseEditForm({
+      category: expense.category || '',
+      description: expense.description ?? '',
+      amount: String(expense.amount ?? ''),
+      expense_date: (expense.expense_date || '').slice(0, 10),
+    });
+    setSummaryError(null);
+  };
+
+  const cancelEditExpenseDetails = () => {
+    setEditingExpenseId(null);
+    setExpenseEditForm({ category: '', description: '', amount: '', expense_date: '' });
+  };
+
+  const saveExpenseDetails = async (expenseId: number) => {
+    if (!token || !isExpenseAdmin) return;
+    const amountNum = parseFloat(expenseEditForm.amount);
+    if (!expenseEditForm.category.trim() || !Number.isFinite(amountNum) || amountNum <= 0) {
+      setSummaryError('Category and a positive amount are required');
+      return;
+    }
+    setUpdatingExpenseId(expenseId);
+    setSummaryError(null);
+    try {
+      await patchJson(
+        `/job-expenses/${expenseId}`,
+        {
+          category: expenseEditForm.category.trim(),
+          description: expenseEditForm.description.trim() || null,
+          amount: amountNum,
+          expense_date: expenseEditForm.expense_date,
+        },
+        token,
+      );
+      cancelEditExpenseDetails();
+      await fetchSummaryData();
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : 'Could not update expense');
     } finally {
       setUpdatingExpenseId(null);
     }
@@ -1273,7 +1344,10 @@ export default function StaffWorkPage() {
           <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-lg font-bold text-slate-900">Pending expenses to approve</h2>
-              <p className="text-sm text-slate-500">Officer-submitted parking, travel, and other job expenses. Approve to add them to outstanding pay and job costs.</p>
+              <p className="text-sm text-slate-500">
+                Officer-submitted parking, travel, and other job expenses. Approve to add them to outstanding pay and job costs.
+                {isExpenseAdmin ? ' Admins can edit category, notes, date, and final amount before approving.' : ''}
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -1285,15 +1359,29 @@ export default function StaffWorkPage() {
                     <th className="px-5 py-3">Expense</th>
                     <th className="px-5 py-3">Receipt</th>
                     <th className="px-5 py-3 text-right">Amount</th>
+                    {isExpenseAdmin && <th className="px-5 py-3 text-right">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pendingExpenses.length === 0 ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No pending expenses for this period.</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={isExpenseAdmin ? 7 : 6}>No pending expenses for this period.</td></tr>
                   ) : (
-                    pendingExpenses.map((e) => (
-                      <tr key={e.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
+                    pendingExpenses.map((e) => {
+                      const isEditing = editingExpenseId === e.id;
+                      return (
+                      <tr key={e.id} className={`hover:bg-slate-50 ${isEditing ? 'bg-teal-50/50' : ''}`}>
+                        <td className="px-5 py-4 text-slate-600">
+                          {isEditing ? (
+                            <input
+                              type="date"
+                              value={expenseEditForm.expense_date}
+                              onChange={(evt) => setExpenseEditForm((f) => ({ ...f, expense_date: evt.target.value }))}
+                              className="w-full min-w-[140px] rounded border border-slate-200 px-2 py-1 text-xs"
+                            />
+                          ) : (
+                            e.expense_date
+                          )}
+                        </td>
                         <td className="px-5 py-4 w-64 min-w-[200px]">
                           <SearchableSelect
                             options={officerOptions}
@@ -1321,8 +1409,27 @@ export default function StaffWorkPage() {
                           <p className="text-xs text-slate-500">{e.customer_name || e.job_title || ''}</p>
                         </td>
                         <td className="px-5 py-4">
-                          <p className="font-medium text-slate-800">{e.category}</p>
-                          {e.description && <p className="text-xs text-slate-500">{e.description}</p>}
+                          {isEditing ? (
+                            <div className="space-y-1.5 min-w-[180px]">
+                              <input
+                                value={expenseEditForm.category}
+                                onChange={(evt) => setExpenseEditForm((f) => ({ ...f, category: evt.target.value }))}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-medium"
+                                placeholder="Category"
+                              />
+                              <input
+                                value={expenseEditForm.description}
+                                onChange={(evt) => setExpenseEditForm((f) => ({ ...f, description: evt.target.value }))}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                                placeholder="Notes (optional)"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <p className="font-medium text-slate-800">{e.category}</p>
+                              {e.description && <p className="text-xs text-slate-500">{e.description}</p>}
+                            </>
+                          )}
                           <div className="mt-1 flex items-center gap-1.5">
                             <span className="text-xs text-slate-500">Type:</span>
                             <select
@@ -1351,11 +1458,22 @@ export default function StaffWorkPage() {
                           )}
                         </td>
                         <td className="px-5 py-4 text-right">
-                          <p className="font-bold text-slate-900">{formatMoney(e.amount)}</p>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={expenseEditForm.amount}
+                              onChange={(evt) => setExpenseEditForm((f) => ({ ...f, amount: evt.target.value }))}
+                              className="ml-auto w-28 rounded border border-slate-200 px-2 py-1 text-right text-xs font-bold"
+                            />
+                          ) : (
+                            <p className="font-bold text-slate-900">{formatMoney(e.amount)}</p>
+                          )}
                           <div className="mt-2 flex justify-end gap-2">
                             <button
                               type="button"
-                              disabled={updatingExpenseId === e.id}
+                              disabled={updatingExpenseId === e.id || isEditing}
                               onClick={() => void updateExpenseStatus(e.id, 'rejected')}
                               className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                             >
@@ -1363,7 +1481,7 @@ export default function StaffWorkPage() {
                             </button>
                             <button
                               type="button"
-                              disabled={updatingExpenseId === e.id}
+                              disabled={updatingExpenseId === e.id || isEditing}
                               onClick={() => void updateExpenseStatus(e.id, 'approved')}
                               className="rounded-md bg-[#14B8A6] px-2 py-1 text-xs font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
                             >
@@ -1371,8 +1489,43 @@ export default function StaffWorkPage() {
                             </button>
                           </div>
                         </td>
+                        {isExpenseAdmin && (
+                          <td className="px-5 py-4 text-right">
+                            {isEditing ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <button
+                                  type="button"
+                                  disabled={updatingExpenseId === e.id}
+                                  onClick={() => void saveExpenseDetails(e.id)}
+                                  className="rounded-md bg-[#14B8A6] px-2 py-1 text-xs font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+                                >
+                                  {updatingExpenseId === e.id ? 'Saving…' : 'Save'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={updatingExpenseId === e.id}
+                                  onClick={cancelEditExpenseDetails}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={updatingExpenseId === e.id || editingExpenseId != null}
+                                onClick={() => startEditExpenseDetails(e)}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-emerald-50 disabled:opacity-50"
+                              >
+                                <Edit2 className="size-3.5" />
+                                Edit
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -1383,7 +1536,10 @@ export default function StaffWorkPage() {
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-lg font-bold text-slate-900">Approved expenses outstanding</h2>
-              <p className="text-sm text-slate-500">These are approved and included in officer outstanding balance and job Costs tab.</p>
+              <p className="text-sm text-slate-500">
+                These are approved and included in officer outstanding balance and job Costs tab.
+                {isExpenseAdmin ? ' Admins can edit the final figure when the exact amount was not known at claim time.' : ''}
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -1395,15 +1551,29 @@ export default function StaffWorkPage() {
                     <th className="px-5 py-3">Expense</th>
                     <th className="px-5 py-3">Receipt</th>
                     <th className="px-5 py-3 text-right">Amount</th>
+                    {isExpenseAdmin && <th className="px-5 py-3 text-right">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {approvedExpenses.length === 0 ? (
-                    <tr><td className="px-5 py-6 text-slate-500" colSpan={6}>No approved outstanding expenses for this period.</td></tr>
+                    <tr><td className="px-5 py-6 text-slate-500" colSpan={isExpenseAdmin ? 7 : 6}>No approved outstanding expenses for this period.</td></tr>
                   ) : (
-                    approvedExpenses.map((e) => (
-                      <tr key={e.id} className="hover:bg-slate-50">
-                        <td className="px-5 py-4 text-slate-600">{e.expense_date}</td>
+                    approvedExpenses.map((e) => {
+                      const isEditing = editingExpenseId === e.id;
+                      return (
+                      <tr key={e.id} className={`hover:bg-slate-50 ${isEditing ? 'bg-teal-50/50' : ''}`}>
+                        <td className="px-5 py-4 text-slate-600">
+                          {isEditing ? (
+                            <input
+                              type="date"
+                              value={expenseEditForm.expense_date}
+                              onChange={(evt) => setExpenseEditForm((f) => ({ ...f, expense_date: evt.target.value }))}
+                              className="w-full min-w-[140px] rounded border border-slate-200 px-2 py-1 text-xs"
+                            />
+                          ) : (
+                            e.expense_date
+                          )}
+                        </td>
                         <td className="px-5 py-4 w-64 min-w-[200px]">
                           <SearchableSelect
                             options={officerOptions}
@@ -1431,8 +1601,27 @@ export default function StaffWorkPage() {
                           <p className="text-xs text-slate-500">{e.customer_name || e.job_title || ''}</p>
                         </td>
                         <td className="px-5 py-4">
-                          <p className="font-medium text-slate-800">{e.category}</p>
-                          {e.description && <p className="text-xs text-slate-500">{e.description}</p>}
+                          {isEditing ? (
+                            <div className="space-y-1.5 min-w-[180px]">
+                              <input
+                                value={expenseEditForm.category}
+                                onChange={(evt) => setExpenseEditForm((f) => ({ ...f, category: evt.target.value }))}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs font-medium"
+                                placeholder="Category"
+                              />
+                              <input
+                                value={expenseEditForm.description}
+                                onChange={(evt) => setExpenseEditForm((f) => ({ ...f, description: evt.target.value }))}
+                                className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                                placeholder="Notes (optional)"
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              <p className="font-medium text-slate-800">{e.category}</p>
+                              {e.description && <p className="text-xs text-slate-500">{e.description}</p>}
+                            </>
+                          )}
                           <div className="mt-1 flex items-center gap-1.5">
                             <span className="text-xs text-slate-500">Type:</span>
                             <select
@@ -1460,19 +1649,68 @@ export default function StaffWorkPage() {
                             <span className="text-xs text-slate-400">No receipt</span>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-right font-bold text-slate-900">{formatMoney(e.amount)}</td>
+                        <td className="px-5 py-4 text-right font-bold text-slate-900">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={expenseEditForm.amount}
+                              onChange={(evt) => setExpenseEditForm((f) => ({ ...f, amount: evt.target.value }))}
+                              className="ml-auto w-28 rounded border border-slate-200 px-2 py-1 text-right text-xs font-bold"
+                            />
+                          ) : (
+                            formatMoney(e.amount)
+                          )}
+                        </td>
+                        {isExpenseAdmin && (
+                          <td className="px-5 py-4 text-right">
+                            {isEditing ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <button
+                                  type="button"
+                                  disabled={updatingExpenseId === e.id}
+                                  onClick={() => void saveExpenseDetails(e.id)}
+                                  className="rounded-md bg-[#14B8A6] px-2 py-1 text-xs font-semibold text-white hover:bg-[#0d9488] disabled:opacity-50"
+                                >
+                                  {updatingExpenseId === e.id ? 'Saving…' : 'Save'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={updatingExpenseId === e.id}
+                                  onClick={cancelEditExpenseDetails}
+                                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={updatingExpenseId === e.id || editingExpenseId != null}
+                                onClick={() => startEditExpenseDetails(e)}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-[#0f766e] hover:bg-emerald-50 disabled:opacity-50"
+                              >
+                                <Edit2 className="size-3.5" />
+                                Edit
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
                 {approvedExpenses.length > 0 && (
                   <tfoot className="border-t border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800">
                     <tr>
-                      <td className="px-5 py-3" colSpan={5}>Period totals</td>
+                      <td className="px-5 py-3" colSpan={isExpenseAdmin ? 6 : 5}>Period totals</td>
                       <td className="px-5 py-3 text-right">
                         <p>Personal: {formatMoney(approvedPersonalTotal)}</p>
                         <p className="text-slate-600">Company: {formatMoney(approvedCompanyTotal)}</p>
                       </td>
+                      {isExpenseAdmin && <td />}
                     </tr>
                   </tfoot>
                 )}

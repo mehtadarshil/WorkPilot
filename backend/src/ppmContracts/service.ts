@@ -9,7 +9,7 @@ type DbExecutor = Pool | PoolClient;
 export type CreatePpmInvoiceFn = (
   jobId: number,
   userId: number,
-  opts?: { description?: string | null },
+  opts?: { description?: string | null; invoice_type?: string | null },
 ) => Promise<number | null>;
 
 export type PpmContractJobSetup = {

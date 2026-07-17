@@ -334,13 +334,16 @@ class DiaryEventDetailController extends GetxController {
     if (saving.value) return;
     saving.value = true;
     try {
-      await _mobile.rescheduleDiaryEvent(
+      final savedId = await _mobile.rescheduleDiaryEvent(
         diaryEventId: diaryId,
         startTime: startTime,
         durationMinutes: durationMinutes,
         notes: notes,
         officerIds: officerIds,
       );
+      if (savedId > 0) {
+        diaryId = savedId;
+      }
       // Reload full detail so all derived fields (endTime, statusLogs, etc.) refresh.
       await load(silent: true);
       if (Get.isRegistered<HomeController>()) {

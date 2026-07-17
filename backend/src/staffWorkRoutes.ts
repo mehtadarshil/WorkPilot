@@ -939,18 +939,49 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     const expenseId = parseId(req.params.expenseId);
     if (!expenseId) return res.status(400).json({ message: 'Invalid expense id' });
     const user = req.user!;
-    if (!assertStaffPermissionAny(user, ['field_users'])) {
-      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
-    }
     const body = req.body as Record<string, unknown>;
     const userId = getTenantScopeUserId(user);
     const isSuperAdmin = user.role === 'SUPER_ADMIN';
+    const isAdmin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN';
+    const canStaffManage = assertStaffPermissionAny(user, ['field_users']);
+
+    const existing = await pool.query<{ id: number; job_id: number; proof_files: unknown }>(
+      `SELECT je.id, je.job_id, je.proof_files
+       FROM job_expenses je
+       JOIN jobs j ON j.id = je.job_id
+       WHERE je.id = $1${isSuperAdmin ? '' : ' AND j.created_by = $2'}`,
+      isSuperAdmin ? [expenseId] : [expenseId, userId],
+    );
+    if ((existing.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+    const jobId = Number(existing.rows[0].job_id);
+    if (!canStaffManage && !(await jobVisibleToUser(pool, jobId, user))) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
 
     const rawStatus = typeof body.status === 'string' ? body.status.trim() : '';
     const rawExpenseType = typeof body.expense_type === 'string' ? body.expense_type.trim().toLowerCase() : '';
 
     const hasStatus = rawStatus.length > 0;
     const hasExpenseType = rawExpenseType.length > 0;
+    const hasCategory = typeof body.category === 'string';
+    const hasDescription = body.description !== undefined;
+    const hasExpenseDate = body.expense_date !== undefined;
+    const hasAmount = body.amount !== undefined;
+    const proof = decodeProofFiles(body.proof_files);
+    const hasProofFiles = proof.length > 0;
+    const hasAdminDetailEdit =
+      hasCategory || hasDescription || hasExpenseDate || hasAmount || hasProofFiles;
+
+    // Final figure / expense details: admins only (provisional amounts are common before invoices).
+    if (hasAdminDetailEdit && !isAdmin) {
+      return res.status(403).json({ message: 'Only admins can edit expense amount and details' });
+    }
+
+    if (hasStatus && !canStaffManage) {
+      return res.status(403).json({ message: 'Forbidden: insufficient permissions' });
+    }
 
     let hasOfficerId = false;
     let officerIdToSet: number | null = null;
@@ -975,7 +1006,16 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
       }
     }
 
-    if (!hasStatus && !hasExpenseType && !hasOfficerId) {
+    if (
+      !hasStatus &&
+      !hasExpenseType &&
+      !hasOfficerId &&
+      !hasCategory &&
+      !hasDescription &&
+      !hasExpenseDate &&
+      !hasAmount &&
+      !hasProofFiles
+    ) {
       return res.status(400).json({ message: 'No fields to update' });
     }
     if (hasStatus && rawStatus !== 'approved' && rawStatus !== 'rejected' && rawStatus !== 'submitted') {
@@ -983,6 +1023,14 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     }
     if (hasExpenseType && rawExpenseType !== 'personal' && rawExpenseType !== 'company') {
       return res.status(400).json({ message: 'expense_type must be personal or company' });
+    }
+
+    let amountToSet: number | null = null;
+    if (hasAmount) {
+      amountToSet = money(body.amount);
+      if (amountToSet == null || amountToSet <= 0) {
+        return res.status(400).json({ message: 'Amount must be greater than zero' });
+      }
     }
 
     const setParts: string[] = [];
@@ -1005,6 +1053,51 @@ export function mountStaffWorkRoutes(app: Application, deps: StaffWorkRouteDeps)
     if (hasOfficerId) {
       setParts.push(`officer_id = $${paramIndex++}`);
       params.push(officerIdToSet);
+    }
+
+    if (hasCategory) {
+      const category = (body.category as string).trim().slice(0, 80) || 'Expense';
+      setParts.push(`category = $${paramIndex++}`);
+      params.push(category);
+    }
+
+    if (hasDescription) {
+      const description =
+        typeof body.description === 'string' ? body.description.trim() || null : null;
+      setParts.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+
+    if (hasExpenseDate) {
+      setParts.push(`expense_date = $${paramIndex++}::date`);
+      params.push(isoDate(body.expense_date));
+    }
+
+    if (hasAmount && amountToSet != null) {
+      setParts.push(`amount = $${paramIndex++}`);
+      params.push(amountToSet);
+    }
+
+    if (hasProofFiles) {
+      const existingProof = Array.isArray(existing.rows[0].proof_files)
+        ? (existing.rows[0].proof_files as Record<string, unknown>[])
+        : [];
+      const proofJson = [...existingProof];
+      for (const file of proof) {
+        const ext = path.extname(file.original).slice(0, 24) || '.jpg';
+        const stored = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+        const uploaded = await writeWorkpilotFile('job-expense-proofs', [jobId, expenseId], stored, file.buf, file.contentType);
+        proofJson.push({
+          stored_filename: stored,
+          original_filename: file.original,
+          content_type: file.contentType,
+          byte_size: file.buf.length,
+          spaces_key: uploaded.spacesKey,
+          file_url: uploaded.fileUrl,
+        });
+      }
+      setParts.push(`proof_files = $${paramIndex++}::jsonb`);
+      params.push(JSON.stringify(proofJson));
     }
 
     setParts.push('updated_at = NOW()');

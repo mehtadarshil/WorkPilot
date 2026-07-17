@@ -494,7 +494,7 @@ class HolidaysView extends GetView<HolidaysController> {
     final reasonController = TextEditingController();
     String leaveType = 'annual';
     int? selectedOfficerId;
-    bool? isAllDayState = true;
+    bool? isAllDayState = false;
 
     showModalBottomSheet(
       context: context,

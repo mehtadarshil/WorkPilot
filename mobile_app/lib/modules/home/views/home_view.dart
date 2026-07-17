@@ -402,6 +402,7 @@ class _HomeTab extends GetView<HomeController> {
                     ),
                   ],
                   const SizedBox(height: 24),
+                  const _HomeDocuCenterCard(),
                   const _HomeCurrentEventCard(),
                   const SizedBox(height: 16),
                   const _HomeTimesheetCard(),
@@ -750,6 +751,78 @@ class _HomeGlassCard extends StatelessWidget {
         child: SizedBox(width: double.infinity, child: child),
       ),
     );
+  }
+}
+
+class _HomeDocuCenterCard extends GetView<HomeController> {
+  const _HomeDocuCenterCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (!controller.showStandaloneDocuCenter) return const SizedBox.shrink();
+      return Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => Get.toNamed(AppRoutes.docuCenter),
+              borderRadius: BorderRadius.circular(16),
+              child: _HomeGlassCard(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.folder_open_rounded,
+                        color: AppColors.primary,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Docu Center',
+                            style: GoogleFonts.inter(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.slate900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Company guides and reference documents',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.slate400,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.slate400,
+                      size: 24,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    });
   }
 }
 
@@ -1740,15 +1813,31 @@ class _DiaryTab extends GetView<HomeController> {
                             ),
                           ),
                         ],
-                        if (e.location != null && e.location!.trim().isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            e.location!.trim(),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.slate400,
-                              height: 1.35,
-                            ),
+                        if (e.displayWorkAddress.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.place_outlined,
+                                size: 14,
+                                color: AppColors.slate400,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  e.displayWorkAddress,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.slate600,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                         if (e.description != null && e.description!.trim().isNotEmpty) ...[
@@ -3162,6 +3251,38 @@ class _ProfileTab extends GetView<HomeController> {
                     trailing: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.slate500),
                     onTap: () => Get.toNamed(AppRoutes.todos),
                   ),
+                  if (controller.showStandaloneDocuCenter) ...[
+                    Divider(height: 1, color: AppColors.slate100),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Icon(
+                        Icons.folder_open_rounded,
+                        color: AppColors.primary.withValues(alpha: 0.9),
+                        size: 22,
+                      ),
+                      title: Text(
+                        'Docu Center',
+                        style: GoogleFonts.inter(
+                          color: AppColors.slate500,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Guides and reference documents',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.slate500,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        size: 22,
+                        color: AppColors.slate500,
+                      ),
+                      onTap: () => Get.toNamed(AppRoutes.docuCenter),
+                    ),
+                  ],
                   Divider(height: 1, color: AppColors.slate100),
                   const CalendarSyncProfileTile(),
                 ],

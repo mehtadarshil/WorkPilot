@@ -25,6 +25,8 @@ export const TENANT_PERMISSION_KEYS = [
   'settings_import',
   'settings_master_data',
   'todos',
+  'docu_center',
+  'docu_center_manage',
   'job_tab_parts',
   'job_tab_job_report',
   'job_tab_reports',
@@ -146,6 +148,8 @@ export const FIELD_MOBILE_PERMISSION_KEYS: readonly TenantPermissionKey[] = [
   'quotations',
   'invoices',
   'todos',
+  'docu_center',
+  'docu_center_manage',
   ...JOB_DETAIL_TAB_PERMISSION_KEYS,
   ...CUSTOMER_TAB_PERMISSION_KEYS,
 ] as const;

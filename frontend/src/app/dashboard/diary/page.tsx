@@ -292,6 +292,9 @@ export default function DiaryPage() {
     const diaryParams = new URLSearchParams();
     diaryParams.set('range_start', rangeStart);
     diaryParams.set('range_end', rangeEnd);
+    // Keep completed visits visible so jobs with finished diary events still appear on the scheduler.
+    diaryParams.set('include_completed', '1');
+    diaryParams.set('scope', 'team');
     try {
       const [officerRes, eventsRes] = await Promise.all([
         getJson<{ officers: Officer[] }>('/officers/list', token),

@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { getJson, postJson, patchJson } from '../../../../../apiClient';
 import { ArrowLeft, Save, Plus, Trash2 } from 'lucide-react';
 import SearchableSelect, { type SearchableSelectOption } from '../../../../SearchableSelect';
+import InlineAddWorkAddress from '../../../../InlineAddWorkAddress';
 import { localDateAndTimeToIso, localDateEndOfDayToIso } from '@/lib/localDateTime';
 import {
   buildCompletedServiceItemsPayload,
@@ -727,21 +728,31 @@ export default function AddNewJobPage() {
                   {!isEdit && (
                     <div>
                       <label className={labelClass}>Site / work address (optional)</label>
-                      <SearchableSelect
-                        options={workAddressOptions}
-                        value={workAddressId}
-                        onChange={(v) => {
-                          setWorkAddressId(v || '');
+                      <InlineAddWorkAddress
+                        customerId={customerId && /^\d+$/.test(customerId) ? Number(customerId) : null}
+                        token={token}
+                        onCreated={(wa) => {
+                          setWorkAddresses((prev) => [...prev.filter((w) => w.id !== wa.id), wa]);
+                          setWorkAddressId(String(wa.id));
                           setJobContactId(null);
                         }}
-                        allowEmpty
-                        emptyButtonLabel="Use customer address"
-                        emptyMenuLabel="Use customer address"
-                        searchPlaceholder="Search work addresses…"
-                        className={inputClass}
-                      />
+                      >
+                        <SearchableSelect
+                          options={workAddressOptions}
+                          value={workAddressId}
+                          onChange={(v) => {
+                            setWorkAddressId(v || '');
+                            setJobContactId(null);
+                          }}
+                          allowEmpty
+                          emptyButtonLabel="Use customer address"
+                          emptyMenuLabel="Use customer address"
+                          searchPlaceholder="Search work addresses…"
+                          className={inputClass}
+                        />
+                      </InlineAddWorkAddress>
                       <p className="text-xs text-slate-400 mt-1">
-                        Optional: choose where this job will be carried out.
+                        Optional: choose where this job will be carried out. Use + to add a new site.
                       </p>
                     </div>
                   )}

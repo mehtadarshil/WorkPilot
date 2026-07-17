@@ -22,7 +22,7 @@ class JobReportController extends GetxController {
 
   final MobileRepository _mobile;
 
-  late final int diaryId;
+  late int diaryId;
   final RxList<JobReportQuestion> questions = <JobReportQuestion>[].obs;
   final RxBool loading = true.obs;
   final RxString errorMessage = ''.obs;
@@ -114,14 +114,41 @@ class JobReportController extends GetxController {
     );
   }
 
+  bool _isEngineerNamePrompt(String prompt) {
+    final p = prompt.trim().toLowerCase();
+    return p == 'engineer name' ||
+        p == 'engineer’s name' ||
+        p == "engineer's name" ||
+        (p.contains('engineer') && p.contains('name'));
+  }
+
+  String? _loggedInEngineerName(JobReportBundle bundle) {
+    final fromApi = bundle.actingOfficerFullName?.trim();
+    if (fromApi != null && fromApi.isNotEmpty) return fromApi;
+    try {
+      if (Get.isRegistered<HomeController>()) {
+        final n = Get.find<HomeController>().home.value?.profile?.fullName?.trim();
+        if (n != null && n.isNotEmpty) return n;
+      }
+    } catch (_) {
+      /* HomeController may not be registered in some flows */
+    }
+    return null;
+  }
+
   Future<void> _load() async {
     loading.value = true;
     errorMessage.value = '';
     try {
       final bundle = await _mobile.fetchDiaryJobReport(diaryId);
+      // Backend may remap to this engineer's own visit when 2+ engineers share a job.
+      if (bundle.diaryEventId > 0 && bundle.diaryEventId != diaryId) {
+        diaryId = bundle.diaryEventId;
+      }
       reportBundle.value = bundle;
       questions.assignAll(bundle.questions);
       currentPage.value = 0;
+      final engineerName = readonlyMode.value ? null : _loggedInEngineerName(bundle);
       for (final q in bundle.questions) {
         final existing = bundle.answersByQuestionId[q.id];
         if (existing != null && existing.trim().isNotEmpty) {
@@ -133,6 +160,10 @@ class JobReportController extends GetxController {
           } else {
             textByQuestionId[q.id] = existing;
           }
+        } else if (engineerName != null &&
+            _isTextQuestion(q.questionType) &&
+            _isEngineerNamePrompt(q.prompt)) {
+          textByQuestionId[q.id] = engineerName;
         }
       }
       imageByQuestionId.refresh();

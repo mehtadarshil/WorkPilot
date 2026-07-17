@@ -11,6 +11,8 @@ class DiaryEventRow {
     this.notes,
     this.title,
     this.location,
+    this.customerAddress,
+    this.addressLine1,
     this.customerFullName,
     this.siteContactName,
     this.jobReportQuestionCount = 0,
@@ -40,6 +42,8 @@ class DiaryEventRow {
       notes: json['notes'] as String?,
       title: json['title'] as String?,
       location: json['location'] as String?,
+      customerAddress: json['customer_address'] as String?,
+      addressLine1: json['address_line_1'] as String?,
       customerFullName: json['customer_full_name'] as String?,
       siteContactName: json['site_contact_name'] as String?,
       jobReportQuestionCount: (json['job_report_question_count'] as num?)?.toInt() ?? 0,
@@ -65,6 +69,8 @@ class DiaryEventRow {
   final String? notes;
   final String? title;
   final String? location;
+  final String? customerAddress;
+  final String? addressLine1;
   final String? customerFullName;
   final String? siteContactName;
   final int jobReportQuestionCount;
@@ -93,6 +99,15 @@ class DiaryEventRow {
     return (customerFullName ?? '').trim();
   }
 
+  /// Work / site address for list cards (falls back to location / address line 1).
+  String get displayWorkAddress {
+    for (final candidate in [customerAddress, location, addressLine1]) {
+      final t = candidate?.trim();
+      if (t != null && t.isNotEmpty) return t;
+    }
+    return '';
+  }
+
   /// Same instant as the API; wall clock in the device time zone (for display).
   DateTime? get startTime {
     try {
@@ -113,6 +128,8 @@ class DiaryEventRow {
         if (notes != null) 'notes': notes,
         if (title != null) 'title': title,
         if (location != null) 'location': location,
+        if (customerAddress != null) 'customer_address': customerAddress,
+        if (addressLine1 != null) 'address_line_1': addressLine1,
         if (customerFullName != null) 'customer_full_name': customerFullName,
         if (siteContactName != null) 'site_contact_name': siteContactName,
         'job_report_question_count': jobReportQuestionCount,
@@ -140,6 +157,8 @@ class DiaryEventRow {
       notes: notes,
       title: title,
       location: location,
+      customerAddress: customerAddress,
+      addressLine1: addressLine1,
       customerFullName: customerFullName,
       siteContactName: siteContactName,
       jobReportQuestionCount: jobReportQuestionCount,

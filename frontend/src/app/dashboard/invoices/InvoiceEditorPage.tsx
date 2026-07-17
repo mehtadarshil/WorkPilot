@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import { getJson, patchJson, postJson } from '../../apiClient';
 import InvoicePriceBookPanel from '../../../components/invoices/InvoicePriceBookPanel';
+import InvoiceExpensesSection from '../../../components/invoices/InvoiceExpensesSection';
 import LineItemDescriptionInput from '../../../components/invoices/LineItemDescriptionInput';
 import {
   InvoicePriceBooksResponse,
@@ -550,6 +551,11 @@ export function InvoiceEditorPage({ invoiceId }: { invoiceId?: string }) {
                 />
               </label>
             </div>
+
+            <InvoiceExpensesSection
+              jobId={jobId || null}
+              onAddExpenseLine={appendLineItem}
+            />
 
             <div>
               <div className="mb-2 flex items-center justify-between">

@@ -203,6 +203,12 @@ class InvoicesListView extends GetView<InvoicesListController> {
                           final invDate = row['invoice_date'] as String?;
                           final due = row['due_date'] as String?;
                           final jobTitle = (row['job_title'] as String?)?.trim();
+                          final workSiteName = (row['work_site_name'] as String?)?.trim();
+                          final workSiteAddr = (row['work_site_address'] as String?)?.trim();
+                          final workSite = [
+                            if (workSiteName != null && workSiteName.isNotEmpty) workSiteName,
+                            if (workSiteAddr != null && workSiteAddr.isNotEmpty) workSiteAddr,
+                          ].join(' — ');
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Material(
@@ -258,6 +264,22 @@ class InvoicesListView extends GetView<InvoicesListController> {
                                       if (jobTitle != null && jobTitle.isNotEmpty) ...[
                                         const SizedBox(height: 2),
                                         Text(jobTitle, style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12)),
+                                      ],
+                                      if (workSite.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(Icons.location_on_outlined, size: 13, color: AppColors.slate400),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                workSite,
+                                                style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ],
                                       const SizedBox(height: 8),
                                       Row(

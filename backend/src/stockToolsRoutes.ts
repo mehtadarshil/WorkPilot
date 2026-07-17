@@ -175,6 +175,9 @@ export async function ensureStockToolsSchema(pool: Pool) {
       ALTER TABLE stock_tools_settings
         ADD COLUMN IF NOT EXISTS uniform_size_options JSONB NOT NULL DEFAULT '["XS","S","M","L","XL","XXL","XXXL","28","30","32","34","36","38","40","42","8","9","10","11","12"]'::jsonb;
     `);
+    await pool.query(`
+      ALTER TABLE uniforms ADD COLUMN IF NOT EXISTS locations JSONB;
+    `);
     console.log('Stock, Tools and Uniform schema verified successfully.');
   } catch (error) {
     console.error('Error ensuring Stock and Tools schema:', error);
@@ -1769,17 +1772,28 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
   app.post('/api/uniforms', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
     const {
-      name, category, size, status, location, quantity, assigned_officer_id, notes,
+      name, category, size, status, location, quantity, locations, assigned_officer_id, notes,
       image_base64, original_filename, content_type,
     } = req.body;
 
-    if (!name || !category || !size || !location) {
+    if (!name || !category || !size) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity || '1'), 10) || 1;
-
     try {
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
+      const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '1'), 10) || 1;
+      const resolvedLocations = normalizeStockPlacements(
+        locations,
+        fallbackLocation,
+        fallbackQty,
+        'New',
+        settings.require_bin_for_locations,
+      );
+      const qty = totalPlacementQuantity(resolvedLocations);
+      const primaryLocation = resolvedLocations[0]?.location || 'Store';
+
       let imageUrl: string | null = null;
       if (image_base64) {
         imageUrl = await storeStockToolImage('uniform-photos', image_base64, original_filename, content_type);
@@ -1789,10 +1803,10 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const uniformStatus = status || (assignedId ? 'issued' : 'available');
 
       const ins = await pool.query(
-        `INSERT INTO uniforms (name, category, size, status, location, quantity, assigned_officer_id, notes, image_url, created_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+        `INSERT INTO uniforms (name, category, size, status, location, quantity, locations, assigned_officer_id, notes, image_url, created_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
          RETURNING *`,
-        [name, category, size, uniformStatus, location, qty, assignedId, notes || null, imageUrl, userId],
+        [name, category, size, uniformStatus, primaryLocation, qty, JSON.stringify(resolvedLocations), assignedId, notes || null, imageUrl, userId],
       );
 
       const row = ins.rows[0];
@@ -1816,7 +1830,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     }
 
     const {
-      name, category, size, status, location, quantity, assigned_officer_id, notes,
+      name, category, size, status, location, quantity, locations, assigned_officer_id, notes,
       image_base64, original_filename, content_type,
     } = req.body;
 
@@ -1855,14 +1869,38 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         updates.push(`status = $${idx++}`);
         values.push(status);
       }
-      if (location !== undefined) {
+
+      if (Array.isArray(locations)) {
+        const settings = await loadStockToolsSettingsRow(pool, userId);
+        const fallbackQuality = 'New';
+        const normalized = normalizeStockPlacements(
+          locations,
+          existing.location || 'Store',
+          existing.quantity,
+          fallbackQuality,
+          settings.require_bin_for_locations,
+        );
+        const newQty = totalPlacementQuantity(normalized);
+        const primaryLocation = normalized[0]?.location || 'Store';
+
+        updates.push(`locations = $${idx++}`);
+        values.push(JSON.stringify(normalized));
+
         updates.push(`location = $${idx++}`);
-        values.push(location);
-      }
-      if (quantity !== undefined) {
-        const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
+        values.push(primaryLocation);
+
         updates.push(`quantity = $${idx++}`);
-        values.push(qty);
+        values.push(newQty);
+      } else {
+        if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+        }
+        if (quantity !== undefined) {
+          const qty = typeof quantity === 'number' ? Math.max(1, Math.trunc(quantity)) : parseInt(String(quantity), 10) || 1;
+          updates.push(`quantity = $${idx++}`);
+          values.push(qty);
+        }
       }
       if (assigned_officer_id !== undefined) {
         updates.push(`assigned_officer_id = $${idx++}`);

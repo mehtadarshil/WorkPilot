@@ -399,10 +399,21 @@ class JobTabDetails extends StatelessWidget {
   }
 
   Future<void> _showAddVisit(BuildContext context, JobDetailController c) async {
-    DateTime start = DateTime.now().add(const Duration(days: 1));
-    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+    final job = c.job.value;
+    DateTime start = DateTime.now();
+    TimeOfDay startTime = TimeOfDay.fromDateTime(start);
+    final scheduleIso = job?['schedule_start'] as String? ?? job?['expected_completion'] as String?;
+    if (scheduleIso != null && scheduleIso.isNotEmpty) {
+      final parsed = DateTime.tryParse(scheduleIso)?.toLocal();
+      if (parsed != null) {
+        start = DateTime(parsed.year, parsed.month, parsed.day);
+        startTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
+      }
+    }
     final selectedOfficerIds = <int>{};
-    final durationC = TextEditingController(text: '60');
+    final durationC = TextEditingController(
+      text: '${(job?['duration_minutes'] as num?)?.toInt() ?? 60}',
+    );
     final notesC = TextEditingController();
     final officers = <Map<String, dynamic>>[];
     final seenOfficerIds = <int>{};
@@ -418,10 +429,20 @@ class JobTabDetails extends StatelessWidget {
           title: const Text('New visit'),
           content: StatefulBuilder(
             builder: (ctx, setS) {
+              final existingVisits = c.diaryEvents.length;
               return SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (existingVisits > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'This job already has $existingVisits visit${existingVisits == 1 ? '' : 's'}. '
+                          'Only add another if you need a second appointment.',
+                          style: GoogleFonts.inter(fontSize: 13, color: Colors.orange.shade800),
+                        ),
+                      ),
                     ListTile(
                       title: const Text('Date'),
                       subtitle: Text(start.toIso8601String().split('T').first),
@@ -553,9 +574,31 @@ class JobTabDetails extends StatelessWidget {
         if (o is Map) officers.add(Map<String, dynamic>.from(o));
       }
     }
+    // Job allows only one primary — prefer job_officers over per-visit flags
+    // (split visits often mark every engineer as primary on their own row).
+    int? jobPrimaryOfficerId;
+    final jobOfficersRaw = job['officers'];
+    if (jobOfficersRaw is List) {
+      for (final o in jobOfficersRaw) {
+        if (o is! Map) continue;
+        if (o['is_primary'] == true) {
+          jobPrimaryOfficerId =
+              (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
+          break;
+        }
+      }
+    }
+    jobPrimaryOfficerId ??= (job['officer_id'] as num?)?.toInt();
     final officerLabel = officers.isEmpty
         ? ((e['officer_full_name'] as String?) ?? 'Unassigned')
-        : officers.map((o) => '${o['full_name'] ?? ''}${o['is_primary'] == true ? ' ★' : ''}').join(', ');
+        : officers.map((o) {
+            final oid =
+                (o['id'] as num?)?.toInt() ?? (o['officer_id'] as num?)?.toInt();
+            final isPrimary = jobPrimaryOfficerId != null
+                ? oid == jobPrimaryOfficerId
+                : o['is_primary'] == true;
+            return '${o['full_name'] ?? ''}${isPrimary ? ' ★' : ''}';
+          }).join(', ');
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(

@@ -145,6 +145,12 @@ class MobileHomeResponse {
 
   bool _perm(String key) => mobilePermissions[key] == true;
 
+  bool get hasDocuCenterAccess {
+    final roleUp = role.toUpperCase();
+    if (roleUp == 'ADMIN' || roleUp == 'SUPER_ADMIN') return true;
+    return _perm('docu_center') || _perm('docu_center_manage');
+  }
+
   /// Extra CRM modules (same flags as the web tenant).
   ///
   /// [officerFeatures] is only set when the session is treated as a field mobile profile (linked officer + jobs/scheduling). Staff who sign in on the app without a linked officer still get [mobile_permissions] but [officerFeatures] is false — they must still see the Work hub when CRM flags are on.
@@ -160,15 +166,18 @@ class MobileHomeResponse {
 
     if (roleUp == 'OFFICER') {
       if (!officerFeatures) return false;
-      if (hasPipeline) return true;
+      if (hasPipeline || _perm('docu_center')) return true;
       return false;
     }
 
     // STAFF / ADMIN / SUPER_ADMIN: CRM hub from tenant permissions alone.
     if (hasPipeline) return true;
-    if (_perm('jobs') || hasSettings) return true;
+    if (_perm('jobs') || hasSettings || _perm('docu_center')) return true;
     return false;
   }
+
+  /// Docu Center without the Work hub tab (e.g. field officers with guides only).
+  bool get showStandaloneDocuCenter => hasDocuCenterAccess && !showWorkHubTab;
 
   MobileHomeResponse copyWith({
     List<MyOfficeTaskRow>? myOfficeTasksOpen,

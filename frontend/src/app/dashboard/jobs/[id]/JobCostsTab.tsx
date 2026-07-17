@@ -200,7 +200,9 @@ export default function JobCostsTab({ jobId, token }: Props) {
   }, [loadCosts]);
 
   const grouped = useMemo(() => {
-    const lines = (payload?.lines ?? []).filter((line) => line.source !== 'timesheet');
+    const lines = (payload?.lines ?? []).filter(
+      (line) => line.source !== 'timesheet' && line.source !== 'job_pricing',
+    );
     return lines.reduce<Record<CostSource, CostLine[]>>(
       (acc, line) => {
         acc[line.source].push(line);
@@ -399,7 +401,8 @@ export default function JobCostsTab({ jobId, token }: Props) {
   }, [payload?.visits, rateConfig?.travel_hourly_rate]);
 
   const tableLines = useMemo(
-    () => (payload?.lines ?? []).filter((line) => line.source !== 'timesheet'),
+    // Timesheet has its own breakdown above; job pricing is price-book sell items for invoice stage only.
+    () => (payload?.lines ?? []).filter((line) => line.source !== 'timesheet' && line.source !== 'job_pricing'),
     [payload?.lines],
   );
   const rateDirty =
@@ -418,7 +421,9 @@ export default function JobCostsTab({ jobId, token }: Props) {
               <Calculator className="size-5 text-[#14B8A6]" />
               Job costs
             </h2>
-            <p className="mt-1 text-sm text-slate-500">Aggregates site costs, timesheet labour, job pricing, quotations, and parts for this job.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Counts site costs, timesheet labour, approved expenses, quotations, and parts. Price book / job pricing is for invoicing only and is not included in the total.
+            </p>
           </div>
           <button
             type="button"
@@ -448,11 +453,18 @@ export default function JobCostsTab({ jobId, token }: Props) {
               <SummaryCard label="Total counted" value={money(summary?.total)} strong />
               <SummaryCard label="Site costs" value={money(summary?.manual_total)} />
               <SummaryCard label="Timesheet" value={money(summary?.timesheet_total)} />
-              <SummaryCard label="Job pricing" value={money(summary?.job_pricing_total)} />
               <SummaryCard label="Quotations" value={money(summary?.quotation_total)} />
               <SummaryCard label="Parts" value={money(summary?.parts_total)} />
               <SummaryCard label="Approved expenses" value={money(summary?.expenses_total)} />
             </div>
+            {(summary?.job_pricing_total ?? 0) > 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">Price book / job pricing: {money(summary?.job_pricing_total)}</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Catalogue sell prices for this job — not counted above. Add these on the invoice when you bill the customer.
+                </span>
+              </div>
+            ) : null}
 
             {rateConfig ? (
               <div className="rounded-lg border border-slate-200 bg-white p-4">

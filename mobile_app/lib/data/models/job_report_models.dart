@@ -38,6 +38,7 @@ class JobReportBundle {
     this.jobNumber,
     this.jobTitle,
     this.customerFullName,
+    this.actingOfficerFullName,
     this.isQuotationVisit = false,
     required this.questions,
     required this.answersByQuestionId,
@@ -73,6 +74,7 @@ class JobReportBundle {
       jobNumber: json['job_number'] as String?,
       jobTitle: json['job_title'] as String?,
       customerFullName: json['customer_full_name'] as String?,
+      actingOfficerFullName: json['acting_officer_full_name'] as String?,
       isQuotationVisit: json['is_quotation_visit'] == true,
       questions: questions,
       answersByQuestionId: answers,
@@ -92,6 +94,7 @@ class JobReportBundle {
   final String? jobNumber;
   final String? jobTitle;
   final String? customerFullName;
+  final String? actingOfficerFullName;
   final bool isQuotationVisit;
   final List<JobReportQuestion> questions;
   final Map<int, String> answersByQuestionId;

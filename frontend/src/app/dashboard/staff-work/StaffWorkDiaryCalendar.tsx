@@ -80,6 +80,11 @@ function eventMatchesOfficer(evt: StaffWorkCalendarEvent, officerId: number): bo
 }
 
 function eventOnDay(evt: StaffWorkCalendarEvent, day: Date): boolean {
+  // Diary visits: place on the local calendar day of start_time (matches job Diary events + main Diary).
+  // Leave/holidays: keep span overlap so multi-day leave still fills each day.
+  if (evt.type === 'diary') {
+    return isSameDay(evt.start, day);
+  }
   const dayStart = startOfDay(day);
   const dayEnd = new Date(dayStart);
   dayEnd.setHours(23, 59, 59, 999);

@@ -67,6 +67,10 @@ class WorkHubTab extends StatelessWidget {
       Get.toNamed(AppRoutes.stockTools);
       return;
     }
+    if (module == 'docu_center') {
+      Get.toNamed(AppRoutes.docuCenter);
+      return;
+    }
     Get.toNamed(AppRoutes.crmList, arguments: module);
   }
 
@@ -138,6 +142,12 @@ class WorkHubTab extends StatelessWidget {
           icon: Icons.inventory_2_rounded,
           accent: Color(0xFFFCD34D),
         ),
+        'docu_center': (
+          label: 'Docu Center',
+          subtitle: 'Guides & reference docs',
+          icon: Icons.folder_open_rounded,
+          accent: Color(0xFF5EEAD4),
+        ),
       };
 
   @override
@@ -190,6 +200,9 @@ class WorkHubTab extends StatelessWidget {
       if (hasSettings && roleUp != 'OFFICER') add('settings');
       if (p('field_users') && roleUp != 'OFFICER') add('holidays');
       add('stock_tools');
+      if (p('docu_center') || roleUp == 'ADMIN' || roleUp == 'SUPER_ADMIN') {
+        add('docu_center');
+      }
 
       return CustomScrollView(
         physics: const BouncingScrollPhysics(),

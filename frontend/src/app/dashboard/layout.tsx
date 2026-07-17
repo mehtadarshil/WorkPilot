@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2, Clock3, CalendarDays, CalendarClock, ListTodo } from 'lucide-react';
+import { Users, Package, UserCircle, Briefcase, FileText, Settings, Quote, Award, FileCheck2, Clock3, CalendarDays, CalendarClock, ListTodo, FolderOpen, ChartColumn } from 'lucide-react';
 import { getJson } from '../apiClient';
 import { normalizePermissions, type TenantPermissionKey } from '../../lib/tenantPermissions';
 import { ImageLightboxProvider } from '../../components/ImageLightboxProvider';
@@ -342,6 +342,19 @@ export default function DashboardLayout({
                 Todos
               </Link>
             )}
+            {hasNavPermission(user, 'docu_center') && (
+              <Link
+                href="/dashboard/docu-center"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/docu-center')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <FolderOpen className="size-4" />
+                Docu Center
+              </Link>
+            )}
 
             {hasNavPermission(user, 'parts_catalog') && (
               <Link
@@ -368,6 +381,19 @@ export default function DashboardLayout({
               >
                 <FileText className="size-4" />
                 Invoices
+              </Link>
+            )}
+            {(hasNavPermission(user, 'jobs') || hasNavPermission(user, 'invoices')) && (
+              <Link
+                href="/dashboard/reports"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                  pathname.startsWith('/dashboard/reports')
+                    ? 'bg-[#14B8A6]/10 text-[#14B8A6]'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <ChartColumn className="size-4" />
+                Reports
               </Link>
             )}
             {hasNavPermission(user, 'quotations') && (

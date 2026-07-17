@@ -33,7 +33,7 @@ export const POST_REPORT_JOB_STAGES = [
   {
     state: 'completed',
     label: 'Ready for invoicing',
-    description: 'Job is finished; a draft invoice is created when possible.',
+    description: 'Job is finished; a final draft invoice is created when possible.',
   },
   {
     state: 'need_to_be_rescheduled',

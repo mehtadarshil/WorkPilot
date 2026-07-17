@@ -474,8 +474,9 @@ class _CustomerNewJobViewState extends State<CustomerNewJobView> {
     if (_expectedDate == null) return null;
     final d = _expectedDate!;
     final t = _expectedTime ?? const TimeOfDay(hour: 23, minute: 59);
+    // Local wall-clock → UTC ISO so the API stores the correct instant (matches web).
     final dt = DateTime(d.year, d.month, d.day, t.hour, t.minute);
-    return dt.toIso8601String();
+    return dt.toUtc().toIso8601String();
   }
 
   Future<void> _submit() async {

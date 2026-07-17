@@ -34,11 +34,13 @@ export async function ensureDiaryEventsForScheduledJob(
   if (!j.schedule_start) return [];
   if (j.state === 'completed' || j.state === 'closed') return [];
 
-  const officersRes = await db.query<{ officer_id: number }>(
-    `SELECT officer_id FROM job_officers WHERE job_id = $1 ORDER BY is_primary DESC, officer_id`,
+  const officersRes = await db.query<{ officer_id: number; is_primary: boolean }>(
+    `SELECT officer_id, is_primary FROM job_officers WHERE job_id = $1 ORDER BY is_primary DESC, officer_id`,
     [jobId],
   );
   let officerIds = officersRes.rows.map((r) => r.officer_id);
+  const primaryOfficerId =
+    officersRes.rows.find((r) => r.is_primary)?.officer_id ?? j.officer_id ?? officerIds[0] ?? null;
   if (officerIds.length === 0 && j.officer_id != null) {
     officerIds = [j.officer_id];
   }
@@ -81,9 +83,9 @@ export async function ensureDiaryEventsForScheduledJob(
     const deId = Number(ins.rows[0].id);
     await db.query(
       `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
-       VALUES ($1, $2, true)
-       ON CONFLICT (diary_event_id, officer_id) DO NOTHING`,
-      [deId, oid],
+       VALUES ($1, $2, $3)
+       ON CONFLICT (diary_event_id, officer_id) DO UPDATE SET is_primary = EXCLUDED.is_primary`,
+      [deId, oid, primaryOfficerId != null && oid === primaryOfficerId],
     );
     createdIds.push(deId);
   }
@@ -308,9 +310,13 @@ export async function diaryEventHasMultipleOfficersDb(db: Db, diaryEventId: numb
   return (r.rows[0]?.c ?? 0) > 1;
 }
 
+/** Same appointment window for matching sibling engineer visits (hours). */
+const SIBLING_VISIT_MATCH_SECONDS = 6 * 60 * 60;
+
 /**
  * Split legacy combined visits and return the diary row for the acting engineer.
  * When Ricky opens Manesh's visit id, this resolves to Ricky's own row.
+ * If Ricky is on the job but has no visit yet, creates one at the same schedule.
  */
 export async function resolveActingDiaryEventId(
   db: Db,
@@ -320,18 +326,89 @@ export async function resolveActingDiaryEventId(
   if (!Number.isFinite(officerId)) return diaryEventId;
   if (await diaryEventHasMultipleOfficersDb(db, diaryEventId)) {
     await splitCombinedDiaryEvent(db, diaryEventId);
-    return resolveDiaryEventIdForOfficer(db, diaryEventId, officerId);
+    const afterSplit = await resolveDiaryEventIdForOfficer(db, diaryEventId, officerId);
+    if (afterSplit !== diaryEventId) return afterSplit;
   }
-  const cur = await db.query<{ officer_id: number | null }>(
-    `SELECT officer_id FROM diary_events WHERE id = $1`,
+  const cur = await db.query<{
+    officer_id: number | null;
+    job_id: number;
+    start_time: Date;
+    duration_minutes: number | null;
+    notes: string | null;
+    created_by_name: string | null;
+    status: string | null;
+  }>(
+    `SELECT officer_id, job_id, start_time, duration_minutes, notes, created_by_name, status
+     FROM diary_events WHERE id = $1`,
     [diaryEventId],
   );
   if ((cur.rowCount ?? 0) === 0) return diaryEventId;
-  const assignedOid = cur.rows[0].officer_id;
-  if (assignedOid != null && assignedOid !== officerId) {
-    return resolveDiaryEventIdForOfficer(db, diaryEventId, officerId);
+  const row = cur.rows[0];
+  if (row.officer_id === officerId) return diaryEventId;
+
+  const existing = await resolveDiaryEventIdForOfficer(db, diaryEventId, officerId);
+  if (existing !== diaryEventId) {
+    const check = await db.query<{ officer_id: number | null }>(
+      `SELECT officer_id FROM diary_events WHERE id = $1`,
+      [existing],
+    );
+    if (check.rows[0]?.officer_id === officerId) return existing;
   }
-  return diaryEventId;
+
+  // Any open visit for this officer on the job (wider than the sibling time window).
+  const openOwn = await db.query<{ id: number }>(
+    `SELECT id FROM diary_events
+     WHERE job_id = $1 AND officer_id = $2
+       AND LOWER(TRIM(REPLACE(COALESCE(status, ''), ' ', '_'))) NOT IN ('completed', 'cancelled', 'aborted')
+     ORDER BY ABS(EXTRACT(EPOCH FROM (start_time - $3::timestamptz))) ASC, id ASC
+     LIMIT 1`,
+    [row.job_id, officerId, row.start_time],
+  );
+  if ((openOwn.rowCount ?? 0) > 0) return Number(openOwn.rows[0].id);
+
+  // Officer is assigned to the job but has no visit row yet — clone schedule so they can report independently.
+  const onJob = await db.query<{ ok: number }>(
+    `SELECT 1 AS ok FROM job_officers WHERE job_id = $1 AND officer_id = $2
+     UNION ALL
+     SELECT 1 AS ok FROM jobs WHERE id = $1 AND officer_id = $2
+     LIMIT 1`,
+    [row.job_id, officerId],
+  );
+  if ((onJob.rowCount ?? 0) === 0) return diaryEventId;
+
+  const duration =
+    row.duration_minutes != null && Number.isFinite(row.duration_minutes) ? row.duration_minutes : 60;
+  const sourceNorm = String(row.status ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  // Only mirror in-progress visit states so a completed colleague visit does not lock the new row.
+  const cloneStatus =
+    sourceNorm === 'travelling_to_site' || sourceNorm === 'arrived_at_site'
+      ? String(row.status).trim()
+      : 'No status';
+  const ins = await db.query<{ id: number }>(
+    `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [
+      row.job_id,
+      officerId,
+      row.start_time,
+      duration,
+      row.notes,
+      row.created_by_name?.trim() || 'System',
+      cloneStatus,
+    ],
+  );
+  const newId = Number(ins.rows[0].id);
+  await db.query(
+    `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
+     VALUES ($1, $2, true)
+     ON CONFLICT (diary_event_id, officer_id) DO NOTHING`,
+    [newId, officerId],
+  );
+  return newId;
 }
 
 export async function resolveDiaryEventIdForOfficer(
@@ -348,10 +425,217 @@ export async function resolveDiaryEventIdForOfficer(
   const match = await db.query<{ id: number }>(
     `SELECT id FROM diary_events
      WHERE job_id = $1 AND officer_id = $2
-       AND ABS(EXTRACT(EPOCH FROM (start_time - $3::timestamptz))) < 120
+       AND ABS(EXTRACT(EPOCH FROM (start_time - $3::timestamptz))) < $4
      ORDER BY id ASC
      LIMIT 1`,
-    [job_id, officerId, start_time],
+    [job_id, officerId, start_time, SIBLING_VISIT_MATCH_SECONDS],
   );
   return match.rows[0]?.id ?? diaryEventId;
+}
+
+export type AppointmentSiblingVisit = {
+  id: number;
+  officer_id: number | null;
+  start_time: Date;
+  duration_minutes: number | null;
+  notes: string | null;
+  status: string | null;
+  created_by_name: string | null;
+};
+
+/** Open visits on the same job in the same appointment window (multi-engineer jobs). */
+export async function listAppointmentSiblingVisits(
+  db: Db,
+  diaryEventId: number,
+): Promise<AppointmentSiblingVisit[]> {
+  const base = await db.query<{
+    id: number;
+    job_id: number | null;
+    officer_id: number | null;
+    start_time: Date;
+    duration_minutes: number | null;
+    notes: string | null;
+    status: string | null;
+    created_by_name: string | null;
+  }>(
+    `SELECT id, job_id, officer_id, start_time, duration_minutes, notes, status, created_by_name
+     FROM diary_events WHERE id = $1`,
+    [diaryEventId],
+  );
+  if ((base.rowCount ?? 0) === 0) return [];
+  const row = base.rows[0];
+  if (row.job_id == null) {
+    return [
+      {
+        id: row.id,
+        officer_id: row.officer_id,
+        start_time: row.start_time,
+        duration_minutes: row.duration_minutes,
+        notes: row.notes,
+        status: row.status,
+        created_by_name: row.created_by_name,
+      },
+    ];
+  }
+  const sibs = await db.query<AppointmentSiblingVisit>(
+    `SELECT id, officer_id, start_time, duration_minutes, notes, status, created_by_name
+     FROM diary_events
+     WHERE job_id = $1
+       AND LOWER(TRIM(REPLACE(COALESCE(status, ''), ' ', '_'))) NOT IN ('cancelled', 'aborted')
+       AND ABS(EXTRACT(EPOCH FROM (start_time - $2::timestamptz))) < $3
+     ORDER BY id ASC`,
+    [row.job_id, row.start_time, SIBLING_VISIT_MATCH_SECONDS],
+  );
+  return sibs.rows;
+}
+
+function visitStatusBlocksEngineerRemoval(status: string | null | undefined): boolean {
+  const s = String(status ?? '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  return (
+    s === 'completed' ||
+    s === 'travelling_to_site' ||
+    s === 'travelling' ||
+    s === 'traveling_to_site' ||
+    s === 'traveling' ||
+    s === 'arrived_at_site' ||
+    s === 'arrived' ||
+    s === 'on_site' ||
+    s === 'onsite' ||
+    s === 'in_progress' ||
+    s === 'working_on_site' ||
+    s === 'job_report_submitted'
+  );
+}
+
+/**
+ * Apply schedule fields to every open visit in the appointment group, and optionally
+ * rebuild one visit per selected engineer (multi-engineer edit visit).
+ * Returns the diary event id that should remain the "current" visit after reconcile.
+ */
+export async function applyAppointmentReschedule(
+  db: Db,
+  diaryEventId: number,
+  opts: {
+    startTime?: Date | null;
+    durationMinutes?: number | null;
+    notes?: string | null;
+    notesProvided?: boolean;
+    officerIds?: number[] | null;
+    createdByName?: string;
+  },
+): Promise<number> {
+  // One row per engineer so job reports/status stay independent.
+  if (await diaryEventHasMultipleOfficersDb(db, diaryEventId)) {
+    await splitCombinedDiaryEvent(db, diaryEventId);
+  }
+
+  let siblings = await listAppointmentSiblingVisits(db, diaryEventId);
+  if (siblings.length === 0) {
+    throw new Error('Diary event not found');
+  }
+
+  const base = siblings.find((s) => s.id === diaryEventId) ?? siblings[0];
+  const jobRow = await db.query<{ job_id: number | null }>(
+    `SELECT job_id FROM diary_events WHERE id = $1`,
+    [base.id],
+  );
+  const jobId = jobRow.rows[0]?.job_id ?? null;
+
+  const nextStart =
+    opts.startTime !== undefined && opts.startTime !== null ? opts.startTime : base.start_time;
+  const nextDuration =
+    opts.durationMinutes !== undefined && opts.durationMinutes != null
+      ? opts.durationMinutes
+      : (base.duration_minutes ?? 60);
+  const nextNotes = opts.notesProvided ? (opts.notes ?? null) : base.notes;
+
+  const scheduleIds = siblings.map((s) => s.id);
+  await db.query(
+    `UPDATE diary_events
+     SET start_time = $1,
+         duration_minutes = $2,
+         notes = $3,
+         updated_at = NOW()
+     WHERE id = ANY($4::int[])`,
+    [nextStart, nextDuration, nextNotes, scheduleIds],
+  );
+
+  if (opts.officerIds == null || jobId == null) {
+    return diaryEventId;
+  }
+
+  const desired = [...new Set(opts.officerIds.filter((id) => Number.isFinite(id)))];
+  if (desired.length === 0) {
+    throw new Error('Select at least one engineer');
+  }
+
+  siblings = await listAppointmentSiblingVisits(db, diaryEventId);
+  const byOfficer = new Map<number, AppointmentSiblingVisit>();
+  for (const s of siblings) {
+    if (s.officer_id != null && !byOfficer.has(s.officer_id)) {
+      byOfficer.set(s.officer_id, s);
+    }
+  }
+
+  const creator = opts.createdByName?.trim() || base.created_by_name?.trim() || 'System';
+  const keptIds: number[] = [];
+
+  for (let i = 0; i < desired.length; i++) {
+    const oid = desired[i];
+    const isPrimary = i === 0; // first selected engineer is the appointment/job primary
+    const existing = byOfficer.get(oid);
+    if (existing) {
+      await db.query(
+        `UPDATE diary_events
+         SET officer_id = $1, start_time = $2, duration_minutes = $3, notes = $4, updated_at = NOW()
+         WHERE id = $5`,
+        [oid, nextStart, nextDuration, nextNotes, existing.id],
+      );
+      await db.query(`DELETE FROM diary_event_officers WHERE diary_event_id = $1`, [existing.id]);
+      await db.query(
+        `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (diary_event_id, officer_id) DO UPDATE SET is_primary = EXCLUDED.is_primary`,
+        [existing.id, oid, isPrimary],
+      );
+      keptIds.push(existing.id);
+      byOfficer.delete(oid);
+      continue;
+    }
+
+    const ins = await db.query<{ id: number }>(
+      `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'No status')
+       RETURNING id`,
+      [jobId, oid, nextStart, nextDuration, nextNotes, creator],
+    );
+    const newId = Number(ins.rows[0].id);
+    await db.query(
+      `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (diary_event_id, officer_id) DO UPDATE SET is_primary = EXCLUDED.is_primary`,
+      [newId, oid, isPrimary],
+    );
+    keptIds.push(newId);
+  }
+
+  // Cancel open visits for engineers no longer selected (never touch in-progress/completed).
+  for (const orphan of byOfficer.values()) {
+    if (visitStatusBlocksEngineerRemoval(orphan.status)) {
+      continue;
+    }
+    await db.query(
+      `UPDATE diary_events
+       SET status = 'cancelled', updated_at = NOW()
+       WHERE id = $1`,
+      [orphan.id],
+    );
+  }
+
+  // Prefer keeping the caller's original id when it still exists; else primary engineer visit.
+  if (keptIds.includes(diaryEventId)) return diaryEventId;
+  return keptIds[0] ?? diaryEventId;
 }

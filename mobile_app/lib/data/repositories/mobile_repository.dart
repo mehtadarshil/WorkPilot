@@ -214,8 +214,12 @@ class MobileRepository extends BaseRepository {
       final data = res.data;
       if (data == null) throw Exception('Empty response');
       final map = Map<String, dynamic>.from(data as Map);
+      final detail = DiaryEventDetail.fromJson(map);
       await _storage.writeCachedDiaryDetailRaw(diaryEventId, map);
-      return (detail: DiaryEventDetail.fromJson(map), fromCache: false);
+      if (detail.diaryId > 0 && detail.diaryId != diaryEventId) {
+        await _storage.writeCachedDiaryDetailRaw(detail.diaryId, map);
+      }
+      return (detail: detail, fromCache: false);
     } on ApiException catch (e) {
       if (apiExceptionLooksLikeNoConnection(e)) {
         final raw = _storage.readCachedDiaryDetailRaw(diaryEventId);
@@ -284,7 +288,8 @@ class MobileRepository extends BaseRepository {
 
   /// Admin/scheduling-only: update visit date/time, duration, notes, and optionally engineers.
   /// Calls `PATCH /api/diary-events/:id/reschedule`.
-  Future<void> rescheduleDiaryEvent({
+  /// Returns the diary event id that was updated (may change when engineers are reconciled).
+  Future<int> rescheduleDiaryEvent({
     required int diaryEventId,
     DateTime? startTime,
     int? durationMinutes,
@@ -298,16 +303,23 @@ class MobileRepository extends BaseRepository {
     if (durationMinutes != null) {
       data['duration_minutes'] = durationMinutes;
     }
-    if (notes != null) {
-      data['notes'] = notes.trim().isEmpty ? null : notes.trim();
-    }
+    // Always send notes so clearing the field persists.
+    data['notes'] = (notes == null || notes.trim().isEmpty) ? null : notes.trim();
     if (officerIds != null) {
       data['officer_ids'] = officerIds;
     }
-    await api.patch<Map<String, dynamic>>(
+    final res = await api.patch<Map<String, dynamic>>(
       '/diary-events/$diaryEventId/reschedule',
       data: data,
     );
+    final event = res.data?['event'];
+    if (event is Map) {
+      final idRaw = event['diary_event_id'] ?? event['id'];
+      if (idRaw is num) return idRaw.toInt();
+      final parsed = int.tryParse(idRaw?.toString() ?? '');
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return diaryEventId;
   }
 
   /// Labels from Settings → Visit abort reasons (same list officers see when aborting).

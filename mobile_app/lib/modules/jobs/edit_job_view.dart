@@ -276,9 +276,9 @@ class _EditJobViewState extends State<EditJobView> {
       'job_description_id': _descriptionId,
       'business_unit': _businessUnit,
       'user_group': _userGroup,
-      'start_date': _startDate?.toIso8601String(),
-      'deadline': _deadline?.toIso8601String(),
-      'expected_completion': _expectedCompletion?.toIso8601String(),
+      'start_date': _startDate?.toUtc().toIso8601String(),
+      'deadline': _deadline?.toUtc().toIso8601String(),
+      'expected_completion': _expectedCompletion?.toUtc().toIso8601String(),
       'officer_ids': _selectedOfficerIds.toList(),
     };
 

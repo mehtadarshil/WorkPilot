@@ -398,6 +398,13 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
     return acc;
   }, {});
 
+  // Job pricing / price-book lines are sell-side catalogue for invoicing — not job costs.
+  const countedSources = new Set(['manual', 'timesheet', 'part', 'expense', 'quotation']);
+  const countedTotal =
+    Math.round(
+      lines.filter((line) => countedSources.has(line.source)).reduce((acc, line) => acc + line.amount, 0) * 100,
+    ) / 100;
+
   const visits = await pool.query(
     `SELECT d.id, d.start_time, d.status,
             COALESCE(o.full_name, 'Unassigned') AS officer_name,
@@ -429,7 +436,7 @@ export async function buildJobCostPayload(pool: Pool, jobId: number) {
           }
         : null,
     summary: {
-      total: Math.round(lines.reduce((acc, line) => acc + line.amount, 0) * 100) / 100,
+      total: countedTotal,
       manual_total: bySource.manual ?? 0,
       timesheet_total: bySource.timesheet ?? 0,
       job_pricing_total: bySource.job_pricing ?? 0,
@@ -674,4 +681,124 @@ export function mountJobCostsRoutes(app: Application, deps: JobCostsRouteDeps): 
       return res.status(500).json({ message: 'Internal server error' });
     }
   });
+}
+
+export async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<number, number>> {
+
+  const costsMap: Record<number, number> = {};
+  if (jobIds.length === 0) return costsMap;
+  for (const id of jobIds) {
+    costsMap[id] = 0;
+  }
+  try {
+    const manualRes = await pool.query<{ job_id: number; amount: string | number }>(
+      `SELECT job_id, amount FROM job_cost_entries WHERE job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    for (const row of manualRes.rows) {
+      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
+    }
+    const partsRes = await pool.query<{ job_id: number; quantity: string | number; unit_cost_price: string | number }>(
+      `SELECT job_id, quantity, unit_cost_price FROM job_parts WHERE job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    for (const row of partsRes.rows) {
+      const qty = typeof row.quantity === 'number' ? row.quantity : parseFloat(row.quantity || '0');
+      const unit = typeof row.unit_cost_price === 'number' ? row.unit_cost_price : parseFloat(row.unit_cost_price || '0');
+      costsMap[row.job_id] += qty * unit;
+    }
+    const expensesRes = await pool.query<{ job_id: number; amount: string | number }>(
+      `SELECT job_id, amount FROM job_expenses WHERE job_id = ANY($1::int[]) AND status = 'approved'`,
+      [jobIds]
+    );
+    for (const row of expensesRes.rows) {
+      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
+    }
+    const rateResult = await pool.query<{
+      job_id: number;
+      default_hourly_rate: string | number;
+      company_travel_rate: string | number | null;
+      company_first_hour_rate: string | number | null;
+      company_additional_hour_rate: string | number | null;
+      travel_hourly_rate: string | number | null;
+      on_site_hourly_rate: string | number | null;
+      first_hour_labour_rate: string | number | null;
+      additional_hour_labour_rate: string | number | null;
+    }>(
+      `SELECT j.id AS job_id,
+              COALESCE(ps.default_first_hour_rate_per_hr, 0)::numeric AS default_hourly_rate,
+              ps.default_travel_rate_per_hr AS company_travel_rate,
+              ps.default_first_hour_rate_per_hr AS company_first_hour_rate,
+              ps.default_additional_hour_rate_per_hr AS company_additional_hour_rate,
+              o.travel_hourly_rate,
+              o.on_site_hourly_rate,
+              o.first_hour_labour_rate,
+              o.additional_hour_labour_rate
+       FROM jobs j
+       LEFT JOIN pricing_settings ps ON ps.created_by = j.created_by
+       LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
+       WHERE j.id = ANY($1::int[])`,
+      [jobIds]
+    );
+    const ratesByJob: Record<number, {
+      travel: number;
+      firstHour: number;
+      additionalHour: number;
+    }> = {};
+    for (const row of rateResult.rows) {
+      const def = typeof row.default_hourly_rate === 'number' ? row.default_hourly_rate : parseFloat(row.default_hourly_rate || '0');
+      const companyTravel = row.company_travel_rate != null ? (typeof row.company_travel_rate === 'number' ? row.company_travel_rate : parseFloat(row.company_travel_rate)) : null;
+      const companyFirst = row.company_first_hour_rate != null ? (typeof row.company_first_hour_rate === 'number' ? row.company_first_hour_rate : parseFloat(row.company_first_hour_rate)) : null;
+      const companyAdditional = row.company_additional_hour_rate != null ? (typeof row.company_additional_hour_rate === 'number' ? row.company_additional_hour_rate : parseFloat(row.company_additional_hour_rate)) : null;
+      const travelOverride = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : null;
+      const onsiteOverride = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : null;
+      const firstOverride = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : null;
+      const additionalOverride = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : null;
+      ratesByJob[row.job_id] = {
+        travel: travelOverride ?? companyTravel ?? def,
+        firstHour: firstOverride ?? companyFirst ?? onsiteOverride ?? def,
+        additionalHour: additionalOverride ?? companyAdditional ?? onsiteOverride ?? def,
+      };
+    }
+    const timesheetRes = await pool.query<{
+      job_id: number;
+      segment_type: string;
+      duration_seconds: string | number;
+    }>(
+      `SELECT d.job_id, te.segment_type,
+              EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::numeric AS duration_seconds
+       FROM timesheet_entries te
+       INNER JOIN diary_events d ON d.id = te.diary_event_id
+       WHERE d.job_id = ANY($1::int[])`,
+      [jobIds]
+    );
+    const secondsByJob: Record<number, { onSite: number; travel: number }> = {};
+    for (const jobId of jobIds) {
+      secondsByJob[jobId] = { onSite: 0, travel: 0 };
+    }
+    for (const row of timesheetRes.rows) {
+      const bucket = secondsByJob[row.job_id];
+      if (!bucket) continue;
+      const seconds = typeof row.duration_seconds === 'number' ? row.duration_seconds : parseFloat(row.duration_seconds || '0');
+      if (row.segment_type === 'travelling') bucket.travel += seconds;
+      else bucket.onSite += seconds;
+    }
+    for (const [jobIdRaw, seconds] of Object.entries(secondsByJob)) {
+      const jobId = Number(jobIdRaw);
+      const rates = ratesByJob[jobId];
+      if (!rates) continue;
+      const totals = calculateTimesheetLabourTotals(seconds.onSite, seconds.travel, {
+        travel_hourly_rate: rates.travel,
+        first_hour_labour_rate: rates.firstHour,
+        additional_hour_labour_rate: rates.additionalHour,
+      });
+      costsMap[jobId] += totals.timesheet_total;
+    }
+  } catch (err) {
+    console.error('Error calculating job costs bulk:', err);
+  }
+  for (const id of jobIds) {
+    costsMap[id] = Math.round(costsMap[id] * 100) / 100;
+  }
+  return costsMap;
 }

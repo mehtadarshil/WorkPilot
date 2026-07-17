@@ -309,6 +309,8 @@ export default function SchedulingPage() {
       params.set('range_start', diaryRangeStart);
       params.set('range_end', diaryRangeEnd);
       params.set('include_unscheduled', 'true');
+      params.set('include_completed', '1');
+      params.set('scope', 'team');
       if (stateFilter) params.set('state', stateFilter);
       if (officerFilter) params.set('officer_id', officerFilter);
       const data = await getJson<{ events: any[] }>(`/diary-events?${params.toString()}`, token);

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/services/storage_service.dart';
 import '../../core/values/app_colors.dart';
@@ -13,6 +15,25 @@ import 'extra_submission_helpers.dart';
 import '../customers/customer_tabs/image_viewer_helper.dart';
 
 const int _kMaxImagesPerTechnicalNote = 8;
+
+bool _tzInitialised = false;
+tz.Location? _ukLocation;
+
+String _formatCreatedAt(String iso) {
+  if (!_tzInitialised) {
+    tzdata.initializeTimeZones();
+    _ukLocation = tz.getLocation('Europe/London');
+    _tzInitialised = true;
+  }
+  final dt = DateTime.tryParse(iso);
+  if (dt == null) return iso;
+  final ukDt = tz.TZDateTime.from(dt, _ukLocation!);
+  final dd = ukDt.day.toString().padLeft(2, '0');
+  final mm = ukDt.month.toString().padLeft(2, '0');
+  final hh = ukDt.hour.toString().padLeft(2, '0');
+  final min = ukDt.minute.toString().padLeft(2, '0');
+  return '$dd/$mm/${ukDt.year} $hh:$min';
+}
 
 void showDiaryTechnicalNoteSheet(
   BuildContext context,
@@ -402,7 +423,7 @@ class _SubmissionCard extends StatelessWidget {
             ],
             Text(
               submission.createdAtIso.isNotEmpty
-                  ? submission.createdAtIso
+                  ? _formatCreatedAt(submission.createdAtIso)
                   : '—',
               style: GoogleFonts.inter(
                 fontSize: 11,

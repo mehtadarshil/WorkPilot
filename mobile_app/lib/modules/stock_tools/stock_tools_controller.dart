@@ -428,18 +428,21 @@ class StockToolsController extends GetxController {
     required String category,
     required String size,
     required String status,
-    required String location,
-    required int quantity,
+    required List<Map<String, dynamic>> locs,
     int? assignedOfficerId,
     required String notes,
   }) async {
+    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    if (binError != null) {
+      Get.snackbar('Error', binError);
+      return false;
+    }
     final payload = <String, dynamic>{
       'name': name.trim(),
       'category': category,
       'size': size,
       'status': status,
-      'location': location,
-      'quantity': quantity,
+      'locations': locs.map(placementRowToApi).toList(),
       'assigned_officer_id': assignedOfficerId,
       'notes': notes.trim().isEmpty ? null : notes.trim(),
     };

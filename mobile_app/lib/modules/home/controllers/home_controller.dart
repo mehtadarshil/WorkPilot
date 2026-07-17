@@ -122,6 +122,10 @@ class HomeController extends GetxController with WidgetsBindingObserver {
 
   bool get showWorkHubTab => home.value?.showWorkHubTab ?? false;
 
+  bool get hasDocuCenterAccess => home.value?.hasDocuCenterAccess ?? false;
+
+  bool get showStandaloneDocuCenter => home.value?.showStandaloneDocuCenter ?? false;
+
   int get tabCount => showWorkHubTab ? 4 : 3;
 
   int get profileTabIndex => tabCount - 1;

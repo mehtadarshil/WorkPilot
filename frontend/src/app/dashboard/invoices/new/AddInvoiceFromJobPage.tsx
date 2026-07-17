@@ -7,6 +7,7 @@ import { getJson, postJson } from '../../../apiClient';
 import { ArrowLeft, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import dayjs from 'dayjs';
 import InvoicePriceBookPanel from '../../../../components/invoices/InvoicePriceBookPanel';
+import InvoiceExpensesSection from '../../../../components/invoices/InvoiceExpensesSection';
 import LineItemDescriptionInput from '../../../../components/invoices/LineItemDescriptionInput';
 import {
   InvoicePriceBooksResponse,
@@ -281,6 +282,8 @@ function AddInvoiceInner() {
         invoice_date: new Date(invoiceDate).toISOString(),
         due_date: new Date(dueDate).toISOString(),
         notes: notes || undefined,
+        description: description.trim() || undefined,
+        invoice_type: invoiceType,
         tax_percentage: vatRate,
         state: targetState,
         line_items: finalItems
@@ -505,8 +508,15 @@ function AddInvoiceInner() {
                </div>
             </div>
 
+            <div className="mt-8">
+              <InvoiceExpensesSection
+                jobId={target.job_id}
+                onAddExpenseLine={appendLineItem}
+              />
+            </div>
+
             {/* Line Items + Settings Box */}
-            <div className="mt-8 text-[13px]">
+            <div className="mt-6 text-[13px]">
                <div className="bg-slate-50 border-x border-t border-slate-200 rounded-t-lg px-6 py-4 shadow-sm flex items-center justify-between">
                  <h3 className="font-bold text-slate-800 text-[15px]">Invoice Line Items</h3>
                  <button type="button" onClick={addLineItem} className="inline-flex items-center gap-1.5 text-[#14B8A6] font-bold hover:underline text-[13px]">

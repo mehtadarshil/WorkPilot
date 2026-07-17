@@ -45,7 +45,7 @@ const List<PostReportJobStage> kPostReportJobStages = [
   PostReportJobStage(
     label: 'Ready for invoicing',
     state: 'completed',
-    description: 'Job is finished; a draft invoice is created when possible.',
+    description: 'Job is finished; a final draft invoice is created when possible.',
   ),
   PostReportJobStage(
     label: 'Need to be rescheduling',

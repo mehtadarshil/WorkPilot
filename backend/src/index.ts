@@ -42,11 +42,12 @@ import { getCustomerServiceReminderSchedule } from './reminders/serviceReminderC
 import { mountJobFilesRoutes } from './jobFilesRoutes';
 import { mountJobEmailRoutes } from './jobEmailRoutes';
 import { mountJobNotesRoutes } from './jobNotesRoutes';
-import { mountJobCostsRoutes, buildJobCostPayload } from './jobCostsRoutes';
-import { calculateTimesheetLabourTotals } from './jobLabourCost';
+import { mountJobCostsRoutes, buildJobCostPayload, calculateJobsCosts } from './jobCostsRoutes';
 import { ensureStaffWorkSchema, mountStaffWorkRoutes } from './staffWorkRoutes';
+import { mountReportsRoutes } from './reportsRoutes';
 import { ensureHolidaySchema, mountHolidayRoutes } from './holidays/routes';
 import { ensureTodoSchema, mountTodoRoutes } from './todos/routes';
+import { ensureDocuCenterSchema, mountDocuCenterRoutes } from './docuCenter/routes';
 import { buildCustomerEmailComposeDraft, sendCustomerCommunicationEmail } from './customerCommunicationEmail';
 import { ensureElectricalCertificateSchema, mountElectricalCertificateRoutes } from './electricalCertificates/routes';
 import { ensurePpmContractSchema } from './ppmContracts/schema';
@@ -78,7 +79,7 @@ import {
 import { officerAssignedToJob } from './jobAssignment';
 import { syncJobDatesFromDiaryEvents, syncJobOfficersFromDiaryEvents } from './jobDiaryDateSync';
 import { buildJobCompletionContext } from './jobCompletionContext';
-import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId } from './ensureJobDiaryEvents';
+import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId, applyAppointmentReschedule, listAppointmentSiblingVisits } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
@@ -792,6 +793,7 @@ interface DbInvoice {
   billing_address: string | null;
   invoice_work_address_id?: number | null;
   customer_reference?: string | null;
+  invoice_type?: string | null;
   state: string;
   created_at: Date;
   updated_at: Date;
@@ -1947,6 +1949,14 @@ async function initDb() {
 
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS description TEXT;`);
   await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS public_token VARCHAR(100) UNIQUE;`);
+  await pool.query(`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(30)`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE invoices ADD CONSTRAINT invoices_invoice_type_check
+        CHECK (invoice_type IS NULL OR invoice_type IN ('additional', 'contract', 'pre_final', 'final'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
 
   // Backfill public_token for existing invoices
   const existingInvoices = await pool.query('SELECT id FROM invoices WHERE public_token IS NULL');
@@ -2368,6 +2378,7 @@ async function initDb() {
   await ensureStaffWorkSchema(pool);
   await ensureHolidaySchema(pool);
   await ensureTodoSchema(pool);
+  await ensureDocuCenterSchema(pool);
   await ensurePpmContractSchema(pool);
   await ensureStockToolsSchema(pool);
   await ensurePricingSettingsSchema(pool);
@@ -3892,9 +3903,15 @@ app.get('/api/mobile/home', authenticate, async (req: AuthenticatedRequest, res:
               j.description,
               COALESCE(
                 NULLIF(TRIM(d.location), ''),
-                NULLIF(TRIM(CONCAT_WS(', ', wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
+                NULLIF(TRIM(CONCAT_WS(', ', wa.name, wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
+                NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), ''),
                 j.location
               ) AS location,
+              COALESCE(
+                NULLIF(TRIM(CONCAT_WS(', ', wa.name, wa.address_line_1, wa.address_line_2, wa.address_line_3, wa.town, wa.county, wa.postcode)), ''),
+                NULLIF(TRIM(CONCAT_WS(', ', c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode)), '')
+              ) AS customer_address,
+              COALESCE(NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(c.address_line_1), '')) AS address_line_1,
               j.customer_id, j.is_quotation_visit, j.job_number,
               c.full_name AS customer_full_name, c.email AS customer_email,
               o.full_name AS officer_full_name,
@@ -8319,10 +8336,31 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       nextParam += 1;
     }
 
-    const ongoingClause =
-      mineFieldOfficer && officerParamIdx != null
-        ? sqlDiaryOngoingForOfficer(`$${officerParamIdx}`)
-        : SQL_DIARY_ONGOING_ONLY;
+    // Staff Work / history calendars pass include_completed=1 so finished visits still appear.
+    // Cancelled/aborted stay hidden unless include_cancelled=1.
+    const includeCompleted =
+      req.query.include_completed === '1' ||
+      req.query.include_completed === 'true' ||
+      req.query.include_completed === 'yes';
+    const includeCancelled =
+      req.query.include_cancelled === '1' ||
+      req.query.include_cancelled === 'true' ||
+      req.query.include_cancelled === 'yes';
+    let ongoingClause = '';
+    if (!includeCancelled) {
+      if (includeCompleted) {
+        const statusExpr =
+          mineFieldOfficer && officerParamIdx != null
+            ? sqlDiaryEventStatusForOfficer(`$${officerParamIdx}`)
+            : 'd.status';
+        ongoingClause = ` AND ${sqlDiaryTerminalStatusExpr(statusExpr)} NOT IN ('cancelled', 'aborted')`;
+      } else {
+        ongoingClause =
+          mineFieldOfficer && officerParamIdx != null
+            ? sqlDiaryOngoingForOfficer(`$${officerParamIdx}`)
+            : SQL_DIARY_ONGOING_ONLY;
+      }
+    }
     const statusSelect =
       mineFieldOfficer && officerParamIdx != null
         ? `${sqlDiaryEventStatusForOfficer(`$${officerParamIdx}`)} as event_status`
@@ -8334,7 +8372,27 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
               d.notes, d.abort_reason, d.created_by_name, d.created_at,
               (d.job_id IS NULL) AS is_general,
               COALESCE(NULLIF(TRIM(d.title), ''), j.title) AS title,
-              COALESCE(NULLIF(TRIM(d.location), ''), j.location) AS location,
+              COALESCE(
+                NULLIF(TRIM(d.location), ''),
+                NULLIF(TRIM(CONCAT_WS(', ',
+                  NULLIF(TRIM(wa.name), ''),
+                  NULLIF(TRIM(wa.address_line_1), ''),
+                  NULLIF(TRIM(wa.address_line_2), ''),
+                  NULLIF(TRIM(wa.address_line_3), ''),
+                  NULLIF(TRIM(wa.town), ''),
+                  NULLIF(TRIM(wa.county), ''),
+                  NULLIF(TRIM(wa.postcode), '')
+                )), ''),
+                NULLIF(TRIM(CONCAT_WS(', ',
+                  NULLIF(TRIM(c.address_line_1), ''),
+                  NULLIF(TRIM(c.address_line_2), ''),
+                  NULLIF(TRIM(c.address_line_3), ''),
+                  NULLIF(TRIM(c.town), ''),
+                  NULLIF(TRIM(c.county), ''),
+                  NULLIF(TRIM(c.postcode), '')
+                )), ''),
+                j.location
+              ) AS location,
               j.description, j.customer_id, j.is_quotation_visit, j.job_number, j.charge_type,
               j.state AS job_state,
               jd.name AS description_name,
@@ -8352,13 +8410,20 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
               ) AS address_line_1,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(', ',
+                  NULLIF(TRIM(wa.name), ''),
                   NULLIF(TRIM(wa.address_line_1), ''),
+                  NULLIF(TRIM(wa.address_line_2), ''),
+                  NULLIF(TRIM(wa.address_line_3), ''),
                   NULLIF(TRIM(wa.town), ''),
+                  NULLIF(TRIM(wa.county), ''),
                   NULLIF(TRIM(wa.postcode), '')
                 )), ''),
                 NULLIF(TRIM(CONCAT_WS(', ',
                   NULLIF(TRIM(c.address_line_1), ''),
+                  NULLIF(TRIM(c.address_line_2), ''),
+                  NULLIF(TRIM(c.address_line_3), ''),
                   NULLIF(TRIM(c.town), ''),
+                  NULLIF(TRIM(c.county), ''),
                   NULLIF(TRIM(c.postcode), '')
                 )), '')
               ) AS customer_address
@@ -8409,12 +8474,24 @@ app.get('/api/diary-events', authenticate, async (req: AuthenticatedRequest, res
       list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
       deOfficersByEvent.set(or.diary_event_id, list);
     }
-    const events = rows.map((r: any) => ({
-      ...r,
-      is_free_job: r.charge_type === 'free',
-      is_general: r.is_general === true,
-      officers: deOfficersByEvent.get(r.diary_id) || [],
-    }));
+    const events = rows.map((r: any) => {
+      const start = r.start_time;
+      const startIso =
+        start instanceof Date
+          ? start.toISOString()
+          : typeof start === 'string'
+            ? start
+            : start != null
+              ? new Date(start as string | number).toISOString()
+              : null;
+      return {
+        ...r,
+        start_time: startIso,
+        is_free_job: r.charge_type === 'free',
+        is_general: r.is_general === true,
+        officers: deOfficersByEvent.get(r.diary_id) || [],
+      };
+    });
     res.json({ events });
   } catch (error) {
     console.error('get diary events error:', error);
@@ -8514,8 +8591,19 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
 
   try {
     const tokenOfficerId = req.user!.officerId ?? null;
+    const detailRole = req.user!.role;
+    const schedulerCanEditAnyVisit =
+      detailRole === 'SUPER_ADMIN' ||
+      detailRole === 'ADMIN' ||
+      (detailRole === 'STAFF' && assertStaffPermission(req.user, 'scheduling'));
     let detailId = id;
-    if (tokenOfficerId != null && Number.isFinite(tokenOfficerId)) {
+    // Field officers are remapped to their own visit; schedulers must keep the visit they opened
+    // so Edit visit saves/loads the same row (multi-engineer jobs were remapping admins to themselves).
+    if (
+      tokenOfficerId != null &&
+      Number.isFinite(tokenOfficerId) &&
+      !schedulerCanEditAnyVisit
+    ) {
       try {
         detailId = await resolveActingDiaryEventId(pool, id, tokenOfficerId);
       } catch (splitErr) {
@@ -8559,7 +8647,10 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
               NULLIF(TRIM(c.postcode), '') AS customer_postcode,
               o.full_name AS officer_full_name,
               (SELECT COUNT(*)::int FROM job_report_questions q WHERE q.job_id = j.id) AS job_report_question_count,
-              EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
+              EXISTS (
+                SELECT 1 FROM diary_event_status_logs l
+                WHERE l.diary_event_id = d.id AND l.status = 'job_report_submitted'
+              ) AS job_report_submitted,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
                 NULLIF(TRIM(CONCAT_WS(' ', wa.title, wa.first_name, wa.surname)), ''),
@@ -8622,6 +8713,47 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        ORDER BY deo.is_primary DESC, o.full_name`,
       [detailId]
     );
+
+    let appointmentOfficers: { id: number; full_name: string; is_primary: boolean }[] =
+      deOfficersResult.rows.map((r) => ({
+        id: Number(r.id),
+        full_name: String(r.full_name ?? ''),
+        is_primary: !!r.is_primary,
+      }));
+    try {
+      const sibs = await listAppointmentSiblingVisits(pool, detailId);
+      const sibIds = sibs.map((s) => s.id);
+      if (sibIds.length > 1) {
+        const apptRes = await pool.query<{ id: number; full_name: string; is_primary: boolean }>(
+          `SELECT deo.officer_id AS id, o.full_name,
+                  BOOL_OR(
+                    COALESCE(jo.is_primary, false)
+                    OR (jo.officer_id IS NULL AND j.officer_id IS NOT NULL AND deo.officer_id = j.officer_id)
+                  ) AS is_primary
+           FROM diary_event_officers deo
+           JOIN officers o ON o.id = deo.officer_id
+           JOIN diary_events d ON d.id = deo.diary_event_id
+           JOIN jobs j ON j.id = d.job_id
+           LEFT JOIN job_officers jo ON jo.job_id = j.id AND jo.officer_id = deo.officer_id
+           WHERE deo.diary_event_id = ANY($1::int[])
+           GROUP BY deo.officer_id, o.full_name
+           ORDER BY BOOL_OR(
+             COALESCE(jo.is_primary, false)
+             OR (jo.officer_id IS NULL AND j.officer_id IS NOT NULL AND deo.officer_id = j.officer_id)
+           ) DESC, o.full_name`,
+          [sibIds],
+        );
+        if ((apptRes.rowCount ?? 0) > 0) {
+          appointmentOfficers = apptRes.rows.map((r) => ({
+            id: Number(r.id),
+            full_name: String(r.full_name ?? ''),
+            is_primary: !!r.is_primary,
+          }));
+        }
+      }
+    } catch (apptErr) {
+      console.error('appointment officers for diary detail:', apptErr);
+    }
 
     let siteImages: unknown[] = [];
     if (row.customer_id) {
@@ -8739,7 +8871,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
        LEFT JOIN users u ON u.id = s.created_by
        WHERE s.diary_event_id = $1
        ORDER BY s.created_at ASC`,
-      [id],
+      [detailId],
     );
     const visitEngineerName = (() => {
       const s = (row.officer_full_name as string | null) ?? null;
@@ -8771,7 +8903,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
             content_type: ct,
             kind,
             byte_size: m.byte_size != null ? Number(m.byte_size) : 0,
-            file_path: `/diary-events/${id}/extra-submissions/${r.id}/files/${encodeURIComponent(stored)}`,
+            file_path: `/diary-events/${detailId}/extra-submissions/${r.id}/files/${encodeURIComponent(stored)}`,
           };
         }),
       };
@@ -8779,7 +8911,7 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
 
     const logsRes = await pool.query(
       `SELECT status, latitude, longitude, timestamp FROM diary_event_status_logs WHERE diary_event_id = $1 ORDER BY timestamp ASC, id ASC`,
-      [id]
+      [detailId]
     );
     const statusLogs = logsRes.rows.map(r => ({
       status: r.status,
@@ -8859,6 +8991,8 @@ app.get('/api/diary-events/:id', authenticate, async (req: AuthenticatedRequest,
         site_contact_phone: row.site_contact_phone ?? null,
         abort_reason: row.abort_reason != null && String(row.abort_reason).trim() ? String(row.abort_reason).trim() : null,
         officers: deOfficersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
+        /** Engineers across this appointment window (multi-engineer jobs with split visits). */
+        appointment_officers: appointmentOfficers,
         /** Also on root; duplicated here for clients that only read `event`. */
         customer_specific_notes: customerSpecificNotes,
         status_logs: statusLogs,
@@ -10288,7 +10422,7 @@ app.put(
 
 app.get('/api/diary-events/:id/job-report', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const diaryEventId = parseInt(String(idParam), 10);
+  let diaryEventId = parseInt(String(idParam), 10);
   if (!Number.isFinite(diaryEventId)) {
     return res.status(400).json({ message: 'Invalid event id' });
   }
@@ -10297,6 +10431,14 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
   const tokenOfficerId = req.user!.officerId ?? null;
 
   try {
+    if (tokenOfficerId != null) {
+      try {
+        diaryEventId = await resolveActingDiaryEventId(pool, diaryEventId, tokenOfficerId);
+      } catch (splitErr) {
+        console.error('resolveActingDiaryEventId on GET job-report:', splitErr);
+      }
+    }
+
     const base = await pool.query<{
       job_id: number;
       officer_id: number | null;
@@ -10310,6 +10452,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       job_title: string;
       customer_full_name: string | null;
       is_quotation_visit: boolean;
+      acting_officer_full_name: string | null;
     }>(
       `SELECT d.job_id, d.officer_id, j.officer_id AS job_officer_id,
               ${tokenOfficerId != null ? `${sqlDiaryEventStatusForOfficer('$2')} AS event_status` : 'd.status AS event_status'},
@@ -10317,10 +10460,13 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
               EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = j.id AND jo.officer_id = $2) AS is_job_officer,
               j.customer_id, j.work_address_id, j.job_number, j.title AS job_title,
               c.full_name AS customer_full_name,
-              COALESCE(j.is_quotation_visit, false) AS is_quotation_visit
+              COALESCE(j.is_quotation_visit, false) AS is_quotation_visit,
+              COALESCE(o.full_name, ao.full_name) AS acting_officer_full_name
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
+       LEFT JOIN officers o ON o.id = d.officer_id
+       LEFT JOIN officers ao ON ao.id = $2
        WHERE d.id = $1`,
       [diaryEventId, tokenOfficerId ?? -1],
     );
@@ -10329,8 +10475,9 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
     }
     const row = base.rows[0];
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
+      // Own visit only (or team scope). Being on job_officers of a colleague's visit is not enough.
       const assigned =
-        row.officer_id === tokenOfficerId || row.job_officer_id === tokenOfficerId || row.is_diary_officer || row.is_job_officer;
+        row.officer_id === tokenOfficerId || row.is_diary_officer;
       if (!assigned && !canUseTeamDiaryScope({ role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
         return res.status(403).json({ message: 'You can only view diary visits assigned to you' });
       }
@@ -10421,6 +10568,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       job_title: row.job_title,
       customer_full_name: row.customer_full_name,
       is_quotation_visit: row.is_quotation_visit,
+      acting_officer_full_name: row.acting_officer_full_name,
       questions,
       answers,
       job_completion_context: jobCompletionContext,
@@ -10434,7 +10582,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
 /** Auto-save job report answers (partial) without completing the visit or changing job state. */
 app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const diaryEventId = parseInt(String(idParam), 10);
+  let diaryEventId = parseInt(String(idParam), 10);
   const role = req.user!.role;
   const tokenOfficerId = req.user!.officerId ?? null;
 
@@ -10450,6 +10598,9 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (tokenOfficerId != null) {
+      diaryEventId = await resolveActingDiaryEventId(client, diaryEventId, tokenOfficerId);
+    }
     const eventRes = await client.query<{
       job_id: number;
       officer_id: number | null;
@@ -10474,7 +10625,7 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
     const ev = eventRes.rows[0];
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const assigned = ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId || ev.is_diary_officer || ev.is_job_officer;
+      const assigned = ev.officer_id === tokenOfficerId || ev.is_diary_officer;
       if (!assigned) {
         await client.query('ROLLBACK');
         return res.status(403).json({ message: 'You can only update job reports for your visits' });
@@ -10565,7 +10716,7 @@ app.post('/api/diary-events/:id/job-report/draft', authenticate, async (req: Aut
     }
 
     await client.query('COMMIT');
-    return res.json({ ok: true, saved_at: new Date().toISOString() });
+    return res.json({ ok: true, diary_event_id: diaryEventId, saved_at: new Date().toISOString() });
   } catch (error) {
     try {
       await client.query('ROLLBACK');
@@ -10848,7 +10999,7 @@ app.get('/api/diary-events/:id/timesheet', authenticate, requireAdmin, requirePe
 
 app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const diaryEventId = parseInt(String(idParam), 10);
+  let diaryEventId = parseInt(String(idParam), 10);
   const userId = getTenantScopeUserId(req.user!);
   const role = req.user!.role;
   const tokenOfficerId = req.user!.officerId ?? null;
@@ -10882,6 +11033,9 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (tokenOfficerId != null) {
+      diaryEventId = await resolveActingDiaryEventId(client, diaryEventId, tokenOfficerId);
+    }
 
     const eventRes = await client.query<{
       job_id: number;
@@ -10908,8 +11062,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
     const ev = eventRes.rows[0];
 
     if (diaryActsAsFieldOfficer(req, { role, officerId: tokenOfficerId, permissions: req.user!.permissions ?? null })) {
-      const assigned =
-        ev.officer_id === tokenOfficerId || ev.job_officer_id === tokenOfficerId || ev.is_diary_officer || ev.is_job_officer;
+      const assigned = ev.officer_id === tokenOfficerId || ev.is_diary_officer;
       if (!assigned) {
         await client.query('ROLLBACK');
         return res.status(403).json({ message: 'You can only submit job reports for your visits' });
@@ -11020,6 +11173,7 @@ app.post('/api/diary-events/:id/job-report/submit', authenticate, async (req: Au
 
     return res.json({
       message: 'Job report submitted',
+      diary_event_id: diaryEventId,
       status: ev.event_status,
       job_state: nextJobState,
       invoice_id: null,
@@ -11618,13 +11772,37 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
     const result = await pool.query(
       `SELECT d.*, o.full_name AS officer_full_name,
               (
-                SELECT COALESCE(json_agg(json_build_object('id', o2.id, 'full_name', o2.full_name, 'is_primary', deo.is_primary) ORDER BY deo.is_primary DESC, o2.full_name), '[]'::json)
+                SELECT COALESCE(
+                  json_agg(
+                    json_build_object(
+                      'id', o2.id,
+                      'full_name', o2.full_name,
+                      -- Job has a single primary; per-visit is_primary is true for every solo engineer visit.
+                      'is_primary',
+                        COALESCE(jo_pri.is_primary, false)
+                        OR (
+                          jo_pri.officer_id IS NULL
+                          AND j.officer_id IS NOT NULL
+                          AND o2.id = j.officer_id
+                        )
+                    )
+                    ORDER BY
+                      COALESCE(jo_pri.is_primary, false) DESC,
+                      o2.full_name
+                  ),
+                  '[]'::json
+                )
                 FROM diary_event_officers deo
                 JOIN officers o2 ON o2.id = deo.officer_id
+                LEFT JOIN job_officers jo_pri
+                  ON jo_pri.job_id = d.job_id AND jo_pri.officer_id = o2.id
                 WHERE deo.diary_event_id = d.id
               ) AS officers,
               j.charge_type,
-              EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
+              EXISTS (
+                SELECT 1 FROM diary_event_status_logs l
+                WHERE l.diary_event_id = d.id AND l.status = 'job_report_submitted'
+              ) AS job_report_submitted,
               (j.charge_type = 'free') AS is_free_job,
               COALESCE(
                 NULLIF(TRIM(CONCAT_WS(' ', jc.title, jc.first_name, jc.surname)), ''),
@@ -11642,10 +11820,24 @@ app.get('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedReq
        LEFT JOIN customer_contacts jc ON jc.id = j.job_contact_id
        LEFT JOIN officers o ON o.id = d.officer_id
        WHERE d.job_id = $1
+         AND LOWER(TRIM(REPLACE(COALESCE(d.status, ''), ' ', '_'))) NOT IN ('cancelled', 'aborted')
        ORDER BY d.start_time ASC`,
       [jobId]
     );
-    res.json({ events: result.rows });
+    res.json({
+      events: result.rows.map((row) => {
+        const start = (row as { start_time?: unknown }).start_time;
+        const startIso =
+          start instanceof Date
+            ? start.toISOString()
+            : typeof start === 'string'
+              ? start
+              : start != null
+                ? new Date(start as string | number).toISOString()
+                : null;
+        return { ...row, start_time: startIso };
+      }),
+    });
   } catch (error) {
     console.error('get job diary events error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -11970,7 +12162,8 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
     }
 
     const createdEvents: Record<string, unknown>[] = [];
-    for (const oid of officerIdsToBook) {
+    for (let oi = 0; oi < officerIdsToBook.length; oi++) {
+      const oid = officerIdsToBook[oi];
       const result = await pool.query(
         `INSERT INTO diary_events (job_id, officer_id, start_time, duration_minutes, notes, created_by_name)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -11979,9 +12172,10 @@ app.post('/api/jobs/:id/diary-events', authenticate, async (req: AuthenticatedRe
       );
       const diaryEventId = result.rows[0].id;
       if (oid != null) {
+        // Only the first selected engineer is job-primary for this booking.
         await pool.query(
-          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
-          [diaryEventId, oid],
+          `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, $3)`,
+          [diaryEventId, oid, oi === 0],
         );
       }
       createdEvents.push(result.rows[0]);
@@ -12055,12 +12249,6 @@ app.patch(
       officer_ids?: unknown;
     };
 
-    const updates: string[] = ['updated_at = NOW()'];
-    const values: unknown[] = [];
-    let idx = 1;
-    let officerIdsUpdated = false;
-    let officerIdsToApply: number[] | null = null;
-
     const visitBlocksEngineerChange = (status: string | null | undefined): boolean => {
       const s = String(status ?? '').toLowerCase().trim().replace(/\s+/g, '_');
       if (s === 'completed') return true;
@@ -12078,12 +12266,18 @@ app.patch(
       );
     };
 
-    let current: {
-      officer_id: number | null;
-      start_time: Date;
-      duration_minutes: number;
-      status: string | null;
-      job_id: number | null;
+    const parseOfficerIds = (raw: unknown): number[] | null => {
+      if (!Array.isArray(raw)) return null;
+      const parsed: number[] = [];
+      for (const oid of raw) {
+        if (typeof oid === 'number' && Number.isFinite(oid)) {
+          parsed.push(Math.round(oid));
+        } else if (typeof oid === 'string' && oid.trim() !== '') {
+          const n = parseInt(oid, 10);
+          if (Number.isFinite(n)) parsed.push(n);
+        }
+      }
+      return [...new Set(parsed)];
     };
 
     try {
@@ -12092,20 +12286,39 @@ app.patch(
         start_time: Date;
         duration_minutes: number;
         status: string | null;
-        job_id: number;
+        job_id: number | null;
       }>(
         `SELECT officer_id, start_time, duration_minutes, status, job_id FROM diary_events WHERE id = $1`,
-        [id]
+        [id],
       );
       if ((currentEventRes.rowCount ?? 0) === 0) {
         return res.status(404).json({ message: 'Diary event not found' });
       }
-      current = currentEventRes.rows[0];
+      const current = currentEventRes.rows[0];
 
-      const newStartTime = body.start_time !== undefined ? (body.start_time ? new Date(body.start_time) : null) : current.start_time;
-      const newDuration = body.duration_minutes !== undefined ? (body.duration_minutes || 60) : current.duration_minutes;
+      const notesProvided = Object.prototype.hasOwnProperty.call(body, 'notes');
+      let nextStart: Date | null | undefined = undefined;
+      if (body.start_time !== undefined) {
+        const ts = body.start_time ? new Date(body.start_time) : null;
+        if (ts !== null && isNaN(ts.getTime())) {
+          return res.status(400).json({ message: 'Invalid start_time' });
+        }
+        nextStart = ts;
+      }
+      let nextDuration: number | null | undefined = undefined;
+      if (body.duration_minutes !== undefined) {
+        nextDuration =
+          typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes)
+            ? Math.round(body.duration_minutes)
+            : null;
+      }
+      const nextNotes = notesProvided
+        ? typeof body.notes === 'string'
+          ? body.notes.trim() || null
+          : null
+        : undefined;
 
-      let effectiveOfficerIds: number[] = [];
+      let officerIdsToApply: number[] | null = null;
       if (body.officer_ids !== undefined) {
         if (!hasSchedulingAccess) {
           return res.status(403).json({ message: 'Forbidden: Only schedulers can change assigned engineers' });
@@ -12115,143 +12328,122 @@ app.patch(
             message: 'Cannot change engineers after travel has started or the visit is complete.',
           });
         }
-        if (!Array.isArray(body.officer_ids)) {
+        const unique = parseOfficerIds(body.officer_ids);
+        if (unique == null) {
           return res.status(400).json({ message: 'officer_ids must be an array' });
         }
-        const parsed = body.officer_ids
-          .filter((oid): oid is number => typeof oid === 'number' && Number.isFinite(oid))
-          .map((oid) => Math.round(oid));
-        const unique = [...new Set(parsed)];
         if (unique.length === 0) {
           return res.status(400).json({ message: 'Select at least one engineer' });
         }
-        effectiveOfficerIds = unique;
         officerIdsToApply = unique;
-        officerIdsUpdated = true;
       }
 
-      if (newStartTime && !isNaN(newStartTime.getTime())) {
-        if (effectiveOfficerIds.length === 0) {
-          const officersRes = await pool.query<{ officer_id: number }>(
-            `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1`,
-            [id]
-          );
-          effectiveOfficerIds = officersRes.rows.map(o => o.officer_id);
-          if (current.officer_id != null && !effectiveOfficerIds.includes(current.officer_id)) {
-            effectiveOfficerIds.push(current.officer_id);
-          }
+      if (
+        nextStart === undefined &&
+        nextDuration === undefined &&
+        !notesProvided &&
+        officerIdsToApply == null
+      ) {
+        return res.status(400).json({ message: 'No fields to update' });
+      }
+
+      const holidayStart = nextStart !== undefined && nextStart != null ? nextStart : current.start_time;
+      const holidayDuration =
+        nextDuration !== undefined && nextDuration != null ? nextDuration : current.duration_minutes || 60;
+      let holidayOfficerIds = officerIdsToApply ?? [];
+      if (holidayOfficerIds.length === 0) {
+        const officersRes = await pool.query<{ officer_id: number }>(
+          `SELECT officer_id FROM diary_event_officers WHERE diary_event_id = $1`,
+          [id],
+        );
+        holidayOfficerIds = officersRes.rows.map((o) => o.officer_id);
+        if (current.officer_id != null && !holidayOfficerIds.includes(current.officer_id)) {
+          holidayOfficerIds.push(current.officer_id);
         }
-
-        if (effectiveOfficerIds.length > 0) {
-          const holidayConflict = await checkOfficerHolidayConflict(pool, effectiveOfficerIds, newStartTime, newDuration);
-          if (holidayConflict) {
-            return res.status(400).json({
-              message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`
-            });
-          }
+      }
+      if (holidayOfficerIds.length > 0 && holidayStart) {
+        const holidayConflict = await checkOfficerHolidayConflict(
+          pool,
+          holidayOfficerIds,
+          holidayStart,
+          holidayDuration,
+        );
+        if (holidayConflict) {
+          return res.status(400).json({
+            message: `Conflict: ${holidayConflict.officerName} has an approved holiday from ${holidayConflict.holidayStart!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${holidayConflict.holidayStart!.toLocaleDateString()} to ${holidayConflict.holidayEnd!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} on ${holidayConflict.holidayEnd!.toLocaleDateString()}.`,
+          });
         }
       }
-    } catch (err) {
-      console.error('reschedule check error:', err);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
 
-    if (body.start_time !== undefined) {
-      const ts = body.start_time ? new Date(body.start_time) : null;
-      if (ts !== null && isNaN(ts.getTime())) {
-        return res.status(400).json({ message: 'Invalid start_time' });
-      }
-      updates.push(`start_time = $${idx++}`);
-      values.push(ts);
-    }
-    if (body.duration_minutes !== undefined) {
-      const dur =
-        typeof body.duration_minutes === 'number' && Number.isFinite(body.duration_minutes)
-          ? Math.round(body.duration_minutes)
-          : null;
-      updates.push(`duration_minutes = $${idx++}`);
-      values.push(dur);
-    }
-    if (body.notes !== undefined) {
-      const n = typeof body.notes === 'string' ? body.notes.trim() || null : null;
-      updates.push(`notes = $${idx++}`);
-      values.push(n);
-    }
+      const creatorRes = await pool.query<{ full_name: string | null }>(
+        `SELECT full_name FROM users WHERE id = $1`,
+        [req.user!.userId],
+      );
+      const createdByName = creatorRes.rows[0]?.full_name?.trim() || req.user!.email || 'System';
 
-    if (updates.length <= 1 && !officerIdsUpdated) {
-      return res.status(400).json({ message: 'No fields to update' });
-    }
-
-    try {
       const client = await pool.connect();
+      let resultId = id;
       try {
         await client.query('BEGIN');
-
-        if (officerIdsUpdated && officerIdsToApply != null) {
-          const parsed = officerIdsToApply;
-          const primaryId = parsed[0] ?? null;
-          await client.query(
-            `UPDATE diary_events SET officer_id = $1, updated_at = NOW() WHERE id = $2`,
-            [primaryId, id],
-          );
-          await client.query(`DELETE FROM diary_event_officers WHERE diary_event_id = $1`, [id]);
-          for (let i = 0; i < parsed.length; i++) {
-            await client.query(
-              `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary)
-               VALUES ($1, $2, $3)`,
-              [id, parsed[i], i === 0],
-            );
-          }
-        }
-
-        values.push(id);
-        const r = await client.query(
-          `UPDATE diary_events SET ${updates.join(', ')} WHERE id = $${idx} RETURNING
-             id, job_id, officer_id, start_time, duration_minutes, status, notes, updated_at`,
-          values,
-        );
-        if ((r.rowCount ?? 0) === 0) {
-          await client.query('ROLLBACK');
-          return res.status(404).json({ message: 'Diary event not found' });
-        }
-        await client.query('COMMIT');
-
-        const row = r.rows[0] as {
-          id: number;
-          job_id: number | null;
-          officer_id: number | null;
-          start_time: Date | null;
-          duration_minutes: number | null;
-          status: string | null;
-          notes: string | null;
-          updated_at: Date;
-        };
-        if (row.job_id != null) {
-          await syncJobDatesFromDiaryEvents(pool, row.job_id);
-          if (officerIdsUpdated) {
-            await syncJobOfficersFromDiaryEvents(pool, row.job_id);
-          }
-        }
-        return res.json({
-          event: {
-            id: row.id,
-            job_id: row.job_id,
-            officer_id: row.officer_id,
-            start_time: row.start_time ? row.start_time.toISOString() : null,
-            duration_minutes: row.duration_minutes,
-            status: row.status,
-            notes: row.notes,
-            updated_at: row.updated_at.toISOString(),
-          },
+        resultId = await applyAppointmentReschedule(client, id, {
+          startTime: nextStart,
+          durationMinutes: nextDuration,
+          notes: nextNotes ?? null,
+          notesProvided,
+          officerIds: officerIdsToApply,
+          createdByName,
         });
+        await client.query('COMMIT');
       } catch (txErr) {
         await client.query('ROLLBACK');
         throw txErr;
       } finally {
         client.release();
       }
+
+      const r = await pool.query<{
+        id: number;
+        job_id: number | null;
+        officer_id: number | null;
+        start_time: Date | null;
+        duration_minutes: number | null;
+        status: string | null;
+        notes: string | null;
+        updated_at: Date;
+      }>(
+        `SELECT id, job_id, officer_id, start_time, duration_minutes, status, notes, updated_at
+         FROM diary_events WHERE id = $1`,
+        [resultId],
+      );
+      if ((r.rowCount ?? 0) === 0) {
+        return res.status(404).json({ message: 'Diary event not found' });
+      }
+      const row = r.rows[0];
+      if (row.job_id != null) {
+        await syncJobDatesFromDiaryEvents(pool, row.job_id);
+        if (officerIdsToApply != null) {
+          await syncJobOfficersFromDiaryEvents(pool, row.job_id);
+        }
+      }
+      return res.json({
+        event: {
+          id: row.id,
+          diary_event_id: row.id,
+          job_id: row.job_id,
+          officer_id: row.officer_id,
+          start_time: row.start_time ? row.start_time.toISOString() : null,
+          duration_minutes: row.duration_minutes,
+          status: row.status,
+          notes: row.notes,
+          updated_at: row.updated_at.toISOString(),
+        },
+      });
     } catch (error) {
       console.error('reschedule diary event error:', error);
+      const msg = error instanceof Error ? error.message : '';
+      if (msg === 'Select at least one engineer' || msg === 'Diary event not found') {
+        return res.status(msg === 'Diary event not found' ? 404 : 400).json({ message: msg });
+      }
       return res.status(500).json({ message: 'Internal server error' });
     }
   },
@@ -12459,7 +12651,10 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
           : 0;
       if (qc > 0) {
         const reportSubCheck = await client.query(
-          `SELECT EXISTS (SELECT 1 FROM job_report_answers WHERE diary_event_id = $1) AS submitted`,
+          `SELECT EXISTS (
+             SELECT 1 FROM diary_event_status_logs
+             WHERE diary_event_id = $1 AND status = 'job_report_submitted'
+           ) AS submitted`,
           [targetEventId]
         );
         if (!reportSubCheck.rows[0]?.submitted) {
@@ -12534,7 +12729,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
           const isPpmJob = ppmCheck.rows[0]?.ppm_contract_id != null;
           if (!isPpmJob) {
             try {
-              await createInvoiceFromJob(row.job_id, userId);
+              await createInvoiceFromJob(row.job_id, userId, { invoice_type: 'final' });
             } catch (invErr) {
               console.error('Auto invoice after diary visit completed:', invErr);
             }
@@ -13703,6 +13898,65 @@ function canAccessInvoice(
   return false;
 }
 
+const INVOICE_TYPES = ['additional', 'contract', 'pre_final', 'final'] as const;
+type InvoiceType = (typeof INVOICE_TYPES)[number];
+
+/** Normalize UI labels / API values to stored invoice_type. */
+function normalizeInvoiceType(value: unknown): InvoiceType | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const key = trimmed.toLowerCase().replace(/[\s-]+/g, '_');
+  if (key === 'final' || key === 'final_invoice') return 'final';
+  if (key === 'pre_final' || key === 'prefinal' || key === 'pre_final_invoice') return 'pre_final';
+  if (key === 'contract' || key === 'contract_invoice') return 'contract';
+  if (key === 'additional' || key === 'additional_invoice') return 'additional';
+  return null;
+}
+
+function invoiceTypeIsRaised(state: string | null | undefined): boolean {
+  const s = String(state ?? '').toLowerCase().trim();
+  return s !== '' && s !== 'draft' && s !== 'cancelled';
+}
+
+/**
+ * Final invoices close the linked job (and finish open diary visits / PPM follow-up).
+ * Skips if already closed. Safe when job has no open work left.
+ */
+async function closeJobAfterFinalInvoice(jobId: number, actingUserId: number): Promise<void> {
+  const jobRes = await pool.query<{ state: string }>(`SELECT state FROM jobs WHERE id = $1`, [jobId]);
+  if ((jobRes.rowCount ?? 0) === 0) return;
+  if (String(jobRes.rows[0].state).toLowerCase() === 'closed') return;
+
+  await pool.query(
+    `UPDATE jobs SET state = 'closed', updated_at = NOW() WHERE id = $1 AND LOWER(TRIM(state)) IS DISTINCT FROM 'closed'`,
+    [jobId],
+  );
+
+  try {
+    await completeOpenDiaryEventsForJob(pool, jobId, actingUserId);
+  } catch (err) {
+    console.error('closeJobAfterFinalInvoice diary:', err);
+  }
+  try {
+    await handlePpmJobCompletion(pool, jobId, actingUserId, createInvoiceFromJob);
+  } catch (err) {
+    console.error('closeJobAfterFinalInvoice ppm:', err);
+  }
+}
+
+async function maybeCloseJobForFinalInvoice(opts: {
+  jobId: number | null | undefined;
+  invoiceType: string | null | undefined;
+  invoiceState: string | null | undefined;
+  actingUserId: number;
+}): Promise<void> {
+  if (opts.jobId == null || !Number.isFinite(opts.jobId)) return;
+  if (normalizeInvoiceType(opts.invoiceType) !== 'final') return;
+  if (!invoiceTypeIsRaised(opts.invoiceState)) return;
+  await closeJobAfterFinalInvoice(opts.jobId, opts.actingUserId);
+}
+
 /** Single-line customer address — same field order as customer detail page (`[id]/page.tsx`). */
 function formatCustomerAddressSingleLine(row: Record<string, unknown>): string {
   const parts: string[] = [];
@@ -13993,7 +14247,7 @@ async function resolveInvoiceBillingFromWorkAddress(
 async function createInvoiceFromJob(
   jobId: number,
   actingUserId: number,
-  opts?: { description?: string | null },
+  opts?: { description?: string | null; invoice_type?: string | null },
 ): Promise<number | null> {
   const jobResult = await pool.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
   if (jobResult.rowCount === 0) return null;
@@ -14058,9 +14312,10 @@ async function createInvoiceFromJob(
   const publicToken = crypto.randomBytes(32).toString('hex');
   const invoiceDescription =
     typeof opts?.description === 'string' && opts.description.trim() ? opts.description.trim() : null;
+  const invoiceType = normalizeInvoiceType(opts?.invoice_type) ?? 'additional';
   const invResult = await pool.query(
-    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token, billing_address, invoice_work_address_id, description)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13, $14)
+    `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, state, created_by, public_token, billing_address, invoice_work_address_id, description, invoice_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10, $11, $12, $13, $14, $15)
      RETURNING id`,
     [
       invoiceNumber,
@@ -14077,6 +14332,7 @@ async function createInvoiceFromJob(
       billingAddress,
       invoiceWorkAddressId,
       invoiceDescription,
+      invoiceType,
     ],
   );
 
@@ -14097,129 +14353,11 @@ async function createInvoiceFromJob(
       invoice_number: invoiceNumber,
       auto_generated_from_job: jobId,
       acting_user_id: actingUserId,
+      invoice_type: invoiceType,
     },
     actingUserId,
   );
   return invoiceId;
-}
-
-async function calculateJobsCosts(pool: Pool, jobIds: number[]): Promise<Record<number, number>> {
-  const costsMap: Record<number, number> = {};
-  if (jobIds.length === 0) return costsMap;
-  for (const id of jobIds) {
-    costsMap[id] = 0;
-  }
-  try {
-    const manualRes = await pool.query<{ job_id: number; amount: string | number }>(
-      `SELECT job_id, amount FROM job_cost_entries WHERE job_id = ANY($1::int[])`,
-      [jobIds]
-    );
-    for (const row of manualRes.rows) {
-      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
-    }
-    const partsRes = await pool.query<{ job_id: number; quantity: string | number; unit_cost_price: string | number }>(
-      `SELECT job_id, quantity, unit_cost_price FROM job_parts WHERE job_id = ANY($1::int[])`,
-      [jobIds]
-    );
-    for (const row of partsRes.rows) {
-      const qty = typeof row.quantity === 'number' ? row.quantity : parseFloat(row.quantity || '0');
-      const unit = typeof row.unit_cost_price === 'number' ? row.unit_cost_price : parseFloat(row.unit_cost_price || '0');
-      costsMap[row.job_id] += qty * unit;
-    }
-    const expensesRes = await pool.query<{ job_id: number; amount: string | number }>(
-      `SELECT job_id, amount FROM job_expenses WHERE job_id = ANY($1::int[]) AND status = 'approved'`,
-      [jobIds]
-    );
-    for (const row of expensesRes.rows) {
-      costsMap[row.job_id] += typeof row.amount === 'number' ? row.amount : parseFloat(row.amount || '0');
-    }
-    const rateResult = await pool.query<{
-      job_id: number;
-      default_hourly_rate: string | number;
-      company_travel_rate: string | number | null;
-      company_first_hour_rate: string | number | null;
-      company_additional_hour_rate: string | number | null;
-      travel_hourly_rate: string | number | null;
-      on_site_hourly_rate: string | number | null;
-      first_hour_labour_rate: string | number | null;
-      additional_hour_labour_rate: string | number | null;
-    }>(
-      `SELECT j.id AS job_id,
-              COALESCE(ps.default_first_hour_rate_per_hr, 0)::numeric AS default_hourly_rate,
-              ps.default_travel_rate_per_hr AS company_travel_rate,
-              ps.default_first_hour_rate_per_hr AS company_first_hour_rate,
-              ps.default_additional_hour_rate_per_hr AS company_additional_hour_rate,
-              o.travel_hourly_rate,
-              o.on_site_hourly_rate,
-              o.first_hour_labour_rate,
-              o.additional_hour_labour_rate
-       FROM jobs j
-       LEFT JOIN pricing_settings ps ON ps.created_by = j.created_by
-       LEFT JOIN job_cost_rate_overrides o ON o.job_id = j.id
-       WHERE j.id = ANY($1::int[])`,
-      [jobIds]
-    );
-    const ratesByJob: Record<number, {
-      travel: number;
-      firstHour: number;
-      additionalHour: number;
-    }> = {};
-    for (const row of rateResult.rows) {
-      const def = typeof row.default_hourly_rate === 'number' ? row.default_hourly_rate : parseFloat(row.default_hourly_rate || '0');
-      const companyTravel = row.company_travel_rate != null ? (typeof row.company_travel_rate === 'number' ? row.company_travel_rate : parseFloat(row.company_travel_rate)) : null;
-      const companyFirst = row.company_first_hour_rate != null ? (typeof row.company_first_hour_rate === 'number' ? row.company_first_hour_rate : parseFloat(row.company_first_hour_rate)) : null;
-      const companyAdditional = row.company_additional_hour_rate != null ? (typeof row.company_additional_hour_rate === 'number' ? row.company_additional_hour_rate : parseFloat(row.company_additional_hour_rate)) : null;
-      const travelOverride = row.travel_hourly_rate != null ? (typeof row.travel_hourly_rate === 'number' ? row.travel_hourly_rate : parseFloat(row.travel_hourly_rate)) : null;
-      const onsiteOverride = row.on_site_hourly_rate != null ? (typeof row.on_site_hourly_rate === 'number' ? row.on_site_hourly_rate : parseFloat(row.on_site_hourly_rate)) : null;
-      const firstOverride = row.first_hour_labour_rate != null ? (typeof row.first_hour_labour_rate === 'number' ? row.first_hour_labour_rate : parseFloat(row.first_hour_labour_rate)) : null;
-      const additionalOverride = row.additional_hour_labour_rate != null ? (typeof row.additional_hour_labour_rate === 'number' ? row.additional_hour_labour_rate : parseFloat(row.additional_hour_labour_rate)) : null;
-      ratesByJob[row.job_id] = {
-        travel: travelOverride ?? companyTravel ?? def,
-        firstHour: firstOverride ?? companyFirst ?? onsiteOverride ?? def,
-        additionalHour: additionalOverride ?? companyAdditional ?? onsiteOverride ?? def,
-      };
-    }
-    const timesheetRes = await pool.query<{
-      job_id: number;
-      segment_type: string;
-      duration_seconds: string | number;
-    }>(
-      `SELECT d.job_id, te.segment_type,
-              EXTRACT(EPOCH FROM (COALESCE(te.clock_out, NOW()) - te.clock_in))::numeric AS duration_seconds
-       FROM timesheet_entries te
-       INNER JOIN diary_events d ON d.id = te.diary_event_id
-       WHERE d.job_id = ANY($1::int[])`,
-      [jobIds]
-    );
-    const secondsByJob: Record<number, { onSite: number; travel: number }> = {};
-    for (const jobId of jobIds) {
-      secondsByJob[jobId] = { onSite: 0, travel: 0 };
-    }
-    for (const row of timesheetRes.rows) {
-      const bucket = secondsByJob[row.job_id];
-      if (!bucket) continue;
-      const seconds = typeof row.duration_seconds === 'number' ? row.duration_seconds : parseFloat(row.duration_seconds || '0');
-      if (row.segment_type === 'travelling') bucket.travel += seconds;
-      else bucket.onSite += seconds;
-    }
-    for (const [jobIdRaw, seconds] of Object.entries(secondsByJob)) {
-      const jobId = Number(jobIdRaw);
-      const rates = ratesByJob[jobId];
-      if (!rates) continue;
-      const totals = calculateTimesheetLabourTotals(seconds.onSite, seconds.travel, {
-        travel_hourly_rate: rates.travel,
-        first_hour_labour_rate: rates.firstHour,
-        additional_hour_labour_rate: rates.additionalHour,
-      });
-      costsMap[jobId] += totals.timesheet_total;
-    }
-  } catch (err) {
-    console.error('Error calculating job costs bulk:', err);
-  }
-  for (const id of jobIds) {
-    costsMap[id] = Math.round(costsMap[id] * 100) / 100;
-  }
-  return costsMap;
 }
 
 app.get('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
@@ -14739,6 +14877,7 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
     invoice_number?: string;
     invoice_work_address_id?: number;
     description?: string;
+    invoice_type?: string;
   };
   const customerId = typeof body.customer_id === 'number' && Number.isFinite(body.customer_id) ? body.customer_id : null;
   if (!customerId) return res.status(400).json({ message: 'Customer is required' });
@@ -14794,6 +14933,7 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
       invoiceWorkAddressId = resolvedBill.invoice_work_address_id;
     }
     const description = typeof body.description === 'string' ? body.description.trim() || null : null;
+    const invoiceType = normalizeInvoiceType(body.invoice_type) ?? (jobId ? 'additional' : null);
     const lineItems = Array.isArray(body.line_items) ? body.line_items : [];
 
     let subtotal = 0;
@@ -14829,9 +14969,9 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
     const publicToken = crypto.randomBytes(32).toString('hex');
 
     const invResult = await pool.query<DbInvoice>(
-      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token, description)
-       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by, description`,
+      `INSERT INTO invoices (invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_by, public_token, description, invoice_type)
+       VALUES ($1, $2, $3, $4::date, $5::date, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       RETURNING id, invoice_number, customer_id, job_id, invoice_date, due_date, subtotal, tax_amount, total_amount, total_paid, currency, notes, billing_address, invoice_work_address_id, customer_reference, state, created_at, updated_at, created_by, description, invoice_type`,
       [
         invoiceNumber,
         customerId,
@@ -14850,6 +14990,7 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
         userId,
         publicToken,
         description,
+        invoiceType,
       ],
     );
     const inv = invResult.rows[0];
@@ -14866,7 +15007,18 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
       );
     }
 
-    await logInvoiceActivity(invId, 'created', { invoice_number: invoiceNumber }, userId);
+    await logInvoiceActivity(invId, 'created', { invoice_number: invoiceNumber, invoice_type: invoiceType }, userId);
+
+    try {
+      await maybeCloseJobForFinalInvoice({
+        jobId,
+        invoiceType,
+        invoiceState: targetState,
+        actingUserId: userId,
+      });
+    } catch (closeErr) {
+      console.error('maybeCloseJobForFinalInvoice after create:', closeErr);
+    }
 
     return res.status(201).json({
       invoice: {
@@ -14883,6 +15035,7 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
         currency: inv.currency,
         notes: inv.notes,
         description: inv.description,
+        invoice_type: inv.invoice_type ?? null,
         state: inv.state,
         created_at: (inv.created_at as Date).toISOString(),
       },
@@ -14983,6 +15136,16 @@ app.patch('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'),
     updates.push(`customer_reference = $${idx++}`);
     values.push(str('customer_reference'));
   }
+  if (body.invoice_type !== undefined) {
+    const parsedType = normalizeInvoiceType(body.invoice_type);
+    if (parsedType) {
+      updates.push(`invoice_type = $${idx++}`);
+      values.push(parsedType);
+    } else if (body.invoice_type === null || body.invoice_type === '') {
+      updates.push(`invoice_type = $${idx++}`);
+      values.push(null);
+    }
+  }
 
   let stateToSet: string | undefined;
 
@@ -15063,6 +15226,16 @@ app.patch('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'),
     );
     const r = result.rows[0];
     await logInvoiceActivity(id, 'updated', {}, userId);
+    try {
+      await maybeCloseJobForFinalInvoice({
+        jobId: r.job_id,
+        invoiceType: r.invoice_type,
+        invoiceState: r.state,
+        actingUserId: userId,
+      });
+    } catch (closeErr) {
+      console.error('maybeCloseJobForFinalInvoice after invoice patch:', closeErr);
+    }
     return res.json({
       invoice: {
         id: r.id,
@@ -15076,6 +15249,7 @@ app.patch('/api/invoices/:id', authenticate, requireTenantCrmAccess('invoices'),
         total_amount: parseFloat(r.total_amount),
         total_paid: parseFloat(r.total_paid),
         currency: r.currency,
+        invoice_type: r.invoice_type ?? null,
         state: r.state,
         updated_at: (r.updated_at as Date).toISOString(),
       },
@@ -15343,6 +15517,16 @@ app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoic
   try {
     await pool.query("UPDATE invoices SET state = 'issued', updated_at = NOW() WHERE id = $1", [id]);
     await logInvoiceActivity(id, 'issued', {}, userId);
+    try {
+      await maybeCloseJobForFinalInvoice({
+        jobId: inv.job_id,
+        invoiceType: inv.invoice_type,
+        invoiceState: 'issued',
+        actingUserId: userId,
+      });
+    } catch (closeErr) {
+      console.error('maybeCloseJobForFinalInvoice after issue:', closeErr);
+    }
     return res.json({ success: true, state: 'issued' });
   } catch (error) {
     console.error('Issue invoice error:', error);
@@ -19781,11 +19965,27 @@ app.post('/api/customers/:customerId/jobs', authenticate, requireTenantCrmAccess
           `INSERT INTO diary_event_officers (diary_event_id, officer_id, is_primary) VALUES ($1, $2, true)`,
           [diaryEvent.id, officerId],
         );
+        await pool.query(
+          `INSERT INTO job_officers (job_id, officer_id, is_primary) VALUES ($1, $2, true)
+           ON CONFLICT (job_id, officer_id) DO UPDATE SET is_primary = EXCLUDED.is_primary`,
+          [job.id, officerId],
+        );
       }
       await pool.query(
-        `UPDATE jobs SET state = 'scheduled', updated_at = NOW() WHERE id = $1 AND state IN ('draft', 'created', 'unscheduled')`,
-        [job.id],
+        `UPDATE jobs
+         SET state = 'scheduled',
+             schedule_start = $2,
+             expected_completion = COALESCE(expected_completion, $2),
+             officer_id = COALESCE(officer_id, $3),
+             updated_at = NOW()
+         WHERE id = $1 AND state IN ('draft', 'created', 'unscheduled', 'scheduled')`,
+        [job.id, expectedCompletionDate, officerId],
       );
+      try {
+        await syncJobOfficersFromDiaryEvents(pool, job.id);
+      } catch (syncErr) {
+        console.error('syncJobOfficersFromDiaryEvents after customer job create:', syncErr);
+      }
     }
 
     return res.status(201).json({
@@ -23124,8 +23324,10 @@ mountJobFilesRoutes(app, { pool, authenticate });
 mountJobNotesRoutes(app, { pool, authenticate });
 mountJobCostsRoutes(app, { pool, authenticate });
 mountStaffWorkRoutes(app, { pool, authenticate });
+mountReportsRoutes(app, { pool, authenticate });
 mountHolidayRoutes(app, { pool, authenticate });
 mountTodoRoutes(app, { pool, authenticate });
+mountDocuCenterRoutes(app, { pool, authenticate });
 mountElectricalCertificateRoutes(app, { pool, authenticate });
 mountStockToolsRoutes(app, { pool, authenticate });
 mountPpmContractRoutes(app, { pool, authenticate });

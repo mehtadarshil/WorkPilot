@@ -187,6 +187,12 @@ class QuotationsListView extends GetView<QuotationsListController> {
                           final cur = (row['currency'] as String?) ?? 'USD';
                           final qd = row['quotation_date'] as String?;
                           final vu = row['valid_until'] as String?;
+                          final workSiteName = (row['work_site_name'] as String?)?.trim();
+                          final workSiteAddr = (row['work_site_address'] as String?)?.trim();
+                          final workSite = [
+                            if (workSiteName != null && workSiteName.isNotEmpty) workSiteName,
+                            if (workSiteAddr != null && workSiteAddr.isNotEmpty) workSiteAddr,
+                          ].join(' — ');
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Material(
@@ -238,6 +244,22 @@ class QuotationsListView extends GetView<QuotationsListController> {
                                       if (cust != null && cust.isNotEmpty) ...[
                                         const SizedBox(height: 4),
                                         Text(cust, style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13)),
+                                      ],
+                                      if (workSite.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Icon(Icons.location_on_outlined, size: 13, color: AppColors.slate400),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                workSite,
+                                                style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 12),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ],
                                       const SizedBox(height: 8),
                                       Row(

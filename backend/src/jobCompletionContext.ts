@@ -56,7 +56,10 @@ export async function buildJobCompletionContext(
             o.full_name AS officer_full_name,
             d.status AS visit_status,
             d.next_job_state,
-            EXISTS (SELECT 1 FROM job_report_answers jra WHERE jra.diary_event_id = d.id) AS job_report_submitted,
+            EXISTS (
+              SELECT 1 FROM diary_event_status_logs l
+              WHERE l.diary_event_id = d.id AND l.status = 'job_report_submitted'
+            ) AS job_report_submitted,
             (${visitIsOpenSql()}) AS visit_is_open
      FROM diary_events d
      LEFT JOIN officers o ON o.id = d.officer_id

@@ -56,6 +56,7 @@ class DiaryEventDetail {
     this.customerSpecificNotes = const [],
     this.abortReason,
     this.officers = const [],
+    this.appointmentOfficers = const [],
     this.isQuotationVisit = false,
     this.jobNumber,
     this.chargeType,
@@ -169,6 +170,9 @@ class DiaryEventDetail {
           ? (m['abort_reason'] as String).trim()
           : null,
       officers: _parseOfficers(json['officers'] ?? m['officers']),
+      appointmentOfficers: _parseOfficers(
+        m['appointment_officers'] ?? json['appointment_officers'] ?? m['officers'] ?? json['officers'],
+      ),
       isQuotationVisit: m['is_quotation_visit'] == true,
       jobNumber: m['job_number'] as String?,
       chargeType: m['charge_type'] as String?,
@@ -230,6 +234,8 @@ class DiaryEventDetail {
   final List<CustomerSpecificNote> customerSpecificNotes;
   final String? abortReason;
   final List<Map<String, dynamic>> officers;
+  /// Engineers on this appointment (includes sibling visits on multi-engineer jobs).
+  final List<Map<String, dynamic>> appointmentOfficers;
   final bool isQuotationVisit;
   final String? jobNumber;
   final String? chargeType;
@@ -340,6 +346,7 @@ class DiaryEventDetail {
       customerSpecificNotes: customerSpecificNotes,
       abortReason: abortReason ?? this.abortReason,
       officers: officers,
+      appointmentOfficers: appointmentOfficers,
       isQuotationVisit: isQuotationVisit,
       jobNumber: jobNumber,
       chargeType: chargeType ?? this.chargeType,
