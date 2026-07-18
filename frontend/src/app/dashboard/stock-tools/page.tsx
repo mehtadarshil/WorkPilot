@@ -948,6 +948,7 @@ export default function StockToolsPage() {
                                   token={activeToken}
                                   alt={item.name}
                                   className="size-full object-cover"
+                                  enableZoom
                                   fallback={
                                     <div className="flex size-full items-center justify-center text-slate-300">
                                       <Package className="size-6" />
@@ -1255,6 +1256,7 @@ export default function StockToolsPage() {
                               token={activeToken}
                               alt={tool.name}
                               className="size-full object-cover"
+                              enableZoom
                               fallback={
                                 <div className="flex size-full items-center justify-center text-slate-300">
                                   <Wrench className="size-6" />

@@ -13,19 +13,13 @@ import {
   Plus,
   Trash2,
   XCircle,
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
   X,
   ImageIcon,
   Wallet,
   Edit2,
 } from 'lucide-react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, endOfDay, startOfDay } from 'date-fns';
 import { getBlob, getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
-import { StaffWorkDiaryCalendar } from './StaffWorkDiaryCalendar';
 import SearchableSelect from '../SearchableSelect';
-import { visitStatusLabel } from '../jobs/[id]/visitStatusLabels';
 
 // --- Type Definitions ---
 type OfficerWorkRow = {
@@ -177,20 +171,6 @@ type Officer = {
   calendar_color?: string | null;
 };
 
-type CalendarEvent = {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  allDay?: boolean;
-  backgroundColor: string;
-  borderColor: string;
-  textColor: string;
-  officerKey?: string;
-  officerLabel?: string;
-  type?: string;
-  raw?: unknown;
-};
 
 // --- Helpers ---
 function monthStart(): string {
@@ -367,64 +347,6 @@ function buildHolidayTimestamps(startInput: string, endInput: string, allDay: bo
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30';
 const selectClass = inputClass;
 
-const ENGINEER_CALENDAR_PALETTE = [
-  { color: 'bg-[#14B8A6] text-white', borderColor: '#0d9488', swatch: 'bg-[#14B8A6]' },
-  { color: 'bg-blue-600 text-white', borderColor: '#2563eb', swatch: 'bg-blue-600' },
-  { color: 'bg-violet-600 text-white', borderColor: '#7c3aed', swatch: 'bg-violet-600' },
-  { color: 'bg-rose-600 text-white', borderColor: '#e11d48', swatch: 'bg-rose-600' },
-  { color: 'bg-amber-600 text-white', borderColor: '#d97706', swatch: 'bg-amber-600' },
-  { color: 'bg-cyan-600 text-white', borderColor: '#0891b2', swatch: 'bg-cyan-600' },
-  { color: 'bg-fuchsia-600 text-white', borderColor: '#c026d3', swatch: 'bg-fuchsia-600' },
-  { color: 'bg-lime-700 text-white', borderColor: '#65a30d', swatch: 'bg-lime-700' },
-  { color: 'bg-orange-600 text-white', borderColor: '#ea580c', swatch: 'bg-orange-600' },
-  { color: 'bg-sky-600 text-white', borderColor: '#0284c7', swatch: 'bg-sky-600' },
-  { color: 'bg-pink-600 text-white', borderColor: '#db2777', swatch: 'bg-pink-600' },
-  { color: 'bg-teal-700 text-white', borderColor: '#0f766e', swatch: 'bg-teal-700' },
-] as const;
-
-function officerColorKey(id: number | string | null | undefined, name?: string | null): string {
-  if (id != null && id !== '' && Number.isFinite(Number(id))) return `id:${id}`;
-  const n = (name ?? '').trim().toLowerCase();
-  return n ? `name:${n}` : 'unassigned';
-}
-
-function officerCalendarColors(key: string) {
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-  return ENGINEER_CALENDAR_PALETTE[hash % ENGINEER_CALENDAR_PALETTE.length]!;
-}
-
-function officerCalendarStyle(key: string, customColor?: string | null) {
-  if (customColor && /^#[0-9A-Fa-f]{6}$/i.test(customColor)) {
-    return { backgroundColor: customColor, borderColor: customColor, textColor: '#ffffff' };
-  }
-  const palette = officerCalendarColors(key);
-  return { backgroundColor: palette.borderColor, borderColor: palette.borderColor, textColor: '#ffffff' };
-}
-
-function diaryEventOfficerKey(e: Record<string, unknown>): string {
-  if (e.officer_id != null && Number.isFinite(Number(e.officer_id))) {
-    return officerColorKey(Number(e.officer_id));
-  }
-  const officers = Array.isArray(e.officers) ? e.officers : [];
-  const primary = officers.find((o) => o && typeof o === 'object' && (o as { is_primary?: boolean }).is_primary) ?? officers[0];
-  if (primary && typeof primary === 'object') {
-    const p = primary as { id?: number; full_name?: string };
-    return officerColorKey(p.id ?? null, p.full_name ?? null);
-  }
-  return officerColorKey(null, typeof e.officer_full_name === 'string' ? e.officer_full_name : null);
-}
-
-function diaryEventOfficerLabel(e: Record<string, unknown>): string {
-  if (typeof e.officer_full_name === 'string' && e.officer_full_name.trim()) return e.officer_full_name.trim();
-  const officers = Array.isArray(e.officers) ? e.officers : [];
-  const names = officers
-    .map((o) => (o && typeof o === 'object' ? (o as { full_name?: string }).full_name : null))
-    .filter((n): n is string => typeof n === 'string' && n.trim().length > 0);
-  if (names.length > 0) return names.join(', ');
-  return 'Unassigned';
-}
-
 // --- Component ---
 export default function StaffWorkPage() {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('wp_token') : null;
@@ -440,7 +362,7 @@ export default function StaffWorkPage() {
   }, []);
 
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'summary' | 'calendar' | 'holidays'>('calendar');
+  const [activeTab, setActiveTab] = useState<'summary' | 'holidays'>('summary');
 
   // --- Work Summary Tab States ---
   const [from, setFrom] = useState(monthStart());
@@ -522,32 +444,6 @@ export default function StaffWorkPage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [holidayForm, setHolidayForm] = useState({ title: '', holiday_date: '', description: '', is_recurring: false });
 
-  // --- Calendar Tab States ---
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [calendarOfficerFilter, setCalendarOfficerFilter] = useState<string>('all');
-  const [officerColorMap, setOfficerColorMap] = useState<Map<string, string>>(new Map());
-  const [calendarDate, setCalendarDate] = useState(new Date());
-  const [calendarView, setCalendarView] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-
-  const dateRange = useMemo(() => {
-    let start: Date;
-    let end: Date;
-
-    if (calendarView === 'monthly') {
-      start = startOfMonth(calendarDate);
-      end = endOfMonth(calendarDate);
-    } else if (calendarView === 'weekly') {
-      start = startOfWeek(calendarDate, { weekStartsOn: 0 });
-      end = endOfWeek(calendarDate, { weekStartsOn: 0 });
-    } else {
-      start = startOfDay(calendarDate);
-      end = endOfDay(calendarDate);
-    }
-    return { start, end };
-  }, [calendarDate, calendarView]);
-
   // --- API Fetch Functions ---
   const fetchSummaryData = useCallback(async () => {
     if (!token) return;
@@ -597,107 +493,6 @@ export default function StaffWorkPage() {
     }
   }, [token]);
 
-  const fetchCalendarEvents = useCallback(async () => {
-    if (!token) return;
-    try {
-      const startIso = dateRange.start.toISOString();
-      const endIso = dateRange.end.toISOString();
-      // Local calendar Y-M-D (not UTC slice) so holidays don't shift a day in IST/BST.
-      const startYmd = format(dateRange.start, 'yyyy-MM-dd');
-      const endYmd = format(dateRange.end, 'yyyy-MM-dd');
-
-      // include_completed: job page shows finished visits; Work calendar must too.
-      // scope=team: admin/office see all engineers' job visits, not only "mine".
-      const diaryQ = new URLSearchParams({
-        range_start: startIso,
-        range_end: endIso,
-        include_completed: '1',
-        scope: 'team',
-      }).toString();
-      const holQ = new URLSearchParams({ from: startYmd, to: endYmd }).toString();
-
-      const [eventsRes, reqRes, holRes, offRes] = await Promise.all([
-        getJson<{ events: any[] }>(`/diary-events?${diaryQ}`, token),
-        getJson<{ requests: HolidayRequest[] }>('/holiday-requests', token),
-        getJson<{ holidays: Holiday[] }>(`/holidays?${holQ}`, token),
-        getJson<{ officers: Officer[] }>('/officers/list', token),
-      ]);
-
-      const colorMap = new Map<string, string>();
-      for (const officer of offRes.officers ?? []) {
-        if (officer.calendar_color) {
-          colorMap.set(officerColorKey(officer.id), officer.calendar_color);
-        }
-      }
-      setOfficerColorMap(colorMap);
-
-      const diaryEvts = (eventsRes.events ?? []).map((e: any) => {
-        const start = new Date(e.start_time);
-        const end = new Date(start.getTime() + (e.duration_minutes || 60) * 60000);
-        const oKey = diaryEventOfficerKey(e);
-        const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
-        const officerLabel = diaryEventOfficerLabel(e);
-        return {
-          id: `diary-${e.diary_id}`,
-          title: `🔧 ${e.is_general ? (e.title || 'General event') : (e.job_number || 'Job')} (${officerLabel})`,
-          start,
-          end,
-          backgroundColor: palette.backgroundColor,
-          borderColor: palette.borderColor,
-          textColor: palette.textColor,
-          officerKey: oKey,
-          officerLabel,
-          type: 'diary',
-          raw: e,
-        };
-      });
-
-      const companyHols = (holRes.holidays ?? []).map((h: any) => ({
-        id: `holiday-${h.id}`,
-        title: `🎉 Holiday: ${h.title}`,
-        start: new Date(h.holiday_date + 'T00:00:00'),
-        end: new Date(h.holiday_date + 'T23:59:59'),
-        allDay: true,
-        backgroundColor: '#4f46e5',
-        borderColor: '#4f46e5',
-        textColor: '#ffffff',
-        type: 'holiday',
-        raw: h,
-      }));
-
-      const leaveEvts = (reqRes.requests ?? [])
-        .filter((r: any) => r.status === 'approved' || r.status === 'pending')
-        .filter((r: any) => {
-          const start = new Date(r.start_date);
-          const end = new Date(r.end_date);
-          return start <= dateRange.end && end >= dateRange.start;
-        })
-        .map((r: any) => {
-          const oKey = officerColorKey(r.officer_id, r.officer_name);
-          const palette = officerCalendarStyle(oKey, colorMap.get(oKey));
-          const allDayLeave = resolveRequestAllDay(r);
-          return {
-            id: `leave-${r.id}`,
-            title: `${r.status === 'approved' ? '✈️' : '⏳'} ${r.officer_name} Leave`,
-            start: new Date(r.start_date),
-            end: new Date(r.end_date),
-            allDay: allDayLeave,
-            backgroundColor: palette.backgroundColor,
-            borderColor: palette.borderColor,
-            textColor: palette.textColor,
-            officerKey: oKey,
-            officerLabel: r.officer_name || 'Leave',
-            type: 'leave',
-            raw: r,
-          };
-        });
-
-      setCalendarEvents([...diaryEvts, ...companyHols, ...leaveEvts]);
-    } catch (e) {
-      console.error('Error loading calendar events:', e);
-    }
-  }, [dateRange, token]);
-
   // Load summary totals for expense badges even when another tab is active.
   useEffect(() => {
     void fetchSummaryData();
@@ -718,10 +513,8 @@ export default function StaffWorkPage() {
   useEffect(() => {
     if (activeTab === 'holidays') {
       void fetchHolidaysData();
-    } else if (activeTab === 'calendar') {
-      void fetchCalendarEvents();
     }
-  }, [activeTab, fetchHolidaysData, fetchCalendarEvents]);
+  }, [activeTab, fetchHolidaysData]);
 
   // Expenses management
   const updateExpenseStatus = async (expenseId: number, status: 'approved' | 'rejected') => {
@@ -1022,7 +815,6 @@ export default function StaffWorkPage() {
         reason: editForm.reason || null,
       }, token);
       setEditingRequest(null);
-      setShowDetailModal(false);
       void fetchHolidaysData();
     } catch (err) {
       setHolidayError(err instanceof Error ? err.message : 'Could not update request');
@@ -1080,8 +872,6 @@ export default function StaffWorkPage() {
     setHolidayError(null);
     try {
       await deleteRequest(`/holiday-requests/${id}`, token);
-      setShowDetailModal(false);
-      setSelectedEvent(null);
       void fetchHolidaysData();
     } catch (err) {
       setHolidayError(err instanceof Error ? err.message : 'Could not delete leave request');
@@ -1115,35 +905,6 @@ export default function StaffWorkPage() {
     [approvedExpenses],
   );
 
-  const filteredCalendarEvents = useMemo(() => {
-    if (calendarOfficerFilter === 'all') return calendarEvents;
-    return calendarEvents.filter((evt) => {
-      if (evt.type === 'holiday') return true;
-      if (evt.type === 'diary' && evt.raw && Array.isArray((evt.raw as any).officers)) {
-        const matchingOfficer = (evt.raw as any).officers.find(
-          (o: any) => o && String(o.id) === calendarOfficerFilter
-        );
-        if (matchingOfficer) return true;
-      }
-      if (evt.officerKey === `id:${calendarOfficerFilter}`) return true;
-      if (evt.raw && String((evt.raw as any).officer_id) === calendarOfficerFilter) return true;
-      return false;
-    });
-  }, [calendarEvents, calendarOfficerFilter]);
-
-  const calendarEngineerLegend = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const evt of calendarEvents) {
-      if (evt.type === 'holiday' || !evt.officerKey || !evt.officerLabel) continue;
-      if (!map.has(evt.officerKey)) map.set(evt.officerKey, evt.officerLabel);
-    }
-    return Array.from(map.entries())
-      .map(([key, label]) => {
-        const style = officerCalendarStyle(key, officerColorMap.get(key));
-        return { key, label, borderColor: style.borderColor };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [calendarEvents, officerColorMap]);
 
   const pendingExpenseCount = summary?.totals?.pending_expenses_count ?? 0;
 
@@ -1158,7 +919,7 @@ export default function StaffWorkPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#14B8A6]">Staff</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">Staff Work</h1>
           <p className="mt-1 text-sm text-slate-600 font-medium">
-            Manage officer working hours, expenses, calendar scheduling, and time-off requests.
+            Manage officer working hours, expenses, and time-off requests. Visit scheduling lives under Calendar.
           </p>
         </div>
 
@@ -1181,15 +942,6 @@ export default function StaffWorkPage() {
                 {pendingExpenseCount}
               </span>
             )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('calendar')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-              activeTab === 'calendar' ? 'bg-[#14B8A6] text-white' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            <CalendarIcon className="size-4" /> Calendar
           </button>
           <button
             type="button"
@@ -2021,83 +1773,6 @@ export default function StaffWorkPage() {
         </>
       )}
 
-      {/* --- TAB CONTENT: CALENDAR --- */}
-      {activeTab === 'calendar' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex flex-col gap-4 border-b border-slate-100 pb-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Work Calendar</h2>
-              <p className="text-sm text-slate-500">
-                Diary-style view of scheduled jobs, staff leave, and company holidays.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Filter:</span>
-              <select
-                value={calendarOfficerFilter}
-                onChange={(e) => setCalendarOfficerFilter(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/20"
-              >
-                <option value="all">All Engineers</option>
-                {officers.map((o) => (
-                  <option key={o.id} value={String(o.id)}>{o.full_name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <StaffWorkDiaryCalendar
-            officers={officers}
-            events={filteredCalendarEvents}
-            date={calendarDate}
-            onDateChange={setCalendarDate}
-            viewMode={calendarView}
-            onViewModeChange={setCalendarView}
-            onSelectEvent={(evt) => {
-              setSelectedEvent(evt);
-              setShowDetailModal(true);
-            }}
-          />
-
-          {calendarEngineerLegend.length > 0 && (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Engineers (Click to filter)</span>
-              {calendarEngineerLegend.map((item) => {
-                const isIdKey = item.key.startsWith('id:');
-                const officerId = isIdKey ? item.key.slice(3) : '';
-                const isSelected = isIdKey ? calendarOfficerFilter === officerId : false;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      if (isIdKey) {
-                        setCalendarOfficerFilter((cur) => (cur === officerId ? 'all' : officerId));
-                      }
-                    }}
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ring-1 transition ${
-                      isSelected
-                        ? 'bg-[#14B8A6] text-white ring-[#14B8A6]'
-                        : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span
-                      className={`size-2.5 rounded-full ${isSelected ? 'bg-white' : ''}`}
-                      style={isSelected ? {} : { backgroundColor: item.borderColor }}
-                    />
-                    {item.label}
-                  </button>
-                );
-              })}
-              <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">
-                <span className="size-2.5 rounded-full bg-indigo-600" />
-                Company holiday
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* --- TAB CONTENT: HOLIDAYS --- */}
       {activeTab === 'holidays' && (
         <>
@@ -2348,6 +2023,7 @@ export default function StaffWorkPage() {
                   className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
                 />
                 <span className="text-sm font-semibold text-slate-700">All day</span>
+                <span className="text-xs text-slate-400">— untick to set specific hours (e.g. 09:00–13:00)</span>
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -2446,6 +2122,7 @@ export default function StaffWorkPage() {
                   className="size-4 rounded border-slate-200 text-[#14B8A6] focus:ring-[#14B8A6]"
                 />
                 <span className="text-sm font-semibold text-slate-700">All Day</span>
+                <span className="text-xs text-slate-400">— untick to set specific hours (e.g. 09:00–13:00)</span>
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -2576,243 +2253,6 @@ export default function StaffWorkPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-      {/* --- MODAL: EVENT DETAIL --- */}
-      {showDetailModal && selectedEvent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowDetailModal(false)}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl relative" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setShowDetailModal(false)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 transition"
-            >
-              <X className="size-5" />
-            </button>
-
-            {selectedEvent.type === 'diary' && (
-              <div>
-                <span className="inline-block rounded-full bg-[#14B8A6]/10 px-2.5 py-0.5 text-xs font-semibold text-[#14B8A6] mb-3">
-                  Job Visit
-                </span>
-                <h3 className="text-xl font-bold text-slate-900">
-                  {selectedEvent.raw.job_number || 'Job'}
-                </h3>
-                {selectedEvent.raw.title && (
-                  <p className="mt-1 text-md font-semibold text-slate-700">{selectedEvent.raw.title}</p>
-                )}
-
-                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600">
-                  {selectedEvent.raw.customer_full_name && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Customer</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.customer_full_name}</p>
-                    </div>
-                  )}
-
-                  {selectedEvent.raw.customer_address && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Site Address</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.customer_address}</p>
-                    </div>
-                  )}
-
-                  {selectedEvent.raw.site_contact_name && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Site Contact</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.site_contact_name}</p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Time Slot</span>
-                      <p className="mt-0.5 text-slate-800">
-                        {format(new Date(selectedEvent.start), 'HH:mm')} – {format(new Date(selectedEvent.end), 'HH:mm')}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {format(new Date(selectedEvent.start), 'EEEE, d MMMM yyyy')}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Duration</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.duration_minutes || 60} mins</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Staff Assigned</span>
-                    <p className="mt-0.5 text-slate-800">
-                      {selectedEvent.raw.officers && selectedEvent.raw.officers.length > 0
-                        ? selectedEvent.raw.officers.map((o: any) => `${o.full_name}${o.is_primary ? ' (Primary)' : ''}`).join(', ')
-                        : selectedEvent.raw.officer_full_name || 'Unassigned'}
-                    </p>
-                  </div>
-
-                  {selectedEvent.raw.notes && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Notes</span>
-                      <p className="mt-0.5 text-slate-800 bg-slate-50 border border-slate-100 rounded-lg p-2 text-xs italic">{selectedEvent.raw.notes}</p>
-                    </div>
-                  )}
-
-                  {selectedEvent.raw.event_status && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Status</span>
-                      <span className={`inline-block mt-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        selectedEvent.raw.event_status === 'completed'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : selectedEvent.raw.event_status === 'aborted' || selectedEvent.raw.event_status === 'cancelled'
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {visitStatusLabel(String(selectedEvent.raw.event_status))}
-                      </span>
-                      {selectedEvent.raw.abort_reason && (
-                        <p className="text-xs text-rose-600 mt-1">Reason: {selectedEvent.raw.abort_reason}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-                  >
-                    Close
-                  </button>
-                  <Link
-                    href={`/dashboard/jobs/${selectedEvent.raw.job_id}`}
-                    className="rounded-lg bg-[#14B8A6] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d9488] transition inline-flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Briefcase className="size-4" /> View Job Details
-                  </Link>
-                </div>
-              </div>
-            )}
-
-            {selectedEvent.type === 'holiday' && (
-              <div>
-                <span className="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-800 mb-3">
-                  Company Holiday
-                </span>
-                <h3 className="text-xl font-bold text-slate-900">
-                  {selectedEvent.raw.title}
-                </h3>
-
-                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600">
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Date</span>
-                    <p className="mt-0.5 text-slate-800">{format(new Date(selectedEvent.start), 'EEEE, d MMMM yyyy')}</p>
-                  </div>
-
-                  {selectedEvent.raw.description && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Description</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.description}</p>
-                    </div>
-                  )}
-
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Recurring</span>
-                    <p className="mt-0.5 text-slate-800">{selectedEvent.raw.is_recurring ? 'Yes, repeats annually' : 'No'}</p>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {selectedEvent.type === 'leave' && (
-              <div>
-                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold mb-3 ${
-                  selectedEvent.raw.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                }`}>
-                  Staff Leave ({selectedEvent.raw.status})
-                </span>
-                <h3 className="text-xl font-bold text-slate-900">
-                  {selectedEvent.raw.officer_name || 'Staff Member'}
-                </h3>
-
-                <div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm text-slate-600">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Dates</span>
-                      <p className="mt-0.5 text-slate-800">
-                        {formatHolidayRange(selectedEvent.raw.start_date, selectedEvent.raw.end_date, resolveRequestAllDay(selectedEvent.raw))}
-                      </p>
-                      {!resolveRequestAllDay(selectedEvent.raw) && (
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {format(new Date(selectedEvent.raw.start_date), 'HH:mm')} – {format(new Date(selectedEvent.raw.end_date), 'HH:mm')}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Duration</span>
-                      <p className="mt-0.5 text-slate-800">
-                        {formatHolidayDuration(
-                          selectedEvent.raw.start_date,
-                          selectedEvent.raw.end_date,
-                          selectedEvent.raw.days_count,
-                          resolveRequestAllDay(selectedEvent.raw),
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Leave Type</span>
-                    <p className="mt-0.5 text-slate-800 capitalize">{selectedEvent.raw.leave_type}</p>
-                  </div>
-
-                  {selectedEvent.raw.reason && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Reason</span>
-                      <p className="mt-0.5 text-slate-800 bg-slate-50 border border-slate-100 rounded-lg p-2 text-xs italic">{selectedEvent.raw.reason}</p>
-                    </div>
-                  )}
-
-                  {selectedEvent.raw.status === 'approved' && selectedEvent.raw.approved_by_name && (
-                    <div>
-                      <span className="font-bold text-slate-900 block text-xs uppercase tracking-wider">Approved By</span>
-                      <p className="mt-0.5 text-slate-800">{selectedEvent.raw.approved_by_name}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-6 flex justify-end gap-2 border-t border-slate-100 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => openEditRequest(selectedEvent.raw as HolidayRequest)}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition inline-flex items-center gap-1.5"
-                  >
-                    <Edit2 className="size-4" /> Edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={updatingHolidayId === selectedEvent.raw.id}
-                    onClick={() => void deleteHolidayRequest(selectedEvent.raw.id as number)}
-                    className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 transition inline-flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <Trash2 className="size-4" /> Delete
-                  </button>
-                  <button
-                    onClick={() => setShowDetailModal(false)}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

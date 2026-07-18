@@ -21,6 +21,7 @@ interface Customer {
   phone: string | null;
   company: string | null;
   address: string | null;
+  address_line_1: string | null;
   city: string | null;
   region: string | null;
   country: string | null;
@@ -80,6 +81,7 @@ function formatLastContact(iso: string | null): string {
 }
 
 function locationStr(c: Customer): string {
+  if (c.address_line_1?.trim()) return c.address_line_1.trim();
   const parts = [c.city, c.region, c.country].filter(Boolean);
   return parts.length ? parts.join(', ') : (c.address || '—');
 }

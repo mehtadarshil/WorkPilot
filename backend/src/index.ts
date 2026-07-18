@@ -2395,6 +2395,30 @@ async function initDb() {
     ON CONFLICT DO NOTHING
   `).catch(err => console.error('Migration error (diary_event_officers backfill):', err));
 
+  // Jobs booked only via diary may lack job_officers — mirror active visit engineers.
+  try {
+    const needsSync = await pool.query<{ id: number }>(
+      `SELECT DISTINCT d.job_id AS id
+       FROM diary_events d
+       WHERE d.job_id IS NOT NULL
+         AND NOT (LOWER(TRIM(COALESCE(d.status, ''))) IN ('cancelled', 'aborted'))
+         AND (
+           d.officer_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM diary_event_officers deo WHERE deo.diary_event_id = d.id)
+         )
+         AND NOT EXISTS (SELECT 1 FROM job_officers jo WHERE jo.job_id = d.job_id)
+       LIMIT 500`,
+    );
+    for (const row of needsSync.rows) {
+      await syncJobOfficersFromDiaryEvents(pool, Number(row.id));
+    }
+    if ((needsSync.rowCount ?? 0) > 0) {
+      console.log(`Backfilled job_officers from diary for ${needsSync.rowCount} job(s)`);
+    }
+  } catch (syncBackfillErr) {
+    console.error('Migration error (job_officers from diary):', syncBackfillErr);
+  }
+
   const plansExist = await pool.query('SELECT 1 FROM service_plans LIMIT 1');
   if ((plansExist.rowCount ?? 0) === 0) {
     await pool.query(`
@@ -2912,7 +2936,23 @@ async function seedJobReportQuestionsForNewJob(jobId: number, jobDescriptionId: 
   }
 }
 
-async function closeOpenTimesheetSegments(client: PoolClient | Pool, officerId: number): Promise<void> {
+function parseClientEventTime(raw: string | null): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function closeOpenTimesheetSegments(client: PoolClient | Pool, officerId: number, at?: Date | null): Promise<void> {
+  if (at) {
+    // Offline replay: close with the real event time. Never close segments that
+    // started after it (a genuinely live segment), and never go negative.
+    await client.query(
+      `UPDATE timesheet_entries SET clock_out = GREATEST(clock_in, LEAST($2::timestamptz, NOW())), updated_at = NOW()
+       WHERE officer_id = $1 AND clock_out IS NULL AND clock_in <= $2::timestamptz`,
+      [officerId, at.toISOString()],
+    );
+    return;
+  }
   await client.query(
     `UPDATE timesheet_entries SET clock_out = NOW(), updated_at = NOW()
      WHERE officer_id = $1 AND clock_out IS NULL`,
@@ -2925,11 +2965,12 @@ async function openTimesheetSegment(
   officerId: number,
   segmentType: 'travelling' | 'on_site',
   diaryEventId: number,
+  at?: Date | null,
 ): Promise<void> {
   await client.query(
     `INSERT INTO timesheet_entries (officer_id, clock_in, clock_out, notes, segment_type, diary_event_id, updated_at)
-     VALUES ($1, NOW(), NULL, NULL, $2, $3, NOW())`,
-    [officerId, segmentType, diaryEventId],
+     VALUES ($1, LEAST(COALESCE($4::timestamptz, NOW()), NOW()), NULL, NULL, $2, $3, NOW())`,
+    [officerId, segmentType, diaryEventId, at ? at.toISOString() : null],
   );
 }
 
@@ -2938,20 +2979,21 @@ async function applyDiaryStatusToTimesheet(
   officerId: number,
   diaryEventId: number,
   normalized: 'travelling_to_site' | 'arrived_at_site' | 'completed' | 'cancelled' | null,
+  at?: Date | null,
 ): Promise<void> {
   if (!normalized) return;
   if (normalized === 'completed' || normalized === 'cancelled') {
-    await closeOpenTimesheetSegments(client, officerId);
+    await closeOpenTimesheetSegments(client, officerId, at);
     return;
   }
   if (normalized === 'travelling_to_site') {
-    await closeOpenTimesheetSegments(client, officerId);
-    await openTimesheetSegment(client, officerId, 'travelling', diaryEventId);
+    await closeOpenTimesheetSegments(client, officerId, at);
+    await openTimesheetSegment(client, officerId, 'travelling', diaryEventId, at);
     return;
   }
   if (normalized === 'arrived_at_site') {
-    await closeOpenTimesheetSegments(client, officerId);
-    await openTimesheetSegment(client, officerId, 'on_site', diaryEventId);
+    await closeOpenTimesheetSegments(client, officerId, at);
+    await openTimesheetSegment(client, officerId, 'on_site', diaryEventId, at);
   }
 }
 
@@ -4571,12 +4613,19 @@ app.get('/api/customers', authenticate, requireTenantCrmAccess('customers'), asy
     const limitIdx = listParams.length - 1;
     const offsetIdx = listParams.length;
     const listResult = await pool.query<any>(
-      `SELECT id, full_name, email, phone, company, address, city, region, country, status, last_contact, notes, customer_type_id,
-              address_line_1, address_line_2, address_line_3, town, county, postcode, landline, credit_days, contact_title, contact_first_name,
-              contact_surname, contact_position, contact_mobile, contact_landline, contact_email, prefers_phone, prefers_sms,
-              prefers_email, prefers_letter, COALESCE(invoice_reminders_enabled, true) AS invoice_reminders_enabled, lead_source, price_book_id,
-              created_at, updated_at, created_by
-       FROM customers ${whereClause} ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      `SELECT c.id, c.full_name, c.email, c.phone, c.company, c.address, c.city, c.region, c.country, c.status,
+              COALESCE(lc.last_contact, c.last_contact) AS last_contact, c.notes, c.customer_type_id,
+              c.address_line_1, c.address_line_2, c.address_line_3, c.town, c.county, c.postcode, c.landline, c.credit_days, c.contact_title, c.contact_first_name,
+              c.contact_surname, c.contact_position, c.contact_mobile, c.contact_landline, c.contact_email, c.prefers_phone, c.prefers_sms,
+              c.prefers_email, c.prefers_letter, COALESCE(c.invoice_reminders_enabled, true) AS invoice_reminders_enabled, c.lead_source, c.price_book_id,
+              c.created_at, c.updated_at, c.created_by
+       FROM customers c
+       LEFT JOIN LATERAL (
+         SELECT MAX(cc.created_at) AS last_contact
+         FROM customer_communications cc
+         WHERE cc.customer_id = c.id
+       ) lc ON true
+       ${whereClause} ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       listParams,
     );
 
@@ -6254,19 +6303,52 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       stateCounts[s] = Number((r.rows[0] as { c: number }).c);
     }
 
-    const jobIds = listResult.rows.map(r => r.id);
-    const officersResult = jobIds.length > 0 ? await pool.query(
-      `SELECT jo.job_id, jo.officer_id AS id, o.full_name, jo.is_primary
-       FROM job_officers jo JOIN officers o ON o.id = jo.officer_id
-       WHERE jo.job_id = ANY($1::int[])
-       ORDER BY jo.is_primary DESC, o.full_name`,
-      [jobIds]
-    ) : { rows: [] };
-    const officersByJob = new Map<number, Array<{id:number;full_name:string;is_primary:boolean}>>();
+    const jobIds = listResult.rows.map((r) => Number(r.id));
+    const officersResult =
+      jobIds.length > 0
+        ? await pool.query<{
+            job_id: number;
+            id: number;
+            full_name: string;
+            is_primary: boolean;
+            source_rank: number;
+          }>(
+            `SELECT job_id, id, full_name, bool_or(is_primary) AS is_primary, MIN(source_rank) AS source_rank
+             FROM (
+               SELECT jo.job_id, jo.officer_id AS id, o.full_name, jo.is_primary, 0 AS source_rank
+               FROM job_officers jo
+               JOIN officers o ON o.id = jo.officer_id
+               WHERE jo.job_id = ANY($1::int[])
+               UNION ALL
+               SELECT d.job_id, deo.officer_id AS id, o.full_name, deo.is_primary, 1 AS source_rank
+               FROM diary_event_officers deo
+               JOIN diary_events d ON d.id = deo.diary_event_id
+               JOIN officers o ON o.id = deo.officer_id
+               WHERE d.job_id = ANY($1::int[])
+                 AND NOT (LOWER(TRIM(COALESCE(d.status, ''))) IN ('cancelled', 'aborted'))
+               UNION ALL
+               SELECT d.job_id, d.officer_id AS id, o.full_name, TRUE AS is_primary, 2 AS source_rank
+               FROM diary_events d
+               JOIN officers o ON o.id = d.officer_id
+               WHERE d.job_id = ANY($1::int[])
+                 AND d.officer_id IS NOT NULL
+                 AND NOT (LOWER(TRIM(COALESCE(d.status, ''))) IN ('cancelled', 'aborted'))
+             ) src
+             GROUP BY job_id, id, full_name
+             ORDER BY job_id, bool_or(is_primary) DESC, MIN(source_rank), full_name`,
+            [jobIds],
+          )
+        : { rows: [] as { job_id: number; id: number; full_name: string; is_primary: boolean; source_rank: number }[] };
+    const officersByJob = new Map<number, Array<{ id: number; full_name: string; is_primary: boolean }>>();
     for (const or of officersResult.rows) {
-      const list = officersByJob.get(or.job_id) || [];
-      list.push({ id: or.id, full_name: or.full_name, is_primary: or.is_primary });
-      officersByJob.set(or.job_id, list);
+      const jobId = Number(or.job_id);
+      const list = officersByJob.get(jobId) || [];
+      list.push({
+        id: Number(or.id),
+        full_name: or.full_name,
+        is_primary: !!or.is_primary,
+      });
+      officersByJob.set(jobId, list);
     }
 
     const pageCostsMap = await calculateJobsCosts(pool, jobIds);
@@ -6282,16 +6364,23 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       revenueMap[row.job_id] = parseFloat(row.invoiced_subtotal || '0');
     }
 
-    const jobs = listResult.rows.map((r) => ({
+    const jobs = listResult.rows.map((r) => {
+      const officers = officersByJob.get(Number(r.id)) || [];
+      const primaryName =
+        officers.find((o) => o.is_primary)?.full_name ||
+        officers[0]?.full_name ||
+        (r as { officer_full_name?: string }).officer_full_name ||
+        null;
+      return {
       id: r.id,
       job_number: r.job_number ?? null,
       title: r.title,
       description: r.description ?? null,
       priority: r.priority,
       responsible_person: r.responsible_person ?? null,
-      officer_id: r.officer_id ?? null,
-      officer_full_name: (r as { officer_full_name?: string }).officer_full_name ?? null,
-      officers: officersByJob.get(r.id) || [],
+      officer_id: r.officer_id ?? officers[0]?.id ?? null,
+      officer_full_name: primaryName,
+      officers,
       start_date: r.start_date ? (r.start_date as Date).toISOString() : null,
       deadline: r.deadline ? (r.deadline as Date).toISOString() : null,
       customer_id: r.customer_id ?? null,
@@ -6311,7 +6400,8 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       created_by: r.created_by,
       is_quotation_visit: !!r.is_quotation_visit,
       profit: Math.round(((revenueMap[r.id] ?? 0) - (pageCostsMap[r.id] ?? 0)) * 100) / 100,
-    }));
+    };
+    });
 
     return res.json({
       jobs,
@@ -9392,7 +9482,7 @@ app.post('/api/diary-events/:id/create-quotation', authenticate, async (req: Aut
       await logDiaryEventStatusTransition(client, diaryEventId, 'completed', latVal, lngVal, tsVal, userId, tokenOfficerId);
 
       if (tokenOfficerId != null) {
-        await applyDiaryStatusToTimesheet(client, tokenOfficerId, diaryEventId, 'completed');
+        await applyDiaryStatusToTimesheet(client, tokenOfficerId, diaryEventId, 'completed', parseClientEventTime(tsVal));
       }
 
       await client.query('COMMIT');
@@ -12702,7 +12792,7 @@ app.patch('/api/diary-events/:id', authenticate, async (req: AuthenticatedReques
 
     const normalized = normalizeDiaryStatusForTimesheet(status);
     if (actingOfficerId != null && Number.isFinite(actingOfficerId)) {
-      await applyDiaryStatusToTimesheet(client, actingOfficerId, targetEventId, normalized);
+      await applyDiaryStatusToTimesheet(client, actingOfficerId, targetEventId, normalized, parseClientEventTime(tsVal));
     }
 
     await client.query('COMMIT');

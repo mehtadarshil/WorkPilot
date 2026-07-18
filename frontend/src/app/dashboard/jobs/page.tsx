@@ -467,9 +467,14 @@ export default function JobsPage() {
                           <td className="px-6 py-4">{stateBadge(j.state)}</td>
                           <td className="px-6 py-4">{priorityBadge(j.priority)}</td>
                           <td className="px-6 py-4 text-sm text-slate-700">
-                            {j.officers && j.officers.length > 0
-                              ? j.officers.map((o) => o.full_name).join(', ')
-                              : j.officer_full_name || j.responsible_person || '—'}
+                            {(() => {
+                              const names =
+                                j.officers && j.officers.length > 0
+                                  ? j.officers.map((o) => o.full_name).filter(Boolean)
+                                  : [];
+                              if (names.length > 0) return names.join(', ');
+                              return j.officer_full_name || j.responsible_person || '—';
+                            })()}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{j.customer_full_name || '—'}</td>
                           <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">

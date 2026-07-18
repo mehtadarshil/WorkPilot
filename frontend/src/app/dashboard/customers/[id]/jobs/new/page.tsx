@@ -634,7 +634,7 @@ export default function AddNewJobPage() {
 
       setSaving(false);
       if (!isEdit && bookIntoDiary && newJobId) {
-        router.push(`/dashboard/diary?jobId=${newJobId}`);
+        router.push(`/dashboard/calendar?jobId=${newJobId}`);
       } else {
         router.push(back);
       }

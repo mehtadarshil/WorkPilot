@@ -307,6 +307,7 @@ export function UniformTab({
                     token={activeToken}
                     alt={item.name}
                     className="size-full object-cover"
+                    enableZoom
                     fallback={<div className="flex size-full items-center justify-center text-slate-300"><Shirt className="size-8" /></div>}
                   />
                 ) : (

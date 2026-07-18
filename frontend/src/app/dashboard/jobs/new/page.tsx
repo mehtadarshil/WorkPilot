@@ -419,7 +419,7 @@ export default function JobsNewJobPage() {
       setSaving(false);
       const jid = res?.job?.id;
       if (bookIntoDiary && jid) {
-        router.push(`/dashboard/diary?jobId=${jid}`);
+        router.push(`/dashboard/calendar?jobId=${jid}`);
       } else if (jid) {
         router.push(`/dashboard/jobs/${jid}`);
       } else {

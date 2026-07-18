@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { enqueueFetch } from '@/lib/fetchQueue';
 import { resolveStockToolImageUrl } from '@/lib/resolveWorkpilotAssetUrl';
+import { showFullscreenImage } from './ImageLightboxProvider';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
@@ -15,6 +16,8 @@ type Props = {
   fallback?: React.ReactNode;
   /** When true (default), only fetch the image once it scrolls into view. */
   lazy?: boolean;
+  /** When true, clicking the thumbnail opens it full-size in the app lightbox. */
+  enableZoom?: boolean;
 };
 
 function buildFetchUrl(
@@ -47,6 +50,7 @@ export function AuthenticatedStockImage({
   className,
   fallback = null,
   lazy = true,
+  enableZoom = false,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(!lazy);
@@ -148,15 +152,35 @@ export function AuthenticatedStockImage({
     );
   }
 
+  const imgEl = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+
+  if (enableZoom) {
+    return (
+      <div ref={rootRef} className="contents">
+        <button
+          type="button"
+          onClick={() => showFullscreenImage(src!)}
+          className="block size-full cursor-zoom-in transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#14B8A6] focus-visible:ring-offset-1"
+          title="View image"
+          aria-label={`View ${alt} full size`}
+        >
+          {imgEl}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className="contents">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className={className}
-        onError={() => setFailed(true)}
-      />
+      {imgEl}
     </div>
   );
 }

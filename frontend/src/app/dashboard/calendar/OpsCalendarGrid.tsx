@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import {
   format,
   startOfMonth,
@@ -23,34 +23,19 @@ import {
   CalendarVisitBlock,
   diaryEventToVisit,
 } from '../diary/calendarVisit';
-
-export type StaffWorkCalendarEvent = {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  allDay?: boolean;
-  backgroundColor: string;
-  borderColor: string;
-  textColor: string;
-  officerKey?: string;
-  officerLabel?: string;
-  type?: string;
-  raw?: unknown;
-};
-
-type Officer = { id: number; full_name: string };
-
-type ViewMode = 'daily' | 'weekly' | 'monthly';
+import type { CalendarOfficer, CalendarViewMode, MergedCalendarEvent } from './calendarTypes';
 
 type Props = {
-  officers: Officer[];
-  events: StaffWorkCalendarEvent[];
+  officers: CalendarOfficer[];
+  events: MergedCalendarEvent[];
   date: Date;
   onDateChange: (d: Date) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (mode: ViewMode) => void;
-  onSelectEvent: (evt: StaffWorkCalendarEvent) => void;
+  viewMode: CalendarViewMode;
+  onViewModeChange: (mode: CalendarViewMode) => void;
+  onSelectEvent: (evt: MergedCalendarEvent) => void;
+  /** Daily timeline slot click — book visit or open general event. */
+  onSlotClick?: (officer: CalendarOfficer, localDateTime: Date) => void;
+  highlightBanner?: ReactNode;
 };
 
 const WEEK_OPTIONS = { weekStartsOn: 0 as const };
@@ -59,7 +44,7 @@ const DAILY_TIMELINE_END_HOUR = 24;
 const DAILY_TIMELINE_HOUR_COUNT = DAILY_TIMELINE_END_HOUR - DAILY_TIMELINE_START_HOUR;
 const DAILY_TIMELINE_MIN_WIDTH_PX = DAILY_TIMELINE_HOUR_COUNT * 48;
 
-function eventOfficerIds(evt: StaffWorkCalendarEvent): number[] {
+function eventOfficerIds(evt: MergedCalendarEvent): number[] {
   if (evt.type === 'holiday') return [];
   if (evt.type === 'leave') {
     const oid = (evt.raw as { officer_id?: number } | undefined)?.officer_id;
@@ -74,12 +59,12 @@ function eventOfficerIds(evt: StaffWorkCalendarEvent): number[] {
   return [];
 }
 
-function eventMatchesOfficer(evt: StaffWorkCalendarEvent, officerId: number): boolean {
+function eventMatchesOfficer(evt: MergedCalendarEvent, officerId: number): boolean {
   if (evt.type === 'holiday') return true;
   return eventOfficerIds(evt).includes(officerId);
 }
 
-function eventOnDay(evt: StaffWorkCalendarEvent, day: Date): boolean {
+function eventOnDay(evt: MergedCalendarEvent, day: Date): boolean {
   // Diary visits: place on the local calendar day of start_time (matches job Diary events + main Diary).
   // Leave/holidays: keep span overlap so multi-day leave still fills each day.
   if (evt.type === 'diary') {
@@ -91,7 +76,7 @@ function eventOnDay(evt: StaffWorkCalendarEvent, day: Date): boolean {
   return evt.start <= dayEnd && evt.end >= dayStart;
 }
 
-function diaryVisitFromEvent(evt: StaffWorkCalendarEvent) {
+function diaryVisitFromEvent(evt: MergedCalendarEvent) {
   const raw = evt.raw as Record<string, unknown>;
   return diaryEventToVisit({
     diary_id: raw.diary_id as number,
@@ -172,11 +157,11 @@ function MiniCalendar({
   );
 }
 
-function StaffEventChip({
+function LayerEventChip({
   evt,
   onSelect,
 }: {
-  evt: StaffWorkCalendarEvent;
+  evt: MergedCalendarEvent;
   onSelect: () => void;
 }) {
   const timeLabel = evt.allDay
@@ -202,7 +187,23 @@ function StaffEventChip({
   );
 }
 
-export function StaffWorkDiaryCalendar({
+function slotDateFromClick(
+  day: Date,
+  e: MouseEvent<HTMLDivElement>,
+): Date {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / Math.max(rect.width, 1);
+  const dayMinutes = DAILY_TIMELINE_HOUR_COUNT * 60;
+  const clickedMinutes = pct * dayMinutes;
+  const rounded = Math.round(clickedMinutes / 15) * 15;
+  const clamped = Math.min(Math.max(rounded, 0), dayMinutes - 15);
+  const totalFromMidnight = DAILY_TIMELINE_START_HOUR * 60 + clamped;
+  const clicked = startOfDay(day);
+  clicked.setHours(Math.floor(totalFromMidnight / 60), totalFromMidnight % 60, 0, 0);
+  return clicked;
+}
+
+export function OpsCalendarGrid({
   officers,
   events,
   date,
@@ -210,6 +211,8 @@ export function StaffWorkDiaryCalendar({
   viewMode,
   onViewModeChange,
   onSelectEvent,
+  onSlotClick,
+  highlightBanner,
 }: Props) {
   const [activeMonthDate, setActiveMonthDate] = useState(date);
   const diaryTimelineScrollRef = useRef<HTMLDivElement>(null);
@@ -286,9 +289,9 @@ export function StaffWorkDiaryCalendar({
   };
 
   const renderEvent = (
-    evt: StaffWorkCalendarEvent,
+    evt: MergedCalendarEvent,
     variant: 'chip' | 'stacked' | 'timeline',
-    extra?: { style?: React.CSSProperties; className?: string },
+    extra?: { style?: CSSProperties; className?: string },
   ) => {
     if (evt.type === 'diary' && evt.raw) {
       return (
@@ -306,7 +309,7 @@ export function StaffWorkDiaryCalendar({
       );
     }
     return (
-      <StaffEventChip
+      <LayerEventChip
         key={evt.id}
         evt={evt}
         onSelect={() => onSelectEvent(evt)}
@@ -315,7 +318,7 @@ export function StaffWorkDiaryCalendar({
   };
 
   return (
-    <div className="flex min-h-[560px] flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+    <div className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
       <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 text-sm">
         <h3 className="text-[15px] font-bold text-slate-800">
           {viewMode === 'daily' && format(date, 'EEEE do MMMM yyyy')}
@@ -355,16 +358,24 @@ export function StaffWorkDiaryCalendar({
                   .sort((a, b) => a.start.getTime() - b.start.getTime());
                 const isToday = isSameDay(d, new Date());
                 const isSelected = isSameDay(d, date);
+                const openDay = () => {
+                  onDateChange(d);
+                  setActiveMonthDate(d);
+                  onViewModeChange('daily');
+                };
                 return (
-                  <button
+                  <div
                     key={format(d, 'yyyy-MM-dd')}
-                    type="button"
-                    onClick={() => {
-                      onDateChange(d);
-                      setActiveMonthDate(d);
-                      onViewModeChange('daily');
+                    role="button"
+                    tabIndex={0}
+                    onClick={openDay}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openDay();
+                      }
                     }}
-                    className={`flex min-h-[118px] flex-col bg-white p-1.5 text-left transition-colors ${
+                    className={`flex min-h-[118px] cursor-pointer flex-col bg-white p-1.5 text-left transition-colors ${
                       !inMonth ? 'text-slate-300' : 'text-slate-800'
                     } ${isToday ? 'ring-1 ring-inset ring-[#14B8A6]' : ''} ${
                       isSelected && inMonth ? 'bg-teal-50/70' : ''
@@ -379,7 +390,7 @@ export function StaffWorkDiaryCalendar({
                         <div className="text-[10px] font-medium text-slate-500">+{dayEvents.length - 3} more</div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -457,7 +468,17 @@ export function StaffWorkDiaryCalendar({
                         );
                         const totalDayMins = DAILY_TIMELINE_HOUR_COUNT * 60;
                         return (
-                          <div key={officer.id} className="relative min-h-[80px] border-b border-slate-200">
+                          <div
+                            key={officer.id}
+                            className={`relative min-h-[80px] border-b border-slate-200 ${
+                              onSlotClick ? 'cursor-pointer hover:bg-slate-50/80' : ''
+                            }`}
+                            onClick={
+                              onSlotClick
+                                ? (e) => onSlotClick(officer, slotDateFromClick(date, e))
+                                : undefined
+                            }
+                          >
                             <div className="pointer-events-none absolute inset-0 z-0 flex">
                               {Array.from({ length: DAILY_TIMELINE_HOUR_COUNT }).map((_, i) => (
                                 <div key={i} className="flex flex-1 border-r border-slate-200 last:border-r-0">
@@ -576,10 +597,12 @@ export function StaffWorkDiaryCalendar({
               }}
             />
           </div>
+          {highlightBanner ? <div className="border-b border-slate-200 p-4">{highlightBanner}</div> : null}
           <div className="p-4 text-[13px] leading-relaxed text-slate-600">
-            <p className="font-semibold text-slate-800">Jobs, leave &amp; holidays</p>
+            <p className="font-semibold text-slate-800">Visits, leave &amp; holidays</p>
             <p className="mt-1 text-slate-500">
-              Same layout as the diary scheduler. Click a visit for details. Company holidays appear on every engineer row.
+              Click a visit for details. In daily view, click an empty slot to book a visit or add a general event.
+              Company holidays appear on every engineer row when enabled.
             </p>
           </div>
         </div>

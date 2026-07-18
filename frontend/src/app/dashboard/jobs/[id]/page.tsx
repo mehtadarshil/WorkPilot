@@ -1525,7 +1525,7 @@ export default function JobDetailsPage() {
               <h2 className="text-[17px] font-black tracking-tight text-slate-800">Diary events</h2>
               <div className="flex items-center gap-3">
                  <button 
-                   onClick={() => router.push(`/dashboard/diary?jobId=${job.id}`)}
+                   onClick={() => router.push(`/dashboard/calendar?jobId=${job.id}`)}
                    className="rounded bg-[#14B8A6] px-4 py-2 text-[13px] font-bold uppercase text-white shadow-sm transition-colors hover:bg-[#13a89a]"
                  >
                    Add new diary event
