@@ -267,11 +267,11 @@ class StockToolsView extends GetView<StockToolsController> {
                                 color: Colors.white,
                                 onSelected: (val) {
                                   if (val == 'edit') {
-                                    _showStockFormSheet(context, item: item);
+                                    _afterPopupMenu(() => _showStockFormSheet(context, item: item));
                                   } else if (val == 'delete') {
                                     _confirmDeleteStock(itemId);
                                   } else if (val == 'convert') {
-                                    _showConvertToToolDialog(context, item);
+                                    _afterPopupMenu(() => _showConvertToToolDialog(context, item));
                                   }
                                 },
                                 itemBuilder: (context) => [
@@ -501,11 +501,11 @@ class StockToolsView extends GetView<StockToolsController> {
                                 color: Colors.white,
                                 onSelected: (val) {
                                   if (val == 'edit') {
-                                    _showToolFormSheet(context, tool: tool);
+                                    _afterPopupMenu(() => _showToolFormSheet(context, tool: tool));
                                   } else if (val == 'delete') {
                                     _confirmDeleteTool(toolId);
                                   } else if (val == 'convert') {
-                                    _showConvertToStockDialog(context, tool);
+                                    _afterPopupMenu(() => _showConvertToStockDialog(context, tool));
                                   }
                                 },
                                 itemBuilder: (context) => [
@@ -732,7 +732,7 @@ class StockToolsView extends GetView<StockToolsController> {
                                 color: Colors.white,
                                 onSelected: (val) {
                                   if (val == 'edit') {
-                                    _showUniformFormSheet(context, item: item);
+                                    _afterPopupMenu(() => _showUniformFormSheet(context, item: item));
                                   } else if (val == 'delete') {
                                     _confirmDeleteUniform(id);
                                   }
@@ -1010,6 +1010,20 @@ class StockToolsView extends GetView<StockToolsController> {
   // FORMS & DIALOGS
   // ──────────────────────────────────────────────────────────────────────────
 
+  /// Popup menus must close before a bottom sheet can open (otherwise nothing shows).
+  void _afterPopupMenu(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => action());
+  }
+
+  double _sheetHeight(BuildContext context) => MediaQuery.sizeOf(context).height * 0.92;
+
+  int? _itemId(Map<String, dynamic> item) {
+    final raw = item['id'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse('$raw');
+  }
+
   void _showSettingsSheet(BuildContext context) {
     final locC = TextEditingController(text: controller.locations.join('\n'));
     final stockC = TextEditingController(text: controller.stockCategories.join('\n'));
@@ -1020,7 +1034,9 @@ class StockToolsView extends GetView<StockToolsController> {
     final requireBinC = TextEditingController(text: controller.requireBinLocations.join('\n'));
 
     Get.bottomSheet(
-      Container(
+      SizedBox(
+        height: _sheetHeight(context),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1086,6 +1102,7 @@ class StockToolsView extends GetView<StockToolsController> {
             ),
           ],
         ),
+        ),
       ),
       isScrollControlled: true,
       ignoreSafeArea: false,
@@ -1142,10 +1159,15 @@ class StockToolsView extends GetView<StockToolsController> {
     }
 
     final formLocs = rawLocations.obs;
-    final selectedCategory = (isEdit ? (item['category'] ?? controller.stockCategories[0]) : controller.stockCategories[0]).obs;
+    final defaultCategory =
+        controller.stockCategories.isNotEmpty ? controller.stockCategories[0] : 'General';
+    final selectedCategory =
+        (isEdit ? (item['category'] ?? defaultCategory) : defaultCategory).obs;
 
     Get.bottomSheet(
-      Container(
+      SizedBox(
+        height: _sheetHeight(context),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1305,7 +1327,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   return;
                 }
                 final ok = await controller.saveStockItem(
-                  id: isEdit ? (item['id'] as int) : null,
+                  id: isEdit ? _itemId(item) : null,
                   name: nameC.text,
                   mpn: mpnC.text,
                   locs: formLocs.toList(),
@@ -1316,6 +1338,7 @@ class StockToolsView extends GetView<StockToolsController> {
               child: Text(isEdit ? 'Save Changes' : 'Create Item', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
+        ),
         ),
       ),
       isScrollControlled: true,
@@ -1348,12 +1371,17 @@ class StockToolsView extends GetView<StockToolsController> {
     }
 
     final formLocs = rawLocations.obs;
-    final selectedCategory = (isEdit ? (tool['category'] ?? controller.toolCategories[0]) : controller.toolCategories[0]).obs;
+    final defaultToolCategory =
+        controller.toolCategories.isNotEmpty ? controller.toolCategories[0] : 'Other';
+    final selectedCategory =
+        (isEdit ? (tool['category'] ?? defaultToolCategory) : defaultToolCategory).obs;
     final selectedStatus = (isEdit ? (tool['status'] ?? 'available') : 'available').obs;
     final selectedOfficer = (isEdit && tool['assigned_officer_id'] != null ? '${tool['assigned_officer_id']}' : '').obs;
 
     Get.bottomSheet(
-      Container(
+      SizedBox(
+        height: _sheetHeight(context),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1539,7 +1567,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   return;
                 }
                 final ok = await controller.saveToolItem(
-                  id: isEdit ? (tool['id'] as int) : null,
+                  id: isEdit ? _itemId(tool) : null,
                   name: nameC.text,
                   category: selectedCategory.value,
                   status: selectedStatus.value,
@@ -1551,6 +1579,7 @@ class StockToolsView extends GetView<StockToolsController> {
               child: Text(isEdit ? 'Save Changes' : 'Create Tool', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
+        ),
         ),
       ),
       isScrollControlled: true,
@@ -1584,13 +1613,20 @@ class StockToolsView extends GetView<StockToolsController> {
     }
 
     final formLocs = rawLocations.obs;
-    final selectedCategory = (isEdit ? (item['category'] ?? controller.uniformCategories[0]) : controller.uniformCategories[0]).obs;
-    final selectedSize = (isEdit ? (item['size'] ?? controller.uniformSizes[0]) : controller.uniformSizes[0]).obs;
+    final defaultUniformCategory =
+        controller.uniformCategories.isNotEmpty ? controller.uniformCategories[0] : 'Other';
+    final defaultUniformSize =
+        controller.uniformSizes.isNotEmpty ? controller.uniformSizes[0] : 'M';
+    final selectedCategory =
+        (isEdit ? (item['category'] ?? defaultUniformCategory) : defaultUniformCategory).obs;
+    final selectedSize = (isEdit ? (item['size'] ?? defaultUniformSize) : defaultUniformSize).obs;
     final selectedStatus = (isEdit ? (item['status'] ?? 'available') : 'available').obs;
     final selectedOfficer = (isEdit && item['assigned_officer_id'] != null ? '${item['assigned_officer_id']}' : '').obs;
 
     Get.bottomSheet(
-      Container(
+      SizedBox(
+        height: _sheetHeight(context),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1769,7 +1805,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   return;
                 }
                 final ok = await controller.saveUniformItem(
-                  id: isEdit ? (item['id'] as int) : null,
+                  id: isEdit ? _itemId(item) : null,
                   name: nameC.text,
                   category: selectedCategory.value,
                   size: selectedSize.value,
@@ -1783,6 +1819,7 @@ class StockToolsView extends GetView<StockToolsController> {
               child: Text(isEdit ? 'Save Changes' : 'Create Uniform', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: AppColors.slate900)),
             ),
           ],
+        ),
         ),
       ),
       isScrollControlled: true,
@@ -1818,7 +1855,7 @@ class StockToolsView extends GetView<StockToolsController> {
             onPressed: () async {
               final q = int.tryParse(qtyC.text) ?? 1;
               if (q < 1) return;
-              final ok = await controller.convertStockToTool(item['id'] as int, q);
+              final ok = await controller.convertStockToTool(_itemId(item) ?? 0, q);
               if (ok) Get.back();
             },
             child: const Text('Convert', style: TextStyle(color: AppColors.slate900)),
@@ -1864,7 +1901,7 @@ class StockToolsView extends GetView<StockToolsController> {
               final q = int.tryParse(qtyC.text) ?? 1;
               if (q < 1) return;
               final ok = await controller.convertToolToStock(
-                toolId: tool['id'] as int,
+                toolId: _itemId(tool) ?? 0,
                 quantity: q,
                 category: selectedCategory.value,
                 quality: selectedQuality.value,

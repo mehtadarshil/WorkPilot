@@ -9,12 +9,16 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/services/storage_service.dart';
+import '../../core/services/user_profile_cache.dart';
 import '../../data/models/job_completion_context.dart';
 import '../../data/models/job_report_models.dart';
+import '../../data/repositories/mobile_profile_repository.dart';
 import '../../data/repositories/mobile_repository.dart';
 import '../diary_event/diary_event_detail_controller.dart';
 import '../home/controllers/home_controller.dart';
 import '../../core/utils/location_helper.dart';
+import '../../core/utils/text_formatters.dart';
 
 class JobReportController extends GetxController {
   JobReportController({MobileRepository? mobile})
@@ -115,25 +119,108 @@ class JobReportController extends GetxController {
   }
 
   bool _isEngineerNamePrompt(String prompt) {
-    final p = prompt.trim().toLowerCase();
+    final p = prompt.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     return p == 'engineer name' ||
         p == 'engineer’s name' ||
         p == "engineer's name" ||
+        p == 'engineers name' ||
         (p.contains('engineer') && p.contains('name'));
+  }
+
+  String? _nameFromStoredUser() {
+    try {
+      if (!Get.isRegistered<StorageService>()) return null;
+      final raw = Get.find<StorageService>().userJson;
+      if (raw == null || raw.isEmpty) return null;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      for (final key in ['full_name', 'fullName', 'name']) {
+        final n = (m[key] as String?)?.trim();
+        if (n != null && n.isNotEmpty) return n;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  String? _nameFromCompletionContext(JobCompletionContext ctx) {
+    for (final s in ctx.siblings) {
+      if (s.isCurrentVisit) {
+        final n = s.officerFullName?.trim();
+        if (n != null && n.isNotEmpty) return n;
+      }
+    }
+    return null;
   }
 
   String? _loggedInEngineerName(JobReportBundle bundle) {
     final fromApi = bundle.actingOfficerFullName?.trim();
     if (fromApi != null && fromApi.isNotEmpty) return fromApi;
+
+    final fromCtx = _nameFromCompletionContext(bundle.jobCompletionContext);
+    if (fromCtx != null && fromCtx.isNotEmpty) return fromCtx;
+
+    try {
+      if (Get.isRegistered<UserProfileCache>()) {
+        final n = Get.find<UserProfileCache>().profile.value?.fullName.trim();
+        if (n != null && n.isNotEmpty) return n;
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
     try {
       if (Get.isRegistered<HomeController>()) {
-        final n = Get.find<HomeController>().home.value?.profile?.fullName?.trim();
+        final home = Get.find<HomeController>();
+        final n = home.home.value?.profile?.fullName?.trim();
         if (n != null && n.isNotEmpty) return n;
+        final diary = home.diaryById(diaryId);
+        final dn = diary?.officerFullName?.trim();
+        if (dn != null && dn.isNotEmpty) return dn;
       }
     } catch (_) {
       /* HomeController may not be registered in some flows */
     }
+
+    return _nameFromStoredUser();
+  }
+
+  Future<String?> _resolveEngineerName(JobReportBundle bundle) async {
+    final cached = _loggedInEngineerName(bundle);
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    try {
+      if (Get.isRegistered<UserProfileCache>()) {
+        final cache = Get.find<UserProfileCache>();
+        await cache.refresh();
+        final n = cache.profile.value?.fullName.trim();
+        if (n != null && n.isNotEmpty) return n;
+      }
+      if (Get.isRegistered<MobileProfileRepository>()) {
+        final p = await Get.find<MobileProfileRepository>().getProfile();
+        final n = p.fullName.trim();
+        if (n.isNotEmpty) return n;
+      }
+    } catch (_) {
+      /* profile fetch is best-effort */
+    }
     return null;
+  }
+
+  void _applyEngineerNameAutofill(String engineerName) {
+    for (final q in questions) {
+      if (!_isTextQuestion(q.questionType) || !_isEngineerNamePrompt(q.prompt)) {
+        continue;
+      }
+      final existing = (textControllers[q.id]?.text ?? textByQuestionId[q.id] ?? '').trim();
+      if (existing.isNotEmpty) continue;
+      textByQuestionId[q.id] = engineerName;
+      final tc = textControllers[q.id];
+      if (tc != null) {
+        tc.text = engineerName;
+      }
+    }
+    textByQuestionId.refresh();
   }
 
   Future<void> _load() async {
@@ -148,7 +235,10 @@ class JobReportController extends GetxController {
       reportBundle.value = bundle;
       questions.assignAll(bundle.questions);
       currentPage.value = 0;
-      final engineerName = readonlyMode.value ? null : _loggedInEngineerName(bundle);
+      var engineerName = readonlyMode.value ? null : _loggedInEngineerName(bundle);
+      if (engineerName == null && !readonlyMode.value) {
+        engineerName = await _resolveEngineerName(bundle);
+      }
       for (final q in bundle.questions) {
         final existing = bundle.answersByQuestionId[q.id];
         if (existing != null && existing.trim().isNotEmpty) {
@@ -158,7 +248,10 @@ class JobReportController extends GetxController {
               q.questionType == 'officer_signature') {
             imageByQuestionId[q.id] = existing;
           } else {
-            textByQuestionId[q.id] = existing;
+            final value = _isEngineerNamePrompt(q.prompt)
+                ? existing
+                : capitalizeSentences(existing);
+            textByQuestionId[q.id] = value;
           }
         } else if (engineerName != null &&
             _isTextQuestion(q.questionType) &&
@@ -181,6 +274,9 @@ class JobReportController extends GetxController {
           });
           textControllers[q.id] = c;
         }
+      }
+      if (engineerName != null && !readonlyMode.value) {
+        _applyEngineerNameAutofill(engineerName);
       }
     } on ApiException catch (e) {
       errorMessage.value = e.message;

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 
+import '../../core/utils/text_formatters.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/job_report_models.dart';
 import '../../data/post_report_job_stages.dart';
@@ -352,6 +353,9 @@ class _QuestionCard extends StatelessWidget {
         return TextField(
           controller: tc,
           maxLines: 5,
+          keyboardType: TextInputType.multiline,
+          textCapitalization: TextCapitalization.sentences,
+          inputFormatters: const [capitalizeSentencesFormatter],
           style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );
@@ -360,6 +364,8 @@ class _QuestionCard extends StatelessWidget {
         if (tc == null) return const SizedBox.shrink();
         return TextField(
           controller: tc,
+          textCapitalization: TextCapitalization.sentences,
+          inputFormatters: const [capitalizeSentencesFormatter],
           style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );
@@ -422,6 +428,8 @@ class _QuestionCard extends StatelessWidget {
         if (tc == null) return const SizedBox.shrink();
         return TextField(
           controller: tc,
+          textCapitalization: TextCapitalization.sentences,
+          inputFormatters: const [capitalizeSentencesFormatter],
           style: GoogleFonts.inter(color: AppColors.slate900, fontSize: 14),
           decoration: _fieldDecoration(),
         );

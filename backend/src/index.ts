@@ -10551,7 +10551,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
               j.customer_id, j.work_address_id, j.job_number, j.title AS job_title,
               c.full_name AS customer_full_name,
               COALESCE(j.is_quotation_visit, false) AS is_quotation_visit,
-              COALESCE(o.full_name, ao.full_name) AS acting_officer_full_name
+              COALESCE(ao.full_name, o.full_name) AS acting_officer_full_name
        FROM diary_events d
        INNER JOIN jobs j ON j.id = d.job_id
        LEFT JOIN customers c ON c.id = j.customer_id
@@ -10599,7 +10599,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       answers[String(a.question_id)] = a.value;
     }
 
-    let questions: {
+    const qRes = await pool.query<{
       id: number;
       job_id: number;
       sort_order: number;
@@ -10607,43 +10607,24 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       prompt: string;
       helper_text: string | null;
       required: boolean;
-    }[];
+    }>(
+      `SELECT id, job_id, sort_order, question_type, prompt, helper_text, required
+       FROM job_report_questions WHERE job_id = $1 ORDER BY sort_order ASC, id ASC`,
+      [row.job_id],
+    );
+    const questions = qRes.rows;
 
-    if (aRes.rows.length > 0) {
-      questions = aRes.rows.map((a, idx) => {
-        const prompt =
-          (a.q_prompt && String(a.q_prompt).trim()) ||
-          (a.prompt_snapshot && String(a.prompt_snapshot).trim()) ||
-          `Question #${a.question_id}`;
-        const questionType =
-          (a.q_type && String(a.q_type).trim()) ||
-          (a.question_type_snapshot && String(a.question_type_snapshot).trim()) ||
-          'text';
-        const helperText =
-          a.q_helper != null && String(a.q_helper).trim()
-            ? String(a.q_helper).trim()
-            : a.helper_text_snapshot != null && String(a.helper_text_snapshot).trim()
-              ? String(a.helper_text_snapshot).trim()
-              : null;
-        const sortOrder = a.q_sort != null ? Number(a.q_sort) : idx;
-        const required = a.q_required != null ? !!a.q_required : false;
-        return {
-          id: a.question_id,
-          job_id: row.job_id,
-          sort_order: sortOrder,
-          question_type: questionType,
-          prompt,
-          helper_text: helperText,
-          required,
-        };
-      });
-    } else {
-      const qRes = await pool.query(
-        `SELECT id, job_id, sort_order, question_type, prompt, helper_text, required
-         FROM job_report_questions WHERE job_id = $1 ORDER BY sort_order ASC, id ASC`,
-        [row.job_id],
+    let actingOfficerFullName =
+      row.acting_officer_full_name != null && String(row.acting_officer_full_name).trim()
+        ? String(row.acting_officer_full_name).trim()
+        : null;
+    if (!actingOfficerFullName && tokenOfficerId != null) {
+      const nameRes = await pool.query<{ full_name: string | null }>(
+        `SELECT full_name FROM officers WHERE id = $1`,
+        [tokenOfficerId],
       );
-      questions = qRes.rows as typeof questions;
+      const n = nameRes.rows[0]?.full_name;
+      if (n != null && String(n).trim()) actingOfficerFullName = String(n).trim();
     }
 
     const jobCompletionContext = await buildJobCompletionContext(pool, row.job_id, diaryEventId);
@@ -10658,7 +10639,7 @@ app.get('/api/diary-events/:id/job-report', authenticate, async (req: Authentica
       job_title: row.job_title,
       customer_full_name: row.customer_full_name,
       is_quotation_visit: row.is_quotation_visit,
-      acting_officer_full_name: row.acting_officer_full_name,
+      acting_officer_full_name: actingOfficerFullName,
       questions,
       answers,
       job_completion_context: jobCompletionContext,
