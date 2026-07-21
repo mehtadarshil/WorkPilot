@@ -4129,6 +4129,7 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
                 NULLIF(TRIM(c.address),''),
                 NULLIF(TRIM(j.location),'')
               ) AS location,
+              NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1),''), NULLIF(TRIM(wa.address_line_2),''), NULLIF(TRIM(wa.address_line_3),''), NULLIF(TRIM(wa.town),''), NULLIF(TRIM(wa.county),''), NULLIF(TRIM(wa.postcode),''))),'') AS work_site_address,
               j.schedule_start, j.duration_minutes, j.scheduling_notes,
               j.customer_id, j.job_notes, j.updated_at, j.dispatched_at,
               j.start_date, j.deadline, j.charge_type,
@@ -4155,6 +4156,7 @@ app.get('/api/mobile/open-jobs', authenticate, requireFieldMobileJobs, async (re
       state: r.state,
       priority: r.priority ?? null,
       location: r.location ?? null,
+      work_site_address: (r as { work_site_address?: string | null }).work_site_address?.trim() || null,
       customer_full_name: r.customer_full_name ?? null,
       customer_id: r.customer_id ?? null,
       schedule_start: r.schedule_start ? (r.schedule_start as Date).toISOString() : null,
@@ -6220,7 +6222,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       listParams.push(userId);
     }
     if (search) {
-      conditions.push(`(j.job_number ILIKE $${p} OR j.title ILIKE $${p} OR j.description ILIKE $${p} OR j.responsible_person ILIKE $${p} OR o.full_name ILIKE $${p})`);
+      conditions.push(`(j.job_number ILIKE $${p} OR j.title ILIKE $${p} OR j.description ILIKE $${p} OR j.responsible_person ILIKE $${p} OR o.full_name ILIKE $${p} OR wa.address_line_1 ILIKE $${p} OR wa.address_line_2 ILIKE $${p} OR wa.address_line_3 ILIKE $${p} OR wa.town ILIKE $${p} OR wa.postcode ILIKE $${p} OR wa.name ILIKE $${p})`);
       countParams.push(`%${search}%`);
       listParams.push(`%${search}%`);
       p++;
@@ -6280,7 +6282,8 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
           NULLIF(TRIM(c.address), ''),
           NULLIF(TRIM(j.location), ''),
           ''
-        ) AS installation_label
+        ) AS installation_label,
+        NULLIF(TRIM(CONCAT_WS(', ', NULLIF(TRIM(wa.address_line_1), ''), NULLIF(TRIM(wa.address_line_2), ''), NULLIF(TRIM(wa.address_line_3), ''), NULLIF(TRIM(wa.town), ''), NULLIF(TRIM(wa.county), ''), NULLIF(TRIM(wa.postcode), ''))), '') AS work_site_address
        FROM jobs j
        ${joinClause}
        ${whereClause}
@@ -6387,6 +6390,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       work_address_id: r.work_address_id ?? null,
       customer_full_name: r.customer_full_name ?? null,
       installation_label: (r as { installation_label?: string | null }).installation_label?.trim() || null,
+      work_site_address: (r as { work_site_address?: string | null }).work_site_address?.trim() || null,
       location: r.location ?? null,
       required_certifications: r.required_certifications ?? null,
       attachments: Array.isArray(r.attachments) ? r.attachments : [],

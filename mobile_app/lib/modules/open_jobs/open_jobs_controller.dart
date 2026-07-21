@@ -59,6 +59,7 @@ class OpenJobsController extends GetxController {
           j.title,
           j.customerFullName,
           j.location,
+          j.workSiteAddress,
           j.state,
           j.priority,
         ].whereType<String>().join(' ').toLowerCase();

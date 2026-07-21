@@ -86,6 +86,17 @@ Map<String, dynamic> placementRowToApi(Map<String, dynamic> row) {
   return placement;
 }
 
+List<Map<String, dynamic>> placementRowsToApi(
+  List<Map<String, dynamic>> rows,
+  String quantityMode,
+) {
+  final parsed = rows.map(placementRowToApi).toList();
+  if (quantityMode == 'level') {
+    return parsed.map((p) => {...p, 'quantity': 0}).toList();
+  }
+  return parsed;
+}
+
 String? validatePlacementsRequireBin(List<Map<String, dynamic>> placements, List<String> requireSites) {
   final require = requireSites.map((s) => s.toLowerCase()).toSet();
   for (final p in placements) {

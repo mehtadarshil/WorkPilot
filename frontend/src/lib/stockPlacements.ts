@@ -129,6 +129,18 @@ export function placementFormToApi(row: StockPlacementFormRow): StockPlacement {
   return placement;
 }
 
+/** Level mode tracks Low/Med/High — placements store location only (qty 0). */
+export function placementRowsToApi(
+  rows: StockPlacementFormRow[],
+  mode: QuantityMode,
+): StockPlacement[] {
+  const parsed = rows.map(placementFormToApi);
+  if (mode === 'level') {
+    return parsed.map((p) => ({ ...p, quantity: 0 }));
+  }
+  return parsed;
+}
+
 export function pickDefaultPlacementIndex(placements: StockPlacement[]): number {
   if (placements.length === 0) return 0;
   let bestIdx = 0;

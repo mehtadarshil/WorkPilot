@@ -36,6 +36,7 @@ import {
   parsePlacementsFromItem,
   placementFormFromApi,
   placementFormToApi,
+  placementRowsToApi,
   placementSearchBlob,
   validatePlacementsRequireBin,
   QUANTITY_LEVELS,
@@ -587,14 +588,15 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
-    const parsedLocations = stockForm.locations.map(placementFormToApi);
+    const isLevelMode = stockForm.quantity_mode === 'level';
+    const parsedLocations = placementRowsToApi(stockForm.locations, stockForm.quantity_mode);
 
-    if (parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
+    if (!isLevelMode && parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
       setErrorMsg('All placement quantities must be 0 or greater');
       return;
     }
 
-    const binError = validatePlacementsRequireBin(parsedLocations, requireBinLocations);
+    const binError = isLevelMode ? null : validatePlacementsRequireBin(parsedLocations, requireBinLocations);
     if (binError) {
       setErrorMsg(binError);
       return;
@@ -604,7 +606,6 @@ export default function StockToolsPage() {
       ? null
       : Math.max(0, parseInt(stockForm.min_quantity, 10) || 0);
 
-    const isLevelMode = stockForm.quantity_mode === 'level';
     if (isLevelMode && !stockForm.quantity_level) {
       setErrorMsg('Please select a quantity level (Low, Medium, or High)');
       return;
@@ -615,7 +616,7 @@ export default function StockToolsPage() {
       mpn: stockForm.mpn.trim() || null,
       category: stockForm.category,
       quality: stockForm.quality,
-      locations: isLevelMode ? [] : parsedLocations,
+      locations: parsedLocations,
       min_quantity: parsedMinQty,
       quantity_mode: stockForm.quantity_mode,
       quantity_level: isLevelMode ? stockForm.quantity_level : null,
@@ -723,18 +724,19 @@ export default function StockToolsPage() {
     if (!token) return;
     setErrorMsg(null);
 
-    const parsedLocations = toolForm.locations.map(placementFormToApi);
-    if (parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
+    const isLevelMode = toolForm.quantity_mode === 'level';
+    const parsedLocations = placementRowsToApi(toolForm.locations, toolForm.quantity_mode);
+    if (!isLevelMode && parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
       setErrorMsg('Quantity must be a positive integer');
       return;
     }
-    const binError = validatePlacementsRequireBin(parsedLocations, requireBinLocations);
+    const binError = isLevelMode ? null : validatePlacementsRequireBin(parsedLocations, requireBinLocations);
     if (binError) {
       setErrorMsg(binError);
       return;
     }
 
-    const qty = parsedLocations.reduce((sum, loc) => sum + loc.quantity, 0);
+    const qty = isLevelMode ? 0 : parsedLocations.reduce((sum, loc) => sum + loc.quantity, 0);
     if (qty < 0) {
       setErrorMsg('Total quantity must be at least 0');
       return;
@@ -744,7 +746,6 @@ export default function StockToolsPage() {
       ? null
       : Math.max(0, parseInt(toolForm.min_quantity, 10) || 0);
 
-    const isLevelMode = toolForm.quantity_mode === 'level';
     if (isLevelMode && !toolForm.quantity_level) {
       setErrorMsg('Please select a quantity level (Low, Medium, or High)');
       return;
@@ -754,7 +755,7 @@ export default function StockToolsPage() {
       name: toolForm.name.trim(),
       category: toolForm.category,
       status: toolForm.status,
-      locations: isLevelMode ? [] : parsedLocations,
+      locations: parsedLocations,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
       min_quantity: parsedMinQty,
       quantity_mode: toolForm.quantity_mode,
@@ -1107,7 +1108,7 @@ export default function StockToolsPage() {
                             </div>
                           </div>
 
-                          {item.quantity_mode !== 'level' && placements.length > 0 && (
+                          {placements.length > 0 && (
                             <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
                               <div className="flex items-center gap-1.5 mb-2">
                                 <MapPin className="size-3.5 text-[#14B8A6]" />
@@ -1422,7 +1423,7 @@ export default function StockToolsPage() {
                               </div>
                             </div>
 
-                            {tool.quantity_mode !== 'level' && placements.length > 0 && (
+                            {placements.length > 0 && (
                               <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
                                 <div className="flex items-center gap-1.5 mb-2">
                                   <MapPin className="size-3.5 text-[#14B8A6]" />
@@ -1804,8 +1805,7 @@ export default function StockToolsPage() {
               </div>
               )}
 
-              {/* Storage placements */}
-              {stockForm.quantity_mode === 'count' && (
+              {/* Storage placements — available in both count and level modes */}
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
@@ -1823,8 +1823,10 @@ export default function StockToolsPage() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-3">
-                  Record site, aisle, shelf, and box/cell so warehouse staff can find parts quickly.
-                  {requireBinLocations.length > 0 && (
+                  {stockForm.quantity_mode === 'level'
+                    ? 'Record where this item is stored. Stock level (Low / Med / High) is tracked separately above.'
+                    : 'Record site, aisle, shelf, and box/cell so warehouse staff can find parts quickly.'}
+                  {requireBinLocations.length > 0 && stockForm.quantity_mode === 'count' && (
                     <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
                   )}
                 </p>
@@ -1933,6 +1935,7 @@ export default function StockToolsPage() {
                             ))}
                           </select>
                         </div>
+                        {stockForm.quantity_mode === 'count' && (
                         <div>
                           <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
                           <input
@@ -1948,6 +1951,7 @@ export default function StockToolsPage() {
                             className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
                           />
                         </div>
+                        )}
                         <div className="flex justify-end">
                           {stockForm.locations.length > 1 && (
                             <button
@@ -1987,7 +1991,6 @@ export default function StockToolsPage() {
                   </datalist>
                 )}
               </div>
-              )}
 
               {/* Photo Upload */}
               <div className="border-t border-slate-100 pt-4">
@@ -2162,8 +2165,7 @@ export default function StockToolsPage() {
               </div>
               )}
 
-              {/* Storage placements */}
-              {toolForm.quantity_mode === 'count' && (
+              {/* Storage placements — available in both count and level modes */}
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
@@ -2181,8 +2183,10 @@ export default function StockToolsPage() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-3">
-                  Record site, aisle, shelf, and box/cell so staff can find tools quickly.
-                  {requireBinLocations.length > 0 && (
+                  {toolForm.quantity_mode === 'level'
+                    ? 'Record where this tool is stored. Stock level (Low / Med / High) is tracked separately above.'
+                    : 'Record site, aisle, shelf, and box/cell so staff can find tools quickly.'}
+                  {requireBinLocations.length > 0 && toolForm.quantity_mode === 'count' && (
                     <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
                   )}
                 </p>
@@ -2291,6 +2295,7 @@ export default function StockToolsPage() {
                             ))}
                           </select>
                         </div>
+                        {toolForm.quantity_mode === 'count' && (
                         <div>
                           <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
                           <input
@@ -2306,6 +2311,7 @@ export default function StockToolsPage() {
                             className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
                           />
                         </div>
+                        )}
                         <div className="flex justify-end">
                           {toolForm.locations.length > 1 && (
                             <button
@@ -2338,7 +2344,6 @@ export default function StockToolsPage() {
                   ))}
                 </div>
               </div>
-              )}
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian (Officer)</label>

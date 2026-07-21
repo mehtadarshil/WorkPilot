@@ -1280,7 +1280,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     hint: 'Default: ${controller.defaultLowStockThreshold.value}',
                   ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
-                  Obx(() => qtyMode.value == 'count' ? Column(
+                  Obx(() => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                   Row(
@@ -1401,7 +1401,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     },
                   )),
                     ],
-                  ) : const SizedBox.shrink()),
+                  )),
                   const SizedBox(height: 16),
                   _buildPhotoSelectorSection(),
                 ],
@@ -1522,7 +1522,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     hint: 'Default: ${controller.defaultLowStockThreshold.value}',
                   ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
-                  Obx(() => qtyMode.value == 'count' ? Column(
+                  Obx(() => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                   Row(
@@ -1643,7 +1643,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     },
                   )),
                     ],
-                  ) : const SizedBox.shrink()),
+                  )),
                   const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
@@ -1786,7 +1786,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   Obx(() => _buildDropdownField('Status', selectedStatus.value, const ['available', 'issued', 'retired', 'lost', 'damaged'], (val) => selectedStatus.value = val!)),
                   _buildQuantityModeToggle(qtyMode, qtyLevel),
                   const SizedBox(height: 12),
-                  Obx(() => qtyMode.value == 'count' ? Column(
+                  Obx(() => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                   Row(
@@ -1898,7 +1898,7 @@ class StockToolsView extends GetView<StockToolsController> {
                     },
                   )),
                     ],
-                  ) : const SizedBox.shrink()),
+                  )),
                   const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[

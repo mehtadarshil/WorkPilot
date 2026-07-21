@@ -419,6 +419,31 @@ class _OpenJobListTile extends StatelessWidget {
                     ],
                   ),
                 ],
+                if (job.workSiteAddress != null &&
+                    job.workSiteAddress!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 16,
+                        color: AppColors.slate500,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          job.workSiteAddress!,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: AppColors.slate400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,

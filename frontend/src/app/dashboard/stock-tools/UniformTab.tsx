@@ -26,6 +26,7 @@ import {
   parsePlacementsFromItem,
   placementFormFromApi,
   placementFormToApi,
+  placementRowsToApi,
   validatePlacementsRequireBin,
   QUANTITY_LEVELS,
   quantityLevelLabel,
@@ -238,7 +239,7 @@ export function UniformTab({
       return;
     }
 
-    const parsedLocations = form.locations.map(placementFormToApi);
+    const parsedLocations = placementRowsToApi(form.locations, form.quantity_mode);
 
     if (!isLevelMode && parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
       setErrorMsg('All placement quantities must be 0 or greater');
@@ -258,8 +259,8 @@ export function UniformTab({
       category: form.category,
       size: form.size,
       status: form.status,
-      location: isLevelMode ? (form.location || 'Store') : (parsedLocations[0]?.location || 'Store'),
-      locations: isLevelMode ? [] : parsedLocations,
+      location: parsedLocations[0]?.location || form.location || 'Store',
+      locations: parsedLocations,
       quantity: totalQty,
       quantity_mode: form.quantity_mode,
       quantity_level: isLevelMode ? form.quantity_level : null,
@@ -479,8 +480,7 @@ export function UniformTab({
                 )}
               </div>
 
-              {/* Storage placements */}
-              {form.quantity_mode === 'count' && (
+              {/* Storage placements — available in both count and level modes */}
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
@@ -498,8 +498,10 @@ export function UniformTab({
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-3">
-                  Record site, aisle, shelf, and box/cell so staff can find uniforms quickly.
-                  {requireBinLocations.length > 0 && (
+                  {form.quantity_mode === 'level'
+                    ? 'Record where this uniform is stored. Stock level (Low / Med / High) is tracked separately above.'
+                    : 'Record site, aisle, shelf, and box/cell so staff can find uniforms quickly.'}
+                  {requireBinLocations.length > 0 && form.quantity_mode === 'count' && (
                     <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
                   )}
                 </p>
@@ -608,6 +610,7 @@ export function UniformTab({
                             ))}
                           </select>
                         </div>
+                        {form.quantity_mode === 'count' && (
                         <div>
                           <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
                           <input
@@ -623,6 +626,7 @@ export function UniformTab({
                             className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
                           />
                         </div>
+                        )}
                         <div className="flex justify-end">
                           {form.locations.length > 1 && (
                             <button
@@ -662,7 +666,6 @@ export function UniformTab({
                   </datalist>
                 )}
               </div>
-              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

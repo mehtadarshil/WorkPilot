@@ -8,6 +8,7 @@ class OpenJobSummary {
     required this.state,
     this.priority,
     this.location,
+    this.workSiteAddress,
     this.customerFullName,
     this.customerId,
     this.scheduleStart,
@@ -33,6 +34,7 @@ class OpenJobSummary {
       state: json['state'] as String? ?? '',
       priority: json['priority'] as String?,
       location: json['location'] as String?,
+      workSiteAddress: json['work_site_address'] as String?,
       customerFullName: json['customer_full_name'] as String?,
       customerId: (json['customer_id'] as num?)?.toInt(),
       scheduleStart: json['schedule_start'] as String?,
@@ -57,6 +59,7 @@ class OpenJobSummary {
   final String state;
   final String? priority;
   final String? location;
+  final String? workSiteAddress;
   final String? customerFullName;
   final int? customerId;
   final String? scheduleStart;

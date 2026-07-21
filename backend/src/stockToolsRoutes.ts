@@ -869,6 +869,25 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         newQty = 0;
         updates.push(`quantity = $${idx++}`);
         values.push(0);
+        if (Array.isArray(locations)) {
+          const settings = await loadStockToolsSettingsRow(pool, userId);
+          const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : (existing.quality || 'New');
+          const normalized = normalizeStockPlacements(
+            locations,
+            existing.location || 'Store',
+            0,
+            fallbackQuality,
+            settings.require_bin_for_locations,
+          ).map((p) => ({ ...p, quantity: 0 }));
+          const primaryLocation = normalized[0]?.location || existing.location || 'Store';
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(normalized));
+          updates.push(`location = $${idx++}`);
+          values.push(primaryLocation);
+        } else if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+        }
       } else if (Array.isArray(locations)) {
         const settings = await loadStockToolsSettingsRow(pool, userId);
         const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : (existing.quality || 'New');
@@ -1453,7 +1472,21 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       if (resolvedQtyMode === 'level') {
         updates.push(`quantity = $${idx++}`);
         values.push(0);
-        if (location !== undefined) {
+        if (Array.isArray(locations)) {
+          const settings = await loadStockToolsSettingsRow(pool, userId);
+          const normalized = normalizeStockPlacements(
+            locations,
+            existing.location || 'Store',
+            0,
+            'Used - Good',
+            settings.require_bin_for_locations,
+          ).map((p) => ({ ...p, quantity: 0 }));
+          const primaryLocation = normalized[0]?.location || existing.location || 'Store';
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(normalized));
+          updates.push(`location = $${idx++}`);
+          values.push(primaryLocation);
+        } else if (location !== undefined) {
           updates.push(`location = $${idx++}`);
           values.push(location);
         }
@@ -2020,7 +2053,22 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       if (resolvedQtyMode === 'level') {
         updates.push(`quantity = $${idx++}`);
         values.push(0);
-        if (location !== undefined) {
+        if (Array.isArray(locations)) {
+          const settings = await loadStockToolsSettingsRow(pool, userId);
+          const fallbackQuality = 'New';
+          const normalized = normalizeStockPlacements(
+            locations,
+            existing.location || 'Store',
+            0,
+            fallbackQuality,
+            settings.require_bin_for_locations,
+          ).map((p) => ({ ...p, quantity: 0 }));
+          const primaryLocation = normalized[0]?.location || existing.location || 'Store';
+          updates.push(`locations = $${idx++}`);
+          values.push(JSON.stringify(normalized));
+          updates.push(`location = $${idx++}`);
+          values.push(primaryLocation);
+        } else if (location !== undefined) {
           updates.push(`location = $${idx++}`);
           values.push(location);
         }
