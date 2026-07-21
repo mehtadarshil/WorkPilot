@@ -394,31 +394,6 @@ class _OpenJobListTile extends StatelessWidget {
                     ],
                   ),
                 ],
-                if (job.location != null &&
-                    job.location!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.place_outlined,
-                        size: 16,
-                        color: AppColors.slate500,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          job.location!,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            height: 1.35,
-                            color: AppColors.slate400,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
                 if (job.workSiteAddress != null &&
                     job.workSiteAddress!.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -426,7 +401,7 @@ class _OpenJobListTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.location_on_outlined,
+                        Icons.place_outlined,
                         size: 16,
                         color: AppColors.slate500,
                       ),

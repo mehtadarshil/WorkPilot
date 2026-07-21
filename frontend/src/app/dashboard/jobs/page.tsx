@@ -411,7 +411,6 @@ export default function JobsPage() {
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Priority</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
-                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Installation</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Work/Site Address</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Profit</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Deadline</th>
@@ -421,7 +420,7 @@ export default function JobsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {jobs.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
                         No jobs yet. Create one to get started.
                       </td>
                     </tr>
@@ -479,11 +478,6 @@ export default function JobsPage() {
                             })()}
                           </td>
                           <td className="px-6 py-4 text-sm text-slate-700">{j.customer_full_name || '—'}</td>
-                          <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">
-                            <span className="line-clamp-2" title={j.installation_label || undefined}>
-                              {j.installation_label?.trim() || '—'}
-                            </span>
-                          </td>
                           <td className="max-w-[220px] px-6 py-4 text-sm text-slate-600">
                             <span className="line-clamp-2" title={j.work_site_address || undefined}>
                               {j.work_site_address?.trim() || '—'}
