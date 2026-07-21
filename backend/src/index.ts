@@ -6688,11 +6688,6 @@ app.post('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: 
     } catch (e) {
       console.error('Seed job report questions for new job:', e);
     }
-    try {
-      await seedJobPricingDefaults(pool, r.id, customerId ?? null, null, createdBy);
-    } catch (e) {
-      console.error('Seed job pricing defaults for new job:', e);
-    }
     return res.status(201).json({
       job: {
         id: r.id,

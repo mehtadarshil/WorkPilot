@@ -327,73 +327,44 @@ export async function getPrimaryLabourRate(pool: Pool, priceBookId: number | nul
   };
 }
 
-/** Copy default sell pricing onto a new job when none was supplied explicitly. */
+/** Copy job-description template pricing onto a new job when none was supplied explicitly. */
 export async function seedJobPricingDefaults(
   pool: Pool,
   jobId: number,
-  customerId: number | null,
+  _customerId: number | null,
   jobDescriptionId: number | null,
-  tenantUserId: number,
+  _tenantUserId: number,
 ): Promise<void> {
   const existing = await pool.query('SELECT id FROM job_pricing_items WHERE job_id = $1 LIMIT 1', [jobId]);
   if ((existing.rowCount ?? 0) > 0) return;
 
-  if (jobDescriptionId) {
-    const descItems = await pool.query<{
-      item_name: string;
-      time_included: number;
-      unit_price: string | number;
-      vat_rate: string | number;
-      quantity: number;
-      sort_order: number;
-    }>(
-      `SELECT item_name, time_included, unit_price, vat_rate, quantity, sort_order
-       FROM job_description_pricing_items
-       WHERE job_description_id = $1
-       ORDER BY sort_order ASC, id ASC`,
-      [jobDescriptionId],
-    );
-    if ((descItems.rowCount ?? 0) > 0) {
-      for (let i = 0; i < descItems.rows.length; i++) {
-        const pi = descItems.rows[i];
-        const unitPrice = n(pi.unit_price);
-        const qty = pi.quantity || 1;
-        const total = unitPrice * qty;
-        await pool.query(
-          `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [jobId, pi.item_name, pi.time_included || 0, unitPrice, n(pi.vat_rate) || 20, qty, total, pi.sort_order ?? i],
-        );
-      }
-      return;
-    }
-  }
+  if (!jobDescriptionId) return;
 
-  const resolved = await resolvePriceBookForCustomer(pool, customerId, tenantUserId);
-  let bookIds = customerId ? await getCustomerPriceBookIds(pool, customerId) : [];
-  if (bookIds.length === 0 && resolved.price_book_id) {
-    bookIds = [resolved.price_book_id];
-  }
-  if (bookIds.length === 0) return;
+  const descItems = await pool.query<{
+    item_name: string;
+    time_included: number;
+    unit_price: string | number;
+    vat_rate: string | number;
+    quantity: number;
+    sort_order: number;
+  }>(
+    `SELECT item_name, time_included, unit_price, vat_rate, quantity, sort_order
+     FROM job_description_pricing_items
+     WHERE job_description_id = $1
+     ORDER BY sort_order ASC, id ASC`,
+    [jobDescriptionId],
+  );
+  if ((descItems.rowCount ?? 0) === 0) return;
 
-  let sortOrder = 0;
-  for (const pbId of bookIds) {
-    const pbItems = await pool.query<{
-      item_name: string;
-      unit_price: string | number;
-      price: string | number;
-    }>(
-      `SELECT item_name, unit_price, price FROM price_book_items WHERE price_book_id = $1 ORDER BY id ASC`,
-      [pbId],
+  for (let i = 0; i < descItems.rows.length; i++) {
+    const pi = descItems.rows[i];
+    const unitPrice = n(pi.unit_price);
+    const qty = pi.quantity || 1;
+    const total = unitPrice * qty;
+    await pool.query(
+      `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [jobId, pi.item_name, pi.time_included || 0, unitPrice, n(pi.vat_rate) || 20, qty, total, pi.sort_order ?? i],
     );
-    for (const item of pbItems.rows) {
-      const sellPrice = n(item.price) || n(item.unit_price);
-      await pool.query(
-        `INSERT INTO job_pricing_items (job_id, item_name, time_included, unit_price, vat_rate, quantity, total, sort_order)
-         VALUES ($1, $2, 0, $3, 20, 1, $3, $4)`,
-        [jobId, item.item_name, sellPrice, sortOrder],
-      );
-      sortOrder += 1;
-    }
   }
 }

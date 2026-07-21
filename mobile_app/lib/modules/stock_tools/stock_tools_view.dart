@@ -253,14 +253,31 @@ class StockToolsView extends GetView<StockToolsController> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(
-                                '$qty pcs',
-                                style: GoogleFonts.outfit(
-                                  color: qty <= 5 ? Colors.redAccent : Colors.greenAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                              if (item['quantity_mode'] == 'level')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: (item['quantity_level'] == 'low' ? Colors.redAccent : item['quantity_level'] == 'medium' ? Colors.orangeAccent : Colors.greenAccent).withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    quantityLevelLabel(item['quantity_level'] as String?),
+                                    style: GoogleFonts.outfit(
+                                      color: item['quantity_level'] == 'low' ? Colors.redAccent : item['quantity_level'] == 'medium' ? Colors.orangeAccent : Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                )
+                              else
+                                Text(
+                                  '$qty pcs',
+                                  style: GoogleFonts.outfit(
+                                    color: controller.isLowStock(item) ? Colors.redAccent : Colors.greenAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
                                 ),
-                              ),
                               const SizedBox(height: 8),
                               PopupMenuButton<String>(
                                 icon: Icon(Icons.more_vert, color: AppColors.slate400),
@@ -718,14 +735,31 @@ class StockToolsView extends GetView<StockToolsController> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(
-                                'Qty: $totalQty',
-                                style: GoogleFonts.outfit(
-                                  color: AppColors.slate900,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                              if (item['quantity_mode'] == 'level')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: (item['quantity_level'] == 'low' ? Colors.redAccent : item['quantity_level'] == 'medium' ? Colors.orangeAccent : Colors.greenAccent).withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    quantityLevelLabel(item['quantity_level'] as String?),
+                                    style: GoogleFonts.outfit(
+                                      color: item['quantity_level'] == 'low' ? Colors.redAccent : item['quantity_level'] == 'medium' ? Colors.orangeAccent : Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                )
+                              else
+                                Text(
+                                  'Qty: $totalQty',
+                                  style: GoogleFonts.outfit(
+                                    color: AppColors.slate900,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
                                 ),
-                              ),
                               const SizedBox(height: 12),
                               PopupMenuButton<String>(
                                 icon: Icon(Icons.more_vert, color: AppColors.slate400),
@@ -1032,6 +1066,7 @@ class StockToolsView extends GetView<StockToolsController> {
     final uniSzC = TextEditingController(text: controller.uniformSizes.join('\n'));
     final binC = TextEditingController(text: controller.storageBins.join('\n'));
     final requireBinC = TextEditingController(text: controller.requireBinLocations.join('\n'));
+    final defaultLowStockC = TextEditingController(text: '${controller.defaultLowStockThreshold.value}');
 
     Get.bottomSheet(
       SizedBox(
@@ -1065,6 +1100,11 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildSettingsField('Uniform Sizes (one per line)', uniSzC),
                   _buildSettingsField('Storage bins (one per line)', binC),
                   _buildSettingsField('Require box/code for sites', requireBinC),
+                  _buildSettingsNumberField(
+                    'Default low stock threshold',
+                    defaultLowStockC,
+                    hint: 'Used when an item has no custom threshold',
+                  ),
                 ],
               ),
             ),
@@ -1082,9 +1122,14 @@ class StockToolsView extends GetView<StockToolsController> {
                 final uniSizes = uniSzC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
                 final bins = binC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
                 final requireBins = requireBinC.text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+                final parsedDefault = int.tryParse(defaultLowStockC.text.trim());
 
                 if (locs.isEmpty || stockCats.isEmpty || toolCats.isEmpty || uniCats.isEmpty || uniSizes.isEmpty) {
                   Get.snackbar('Error', 'Lists cannot be empty');
+                  return;
+                }
+                if (parsedDefault == null || parsedDefault < 0) {
+                  Get.snackbar('Error', 'Default low stock threshold must be 0 or greater');
                   return;
                 }
                 await controller.saveSettings(
@@ -1095,6 +1140,7 @@ class StockToolsView extends GetView<StockToolsController> {
                   uniSizes: uniSizes,
                   bins: bins,
                   requireBins: requireBins.isNotEmpty ? requireBins : <String>['Store'],
+                  defaultLowStock: parsedDefault,
                 );
                 Get.back();
               },
@@ -1133,12 +1179,44 @@ class StockToolsView extends GetView<StockToolsController> {
     );
   }
 
+  Widget _buildSettingsNumberField(String label, TextEditingController textC, {String? hint}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: GoogleFonts.outfit(color: AppColors.slate400, fontWeight: FontWeight.bold, fontSize: 13)),
+          if (hint != null) ...[
+            const SizedBox(height: 4),
+            Text(hint, style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 11)),
+          ],
+          const SizedBox(height: 6),
+          TextField(
+            controller: textC,
+            keyboardType: TextInputType.number,
+            style: GoogleFonts.outfit(color: AppColors.slate900),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppColors.slate500.withOpacity(0.08),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.slate500.withOpacity(0.2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.primary)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Stock Add/Edit Form Sheet
   void _showStockFormSheet(BuildContext context, {Map<String, dynamic>? item}) {
     controller.clearImage();
     final isEdit = item != null;
     final nameC = TextEditingController(text: isEdit ? (item['name'] ?? '') : '');
     final mpnC = TextEditingController(text: isEdit ? (item['mpn'] ?? '') : '');
+    final minQtyRaw = isEdit ? item['min_quantity'] : null;
+    final minQtyC = TextEditingController(
+      text: minQtyRaw != null ? '$minQtyRaw' : '',
+    );
 
     // Parse existing placements or set defaults
     final List<Map<String, dynamic>> rawLocations = [];
@@ -1163,6 +1241,8 @@ class StockToolsView extends GetView<StockToolsController> {
         controller.stockCategories.isNotEmpty ? controller.stockCategories[0] : 'General';
     final selectedCategory =
         (isEdit ? (item['category'] ?? defaultCategory) : defaultCategory).obs;
+    final qtyMode = (isEdit ? (item['quantity_mode'] ?? 'count') : 'count').obs;
+    final qtyLevel = (isEdit ? (item['quantity_level'] ?? 'medium') : 'medium').obs;
 
     Get.bottomSheet(
       SizedBox(
@@ -1192,7 +1272,17 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildInput('Item Name*', nameC),
                   _buildInput('MPN', mpnC),
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.stockCategories, (val) => selectedCategory.value = val!)),
+                  _buildQuantityModeToggle(qtyMode, qtyLevel),
+                  Obx(() => qtyMode.value == 'count' ? _buildInput(
+                    'Low stock threshold (optional)',
+                    minQtyC,
+                    isNumber: true,
+                    hint: 'Default: ${controller.defaultLowStockThreshold.value}',
+                  ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
+                  Obx(() => qtyMode.value == 'count' ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1310,6 +1400,8 @@ class StockToolsView extends GetView<StockToolsController> {
                       );
                     },
                   )),
+                    ],
+                  ) : const SizedBox.shrink()),
                   const SizedBox(height: 16),
                   _buildPhotoSelectorSection(),
                 ],
@@ -1326,12 +1418,22 @@ class StockToolsView extends GetView<StockToolsController> {
                   Get.snackbar('Error', 'Name is required');
                   return;
                 }
+                final parsedMinQty = minQtyC.text.trim().isEmpty
+                    ? null
+                    : int.tryParse(minQtyC.text.trim());
+                if (parsedMinQty != null && parsedMinQty < 0) {
+                  Get.snackbar('Error', 'Low stock threshold must be 0 or greater');
+                  return;
+                }
                 final ok = await controller.saveStockItem(
                   id: isEdit ? _itemId(item) : null,
                   name: nameC.text,
                   mpn: mpnC.text,
                   locs: formLocs.toList(),
                   category: selectedCategory.value,
+                  minQuantity: parsedMinQty,
+                  quantityMode: qtyMode.value,
+                  quantityLevel: qtyMode.value == 'level' ? qtyLevel.value : null,
                 );
                 if (ok) Get.back();
               },
@@ -1351,6 +1453,10 @@ class StockToolsView extends GetView<StockToolsController> {
     controller.clearImage();
     final isEdit = tool != null;
     final nameC = TextEditingController(text: isEdit ? (tool['name'] ?? '') : '');
+    final minQtyRaw = isEdit ? tool['min_quantity'] : null;
+    final minQtyC = TextEditingController(
+      text: minQtyRaw != null ? '$minQtyRaw' : '',
+    );
 
     // Parse existing placements or set defaults
     final List<Map<String, dynamic>> rawLocations = [];
@@ -1377,6 +1483,8 @@ class StockToolsView extends GetView<StockToolsController> {
         (isEdit ? (tool['category'] ?? defaultToolCategory) : defaultToolCategory).obs;
     final selectedStatus = (isEdit ? (tool['status'] ?? 'available') : 'available').obs;
     final selectedOfficer = (isEdit && tool['assigned_officer_id'] != null ? '${tool['assigned_officer_id']}' : '').obs;
+    final qtyMode = (isEdit ? (tool['quantity_mode'] ?? 'count') : 'count').obs;
+    final qtyLevel = (isEdit ? (tool['quantity_level'] ?? 'medium') : 'medium').obs;
 
     Get.bottomSheet(
       SizedBox(
@@ -1406,7 +1514,17 @@ class StockToolsView extends GetView<StockToolsController> {
                   _buildInput('Tool Name*', nameC),
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.toolCategories, (val) => selectedCategory.value = val!)),
                   Obx(() => _buildDropdownField('Status', selectedStatus.value, const ['available', 'in_use', 'missing', 'damaged'], (val) => selectedStatus.value = val!)),
+                  _buildQuantityModeToggle(qtyMode, qtyLevel),
+                  Obx(() => qtyMode.value == 'count' ? _buildInput(
+                    'Low stock threshold (optional)',
+                    minQtyC,
+                    isNumber: true,
+                    hint: 'Default: ${controller.defaultLowStockThreshold.value}',
+                  ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
+                  Obx(() => qtyMode.value == 'count' ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1524,6 +1642,8 @@ class StockToolsView extends GetView<StockToolsController> {
                       );
                     },
                   )),
+                    ],
+                  ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
@@ -1566,6 +1686,13 @@ class StockToolsView extends GetView<StockToolsController> {
                   Get.snackbar('Error', 'Name is required');
                   return;
                 }
+                final parsedMinQty = minQtyC.text.trim().isEmpty
+                    ? null
+                    : int.tryParse(minQtyC.text.trim());
+                if (parsedMinQty != null && parsedMinQty < 0) {
+                  Get.snackbar('Error', 'Low stock threshold must be 0 or greater');
+                  return;
+                }
                 final ok = await controller.saveToolItem(
                   id: isEdit ? _itemId(tool) : null,
                   name: nameC.text,
@@ -1573,6 +1700,9 @@ class StockToolsView extends GetView<StockToolsController> {
                   status: selectedStatus.value,
                   locs: formLocs.toList(),
                   assignedOfficerId: selectedOfficer.isEmpty ? null : int.tryParse(selectedOfficer.value),
+                  minQuantity: parsedMinQty,
+                  quantityMode: qtyMode.value,
+                  quantityLevel: qtyMode.value == 'level' ? qtyLevel.value : null,
                 );
                 if (ok) Get.back();
               },
@@ -1622,6 +1752,8 @@ class StockToolsView extends GetView<StockToolsController> {
     final selectedSize = (isEdit ? (item['size'] ?? defaultUniformSize) : defaultUniformSize).obs;
     final selectedStatus = (isEdit ? (item['status'] ?? 'available') : 'available').obs;
     final selectedOfficer = (isEdit && item['assigned_officer_id'] != null ? '${item['assigned_officer_id']}' : '').obs;
+    final qtyMode = (isEdit ? (item['quantity_mode'] ?? 'count') : 'count').obs;
+    final qtyLevel = (isEdit ? (item['quantity_level'] ?? 'medium') : 'medium').obs;
 
     Get.bottomSheet(
       SizedBox(
@@ -1652,7 +1784,11 @@ class StockToolsView extends GetView<StockToolsController> {
                   Obx(() => _buildDropdownField('Category', selectedCategory.value, controller.uniformCategories, (val) => selectedCategory.value = val!)),
                   Obx(() => _buildDropdownField('Size', selectedSize.value, controller.uniformSizes, (val) => selectedSize.value = val!)),
                   Obx(() => _buildDropdownField('Status', selectedStatus.value, const ['available', 'issued', 'retired', 'lost', 'damaged'], (val) => selectedStatus.value = val!)),
+                  _buildQuantityModeToggle(qtyMode, qtyLevel),
                   const SizedBox(height: 12),
+                  Obx(() => qtyMode.value == 'count' ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1761,6 +1897,8 @@ class StockToolsView extends GetView<StockToolsController> {
                       );
                     },
                   )),
+                    ],
+                  ) : const SizedBox.shrink()),
                   const SizedBox(height: 12),
                   Obx(() {
                     final offList = <DropdownMenuItem<String>>[
@@ -1813,6 +1951,8 @@ class StockToolsView extends GetView<StockToolsController> {
                   locs: formLocs.toList(),
                   assignedOfficerId: selectedOfficer.isEmpty ? null : int.tryParse(selectedOfficer.value),
                   notes: notesC.text,
+                  quantityMode: qtyMode.value,
+                  quantityLevel: qtyMode.value == 'level' ? qtyLevel.value : null,
                 );
                 if (ok) Get.back();
               },
@@ -2003,7 +2143,80 @@ class StockToolsView extends GetView<StockToolsController> {
     );
   }
 
-  Widget _buildInput(String label, TextEditingController textC, {bool isMultiline = false, bool isNumber = false}) {
+  Widget _buildQuantityModeToggle(RxString qtyMode, RxString qtyLevel) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Quantity tracking', style: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 13, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Obx(() => Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () { qtyMode.value = 'count'; },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: qtyMode.value == 'count' ? AppColors.primary : Colors.white,
+                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(10)),
+                      border: Border.all(color: AppColors.slate500.withOpacity(0.3)),
+                    ),
+                    child: Center(child: Text('Exact count', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: qtyMode.value == 'count' ? AppColors.slate900 : AppColors.slate400))),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () { qtyMode.value = 'level'; },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: qtyMode.value == 'level' ? AppColors.primary : Colors.white,
+                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(10)),
+                      border: Border.all(color: AppColors.slate500.withOpacity(0.3)),
+                    ),
+                    child: Center(child: Text('Level (Low/Med/High)', style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: qtyMode.value == 'level' ? AppColors.slate900 : AppColors.slate400))),
+                  ),
+                ),
+              ),
+            ],
+          )),
+          Obx(() => qtyMode.value == 'level' ? Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: quantityLevels.map((lvl) {
+                final selected = qtyLevel.value == lvl;
+                Color bg = Colors.white;
+                Color fg = AppColors.slate400;
+                if (selected) {
+                  if (lvl == 'low') { bg = Colors.redAccent.withOpacity(0.12); fg = Colors.redAccent; }
+                  else if (lvl == 'medium') { bg = Colors.orangeAccent.withOpacity(0.12); fg = Colors.orangeAccent; }
+                  else { bg = Colors.greenAccent.withOpacity(0.12); fg = Colors.green; }
+                }
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: GestureDetector(
+                      onTap: () { qtyLevel.value = lvl; },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: selected ? fg.withOpacity(0.4) : AppColors.slate500.withOpacity(0.2))),
+                        child: Center(child: Text(quantityLevelLabel(lvl), style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: fg))),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ) : const SizedBox.shrink()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInput(String label, TextEditingController textC, {bool isMultiline = false, bool isNumber = false, String? hint}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Column(
@@ -2017,6 +2230,8 @@ class StockToolsView extends GetView<StockToolsController> {
             maxLines: isMultiline ? 3 : 1,
             style: GoogleFonts.outfit(color: AppColors.slate900),
             decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: GoogleFonts.outfit(color: AppColors.slate400, fontSize: 12),
               filled: true,
               fillColor: AppColors.slate500.withOpacity(0.08),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

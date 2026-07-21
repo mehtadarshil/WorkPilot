@@ -29,6 +29,8 @@ import { UniformTab } from './UniformTab';
 import {
   type StockPlacement,
   type StockPlacementFormRow,
+  type QuantityMode,
+  type QuantityLevel,
   emptyPlacementFormRow,
   formatPlacementLabel,
   parsePlacementsFromItem,
@@ -36,6 +38,9 @@ import {
   placementFormToApi,
   placementSearchBlob,
   validatePlacementsRequireBin,
+  QUANTITY_LEVELS,
+  quantityLevelLabel,
+  quantityLevelColor,
 } from '@/lib/stockPlacements';
 
 function imageUploadFields(dataUrl: string, originalFilename: string, contentType: string) {
@@ -60,6 +65,9 @@ interface StockItem {
   name: string;
   mpn: string | null;
   quantity: number;
+  min_quantity?: number | null;
+  quantity_mode?: QuantityMode;
+  quantity_level?: QuantityLevel | null;
   category: string;
   quality: string;
   location: string;
@@ -91,6 +99,9 @@ interface Tool {
   name: string;
   category: string;
   quantity: number;
+  min_quantity?: number | null;
+  quantity_mode?: QuantityMode;
+  quantity_level?: QuantityLevel | null;
   status: 'available' | 'in_use' | 'missing' | 'damaged';
   location: string;
   zone?: string | null;
@@ -146,6 +157,37 @@ const DEFAULT_UNIFORM_CATEGORIES = ['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'F
 const DEFAULT_UNIFORM_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'];
 const DEFAULT_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
 const QUALITIES = ['New', 'Used - Good', 'Used - Fair', 'Damaged'];
+const DEFAULT_LOW_STOCK_THRESHOLD = 5;
+
+function effectiveLowStockThreshold(
+  minQuantity: number | null | undefined,
+  defaultThreshold: number,
+): number {
+  return minQuantity != null && minQuantity >= 0 ? minQuantity : defaultThreshold;
+}
+
+function isLowStock(
+  quantity: number,
+  minQuantity: number | null | undefined,
+  defaultThreshold: number,
+  quantityMode?: QuantityMode,
+  quantityLevel?: QuantityLevel | null,
+): boolean {
+  if (quantityMode === 'level') return quantityLevel === 'low';
+  if (quantity <= 0) return false;
+  return quantity <= effectiveLowStockThreshold(minQuantity, defaultThreshold);
+}
+
+function needsReplenishment(
+  quantity: number,
+  minQuantity: number | null | undefined,
+  defaultThreshold: number,
+  quantityMode?: QuantityMode,
+): boolean {
+  if (quantityMode === 'level') return false;
+  if (quantity === 0) return true;
+  return isLowStock(quantity, minQuantity, defaultThreshold);
+}
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -197,6 +239,9 @@ export default function StockToolsPage() {
     name: string;
     mpn: string;
     quantity: string;
+    min_quantity: string;
+    quantity_mode: QuantityMode;
+    quantity_level: QuantityLevel | '';
     category: string;
     quality: string;
     location: string;
@@ -208,6 +253,9 @@ export default function StockToolsPage() {
     name: '',
     mpn: '',
     quantity: '0',
+    min_quantity: '',
+    quantity_mode: 'count',
+    quantity_level: '',
     category: 'Electrical',
     quality: 'New',
     location: 'Store',
@@ -223,6 +271,9 @@ export default function StockToolsPage() {
     name: string;
     category: string;
     quantity: string;
+    min_quantity: string;
+    quantity_mode: QuantityMode;
+    quantity_level: QuantityLevel | '';
     status: 'available' | 'in_use' | 'missing' | 'damaged';
     location: string;
     locations: StockPlacementFormRow[];
@@ -234,6 +285,9 @@ export default function StockToolsPage() {
     name: '',
     category: 'Power Tools',
     quantity: '1',
+    min_quantity: '',
+    quantity_mode: 'count',
+    quantity_level: '',
     status: 'available',
     location: 'Store',
     locations: [emptyPlacementFormRow('Store')],
@@ -259,6 +313,8 @@ export default function StockToolsPage() {
   const [requireBinDraft, setRequireBinDraft] = useState('Store');
   const [storageBins, setStorageBins] = useState<string[]>([]);
   const [requireBinLocations, setRequireBinLocations] = useState<string[]>(['Store']);
+  const [defaultLowStockThreshold, setDefaultLowStockThreshold] = useState(DEFAULT_LOW_STOCK_THRESHOLD);
+  const [defaultLowStockDraft, setDefaultLowStockDraft] = useState(String(DEFAULT_LOW_STOCK_THRESHOLD));
   const [savingListSettings, setSavingListSettings] = useState(false);
   const [copiedPlacementKey, setCopiedPlacementKey] = useState<string | null>(null);
 
@@ -285,6 +341,7 @@ export default function StockToolsPage() {
         uniform_size_options?: string[];
         storage_bin_options?: string[];
         require_bin_for_locations?: string[];
+        default_low_stock_threshold?: number;
       }>('/settings/stock-tools', token);
       const locs = data.location_options?.filter((v) => v.trim().length > 0) ?? [];
       const stockCats = data.stock_category_options?.filter((v) => v.trim().length > 0) ?? [];
@@ -300,6 +357,9 @@ export default function StockToolsPage() {
       if (uniformSz.length > 0) setUniformSizes(uniformSz);
       setStorageBins(bins);
       setRequireBinLocations(requireBins.length > 0 ? requireBins : ['Store']);
+      if (typeof data.default_low_stock_threshold === 'number' && data.default_low_stock_threshold >= 0) {
+        setDefaultLowStockThreshold(data.default_low_stock_threshold);
+      }
     } catch {
       setLocations(DEFAULT_LOCATIONS);
       setStockCategories(DEFAULT_STOCK_CATEGORIES);
@@ -321,6 +381,11 @@ export default function StockToolsPage() {
       const uniform_size_options = uniformSizeDraft.split('\n').map((line) => line.trim()).filter(Boolean);
       const storage_bin_options = storageBinDraft.split('\n').map((line) => line.trim()).filter(Boolean);
       const require_bin_for_locations = requireBinDraft.split('\n').map((line) => line.trim()).filter(Boolean);
+      const parsedDefaultThreshold = parseInt(defaultLowStockDraft, 10);
+      if (!Number.isFinite(parsedDefaultThreshold) || parsedDefaultThreshold < 0) {
+        setErrorMsg('Default low stock threshold must be 0 or greater.');
+        return;
+      }
       if (
         location_options.length === 0
         || stock_category_options.length === 0
@@ -339,6 +404,7 @@ export default function StockToolsPage() {
         uniform_size_options: string[];
         storage_bin_options: string[];
         require_bin_for_locations: string[];
+        default_low_stock_threshold: number;
       }>('/settings/stock-tools', {
         location_options,
         stock_category_options,
@@ -347,6 +413,7 @@ export default function StockToolsPage() {
         uniform_size_options,
         storage_bin_options,
         require_bin_for_locations: require_bin_for_locations.length > 0 ? require_bin_for_locations : ['Store'],
+        default_low_stock_threshold: parsedDefaultThreshold,
       }, token);
       setLocations(res.location_options);
       setStockCategories(res.stock_category_options);
@@ -355,6 +422,9 @@ export default function StockToolsPage() {
       setUniformSizes(res.uniform_size_options);
       setStorageBins(res.storage_bin_options ?? []);
       setRequireBinLocations(res.require_bin_for_locations ?? ['Store']);
+      if (typeof res.default_low_stock_threshold === 'number') {
+        setDefaultLowStockThreshold(res.default_low_stock_threshold);
+      }
       setShowListSettings(false);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Could not save list options');
@@ -371,6 +441,7 @@ export default function StockToolsPage() {
     setUniformSizeDraft(uniformSizes.join('\n'));
     setStorageBinDraft(storageBins.join('\n'));
     setRequireBinDraft(requireBinLocations.join('\n'));
+    setDefaultLowStockDraft(String(defaultLowStockThreshold));
     setShowListSettings(true);
   };
 
@@ -457,6 +528,9 @@ export default function StockToolsPage() {
       name: '',
       mpn: '',
       quantity: '0',
+      min_quantity: '',
+      quantity_mode: 'count',
+      quantity_level: '',
       category: stockCategories[0] ?? 'General',
       quality: 'New',
       location: locations[0] || 'Store',
@@ -477,6 +551,9 @@ export default function StockToolsPage() {
       name: item.name,
       mpn: item.mpn || '',
       quantity: String(item.quantity),
+      min_quantity: item.min_quantity != null ? String(item.min_quantity) : '',
+      quantity_mode: item.quantity_mode || 'count',
+      quantity_level: item.quantity_level || '',
       category: item.category,
       quality: item.quality,
       location: item.location,
@@ -523,12 +600,25 @@ export default function StockToolsPage() {
       return;
     }
 
+    const parsedMinQty = stockForm.min_quantity.trim() === ''
+      ? null
+      : Math.max(0, parseInt(stockForm.min_quantity, 10) || 0);
+
+    const isLevelMode = stockForm.quantity_mode === 'level';
+    if (isLevelMode && !stockForm.quantity_level) {
+      setErrorMsg('Please select a quantity level (Low, Medium, or High)');
+      return;
+    }
+
     const payload = {
       name: stockForm.name.trim(),
       mpn: stockForm.mpn.trim() || null,
       category: stockForm.category,
       quality: stockForm.quality,
-      locations: parsedLocations,
+      locations: isLevelMode ? [] : parsedLocations,
+      min_quantity: parsedMinQty,
+      quantity_mode: stockForm.quantity_mode,
+      quantity_level: isLevelMode ? stockForm.quantity_level : null,
       ...(stockForm.image_base64
         ? imageUploadFields(
             stockForm.image_base64,
@@ -574,6 +664,9 @@ export default function StockToolsPage() {
       name: '',
       category: toolCategories[0] ?? 'Other',
       quantity: '1',
+      min_quantity: '',
+      quantity_mode: 'count',
+      quantity_level: '',
       status: 'available',
       location: 'Store',
       locations: [emptyPlacementFormRow(locations[0] || 'Store')],
@@ -594,6 +687,9 @@ export default function StockToolsPage() {
       name: tool.name,
       category: tool.category,
       quantity: String(tool.quantity ?? 1),
+      min_quantity: tool.min_quantity != null ? String(tool.min_quantity) : '',
+      quantity_mode: tool.quantity_mode || 'count',
+      quantity_level: tool.quantity_level || '',
       status: tool.status,
       location: tool.location,
       locations: mappedPlacements,
@@ -644,12 +740,25 @@ export default function StockToolsPage() {
       return;
     }
 
+    const parsedMinQty = toolForm.min_quantity.trim() === ''
+      ? null
+      : Math.max(0, parseInt(toolForm.min_quantity, 10) || 0);
+
+    const isLevelMode = toolForm.quantity_mode === 'level';
+    if (isLevelMode && !toolForm.quantity_level) {
+      setErrorMsg('Please select a quantity level (Low, Medium, or High)');
+      return;
+    }
+
     const payload = {
       name: toolForm.name.trim(),
       category: toolForm.category,
       status: toolForm.status,
-      locations: parsedLocations,
+      locations: isLevelMode ? [] : parsedLocations,
       assigned_officer_id: toolForm.assigned_officer_id ? parseInt(toolForm.assigned_officer_id, 10) : null,
+      min_quantity: parsedMinQty,
+      quantity_mode: toolForm.quantity_mode,
+      quantity_level: isLevelMode ? toolForm.quantity_level : null,
       ...(toolForm.image_base64
         ? imageUploadFields(toolForm.image_base64, toolForm.original_filename, toolForm.content_type)
         : {}),
@@ -928,8 +1037,8 @@ export default function StockToolsPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredStock.map((item) => {
-                    const isLow = item.quantity > 0 && item.quantity <= 5;
-                    const isOut = item.quantity === 0;
+                    const isLow = isLowStock(item.quantity, item.min_quantity, defaultLowStockThreshold, item.quantity_mode, item.quantity_level);
+                    const isOut = item.quantity_mode !== 'level' && item.quantity === 0;
                     const placements = parsePlacementsFromItem(item);
 
                     return (
@@ -986,13 +1095,19 @@ export default function StockToolsPage() {
                             </div>
                             <div>
                               <p className="text-slate-400 font-semibold mb-0.5">Stock Level</p>
-                              <p className={`font-bold ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-[#14B8A6]'}`}>
-                                {item.quantity} units
-                              </p>
+                              {item.quantity_mode === 'level' ? (
+                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${quantityLevelColor(item.quantity_level)}`}>
+                                  {quantityLevelLabel(item.quantity_level)}
+                                </span>
+                              ) : (
+                                <p className={`font-bold ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-[#14B8A6]'}`}>
+                                  {item.quantity} units
+                                </p>
+                              )}
                             </div>
                           </div>
 
-                          {placements.length > 0 && (
+                          {item.quantity_mode !== 'level' && placements.length > 0 && (
                             <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
                               <div className="flex items-center gap-1.5 mb-2">
                                 <MapPin className="size-3.5 text-[#14B8A6]" />
@@ -1292,10 +1407,14 @@ export default function StockToolsPage() {
                                 </p>
                               </div>
                               <div>
-                                <p className="text-slate-400 font-semibold mb-0.5">Quality</p>
-                                <p className="font-bold text-slate-700 truncate">
-                                  {placements.map((l) => l.quality).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || 'N/A'}
-                                </p>
+                                <p className="text-slate-400 font-semibold mb-0.5">{tool.quantity_mode === 'level' ? 'Qty Level' : 'Qty'}</p>
+                                {tool.quantity_mode === 'level' ? (
+                                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${quantityLevelColor(tool.quantity_level)}`}>
+                                    {quantityLevelLabel(tool.quantity_level)}
+                                  </span>
+                                ) : (
+                                  <p className="font-bold text-slate-700 truncate">{tool.quantity ?? 1}</p>
+                                )}
                               </div>
                               <div>
                                 <p className="text-slate-400 font-semibold mb-0.5">Status</p>
@@ -1303,7 +1422,7 @@ export default function StockToolsPage() {
                               </div>
                             </div>
 
-                            {placements.length > 0 && (
+                            {tool.quantity_mode !== 'level' && placements.length > 0 && (
                               <div className="mt-3 rounded-xl border border-slate-100 bg-white p-2.5">
                                 <div className="flex items-center gap-1.5 mb-2">
                                   <MapPin className="size-3.5 text-[#14B8A6]" />
@@ -1394,6 +1513,8 @@ export default function StockToolsPage() {
           locations={locations}
           uniformCategories={uniformCategories}
           uniformSizes={uniformSizes}
+          storageBins={storageBins}
+          requireBinLocations={requireBinLocations}
           onManageLists={openListSettings}
         />
       )}
@@ -1526,13 +1647,13 @@ export default function StockToolsPage() {
                   </div>
 
                   <div className="flex-1 flex flex-col gap-3 overflow-y-auto max-h-[220px] mb-4 pr-1">
-                    {stockItems.filter(item => item.quantity <= 5).length === 0 ? (
+                    {stockItems.filter(item => needsReplenishment(item.quantity, item.min_quantity, defaultLowStockThreshold, item.quantity_mode)).length === 0 ? (
                       <div className="text-center py-8 text-slate-400 text-xs">
                         All stock items are well supplied! No replenishment orders needed.
                       </div>
                     ) : (
                       stockItems
-                        .filter(item => item.quantity <= 5)
+                        .filter(item => needsReplenishment(item.quantity, item.min_quantity, defaultLowStockThreshold, item.quantity_mode))
                         .map(item => (
                           <div key={item.id} className="flex items-center justify-between border-b border-slate-50 pb-2.5 last:border-0 last:pb-0">
                             <div>
@@ -1633,7 +1754,58 @@ export default function StockToolsPage() {
                 </div>
               </div>
 
+              {/* Quantity mode toggle */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity tracking</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setStockForm((prev) => ({ ...prev, quantity_mode: 'count', quantity_level: '' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${stockForm.quantity_mode === 'count' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Exact count
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStockForm((prev) => ({ ...prev, quantity_mode: 'level', quantity_level: prev.quantity_level || 'medium' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${stockForm.quantity_mode === 'level' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Level (Low / Med / High)
+                  </button>
+                </div>
+                {stockForm.quantity_mode === 'level' && (
+                  <div className="mt-2 flex gap-2">
+                    {QUANTITY_LEVELS.map((lvl) => (
+                      <button
+                        key={lvl.value}
+                        type="button"
+                        onClick={() => setStockForm((prev) => ({ ...prev, quantity_level: lvl.value }))}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-xs font-bold transition ${stockForm.quantity_level === lvl.value ? quantityLevelColor(lvl.value) : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        {lvl.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {stockForm.quantity_mode === 'count' && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Low stock threshold (optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={stockForm.min_quantity}
+                  onChange={(e) => setStockForm((prev) => ({ ...prev, min_quantity: e.target.value }))}
+                  placeholder={`Uses default (${defaultLowStockThreshold}) when blank`}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Warn when quantity is above 0 but at or below this level.</p>
+              </div>
+              )}
+
               {/* Storage placements */}
+              {stockForm.quantity_mode === 'count' && (
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
@@ -1815,6 +1987,7 @@ export default function StockToolsPage() {
                   </datalist>
                 )}
               </div>
+              )}
 
               {/* Photo Upload */}
               <div className="border-t border-slate-100 pt-4">
@@ -1939,7 +2112,58 @@ export default function StockToolsPage() {
                 </div>
               </div>
 
+              {/* Quantity mode toggle */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity tracking</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setToolForm((prev) => ({ ...prev, quantity_mode: 'count', quantity_level: '' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${toolForm.quantity_mode === 'count' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Exact count
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setToolForm((prev) => ({ ...prev, quantity_mode: 'level', quantity_level: prev.quantity_level || 'medium' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${toolForm.quantity_mode === 'level' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Level (Low / Med / High)
+                  </button>
+                </div>
+                {toolForm.quantity_mode === 'level' && (
+                  <div className="mt-2 flex gap-2">
+                    {QUANTITY_LEVELS.map((lvl) => (
+                      <button
+                        key={lvl.value}
+                        type="button"
+                        onClick={() => setToolForm((prev) => ({ ...prev, quantity_level: lvl.value }))}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-xs font-bold transition ${toolForm.quantity_level === lvl.value ? quantityLevelColor(lvl.value) : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        {lvl.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {toolForm.quantity_mode === 'count' && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Low stock threshold (optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={toolForm.min_quantity}
+                  onChange={(e) => setToolForm((prev) => ({ ...prev, min_quantity: e.target.value }))}
+                  placeholder={`Uses default (${defaultLowStockThreshold}) when blank`}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Warn when quantity is above 0 but at or below this level.</p>
+              </div>
+              )}
+
               {/* Storage placements */}
+              {toolForm.quantity_mode === 'count' && (
               <div className="border-t border-slate-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
@@ -2114,6 +2338,7 @@ export default function StockToolsPage() {
                   ))}
                 </div>
               </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Custodian (Officer)</label>
@@ -2218,6 +2443,17 @@ export default function StockToolsPage() {
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Require box/code for sites</label>
                 <p className="mt-0.5 text-[11px] text-slate-500">Sites where a box or storage code is mandatory when qty &gt; 0.</p>
                 <textarea value={requireBinDraft} onChange={(e) => setRequireBinDraft(e.target.value)} rows={2} placeholder="Store" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Default low stock threshold</label>
+                <p className="mt-0.5 text-[11px] text-slate-500">Used when an item has no custom threshold. Set to 0 to only warn when out of stock.</p>
+                <input
+                  type="number"
+                  min={0}
+                  value={defaultLowStockDraft}
+                  onChange={(e) => setDefaultLowStockDraft(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6] focus:ring-2 focus:ring-[#14B8A6]/30"
+                />
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Uniform sizes</label>

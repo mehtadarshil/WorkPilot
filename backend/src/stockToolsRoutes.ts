@@ -178,6 +178,34 @@ export async function ensureStockToolsSchema(pool: Pool) {
     await pool.query(`
       ALTER TABLE uniforms ADD COLUMN IF NOT EXISTS locations JSONB;
     `);
+    await pool.query(`
+      ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS min_quantity INTEGER DEFAULT NULL;
+    `);
+    await pool.query(`
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS min_quantity INTEGER DEFAULT NULL;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_tools_settings
+        ADD COLUMN IF NOT EXISTS default_low_stock_threshold INTEGER NOT NULL DEFAULT 5;
+    `);
+    await pool.query(`
+      ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS quantity_mode VARCHAR(10) NOT NULL DEFAULT 'count';
+    `);
+    await pool.query(`
+      ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS quantity_level VARCHAR(10) DEFAULT NULL;
+    `);
+    await pool.query(`
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS quantity_mode VARCHAR(10) NOT NULL DEFAULT 'count';
+    `);
+    await pool.query(`
+      ALTER TABLE tools ADD COLUMN IF NOT EXISTS quantity_level VARCHAR(10) DEFAULT NULL;
+    `);
+    await pool.query(`
+      ALTER TABLE uniforms ADD COLUMN IF NOT EXISTS quantity_mode VARCHAR(10) NOT NULL DEFAULT 'count';
+    `);
+    await pool.query(`
+      ALTER TABLE uniforms ADD COLUMN IF NOT EXISTS quantity_level VARCHAR(10) DEFAULT NULL;
+    `);
     console.log('Stock, Tools and Uniform schema verified successfully.');
   } catch (error) {
     console.error('Error ensuring Stock and Tools schema:', error);
@@ -399,6 +427,34 @@ export async function syncStockTransaction(
 
 const DEFAULT_STOCK_LOCATIONS = ['Van', 'House', 'Store', 'Other'];
 const DEFAULT_STOCK_CATEGORIES = ['Electrical', 'Locksmith', 'Plumbing', 'HVAC', 'General'];
+const DEFAULT_LOW_STOCK_THRESHOLD = 5;
+
+function parseMinQuantity(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+function parseDefaultLowStockThreshold(raw: unknown): number {
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_LOW_STOCK_THRESHOLD;
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_LOW_STOCK_THRESHOLD;
+  return n;
+}
+
+const VALID_QUANTITY_LEVELS = ['low', 'medium', 'high'] as const;
+
+function parseQuantityMode(raw: unknown): 'count' | 'level' {
+  return raw === 'level' ? 'level' : 'count';
+}
+
+function parseQuantityLevel(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.toLowerCase().trim();
+  return (VALID_QUANTITY_LEVELS as readonly string[]).includes(v) ? v : null;
+}
+
 const DEFAULT_TOOL_CATEGORIES = ['Power Tools', 'Hand Tools', 'Measurement', 'Safety', 'Other'];
 const DEFAULT_UNIFORM_CATEGORIES = ['Jacket', 'Hi-Vis', 'PPE', 'Fire Safety', 'Footwear', 'Branded', 'Other'];
 const DEFAULT_UNIFORM_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'];
@@ -428,6 +484,7 @@ async function loadStockToolsSettingsRow(
   uniform_size_options: string[];
   storage_bin_options: string[];
   require_bin_for_locations: string[];
+  default_low_stock_threshold: number;
 }> {
   const row = await pool.query<{
     location_options: unknown;
@@ -437,10 +494,12 @@ async function loadStockToolsSettingsRow(
     uniform_size_options: unknown;
     storage_bin_options: unknown;
     require_bin_for_locations: unknown;
+    default_low_stock_threshold: number | null;
   }>(
     `SELECT location_options, stock_category_options, tool_category_options,
             uniform_category_options, uniform_size_options,
-            storage_bin_options, require_bin_for_locations
+            storage_bin_options, require_bin_for_locations,
+            default_low_stock_threshold
      FROM stock_tools_settings WHERE created_by = $1`,
     [userId],
   );
@@ -453,6 +512,7 @@ async function loadStockToolsSettingsRow(
       uniform_size_options: [...DEFAULT_UNIFORM_SIZES],
       storage_bin_options: [],
       require_bin_for_locations: ['Store'],
+      default_low_stock_threshold: DEFAULT_LOW_STOCK_THRESHOLD,
     };
   }
   const r = row.rows[0];
@@ -464,6 +524,7 @@ async function loadStockToolsSettingsRow(
     uniform_size_options: parseStringOptions(r.uniform_size_options, DEFAULT_UNIFORM_SIZES),
     storage_bin_options: parseStringOptions(r.storage_bin_options, []),
     require_bin_for_locations: parseStringOptions(r.require_bin_for_locations, ['Store']),
+    default_low_stock_threshold: parseDefaultLowStockThreshold(r.default_low_stock_threshold),
   };
 }
 
@@ -492,6 +553,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       uniform_size_options?: unknown;
       storage_bin_options?: unknown;
       require_bin_for_locations?: unknown;
+      default_low_stock_threshold?: unknown;
     };
 
     const current = await loadStockToolsSettingsRow(pool, userId);
@@ -516,6 +578,9 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const require_bin_for_locations = body.require_bin_for_locations !== undefined
       ? parseStringOptions(body.require_bin_for_locations, ['Store']).slice(0, 30)
       : current.require_bin_for_locations;
+    const default_low_stock_threshold = body.default_low_stock_threshold !== undefined
+      ? parseDefaultLowStockThreshold(body.default_low_stock_threshold)
+      : current.default_low_stock_threshold;
 
     if (
       location_options.length === 0
@@ -532,9 +597,9 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         `INSERT INTO stock_tools_settings (
            created_by, location_options, stock_category_options, tool_category_options,
            uniform_category_options, uniform_size_options, storage_bin_options,
-           require_bin_for_locations, updated_at
+           require_bin_for_locations, default_low_stock_threshold, updated_at
          )
-         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, NOW())
+         VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, NOW())
          ON CONFLICT (created_by) DO UPDATE
          SET location_options = EXCLUDED.location_options,
              stock_category_options = EXCLUDED.stock_category_options,
@@ -543,6 +608,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
              uniform_size_options = EXCLUDED.uniform_size_options,
              storage_bin_options = EXCLUDED.storage_bin_options,
              require_bin_for_locations = EXCLUDED.require_bin_for_locations,
+             default_low_stock_threshold = EXCLUDED.default_low_stock_threshold,
              updated_at = NOW()`,
         [
           userId,
@@ -553,6 +619,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
           JSON.stringify(uniform_size_options),
           JSON.stringify(storage_bin_options),
           JSON.stringify(require_bin_for_locations),
+          default_low_stock_threshold,
         ],
       );
       return res.json({
@@ -563,6 +630,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         uniform_size_options,
         storage_bin_options,
         require_bin_for_locations,
+        default_low_stock_threshold,
       });
     } catch (error) {
       console.error('Patch stock tools settings error:', error);
@@ -672,7 +740,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
   app.post('/api/stock', authenticate, async (req: AuthenticatedRequest, res: Response) => {
     const userId = getTenantScopeUserId(req.user!);
-    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type } = req.body;
+    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type, min_quantity, quantity_mode, quantity_level } = req.body;
 
     if (!name || !category) {
       return res.status(400).json({ message: 'Missing required fields' });
@@ -680,6 +748,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
     try {
       const settings = await loadStockToolsSettingsRow(pool, userId);
+      const qtyMode = parseQuantityMode(quantity_mode);
+      const qtyLevel = qtyMode === 'level' ? parseQuantityLevel(quantity_level) : null;
       const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
       const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '0'), 10) || 0;
       const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : 'New';
@@ -690,7 +760,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         fallbackQuality,
         settings.require_bin_for_locations,
       );
-      const qty = totalPlacementQuantity(resolvedLocations);
+      const qty = qtyMode === 'level' ? 0 : totalPlacementQuantity(resolvedLocations);
       const primaryLocation = resolvedLocations[0]?.location || 'Store';
 
       let imageUrl: string | null = null;
@@ -698,11 +768,15 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         imageUrl = await storeStockToolImage('stock-photos', image_base64, original_filename, content_type);
       }
 
+      const parsedMinQty = min_quantity !== undefined && min_quantity !== null && min_quantity !== ''
+        ? Math.max(0, parseInt(String(min_quantity), 10) || 0)
+        : null;
+
       const ins = await pool.query(
-        `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO stock_items (name, mpn, quantity, category, quality, location, image_url, created_by, locations, min_quantity, quantity_mode, quantity_level)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
-        [name, mpn || null, qty, category, fallbackQuality, primaryLocation, imageUrl, userId, JSON.stringify(resolvedLocations)]
+        [name, mpn || null, qty, category, fallbackQuality, primaryLocation, imageUrl, userId, JSON.stringify(resolvedLocations), parsedMinQty, qtyMode, qtyLevel]
       );
 
       const newItem = ins.rows[0];
@@ -733,7 +807,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       return res.status(400).json({ message: 'Invalid ID' });
     }
 
-    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type } = req.body;
+    const { name, mpn, quantity, category, quality, location, locations, image_base64, original_filename, content_type, min_quantity, quantity_mode, quantity_level } = req.body;
 
     try {
       const itemCheck = await pool.query('SELECT * FROM stock_items WHERE id = $1', [itemId]);
@@ -774,9 +848,28 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         updates.push(`image_url = $${idx++}`);
         values.push(imageUrl);
       }
+      if (min_quantity !== undefined) {
+        updates.push(`min_quantity = $${idx++}`);
+        values.push(min_quantity !== null && min_quantity !== '' ? Math.max(0, parseInt(String(min_quantity), 10) || 0) : null);
+      }
+
+      const resolvedQtyMode = quantity_mode !== undefined ? parseQuantityMode(quantity_mode) : (existing.quantity_mode || 'count');
+      if (quantity_mode !== undefined) {
+        updates.push(`quantity_mode = $${idx++}`);
+        values.push(resolvedQtyMode);
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      } else if (quantity_level !== undefined) {
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      }
 
       let newQty = existing.quantity;
-      if (Array.isArray(locations)) {
+      if (resolvedQtyMode === 'level') {
+        newQty = 0;
+        updates.push(`quantity = $${idx++}`);
+        values.push(0);
+      } else if (Array.isArray(locations)) {
         const settings = await loadStockToolsSettingsRow(pool, userId);
         const fallbackQuality = typeof quality === 'string' && quality.trim() ? quality.trim() : (existing.quality || 'New');
         const normalized = normalizeStockPlacements(
@@ -1027,12 +1120,21 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const stockCountRes = await pool.query(stockCountQuery, stockCountParams);
       const stockCount = stockCountRes.rows[0]?.count || 0;
 
-      // 2. lowStockCount (quantity <= 5 and quantity > 0)
-      let lowStockQuery = `SELECT COALESCE(COUNT(*), 0)::int AS count FROM stock_items WHERE quantity > 0 AND quantity <= 5`;
-      const lowStockParams: any[] = [];
+      const settings = await loadStockToolsSettingsRow(pool, userId);
+      const defaultThreshold = settings.default_low_stock_threshold;
+
+      // 2. lowStockCount (count mode: qty at/below threshold; level mode: level = low)
+      let lowStockQuery = `
+        SELECT COALESCE(COUNT(*), 0)::int AS count FROM stock_items
+        WHERE (
+          (COALESCE(quantity_mode, 'count') <> 'level' AND quantity > 0 AND quantity <= COALESCE(min_quantity, $1))
+          OR (quantity_mode = 'level' AND quantity_level = 'low')
+        )
+      `;
+      const lowStockParams: any[] = [defaultThreshold];
       if (!isSuperAdmin) {
         lowStockParams.push(userId);
-        lowStockQuery += ` AND created_by = $1`;
+        lowStockQuery += ` AND created_by = $2`;
       }
       const lowStockRes = await pool.query(lowStockQuery, lowStockParams);
       const lowStockCount = lowStockRes.rows[0]?.count || 0;
@@ -1169,6 +1271,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         uniformsCount,
         uniformsByStatus,
         categoryStats,
+        defaultLowStockThreshold: defaultThreshold,
       });
     } catch (err) {
       console.error('Error loading stock-tools analytics:', err);
@@ -1227,6 +1330,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       name, category, status, location, assigned_officer_id, quantity,
       zone, aisle, shelf, box, storage_code, location_notes,
       locations, image_base64, original_filename, content_type,
+      min_quantity, quantity_mode, quantity_level,
     } = req.body;
 
     if (!name || !category) {
@@ -1235,6 +1339,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
     try {
       const settings = await loadStockToolsSettingsRow(pool, userId);
+      const qtyMode = parseQuantityMode(quantity_mode);
+      const qtyLevel = qtyMode === 'level' ? parseQuantityLevel(quantity_level) : null;
       const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
       const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '1'), 10) || 1;
       const resolvedLocations = normalizeStockPlacements(
@@ -1244,7 +1350,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         'Used - Good', // tools default quality
         settings.require_bin_for_locations,
       );
-      const qty = totalPlacementQuantity(resolvedLocations);
+      const qty = qtyMode === 'level' ? 0 : totalPlacementQuantity(resolvedLocations);
       const primaryLocation = resolvedLocations[0]?.location || 'Store';
 
       let imageUrl: string | null = null;
@@ -1253,17 +1359,21 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       }
 
       const assignedId = assigned_officer_id ? parseInt(String(assigned_officer_id), 10) || null : null;
+      const parsedMinQty = min_quantity !== undefined && min_quantity !== null && min_quantity !== ''
+        ? Math.max(0, parseInt(String(min_quantity), 10) || 0)
+        : null;
 
       const ins = await pool.query(
         `INSERT INTO tools (name, category, status, location, quantity, assigned_officer_id, image_url, created_by,
-                            zone, aisle, shelf, box, storage_code, location_notes, locations)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                            zone, aisle, shelf, box, storage_code, location_notes, locations, min_quantity,
+                            quantity_mode, quantity_level)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
          RETURNING *`,
         [
           name, category, status || 'available', primaryLocation, qty, assignedId, imageUrl, userId,
           normalizeBinField(zone), normalizeBinField(aisle), normalizeBinField(shelf),
           normalizeBinField(box), normalizeBinField(storage_code), normalizeBinField(location_notes),
-          JSON.stringify(resolvedLocations)
+          JSON.stringify(resolvedLocations), parsedMinQty, qtyMode, qtyLevel,
         ]
       );
 
@@ -1286,6 +1396,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       name, category, status, location, assigned_officer_id, quantity,
       zone, aisle, shelf, box, storage_code, location_notes,
       locations, image_base64, original_filename, content_type,
+      min_quantity, quantity_mode, quantity_level,
     } = req.body;
 
     try {
@@ -1328,7 +1439,25 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         values.push(imageUrl);
       }
 
-      if (Array.isArray(locations)) {
+      const resolvedQtyMode = quantity_mode !== undefined ? parseQuantityMode(quantity_mode) : (existing.quantity_mode || 'count');
+      if (quantity_mode !== undefined) {
+        updates.push(`quantity_mode = $${idx++}`);
+        values.push(resolvedQtyMode);
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      } else if (quantity_level !== undefined) {
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      }
+
+      if (resolvedQtyMode === 'level') {
+        updates.push(`quantity = $${idx++}`);
+        values.push(0);
+        if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+        }
+      } else if (Array.isArray(locations)) {
         const settings = await loadStockToolsSettingsRow(pool, userId);
         const normalized = normalizeStockPlacements(
           locations,
@@ -1394,6 +1523,11 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
           updates.push(`location_notes = $${idx++}`);
           values.push(normalizeBinField(location_notes));
         }
+      }
+
+      if (min_quantity !== undefined) {
+        updates.push(`min_quantity = $${idx++}`);
+        values.push(parseMinQuantity(min_quantity));
       }
 
       if (updates.length > 0) {
@@ -1773,7 +1907,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
     const userId = getTenantScopeUserId(req.user!);
     const {
       name, category, size, status, location, quantity, locations, assigned_officer_id, notes,
-      image_base64, original_filename, content_type,
+      image_base64, original_filename, content_type, quantity_mode, quantity_level,
     } = req.body;
 
     if (!name || !category || !size) {
@@ -1782,6 +1916,8 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
     try {
       const settings = await loadStockToolsSettingsRow(pool, userId);
+      const qtyMode = parseQuantityMode(quantity_mode);
+      const qtyLevel = qtyMode === 'level' ? parseQuantityLevel(quantity_level) : null;
       const fallbackLocation = typeof location === 'string' && location.trim() ? location.trim() : 'Store';
       const fallbackQty = typeof quantity === 'number' ? quantity : parseInt(String(quantity || '1'), 10) || 1;
       const resolvedLocations = normalizeStockPlacements(
@@ -1791,7 +1927,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         'New',
         settings.require_bin_for_locations,
       );
-      const qty = totalPlacementQuantity(resolvedLocations);
+      const qty = qtyMode === 'level' ? 0 : totalPlacementQuantity(resolvedLocations);
       const primaryLocation = resolvedLocations[0]?.location || 'Store';
 
       let imageUrl: string | null = null;
@@ -1803,10 +1939,10 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
       const uniformStatus = status || (assignedId ? 'issued' : 'available');
 
       const ins = await pool.query(
-        `INSERT INTO uniforms (name, category, size, status, location, quantity, locations, assigned_officer_id, notes, image_url, created_by, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        `INSERT INTO uniforms (name, category, size, status, location, quantity, locations, assigned_officer_id, notes, image_url, created_by, updated_at, quantity_mode, quantity_level)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), $12, $13)
          RETURNING *`,
-        [name, category, size, uniformStatus, primaryLocation, qty, JSON.stringify(resolvedLocations), assignedId, notes || null, imageUrl, userId],
+        [name, category, size, uniformStatus, primaryLocation, qty, JSON.stringify(resolvedLocations), assignedId, notes || null, imageUrl, userId, qtyMode, qtyLevel],
       );
 
       const row = ins.rows[0];
@@ -1831,7 +1967,7 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
 
     const {
       name, category, size, status, location, quantity, locations, assigned_officer_id, notes,
-      image_base64, original_filename, content_type,
+      image_base64, original_filename, content_type, quantity_mode, quantity_level,
     } = req.body;
 
     try {
@@ -1870,7 +2006,25 @@ export function mountStockToolsRoutes(app: Application, deps: { pool: Pool; auth
         values.push(status);
       }
 
-      if (Array.isArray(locations)) {
+      const resolvedQtyMode = quantity_mode !== undefined ? parseQuantityMode(quantity_mode) : (existing.quantity_mode || 'count');
+      if (quantity_mode !== undefined) {
+        updates.push(`quantity_mode = $${idx++}`);
+        values.push(resolvedQtyMode);
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      } else if (quantity_level !== undefined) {
+        updates.push(`quantity_level = $${idx++}`);
+        values.push(resolvedQtyMode === 'level' ? parseQuantityLevel(quantity_level) : null);
+      }
+
+      if (resolvedQtyMode === 'level') {
+        updates.push(`quantity = $${idx++}`);
+        values.push(0);
+        if (location !== undefined) {
+          updates.push(`location = $${idx++}`);
+          values.push(location);
+        }
+      } else if (Array.isArray(locations)) {
         const settings = await loadStockToolsSettingsRow(pool, userId);
         const fallbackQuality = 'New';
         const normalized = normalizeStockPlacements(

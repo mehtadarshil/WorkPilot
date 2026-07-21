@@ -32,6 +32,27 @@ class StockToolsController extends GetxController {
   final RxList<String> uniformSizes = <String>['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '28', '30', '32', '34', '36', '38', '40', '42', '8', '9', '10', '11', '12'].obs;
   final RxList<String> storageBins = <String>[].obs;
   final RxList<String> requireBinLocations = <String>['Store'].obs;
+  final RxInt defaultLowStockThreshold = 5.obs;
+
+  int effectiveLowStockThreshold(Map<String, dynamic> item) {
+    final raw = item['min_quantity'];
+    if (raw is num && raw >= 0) return raw.toInt();
+    if (raw is String) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null && parsed >= 0) return parsed;
+    }
+    return defaultLowStockThreshold.value;
+  }
+
+  bool isLowStock(Map<String, dynamic> item) {
+    if (item['quantity_mode'] == 'level') {
+      return item['quantity_level'] == 'low';
+    }
+    final qtyRaw = item['quantity'];
+    final qty = qtyRaw is num ? qtyRaw.toInt() : int.tryParse('$qtyRaw') ?? 0;
+    if (qty <= 0) return false;
+    return qty <= effectiveLowStockThreshold(item);
+  }
 
   // Filter values
   final RxString stockSearch = ''.obs;
@@ -129,6 +150,15 @@ class StockToolsController extends GetxController {
       final req = List<String>.from(json['require_bin_for_locations']);
       requireBinLocations.value = req.isNotEmpty ? req : <String>['Store'];
     }
+    final threshold = json['default_low_stock_threshold'];
+    if (threshold is num && threshold >= 0) {
+      defaultLowStockThreshold.value = threshold.toInt();
+    } else if (threshold is String) {
+      final parsed = int.tryParse(threshold);
+      if (parsed != null && parsed >= 0) {
+        defaultLowStockThreshold.value = parsed;
+      }
+    }
   }
 
   Future<void> saveSettings({
@@ -139,6 +169,7 @@ class StockToolsController extends GetxController {
     required List<String> uniSizes,
     List<String>? bins,
     List<String>? requireBins,
+    int? defaultLowStock,
   }) async {
     try {
       final res = await repository.patchSettings({
@@ -149,6 +180,7 @@ class StockToolsController extends GetxController {
         'uniform_size_options': uniSizes,
         if (bins != null) 'storage_bin_options': bins,
         if (requireBins != null) 'require_bin_for_locations': requireBins,
+        if (defaultLowStock != null) 'default_low_stock_threshold': defaultLowStock,
       });
       _parseSettings(res);
       Get.snackbar('Success', 'Options updated successfully');
@@ -271,14 +303,21 @@ class StockToolsController extends GetxController {
     required String mpn,
     required List<Map<String, dynamic>> locs,
     required String category,
+    int? minQuantity,
+    String quantityMode = 'count',
+    String? quantityLevel,
   }) async {
+    final isLevel = quantityMode == 'level';
     final payload = <String, dynamic>{
       'name': name.trim(),
       'mpn': mpn.trim().isEmpty ? null : mpn.trim(),
       'category': category,
-      'locations': locs.map(placementRowToApi).toList(),
+      'locations': isLevel ? [] : locs.map(placementRowToApi).toList(),
+      'min_quantity': minQuantity,
+      'quantity_mode': quantityMode,
+      'quantity_level': isLevel ? quantityLevel : null,
     };
-    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    final binError = isLevel ? null : validatePlacementsRequireBin(locs, requireBinLocations.toList());
     if (binError != null) {
       Get.snackbar('Error', binError);
       return false;
@@ -345,15 +384,22 @@ class StockToolsController extends GetxController {
     required String status,
     required List<Map<String, dynamic>> locs,
     int? assignedOfficerId,
+    int? minQuantity,
+    String quantityMode = 'count',
+    String? quantityLevel,
   }) async {
+    final isLevel = quantityMode == 'level';
     final payload = <String, dynamic>{
       'name': name.trim(),
       'category': category,
       'status': status,
       'assigned_officer_id': assignedOfficerId,
-      'locations': locs.map(placementRowToApi).toList(),
+      'locations': isLevel ? [] : locs.map(placementRowToApi).toList(),
+      'min_quantity': minQuantity,
+      'quantity_mode': quantityMode,
+      'quantity_level': isLevel ? quantityLevel : null,
     };
-    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    final binError = isLevel ? null : validatePlacementsRequireBin(locs, requireBinLocations.toList());
     if (binError != null) {
       Get.snackbar('Error', binError);
       return false;
@@ -431,8 +477,11 @@ class StockToolsController extends GetxController {
     required List<Map<String, dynamic>> locs,
     int? assignedOfficerId,
     required String notes,
+    String quantityMode = 'count',
+    String? quantityLevel,
   }) async {
-    final binError = validatePlacementsRequireBin(locs, requireBinLocations.toList());
+    final isLevel = quantityMode == 'level';
+    final binError = isLevel ? null : validatePlacementsRequireBin(locs, requireBinLocations.toList());
     if (binError != null) {
       Get.snackbar('Error', binError);
       return false;
@@ -442,9 +491,11 @@ class StockToolsController extends GetxController {
       'category': category,
       'size': size,
       'status': status,
-      'locations': locs.map(placementRowToApi).toList(),
+      'locations': isLevel ? [] : locs.map(placementRowToApi).toList(),
       'assigned_officer_id': assignedOfficerId,
       'notes': notes.trim().isEmpty ? null : notes.trim(),
+      'quantity_mode': quantityMode,
+      'quantity_level': isLevel ? quantityLevel : null,
     };
     if (base64Image.isNotEmpty) {
       payload['image_base64'] = base64Image.value;

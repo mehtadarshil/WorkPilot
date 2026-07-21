@@ -16,6 +16,21 @@ import {
 } from 'lucide-react';
 import { getJson, postJson, patchJson, deleteRequest } from '../../apiClient';
 import { AuthenticatedStockImage } from '@/components/AuthenticatedStockImage';
+import {
+  type StockPlacement,
+  type StockPlacementFormRow,
+  type QuantityMode,
+  type QuantityLevel,
+  emptyPlacementFormRow,
+  formatPlacementLabel,
+  parsePlacementsFromItem,
+  placementFormFromApi,
+  placementFormToApi,
+  validatePlacementsRequireBin,
+  QUANTITY_LEVELS,
+  quantityLevelLabel,
+  quantityLevelColor,
+} from '@/lib/stockPlacements';
 
 export interface UniformItem {
   id: number;
@@ -24,7 +39,10 @@ export interface UniformItem {
   size: string;
   status: 'available' | 'issued' | 'retired' | 'lost' | 'damaged';
   location: string;
+  locations?: StockPlacement[];
   quantity: number;
+  quantity_mode?: QuantityMode;
+  quantity_level?: QuantityLevel | null;
   assigned_officer_id: number | null;
   assigned_officer_name?: string | null;
   notes: string | null;
@@ -44,8 +62,12 @@ type Props = {
   locations: string[];
   uniformCategories: string[];
   uniformSizes: string[];
+  storageBins: string[];
+  requireBinLocations: string[];
   onManageLists: () => void;
 };
+
+const QUALITIES = ['New', 'Used - Good', 'Used - Fair', 'Damaged'];
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -79,6 +101,8 @@ export function UniformTab({
   locations,
   uniformCategories,
   uniformSizes,
+  storageBins,
+  requireBinLocations,
   onManageLists,
 }: Props) {
   const [uniforms, setUniforms] = useState<UniformItem[]>([]);
@@ -97,7 +121,10 @@ export function UniformTab({
     size: '',
     status: 'available' as UniformItem['status'],
     location: 'Store',
+    locations: [emptyPlacementFormRow('Store')] as StockPlacementFormRow[],
     quantity: '1',
+    quantity_mode: 'count' as QuantityMode,
+    quantity_level: '' as QuantityLevel | '',
     assigned_officer_id: '',
     notes: '',
     image_base64: '',
@@ -147,7 +174,10 @@ export function UniformTab({
       size: uniformSizes[0] ?? 'M',
       status: 'available',
       location: locations[0] ?? 'Store',
+      locations: [emptyPlacementFormRow(locations[0] ?? 'Store')],
       quantity: '1',
+      quantity_mode: 'count',
+      quantity_level: '',
       assigned_officer_id: '',
       notes: '',
       image_base64: '',
@@ -160,13 +190,17 @@ export function UniformTab({
 
   const openEdit = (item: UniformItem) => {
     setEditing(item);
+    const initialLocs = parsePlacementsFromItem(item).map(placementFormFromApi);
     setForm({
       name: item.name,
       category: item.category,
       size: item.size,
       status: item.status,
       location: item.location,
+      locations: initialLocs,
       quantity: String(item.quantity ?? 1),
+      quantity_mode: item.quantity_mode || 'count',
+      quantity_level: item.quantity_level || '',
       assigned_officer_id: item.assigned_officer_id ? String(item.assigned_officer_id) : '',
       notes: item.notes || '',
       image_base64: '',
@@ -198,13 +232,37 @@ export function UniformTab({
     if (!token) return;
     setErrorMsg(null);
 
+    const isLevelMode = form.quantity_mode === 'level';
+    if (isLevelMode && !form.quantity_level) {
+      setErrorMsg('Please select a quantity level (Low, Medium, or High)');
+      return;
+    }
+
+    const parsedLocations = form.locations.map(placementFormToApi);
+
+    if (!isLevelMode && parsedLocations.some((l) => isNaN(l.quantity) || l.quantity < 0)) {
+      setErrorMsg('All placement quantities must be 0 or greater');
+      return;
+    }
+
+    const binError = isLevelMode ? null : validatePlacementsRequireBin(parsedLocations, requireBinLocations);
+    if (binError) {
+      setErrorMsg(binError);
+      return;
+    }
+
+    const totalQty = isLevelMode ? 0 : parsedLocations.reduce((sum, loc) => sum + loc.quantity, 0);
+
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       category: form.category,
       size: form.size,
       status: form.status,
-      location: form.location,
-      quantity: parseInt(form.quantity, 10) || 1,
+      location: isLevelMode ? (form.location || 'Store') : (parsedLocations[0]?.location || 'Store'),
+      locations: isLevelMode ? [] : parsedLocations,
+      quantity: totalQty,
+      quantity_mode: form.quantity_mode,
+      quantity_level: isLevelMode ? form.quantity_level : null,
       assigned_officer_id: form.assigned_officer_id ? parseInt(form.assigned_officer_id, 10) : null,
       notes: form.notes.trim() || null,
     };
@@ -325,8 +383,21 @@ export function UniformTab({
                   </div>
                   <h3 className="font-bold text-slate-900 truncate mb-2">{item.name}</h3>
                   <div className="flex flex-col gap-1.5 text-xs text-slate-600">
-                    <div className="flex items-center gap-1.5"><Package className="size-3.5 text-slate-400" /><span>Qty: <strong>{item.quantity ?? 1}</strong></span></div>
-                    <div className="flex items-center gap-1.5"><MapPin className="size-3.5 text-slate-400" /><span>Location: <strong>{item.location}</strong></span></div>
+                    {item.quantity_mode === 'level' ? (
+                      <div className="flex items-center gap-1.5"><Package className="size-3.5 text-slate-400" /><span>Qty: <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${quantityLevelColor(item.quantity_level)}`}>{quantityLevelLabel(item.quantity_level)}</span></span></div>
+                    ) : (
+                      <div className="flex items-center gap-1.5"><Package className="size-3.5 text-slate-400" /><span>Qty: <strong>{item.quantity ?? 1}</strong></span></div>
+                    )}
+                    {item.quantity_mode !== 'level' && (
+                    <div className="flex flex-col gap-0.5">
+                      {parsePlacementsFromItem(item).slice(0, 3).map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5"><MapPin className="size-3.5 text-slate-400 shrink-0" /><span className="truncate">{formatPlacementLabel(p)} ({p.quantity})</span></div>
+                      ))}
+                      {parsePlacementsFromItem(item).length > 3 && (
+                        <div className="text-xs text-slate-400 pl-5">+{parsePlacementsFromItem(item).length - 3} more</div>
+                      )}
+                    </div>
+                    )}
                     <div className="flex items-center gap-1.5"><User className="size-3.5 text-slate-400" /><span>Issued to: <strong>{item.assigned_officer_name || 'Unassigned'}</strong></span></div>
                   </div>
                   {item.notes && <p className="mt-2 text-xs text-slate-500 line-clamp-2">{item.notes}</p>}
@@ -372,18 +443,227 @@ export function UniformTab({
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Location</label>
-                  <select value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]">
-                    {locations.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
+
+              {/* Quantity mode toggle */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity tracking</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, quantity_mode: 'count', quantity_level: '' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${form.quantity_mode === 'count' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Exact count
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, quantity_mode: 'level', quantity_level: p.quantity_level || 'medium' }))}
+                    className={`flex-1 px-3 py-2 text-xs font-bold transition ${form.quantity_mode === 'level' ? 'bg-[#14B8A6] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    Level (Low / Med / High)
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Quantity</label>
-                  <input type="number" min={1} value={form.quantity} onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#14B8A6]" />
-                </div>
+                {form.quantity_mode === 'level' && (
+                  <div className="mt-2 flex gap-2">
+                    {QUANTITY_LEVELS.map((lvl) => (
+                      <button
+                        key={lvl.value}
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, quantity_level: lvl.value }))}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-xs font-bold transition ${form.quantity_level === lvl.value ? quantityLevelColor(lvl.value) : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        {lvl.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Storage placements */}
+              {form.quantity_mode === 'count' && (
+              <div className="border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500">Storage placements</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm(prev => ({
+                        ...prev,
+                        locations: [...prev.locations, emptyPlacementFormRow(locations[0] || 'Store')]
+                      }));
+                    }}
+                    className="text-xs font-bold text-[#14B8A6] hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="size-3.5" /> Add placement
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-3">
+                  Record site, aisle, shelf, and box/cell so staff can find uniforms quickly.
+                  {requireBinLocations.length > 0 && (
+                    <> Box or storage code required for: {requireBinLocations.join(', ')}.</>
+                  )}
+                </p>
+                <div className="flex flex-col gap-3">
+                  {form.locations.map((loc, index) => (
+                    <div key={index} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Site</label>
+                          <select
+                            value={loc.location}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], location: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {locations.map(l => (
+                              <option key={l} value={l}>{l}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Zone</label>
+                          <input
+                            value={loc.zone}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], zone: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="WH-A"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Aisle</label>
+                          <input
+                            value={loc.aisle}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], aisle: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="3"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Shelf</label>
+                          <input
+                            value={loc.shelf}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], shelf: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="B"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Box / Cell</label>
+                          <input
+                            value={loc.box}
+                            list={storageBins.length > 0 ? 'uniform-storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], box: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Storage code</label>
+                          <input
+                            value={loc.storage_code}
+                            list={storageBins.length > 0 ? 'uniform-storage-bin-suggestions' : undefined}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], storage_code: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            placeholder="A3-B-14"
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Quality</label>
+                          <select
+                            value={loc.quality}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], quality: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          >
+                            {QUALITIES.map(q => (
+                              <option key={q} value={q}>{q}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400">Qty</label>
+                          <input
+                            type="number"
+                            min="0"
+                            required
+                            value={loc.quantity}
+                            onChange={(e) => {
+                              const newLocs = [...form.locations];
+                              newLocs[index] = { ...newLocs[index], quantity: e.target.value };
+                              setForm(prev => ({ ...prev, locations: newLocs }));
+                            }}
+                            className="mt-0.5 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          {form.locations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setForm(prev => ({
+                                  ...prev,
+                                  locations: prev.locations.filter((_, i) => i !== index)
+                                }));
+                              }}
+                              className="rounded-lg p-2 text-rose-500 hover:bg-rose-50 transition"
+                              title="Remove placement"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        value={loc.notes}
+                        onChange={(e) => {
+                          const newLocs = [...form.locations];
+                          newLocs[index] = { ...newLocs[index], notes: e.target.value };
+                          setForm(prev => ({ ...prev, locations: newLocs }));
+                        }}
+                        placeholder="Notes (optional) — e.g. top shelf, left side"
+                        className="mt-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-[#14B8A6]"
+                      />
+                    </div>
+                  ))}
+                </div>
+                {storageBins.length > 0 && (
+                  <datalist id="uniform-storage-bin-suggestions">
+                    {storageBins.map((bin) => (
+                      <option key={bin} value={bin} />
+                    ))}
+                  </datalist>
+                )}
+              </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">Status</label>

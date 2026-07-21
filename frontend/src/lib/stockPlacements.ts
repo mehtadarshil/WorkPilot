@@ -157,3 +157,27 @@ export function validatePlacementsRequireBin(
   }
   return null;
 }
+
+export type QuantityMode = 'count' | 'level';
+export type QuantityLevel = 'low' | 'medium' | 'high';
+
+export const QUANTITY_LEVELS: { value: QuantityLevel; label: string }[] = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+];
+
+export function quantityLevelLabel(level: string | null | undefined): string {
+  if (!level) return '';
+  const found = QUANTITY_LEVELS.find((l) => l.value === level);
+  return found ? found.label : level;
+}
+
+export function quantityLevelColor(level: string | null | undefined): string {
+  switch (level) {
+    case 'low': return 'text-rose-600 bg-rose-50 border-rose-200';
+    case 'medium': return 'text-amber-600 bg-amber-50 border-amber-200';
+    case 'high': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+    default: return 'text-slate-600 bg-slate-50 border-slate-200';
+  }
+}
