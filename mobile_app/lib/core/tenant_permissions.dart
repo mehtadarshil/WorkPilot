@@ -50,6 +50,11 @@ bool canViewInvoicesModule(Map<String, bool> perms, {String? role}) {
   return perms['invoices'] == true;
 }
 
+bool canSendInvoices(Map<String, bool> perms, {String? role}) {
+  if (_isAdminRole(role)) return true;
+  return perms['invoice_send'] == true;
+}
+
 bool canViewQuotationsModule(Map<String, bool> perms, {String? role}) {
   if (_isAdminRole(role)) return true;
   return perms['quotations'] == true;

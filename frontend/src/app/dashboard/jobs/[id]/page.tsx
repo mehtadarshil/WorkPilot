@@ -1136,6 +1136,7 @@ export default function JobDetailsPage() {
                                <th className="px-6 py-4">Date</th>
                                <th className="px-6 py-4">Description</th>
                                <th className="px-6 py-4">Invoice/Credit no</th>
+                               <th className="px-6 py-4">Status</th>
                                <th className="px-6 py-4 text-right">Total (exc VAT)</th>
                                <th className="px-6 py-4 text-right">VAT</th>
                                <th className="px-6 py-4 text-right">Total</th>
@@ -1147,7 +1148,7 @@ export default function JobDetailsPage() {
                          <tbody className="divide-y divide-slate-50">
                             {invoices.filter(i => i.state !== 'draft').length === 0 ? (
                                <tr>
-                                  <td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold italic tracking-tight">No finalized invoices found.</td>
+                                  <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold italic tracking-tight">No finalized invoices found.</td>
                                </tr>
                             ) : (
                                invoices.filter(i => i.state !== 'draft').map(inv => (
@@ -1156,6 +1157,19 @@ export default function JobDetailsPage() {
                                      <td className="px-6 py-5 text-slate-600 font-bold">{dayjs(inv.invoice_date).format('DD/MM/YY')}</td>
                                      <td className="px-6 py-5 text-slate-600 font-medium truncate max-w-[150px]">{inv.job_title || job.title}</td>
                                      <td className="px-6 py-5 font-black text-[#14B8A6]">{inv.invoice_number}</td>
+                                     <td className="px-6 py-5">
+                                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                                          inv.state === 'paid' ? 'bg-emerald-100 text-emerald-800'
+                                          : inv.state === 'partially_paid' ? 'bg-violet-100 text-violet-800'
+                                          : inv.state === 'overdue' ? 'bg-rose-100 text-rose-800'
+                                          : inv.state === 'pending_payment' ? 'bg-amber-100 text-amber-800'
+                                          : inv.state === 'issued' ? 'bg-blue-100 text-blue-800'
+                                          : inv.state === 'cancelled' ? 'bg-slate-200 text-slate-500'
+                                          : 'bg-slate-100 text-slate-600'
+                                        }`}>
+                                          {inv.state.replace(/_/g, ' ')}
+                                        </span>
+                                     </td>
                                      <td className="px-6 py-5 text-right font-bold text-slate-700">£{Number(inv.subtotal).toFixed(2)}</td>
                                      <td className="px-6 py-5 text-right font-medium text-slate-400">£{Number(inv.tax_amount).toFixed(2)}</td>
                                      <td className="px-6 py-5 text-right font-black text-slate-800">£{Number(inv.total_amount).toFixed(2)}</td>

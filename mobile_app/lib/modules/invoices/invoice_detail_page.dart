@@ -8,9 +8,11 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/tenant_permissions.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/models/open_job_summary.dart';
 import '../../data/repositories/invoices_repository.dart';
+import '../home/controllers/home_controller.dart';
 import 'invoice_helpers.dart';
 import 'invoice_notes_tab.dart';
 import 'invoice_official_send_sheet.dart';
@@ -38,6 +40,14 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
   String? _error;
   Map<String, dynamic>? _inv;
   Map<String, dynamic>? _job;
+
+  Map<String, bool> get _perms =>
+      Get.isRegistered<HomeController>() ? (Get.find<HomeController>().home.value?.mobilePermissions ?? {}) : {};
+
+  String? get _role =>
+      Get.isRegistered<HomeController>() ? Get.find<HomeController>().home.value?.role : null;
+
+  bool get _canSend => canSendInvoices(_perms, role: _role);
 
   @override
   void initState() {
@@ -397,26 +407,27 @@ class _InvoiceDetailPageState extends State<InvoiceDetailPage> with SingleTicker
                     label: const Text('Print layout'),
                     onPressed: _openPrintLayout,
                   ),
-                  if (_state == 'draft')
+                  if (_state == 'draft' && _canSend)
                     ActionChip(
                       avatar: Icon(Icons.send_rounded, size: 18),
                       label: const Text('Issue'),
                       onPressed: _issue,
                     ),
-                  if (_state != 'draft' && _state != 'cancelled')
+                  if (_canSend && _state != 'draft' && _state != 'cancelled')
                     ActionChip(
                       avatar: Icon(Icons.email_rounded, size: 18),
                       label: const Text('Send email'),
                       onPressed: _sendEmail,
                     ),
-                  ActionChip(
-                    avatar: Icon(Icons.edit_rounded, size: 18),
-                    label: const Text('Edit'),
-                    onPressed: () async {
-                      await Get.toNamed(AppRoutes.invoiceForm, arguments: _id);
-                      _load();
-                    },
-                  ),
+                  if (_role?.toUpperCase() != 'OFFICER')
+                    ActionChip(
+                      avatar: Icon(Icons.edit_rounded, size: 18),
+                      label: const Text('Edit'),
+                      onPressed: () async {
+                        await Get.toNamed(AppRoutes.invoiceForm, arguments: _id);
+                        _load();
+                      },
+                    ),
                   if (custId > 0)
                     ActionChip(
                       avatar: Icon(Icons.person_outline_rounded, size: 18),

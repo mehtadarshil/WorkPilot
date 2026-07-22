@@ -81,6 +81,7 @@ import { syncJobDatesFromDiaryEvents, syncJobOfficersFromDiaryEvents } from './j
 import { buildJobCompletionContext } from './jobCompletionContext';
 import { ensureDiaryEventsForScheduledJob, ensureDiaryEventsForScheduledJobsInRange, splitCombinedDiaryEvent, splitCombinedDiaryEventsForJob, splitCombinedDiaryEventsInRange, resolveDiaryEventIdForOfficer, resolveActingDiaryEventId, applyAppointmentReschedule, listAppointmentSiblingVisits } from './ensureJobDiaryEvents';
 import { generateInvoicePdfBuffer } from './invoicePrintHtml';
+import { loadInvoiceSummariesByJobIds, emptyInvoiceSummary } from './invoiceSummary';
 import { generateJobStatementPdfBuffer, generateCustomerStatementPdfBuffer } from './jobStatementPdf';
 import { generateQuotationPdfBuffer } from './quotationPdf';
 import { normalizeTemplateSiteReportDocument, collectTemplateDocumentImageIds } from './siteReportTemplates/documentNormalize';
@@ -6366,6 +6367,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
     for (const row of revenueRes.rows) {
       revenueMap[row.job_id] = parseFloat(row.invoiced_subtotal || '0');
     }
+    const invoiceSummaryByJob = await loadInvoiceSummariesByJobIds(pool, jobIds);
 
     const jobs = listResult.rows.map((r) => {
       const officers = officersByJob.get(Number(r.id)) || [];
@@ -6404,6 +6406,7 @@ app.get('/api/jobs', authenticate, requireTenantCrmAccess('jobs'), async (req: A
       created_by: r.created_by,
       is_quotation_visit: !!r.is_quotation_visit,
       profit: Math.round(((revenueMap[r.id] ?? 0) - (pageCostsMap[r.id] ?? 0)) * 100) / 100,
+      invoice_summary: invoiceSummaryByJob[Number(r.id)] ?? emptyInvoiceSummary(),
     };
     });
 
@@ -6588,6 +6591,7 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
       }
     }
 
+    const invoiceSummaryMap = await loadInvoiceSummariesByJobIds(pool, [id]);
     return res.json({
       job: {
         ...jobRest,
@@ -6605,6 +6609,7 @@ app.get('/api/jobs/:id', authenticate, requireTenantCrmAccess('jobs'), async (re
         pricing_items: pItems.rows,
         officers: officersResult.rows.map(r => ({ id: r.id, full_name: r.full_name, is_primary: r.is_primary })),
         ppm,
+        invoice_summary: invoiceSummaryMap[id] ?? emptyInvoiceSummary(),
       },
     });
   } catch (error) {
@@ -14930,7 +14935,7 @@ app.get('/api/invoices/:id/pdf', authenticate, requireTenantCrmAccess('invoices'
   }
 });
 
-app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices', { officerWritePermission: 'invoices' }), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     customer_id?: number;
     job_id?: number;
@@ -15035,7 +15040,13 @@ app.post('/api/invoices', authenticate, requireTenantCrmAccess('invoices'), asyn
       invoiceNumber = await generateInvoiceNumber(settings.invoice_prefix);
     }
     const validStates = ['draft', 'issued', 'pending_payment'];
-    const targetState = body.state && validStates.includes(body.state) ? body.state : 'draft';
+    // Officers may only create drafts; admin/staff may issue immediately if requested.
+    const targetState =
+      req.user!.role === 'OFFICER'
+        ? 'draft'
+        : body.state && validStates.includes(body.state)
+          ? body.state
+          : 'draft';
     const publicToken = crypto.randomBytes(32).toString('hex');
 
     const invResult = await pool.query<DbInvoice>(
@@ -15563,7 +15574,7 @@ app.patch(
   },
 );
 
-app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoices', { officerWritePermission: 'invoice_send' }), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
@@ -15604,7 +15615,7 @@ app.post('/api/invoices/:id/issue', authenticate, requireTenantCrmAccess('invoic
   }
 });
 
-app.post('/api/invoices/:id/send', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/send', authenticate, requireTenantCrmAccess('invoices', { officerWritePermission: 'invoice_send' }), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });
@@ -15823,7 +15834,7 @@ app.get('/api/invoices/:id/email-compose', authenticate, requireTenantCrmAccess(
   }
 });
 
-app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('invoices'), async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/invoices/:id/send-email', authenticate, requireTenantCrmAccess('invoices', { officerWritePermission: 'invoice_send' }), async (req: AuthenticatedRequest, res: Response) => {
   const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(String(idParam), 10);
   if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid invoice id' });

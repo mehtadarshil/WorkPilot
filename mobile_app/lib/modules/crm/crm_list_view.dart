@@ -8,6 +8,7 @@ import '../../core/values/app_colors.dart';
 import '../open_jobs/open_job_formatters.dart';
 import '../certificates/certificate_catalog.dart';
 import '../certificates/widgets/copy_convert_certificate_sheet.dart';
+import '../invoices/invoice_helpers.dart';
 import 'crm_list_controller.dart';
 
 class CrmListView extends GetView<CrmListController> {
@@ -554,6 +555,38 @@ class CrmListView extends GetView<CrmListController> {
                                                   ),
                                                 ),
                                               ],
+                                            ),
+                                          ],
+                                          if (!isQuotationVisit) ...[
+                                            const SizedBox(height: 8),
+                                            Builder(
+                                              builder: (_) {
+                                                final rawSummary = row['invoice_summary'];
+                                                final summary = rawSummary is Map
+                                                    ? Map<String, dynamic>.from(rawSummary)
+                                                    : null;
+                                                final label = InvoiceHelpers.summaryLabelFromMap(summary);
+                                                final color = InvoiceHelpers.summaryChipColor(summary);
+                                                return Align(
+                                                  alignment: Alignment.centerLeft,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: color.withValues(alpha: 0.12),
+                                                      borderRadius: BorderRadius.circular(20),
+                                                      border: Border.all(color: color.withValues(alpha: 0.35)),
+                                                    ),
+                                                    child: Text(
+                                                      label,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: color,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
                                             ),
                                           ],
                                           const SizedBox(height: 10),

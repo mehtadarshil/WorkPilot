@@ -110,4 +110,42 @@ class InvoiceHelpers {
     }
     return code.replaceAll('_', ' ');
   }
+
+  /// Job-list chip label from API `invoice_summary` or local counts.
+  static String summaryLabelFromMap(Map<String, dynamic>? summary) {
+    if (summary == null) return '0 invoices';
+    final label = summary['label'];
+    if (label is String && label.trim().isNotEmpty) return label.trim();
+    final total = (summary['total'] is num) ? (summary['total'] as num).toInt() : int.tryParse('${summary['total']}') ?? 0;
+    if (total <= 0) return '0 invoices';
+    final draft = (summary['draft'] is num) ? (summary['draft'] as num).toInt() : int.tryParse('${summary['draft']}') ?? 0;
+    final awaiting = (summary['awaiting_payment'] is num)
+        ? (summary['awaiting_payment'] as num).toInt()
+        : int.tryParse('${summary['awaiting_payment']}') ?? 0;
+    final issued = (summary['issued'] is num) ? (summary['issued'] as num).toInt() : int.tryParse('${summary['issued']}') ?? 0;
+    final paid = (summary['paid'] is num) ? (summary['paid'] as num).toInt() : int.tryParse('${summary['paid']}') ?? 0;
+    final parts = <String>['$total invoice${total == 1 ? '' : 's'}'];
+    if (draft > 0) parts.add('$draft draft');
+    if (awaiting > 0) {
+      parts.add('unpaid');
+    } else if (issued > 0) {
+      parts.add('issued');
+    } else if (paid > 0 && draft == 0) {
+      parts.add('paid');
+    }
+    return parts.join(' · ');
+  }
+
+  static Color summaryChipColor(Map<String, dynamic>? summary) {
+    if (summary == null) return AppColors.slate400;
+    final total = (summary['total'] is num) ? (summary['total'] as num).toInt() : 0;
+    if (total <= 0) return AppColors.slate400;
+    final draft = (summary['draft'] is num) ? (summary['draft'] as num).toInt() : 0;
+    final awaiting = (summary['awaiting_payment'] is num) ? (summary['awaiting_payment'] as num).toInt() : 0;
+    final paid = (summary['paid'] is num) ? (summary['paid'] as num).toInt() : 0;
+    if (draft > 0) return const Color(0xFFF59E0B);
+    if (awaiting > 0) return const Color(0xFFF43F5E);
+    if (paid > 0) return const Color(0xFF10B981);
+    return const Color(0xFF3B82F6);
+  }
 }

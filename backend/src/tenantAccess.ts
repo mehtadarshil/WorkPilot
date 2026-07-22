@@ -105,12 +105,15 @@ export function officerHasPermission(user: TenantAuthUser, permission: TenantPer
 
 /**
  * Same CRM routes as the web dashboard: tenant owner + STAFF keep full verbs;
- * OFFICER may only GET/HEAD when they have the matching permission and a tenant scope user id on the JWT.
+ * OFFICER may GET/HEAD with the matching permission. For writes, pass
+ * `officerWritePermission` so officers can POST when they have that flag
+ * (e.g. invoices create, invoice_send for email).
  */
 export function tenantCrmAccessAllowed(
   user: TenantAuthUser | undefined,
   permission: TenantPermissionKey,
   method: string,
+  opts?: { officerWritePermission?: TenantPermissionKey },
 ): boolean {
   if (!user) return false;
   const m = (method || 'GET').toUpperCase();
@@ -118,16 +121,23 @@ export function tenantCrmAccessAllowed(
   if (user.role === 'ADMIN') return staffHasPermission(user, permission);
   if (user.role === 'STAFF') return staffHasPermission(user, permission);
   if (user.role === 'OFFICER') {
-    if (m !== 'GET' && m !== 'HEAD') return false;
     if (user.tenantScopeUserId == null || !Number.isFinite(user.tenantScopeUserId)) return false;
-    return officerHasPermission(user, permission);
+    if (m === 'GET' || m === 'HEAD') {
+      return officerHasPermission(user, permission);
+    }
+    const writeKey = opts?.officerWritePermission;
+    if (!writeKey) return false;
+    return officerHasPermission(user, writeKey);
   }
   return false;
 }
 
-export function requireTenantCrmAccess(permission: TenantPermissionKey) {
+export function requireTenantCrmAccess(
+  permission: TenantPermissionKey,
+  opts?: { officerWritePermission?: TenantPermissionKey },
+) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
-    if (!tenantCrmAccessAllowed(req.user, permission, req.method)) {
+    if (!tenantCrmAccessAllowed(req.user, permission, req.method, opts)) {
       res.status(403).json({ message: 'Forbidden: insufficient permissions' });
       return;
     }

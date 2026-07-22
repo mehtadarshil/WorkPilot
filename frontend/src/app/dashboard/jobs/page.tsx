@@ -34,6 +34,15 @@ interface Job {
   is_quotation_visit?: boolean;
   charge_type?: string;
   profit?: number;
+  invoice_summary?: {
+    total: number;
+    draft: number;
+    issued: number;
+    awaiting_payment: number;
+    paid: number;
+    cancelled: number;
+    label: string;
+  };
 }
 
 interface JobsResponse {
@@ -408,6 +417,7 @@ export default function JobsPage() {
                   <tr>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Job</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">State</th>
+                    <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Invoicing</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Priority</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned</th>
                     <th className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</th>
@@ -420,7 +430,7 @@ export default function JobsPage() {
                 <tbody className="divide-y divide-slate-200">
                   {jobs.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
+                      <td colSpan={10} className="px-6 py-12 text-center text-slate-500">
                         No jobs yet. Create one to get started.
                       </td>
                     </tr>
@@ -466,6 +476,24 @@ export default function JobsPage() {
                             </div>
                           </td>
                           <td className="px-6 py-4">{stateBadge(j.state)}</td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-flex max-w-[220px] items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                                !j.invoice_summary || j.invoice_summary.total === 0
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : j.invoice_summary.draft > 0
+                                    ? 'bg-amber-50 text-amber-800'
+                                    : j.invoice_summary.awaiting_payment > 0
+                                      ? 'bg-rose-50 text-rose-700'
+                                      : j.invoice_summary.paid > 0
+                                        ? 'bg-emerald-50 text-emerald-700'
+                                        : 'bg-blue-50 text-blue-700'
+                              }`}
+                              title={j.invoice_summary?.label || '0 invoices'}
+                            >
+                              {j.invoice_summary?.label || '0 invoices'}
+                            </span>
+                          </td>
                           <td className="px-6 py-4">{priorityBadge(j.priority)}</td>
                           <td className="px-6 py-4 text-sm text-slate-700">
                             {(() => {

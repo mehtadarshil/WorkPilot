@@ -4,11 +4,14 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/tenant_permissions.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/customers_repository.dart';
 import '../../data/repositories/invoices_repository.dart';
 import '../../widgets/searchable_select_field.dart';
+import '../home/controllers/home_controller.dart';
 import 'invoice_helpers.dart';
+import 'invoice_official_send_sheet.dart';
 
 class _LineRow {
   _LineRow({String desc = '', double qty = 1, double price = 0})
@@ -280,6 +283,66 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
 
   double get _total => _subtotal + _taxAmount;
 
+  Map<String, bool> get _perms =>
+      Get.isRegistered<HomeController>() ? (Get.find<HomeController>().home.value?.mobilePermissions ?? {}) : {};
+
+  String? get _role =>
+      Get.isRegistered<HomeController>() ? Get.find<HomeController>().home.value?.role : null;
+
+  bool get _canSend => canSendInvoices(_perms, role: _role);
+
+  Future<void> _afterCreate(int? id) async {
+    if (id == null) {
+      Get.back(result: null);
+      return;
+    }
+    if (!_canSend) {
+      Get.back(result: id);
+      Get.snackbar(
+        'Invoice drafted',
+        'Saved as draft. An admin can review and send it to the client.',
+      );
+      return;
+    }
+    final sendNow = await Get.dialog<bool>(
+      AlertDialog(
+        backgroundColor: Colors.white,
+        title: Text('Send to client?', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        content: Text(
+          'Issue this invoice and open the email composer to send it to the client now?',
+          style: GoogleFonts.inter(color: AppColors.slate500),
+        ),
+        actions: [
+          TextButton(onPressed: () => Get.back(result: false), child: const Text('Keep as draft')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
+            onPressed: () => Get.back(result: true),
+            child: const Text('Send now'),
+          ),
+        ],
+      ),
+    );
+    if (sendNow == true) {
+      try {
+        await _repo.issueInvoice(id);
+      } catch (_) {
+        // May already be issued; continue to composer.
+      }
+      if (!mounted) {
+        Get.back(result: id);
+        return;
+      }
+      await showInvoiceOfficialSendSheet(
+        context,
+        invoiceId: id,
+        onSent: () {},
+      );
+    } else {
+      Get.snackbar('Invoice', 'Saved as draft.');
+    }
+    Get.back(result: id);
+  }
+
   Future<void> _save({String? targetState}) async {
     if (_customerId == null) {
       setState(() => _error = 'Customer is required.');
@@ -323,11 +386,12 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
           if (_workAddressId != null) 'invoice_work_address_id': _workAddressId,
           'line_items': validItems,
           'tax_percentage': _taxPct,
-          if (targetState != null) 'state': targetState,
+          // Officers are always forced to draft on the server; only staff/admin may pass issued.
+          if (targetState != null && _canSend) 'state': targetState,
         };
         final created = await _repo.createInvoice(body);
         final id = (created['id'] as num?)?.toInt();
-        Get.back(result: id);
+        await _afterCreate(id);
       } else {
         final body = <String, dynamic>{
           'invoice_number': _invoiceNumberC.text.trim(),
@@ -379,7 +443,7 @@ class _InvoiceFormPageState extends State<InvoiceFormPage> {
             onPressed: _saving ? null : () => Get.back(),
           ),
           actions: [
-            if (_editId == null) ...[
+            if (_editId == null && _canSend) ...[
               TextButton(
                 onPressed: _saving || _loading ? null : () => _save(targetState: 'issued'),
                 child: Text('Issue', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: Colors.amber)),

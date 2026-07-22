@@ -4,9 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/network/api_exception.dart';
+import '../../core/tenant_permissions.dart';
 import '../../core/values/app_colors.dart';
 import '../../data/repositories/invoices_repository.dart';
+import '../home/controllers/home_controller.dart';
 import 'job_detail_controller.dart';
+import '../invoices/invoice_official_send_sheet.dart';
 
 class JobTabInvoices extends StatelessWidget {
   const JobTabInvoices({super.key});
@@ -34,17 +37,54 @@ class JobTabInvoices extends StatelessWidget {
 
   String _stateLabel(String? state) {
     if (state == null || state.isEmpty) return 'Draft';
-    return state[0].toUpperCase() + state.substring(1);
+    return state[0].toUpperCase() + state.substring(1).replaceAll('_', ' ');
   }
 
-  Future<void> _issueInvoice(int id, JobDetailController c) async {
+  Map<String, bool> get _perms =>
+      Get.isRegistered<HomeController>() ? (Get.find<HomeController>().home.value?.mobilePermissions ?? {}) : {};
+
+  String? get _role =>
+      Get.isRegistered<HomeController>() ? Get.find<HomeController>().home.value?.role : null;
+
+  bool get _canSend => canSendInvoices(_perms, role: _role);
+
+  bool get _canCreate => canViewInvoicesModule(_perms, role: _role);
+
+  Future<void> _issueAndMaybeSend(int id, JobDetailController c) async {
     try {
       await Get.find<InvoicesRepository>().issueInvoice(id);
       await c.refreshAll();
-      Get.snackbar('Invoice', 'Invoice issued successfully.');
+      if (_canSend && Get.context != null) {
+        final send = await Get.dialog<bool>(
+          AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text('Send to client?'),
+            content: const Text('Open the email composer to send this invoice now?'),
+            actions: [
+              TextButton(onPressed: () => Get.back(result: false), child: const Text('Not now')),
+              FilledButton(onPressed: () => Get.back(result: true), child: const Text('Send')),
+            ],
+          ),
+        );
+        if (send == true && Get.context != null) {
+          await showInvoiceOfficialSendSheet(
+            Get.context!,
+            invoiceId: id,
+            onSent: () => c.refreshAll(),
+          );
+        } else {
+          Get.snackbar('Invoice', 'Invoice issued successfully.');
+        }
+      } else {
+        Get.snackbar('Invoice', 'Invoice issued successfully.');
+      }
     } on ApiException catch (e) {
       Get.snackbar('Error', e.message);
     }
+  }
+
+  Future<void> _issueInvoice(int id, JobDetailController c) async {
+    await _issueAndMaybeSend(id, c);
   }
 
   Future<void> _deleteInvoice(int id, JobDetailController c) async {
@@ -140,18 +180,19 @@ class JobTabInvoices extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (hasPricingItems && !hasDrafts)
+              if (_canCreate && hasPricingItems && !hasDrafts)
                 FilledButton.icon(
                   onPressed: () => _generateFromJobItems(c),
                   icon: Icon(Icons.auto_fix_high_rounded, size: 18),
-                  label: const Text('Generate from job items'),
+                  label: Text(_canSend ? 'Create & send from job' : 'Generate from job items'),
                 ),
-              if (hasPricingItems && !hasDrafts) const SizedBox(width: 10),
-              FilledButton.icon(
-                onPressed: () => _addNewInvoice(c),
-                icon: Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add new invoice'),
-              ),
+              if (_canCreate && hasPricingItems && !hasDrafts) const SizedBox(width: 10),
+              if (_canCreate)
+                FilledButton.icon(
+                  onPressed: () => _addNewInvoice(c),
+                  icon: Icon(Icons.add_rounded, size: 18),
+                  label: Text(_canSend ? 'Create & send invoice' : 'Add new invoice'),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -310,17 +351,20 @@ class JobTabInvoices extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      TextButton.icon(
-                        onPressed: () => _issueInvoice(id, controller),
-                        icon: Icon(Icons.send_rounded, size: 16),
-                        label: Text('Issue', style: GoogleFonts.inter(color: const Color(0xFF34D399), fontWeight: FontWeight.w700)),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: () => _deleteInvoice(id, controller),
-                        icon: Icon(Icons.delete_outline_rounded, size: 16),
-                        label: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontWeight: FontWeight.w700)),
-                      ),
+                      if (_canSend)
+                        TextButton.icon(
+                          onPressed: () => _issueInvoice(id, controller),
+                          icon: Icon(Icons.send_rounded, size: 16),
+                          label: Text('Issue', style: GoogleFonts.inter(color: const Color(0xFF34D399), fontWeight: FontWeight.w700)),
+                        ),
+                      if (_canSend) const SizedBox(width: 8),
+                      // Officers cannot delete invoices (write blocked except create/send).
+                      if (_role?.toUpperCase() != 'OFFICER')
+                        TextButton.icon(
+                          onPressed: () => _deleteInvoice(id, controller),
+                          icon: Icon(Icons.delete_outline_rounded, size: 16),
+                          label: Text('Delete', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontWeight: FontWeight.w700)),
+                        ),
                     ],
                   ),
                 ],

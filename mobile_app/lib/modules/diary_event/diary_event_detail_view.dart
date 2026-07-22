@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/routes/app_routes.dart';
 import '../../core/services/storage_service.dart';
+import '../../core/tenant_permissions.dart';
 import '../../core/values/app_colors.dart';
 import '../../core/values/app_constants.dart';
 import '../../data/models/diary_event_detail.dart';
@@ -231,6 +232,40 @@ class DiaryEventDetailView extends GetView<DiaryEventDetailController> {
                               if (!d.isQuotationVisit) ...[
                                 const SizedBox(height: 12),
                                 _JobCompletionDocumentsPanel(controller: controller),
+                                Builder(
+                                  builder: (context) {
+                                    final home = Get.isRegistered<HomeController>()
+                                        ? Get.find<HomeController>().home.value
+                                        : null;
+                                    final perms = home?.mobilePermissions ?? {};
+                                    final role = home?.role;
+                                    if (!canViewInvoicesModule(perms, role: role)) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    final canSend = canSendInvoices(perms, role: role);
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 12),
+                                      child: _CreateInvoiceBanner(
+                                        canSend: canSend,
+                                        onTap: () async {
+                                          final cid = d.customerId;
+                                          final jid = d.jobId;
+                                          if (cid == null || jid == null) {
+                                            Get.snackbar('Invoice', 'Job or customer missing for this visit.');
+                                            return;
+                                          }
+                                          await Get.toNamed(
+                                            AppRoutes.invoiceForm,
+                                            arguments: <String, dynamic>{
+                                              'customer_id': cid,
+                                              'job_id': jid,
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    );
+                                  },
+                                ),
                               ],
                               if (d.isQuotationVisit) ...[
                                 const SizedBox(height: 12),
@@ -1227,6 +1262,60 @@ class _JobCompletionDocumentsPanel extends StatelessWidget {
         ),
       );
     });
+  }
+}
+
+class _CreateInvoiceBanner extends StatelessWidget {
+  const _CreateInvoiceBanner({
+    required this.onTap,
+    required this.canSend,
+  });
+
+  final Future<void> Function() onTap;
+  final bool canSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.92),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => onTap(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.receipt_long_rounded, color: AppColors.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      canSend ? 'Create & send invoice' : 'Create invoice',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.slate900,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      canSend
+                          ? 'Build the invoice and email it to the client.'
+                          : 'Create a draft for admin to review and send.',
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, color: AppColors.primary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
